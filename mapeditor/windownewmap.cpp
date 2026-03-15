@@ -310,7 +310,10 @@ void WindowNewMap::on_okButton_clicked()
 	
 		try
 		{
-			auto f = std::async(std::launch::async, &CMapGenerator::generate, &generator);
+			auto f = std::async(std::launch::async, [&generator]()
+			{
+				return generator.generate(std::nullopt);
+			});
 			progressBarWnd->update();
 			nmap = f.get();
 		}
