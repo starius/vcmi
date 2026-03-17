@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <fstream>
 #include <map>
+#include <sstream>
 #include <tbb/global_control.h>
 
 namespace
@@ -90,6 +91,7 @@ std::unique_ptr<CMap> generateMap(int randomSeed, std::time_t creationDateTime, 
 	options.setPlayerTypeForStandardPlayer(PlayerColor(1), EPlayerType::AI);
 	auto & callback = getDummyCallback();
 	CMapGenerator generator(options, &callback, randomSeed);
+	generator.setSingleThread(singleThread);
 
 	auto map = generator.generate(creationDateTime);
 	gMapForCallbackLookup = map.get();
@@ -139,13 +141,66 @@ std::map<std::string, std::string> extractArchivePayload(const std::vector<ui8> 
 
 	return payloadByName;
 }
+
+::testing::AssertionResult archivePayloadEquals(
+	const std::vector<ui8> & baselineSerialized,
+	const std::vector<ui8> & candidateSerialized,
+	const std::string & context)
+{
+	const auto baseline = extractArchivePayload(baselineSerialized);
+	const auto candidate = extractArchivePayload(candidateSerialized);
+	if(baseline == candidate)
+		return ::testing::AssertionSuccess();
+
+	std::ostringstream error;
+	error << context << ": archive payload mismatch";
+	if(baseline.size() != candidate.size())
+		error << " (entry count " << baseline.size() << " vs " << candidate.size() << ")";
+
+	for(const auto & [name, baselineData] : baseline)
+	{
+		const auto candidateIt = candidate.find(name);
+		if(candidateIt == candidate.end())
+		{
+			error << "; missing entry in candidate: " << name;
+			return ::testing::AssertionFailure() << error.str();
+		}
+
+		const auto & candidateData = candidateIt->second;
+		if(baselineData == candidateData)
+			continue;
+
+		const auto firstMismatch = std::mismatch(
+			baselineData.begin(), baselineData.end(),
+			candidateData.begin(), candidateData.end());
+		const size_t firstDifferent = static_cast<size_t>(
+			std::distance(baselineData.begin(), firstMismatch.first));
+
+		error << "; first difference in entry " << name
+			  << " at byte " << firstDifferent
+			  << " (sizes " << baselineData.size() << " vs " << candidateData.size() << ")";
+		return ::testing::AssertionFailure() << error.str();
+	}
+
+	for(const auto & [name, candidateData] : candidate)
+	{
+		if(baseline.find(name) == baseline.end())
+		{
+			error << "; extra entry in candidate: " << name
+				  << " (size " << candidateData.size() << ")";
+			return ::testing::AssertionFailure() << error.str();
+		}
+	}
+
+	return ::testing::AssertionFailure() << error.str();
+}
 }
 
 TEST(RmgDeterminism, SameSeedProducesSameSerializedMap)
 {
-	const auto first = extractArchivePayload(serializeMap(generateMap(TEST_RANDOM_SEED, TEST_CREATION_TIME, true, TEST_SINGLE_THREAD_PARALLELISM)));
-	const auto second = extractArchivePayload(serializeMap(generateMap(TEST_RANDOM_SEED, TEST_CREATION_TIME, true, TEST_SINGLE_THREAD_PARALLELISM)));
-	EXPECT_EQ(first, second);
+	const auto first = serializeMap(generateMap(TEST_RANDOM_SEED, TEST_CREATION_TIME, true, TEST_SINGLE_THREAD_PARALLELISM));
+	const auto second = serializeMap(generateMap(TEST_RANDOM_SEED, TEST_CREATION_TIME, true, TEST_SINGLE_THREAD_PARALLELISM));
+	EXPECT_TRUE(archivePayloadEquals(first, second, "single-thread replay"));
 }
 
 TEST(RmgDeterminism, CreationTimestampCanBeOverridden)
@@ -199,20 +254,22 @@ TEST(RmgDeterminism, DeterministicSeedDerivationIsStable)
 	EXPECT_NE(reference, 0);
 }
 
-TEST(RmgDeterminism, DISABLED_ParallelSameSeedProducesSameSerializedMap)
+TEST(RmgDeterminism, ParallelSameSeedProducesSameSerializedMap)
 {
 	const auto first = serializeMap(generateMap(TEST_RANDOM_SEED, TEST_CREATION_TIME, false, TEST_PARALLEL_PARALLELISM));
 	const auto second = serializeMap(generateMap(TEST_RANDOM_SEED, TEST_CREATION_TIME, false, TEST_PARALLEL_PARALLELISM));
-	EXPECT_EQ(first, second);
+	EXPECT_TRUE(archivePayloadEquals(first, second, "parallel replay"));
 }
 
-TEST(RmgDeterminism, DISABLED_ParallelResultIsThreadCountInvariant)
+TEST(RmgDeterminism, ParallelResultIsThreadCountInvariant)
 {
 	const auto baseline = serializeMap(generateMap(TEST_RANDOM_SEED, TEST_CREATION_TIME, false, 1));
 
 	for(const int parallelism : {2, 4, 8})
 	{
 		const auto candidate = serializeMap(generateMap(TEST_RANDOM_SEED, TEST_CREATION_TIME, false, parallelism));
-		EXPECT_EQ(baseline, candidate);
+		EXPECT_TRUE(archivePayloadEquals(
+			baseline, candidate,
+			"worker-count invariance 1 vs " + std::to_string(parallelism)));
 	}
 }
