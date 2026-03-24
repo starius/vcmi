@@ -1,0 +1,76 @@
+# Make RMG Worker-Count Invariant
+
+## Goal
+For a fixed template, seed, creation timestamp, and enabled mods, map generation must
+produce identical serialized map state for any worker count (1, 2, 4, 8, 16, ...).
+
+## Why it still differs today
+- The scheduler runs whole "ready" waves in parallel, but job execution order inside a
+  wave is not fixed by worker count.
+- `requiresExclusiveExecution()` exists, but current scheduling does not enforce it.
+- Modificators consume RNG from shared zone RNG state (`zone.getRand()`), so different
+  interleavings can change draw order and therefore results.
+- Some map mutations are global/cross-zone and order-sensitive, so concurrent writes can
+  lead to deterministic-per-run but worker-dependent outcomes.
+
+## Plan
+
+### Phase 1: Make divergence visible and reproducible
+1. Add a deterministic check helper used by tests/fuzz that compares full serialized map
+   state for worker counts `{1, 2, 4, 8}`.
+2. Keep the current replay stability check (same worker count twice), and add a separate
+   worker-count invariance check gate.
+3. Add optional debug output that dumps first mismatch context (seed, worker counts,
+   template, and map payload diff summary).
+
+### Phase 2: Remove RNG coupling to thread interleaving
+1. Introduce a per-modificator RNG stream in `Modificator`, derived from
+   `CMapGenerator::deriveDeterministicSeed(zoneId, modificatorName, streamTag)`.
+2. Stop using shared zone RNG for modificator internals; migrate call sites from
+   `zone.getRand()` to the modificator-owned RNG stream.
+3. For multi-stream logic inside one modificator (selection vs shuffle vs placement),
+   derive sub-streams with explicit tags so behavior stays stable after refactors.
+
+### Phase 3: Fix scheduler semantics
+1. Enforce `requiresExclusiveExecution()` in `fillZones()` scheduling.
+2. Build each ready wave in stable order `(zoneId, modificatorName)`.
+3. If any ready job is exclusive, run exclusive jobs serially in that stable order.
+4. For non-exclusive waves, run in parallel but keep deterministic step accounting and
+   deterministic wave boundaries.
+
+### Phase 4: Make shared mutations order-independent
+1. Identify global write hotspots (object placement, terrain/river/road painting,
+   cross-zone artifact replacement).
+2. For each hotspot, change from direct concurrent mutation to:
+   - per-job staged actions, then
+   - deterministic merge/apply in stable key order.
+3. Define deterministic conflict rules for collisions (same tile/object target) so merge
+   result is independent of which worker finished first.
+
+### Phase 5: Re-enable invariance tests and CI signal
+1. Re-enable disabled worker-count determinism tests in `RmgDeterminismTest`.
+2. Keep them focused and fast in PR CI (for example 1 vs 4 workers on fixed template).
+3. Run broader matrix in fuzz/nightly (`VCMI_FUZZ_CHECK_THREAD_INVARIANCE=1`) to catch
+   regressions early.
+
+### Phase 6: Recover performance safely
+1. Benchmark old/new with the existing bench tool on representative templates/sizes.
+2. If slowdown is high, parallelize only proven commutative stages first.
+3. Keep worker-count invariance tests mandatory while optimizing.
+
+## Suggested commit slices
+1. Test harness for worker-count invariance and mismatch reporting.
+2. Modificator-owned deterministic RNG API.
+3. Migrate high-impact modificators to dedicated RNG streams.
+4. Enforce exclusive jobs in scheduler.
+5. Stable ready-wave ordering and execution policy cleanup.
+6. Stage-and-merge for first shared hotspot.
+7. Stage-and-merge for remaining shared hotspots.
+8. Re-enable tests + CI wiring.
+9. Performance tuning commits (only after invariance is green).
+
+## Done criteria
+- `worker_count = 1/2/4/8` produces byte-identical serialized map state on the same
+  input corpus.
+- Replay stability and worker-count invariance checks both pass.
+- Benchmarks show acceptable slowdown (or no slowdown) relative to current branch.
