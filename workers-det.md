@@ -74,3 +74,18 @@ produce identical serialized map state for any worker count (1, 2, 4, 8, 16, ...
   input corpus.
 - Replay stability and worker-count invariance checks both pass.
 - Benchmarks show acceptable slowdown (or no slowdown) relative to current branch.
+
+## Execution log
+
+### Baseline before worker-count fixes (tip 48026556df44)
+- Synced current source to remote host `vcmi-bench` (AMD EPYC-Genoa, 16 cores / 16 threads)
+  and built remotely only:
+  - `cmake --preset linux-gcc-test && cmake --build --preset linux-gcc-test --target vcmitest -j16`
+  - `cmake --preset linux-gcc-bench && cmake --build --preset linux-gcc-bench --target vcmi-rmg-bench -j16`
+- Determinism tests:
+  - `vcmitest --gtest_filter=RmgDeterminism.*` -> pass (4 tests, 2 still disabled)
+  - `vcmitest --gtest_also_run_disabled_tests --gtest_filter=RmgDeterminism.DISABLED_ParallelResultIsThreadCountInvariant`
+    -> **fails** (byte-level mismatch between worker-count variants)
+- Baseline performance run:
+  - `vcmi-rmg-bench --template-id "vcmi:Clash of Dragons" --width 252 --height 252 --levels 2 --threads 16 --scheduler parallel --warmup 2 --runs 10 --expected-zones 0`
+  - Result: min/mean/median/p95/max = `8424.27 / 8615.08 / 8638.72 / 8748.70 / 8780.47 ms`
