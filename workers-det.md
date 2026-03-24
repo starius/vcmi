@@ -123,8 +123,8 @@ produce identical serialized map state for any worker count (1, 2, 4, 8, 16, ...
   - `vcmitest --gtest_filter=RmgDeterminism.*` -> pass (6/6)
 - Performance:
   - `vcmi-rmg-bench --template-id "vcmi:Clash of Dragons" --width 252 --height 252 --levels 2 --threads 16 --scheduler parallel --warmup 2 --runs 10 --expected-zones 0`
-  - Result: min/mean/median/p95/max = `8616.82 / 8798.97 / 8799.51 / 9001.55 / 9021.20 ms`
-  - Delta vs baseline mean: `+183.89 ms` (`+2.13%`), inside the 5% budget.
+  - Result: min/mean/median/p95/max = `8632.74 / 8948.21 / 8805.41 / 9424.61 / 9500.95 ms`
+  - Delta vs baseline mean: `+333.13 ms` (`+3.87%`), inside the 5% budget.
 - Editor build (remote-only):
   - `cmake --preset linux-gcc-release`
   - `cmake --build --preset linux-gcc-release --target vcmieditor -j16`
