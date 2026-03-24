@@ -89,3 +89,44 @@ produce identical serialized map state for any worker count (1, 2, 4, 8, 16, ...
 - Baseline performance run:
   - `vcmi-rmg-bench --template-id "vcmi:Clash of Dragons" --width 252 --height 252 --levels 2 --threads 16 --scheduler parallel --warmup 2 --runs 10 --expected-zones 0`
   - Result: min/mean/median/p95/max = `8424.27 / 8615.08 / 8638.72 / 8748.70 / 8780.47 ms`
+
+### Phase 1/3/5 implementation pass
+- Added archive payload comparison helper in `RmgDeterminismTest` with first-mismatch
+  context (entry name + byte offset).
+- Re-enabled parallel determinism tests:
+  - `RmgDeterminism.ParallelSameSeedProducesSameSerializedMap`
+  - `RmgDeterminism.ParallelResultIsThreadCountInvariant`
+- Implemented deterministic scheduler behavior in `CMapGenerator::fillZones()`:
+  - stable ready-wave sorting by `(zoneId, modificatorName)`
+  - explicit handling of `requiresExclusiveExecution()` (exclusive jobs run serially
+    in stable order, regular jobs stay parallel)
+- Validation on remote:
+  - `vcmitest --gtest_filter=RmgDeterminism.*` -> pass (6/6)
+
+### Phase 2 experiment and rollback decision
+- Implemented a per-modificator deterministic RNG API in `Modificator` and tested full
+  routing of `zone.getRand()` through per-mod streams.
+- Determinism checks stayed green, but benchmark performance regressed heavily:
+  - `vcmi-rmg-bench ... --runs 10` mean became `20416.20 ms` (from `8615.08 ms`)
+  - Regression: about `+137%`.
+- Rolled back runtime RNG routing through `Zone::getRand()` to keep map generation
+  quality/performance stable, while keeping scheduler determinism changes.
+
+### Extra fuzzing guard
+- Added an empty-input guard to `RmgReproFuzzer` (`size == 0 -> return 0`) to avoid an
+  immediate crash on empty corpus entries.
+- Remote fuzz runs still hit pre-existing sanitizer issues (leaks and crash artifacts),
+  so fuzz signal was not used as a merge gate in this pass.
+
+### Final remote validation
+- Tests:
+  - `vcmitest --gtest_filter=RmgDeterminism.*` -> pass (6/6)
+- Performance:
+  - `vcmi-rmg-bench --template-id "vcmi:Clash of Dragons" --width 252 --height 252 --levels 2 --threads 16 --scheduler parallel --warmup 2 --runs 10 --expected-zones 0`
+  - Result: min/mean/median/p95/max = `8616.82 / 8798.97 / 8799.51 / 9001.55 / 9021.20 ms`
+  - Delta vs baseline mean: `+183.89 ms` (`+2.13%`), inside the 5% budget.
+- Editor build (remote-only):
+  - `cmake --preset linux-gcc-release`
+  - `cmake --build --preset linux-gcc-release --target vcmieditor -j16`
+  - Result: success after updating `windownewmap.cpp` call-site for the
+    `CMapGenerator::generate(std::optional<std::time_t>)` signature.
