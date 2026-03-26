@@ -24,13 +24,15 @@ out/build/linux-gcc-bench/bin/vcmi-rmg-bench
 The tool defaults to a heavy stress scenario intended for scheduler and
 throughput checks:
 
-- `--width 504`
-- `--height 504`
-- `--levels 4`
-- `--expected-zones 200`
+- `--template-id vcmi:Clash of Dragons`
+- `--width 252`
+- `--height 252`
+- `--levels 2`
+- `--expected-zones 18`
 
-This scenario requires compatible templates in loaded data/mods. If none match,
-the benchmark now exits with a clear error instead of crashing.
+This uses an existing built-in G+U template scenario rather than synthetic map
+dimensions. If the template cannot be found in loaded data/mods, the benchmark
+exits with a clear error instead of crashing.
 
 If template selection cannot enforce exactly 200 zones, the benchmark prints the
 actual zone count for traceability.

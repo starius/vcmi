@@ -50,9 +50,9 @@ enum class SchedulerMode
 
 struct BenchmarkOptions
 {
-	int width = 504;
-	int height = 504;
-	int levels = 4;
+	int width = 252;
+	int height = 252;
+	int levels = 2;
 	int players = 2;
 	int humanPlayers = 1;
 	int compOnlyPlayers = 0;
@@ -61,11 +61,11 @@ struct BenchmarkOptions
 	int seed = 1;
 	int seedStep = 0;
 	std::time_t creationDateTime = std::time(nullptr);
-	std::string templateId;
+	std::string templateId = "vcmi:Clash of Dragons";
 	std::string templatePath;
 	std::string templateKey;
 	std::string autoTemplate = "largest";
-	int expectedZones = 200;
+	int expectedZones = 18;
 	int threads = 8;
 	SchedulerMode scheduler = SchedulerMode::PARALLEL;
 	int warmup = 2;
@@ -389,9 +389,9 @@ int main(int argc, char * argv[])
 	options.add_options()
 		("help,h", "Show help")
 		("list-templates", po::bool_switch(&benchmark.listTemplates), "List available RMG templates and exit")
-		("width", po::value<int>(&benchmark.width)->default_value(benchmark.width), "Map width (default: 504)")
-		("height", po::value<int>(&benchmark.height)->default_value(benchmark.height), "Map height (default: 504)")
-		("levels", po::value<int>(&benchmark.levels)->default_value(benchmark.levels), "Map levels (default: 4)")
+		("width", po::value<int>(&benchmark.width)->default_value(benchmark.width), "Map width (default: 252)")
+		("height", po::value<int>(&benchmark.height)->default_value(benchmark.height), "Map height (default: 252)")
+		("levels", po::value<int>(&benchmark.levels)->default_value(benchmark.levels), "Map levels (default: 2)")
 		("players", po::value<int>(&benchmark.players)->default_value(benchmark.players), "Standard players (human or AI)")
 		("human-players", po::value<int>(&benchmark.humanPlayers)->default_value(benchmark.humanPlayers), "Human players among standard players")
 		("comp-only-players", po::value<int>(&benchmark.compOnlyPlayers)->default_value(benchmark.compOnlyPlayers), "Computer-only players")
