@@ -71,12 +71,17 @@ Submitted at: `2026-03-25T15:06:52Z`
    - Compare serialized outputs between two runs of the same input.
    - Preserve optional thread-invariance mode as a separate check.
 
-6. Corpus seed files: document binary corpus format and purpose.
-   - Add a short README in `fuzz/corpus/vcmi-fuzz-rmg-repro/` explaining that seeds are raw libFuzzer byte inputs.
-   - Document field layout and provide hex dump examples for `single-thread.seed` and `parallel.seed`.
-   - Keep files binary (libFuzzer-native), but make them understandable to reviewers.
+6. Corpus seed files: keep binary inputs for libFuzzer, but expose text to humans.
+   - Keep curated seeds in human-readable text form in the repo.
+   - Add conversion support to the existing `vcmi-fuzz-rmg-repro` binary (no extra tool):
+     prepare text corpus into temporary binary corpus before fuzz run, and decode
+     artifacts/crashes back to text for review.
+   - Keep runtime fuzz corpus binary for libFuzzer performance and mutation quality.
 
 7. Validation after changes (implementation phase later):
+   - Use the remote server for builds, tests, and benchmarks.
+   - For every commit we modify during rebase/amend, re-run the affected build/tests/bench
+     on that commit (incremental build is fine).
    - Build `vcmi-fuzz-rmg-repro` and run a short smoke fuzz session.
    - Run `RmgDeterminism.*` tests to ensure determinism checks remain green.
    - Run `vcmi-rmg-bench --list-templates` and one default benchmark run to verify docs/defaults match behavior.
