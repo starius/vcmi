@@ -21,7 +21,8 @@ out/build/linux-gcc-bench/bin/vcmi-rmg-bench
 
 ## Defaults
 
-The tool defaults to the heavy scenario discussed in PR feedback:
+The tool defaults to a heavy stress scenario intended for scheduler and
+throughput checks:
 
 - `--width 504`
 - `--height 504`
@@ -33,6 +34,27 @@ the benchmark now exits with a clear error instead of crashing.
 
 If template selection cannot enforce exactly 200 zones, the benchmark prints the
 actual zone count for traceability.
+
+## Validation Workflow
+
+When using this benchmark for review-driven changes:
+
+- Run builds and performance checks on the remote benchmark machine.
+- If you amend/rebase commits, validate each changed commit in place.
+- Re-run affected checks per commit (incremental build is fine):
+  - `vcmi-rmg-bench --list-templates`
+  - one benchmark run with the intended scenario
+  - related tests when behavior changes (for example `RmgDeterminism.*`)
+
+## Repro Fuzzer Corpus Workflow
+
+For reproducibility fuzzing in this branch, use a split workflow:
+
+- Human-facing seeds stay in text form.
+- Runtime corpus for libFuzzer stays binary in a temporary directory.
+- Conversion is handled by the existing fuzz binary flow (text to binary before
+  run, binary artifacts back to text after run), so no separate helper tool is
+  required.
 
 ## Usage
 
