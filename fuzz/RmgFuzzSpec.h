@@ -10,12 +10,13 @@
 
 #pragma once
 
-#include "FuzzEnvironment.h"
-
 #include "../lib/mapping/CMap.h"
 
 #include <ctime>
+#include <cstdint>
 #include <memory>
+#include <string>
+#include <vector>
 
 namespace fuzzing
 {
@@ -27,7 +28,11 @@ struct RmgGenerationSpec
 	std::time_t creationDateTime;
 };
 
-RmgGenerationSpec decodeRmgGenerationSpec(ByteReader & input);
+RmgGenerationSpec decodeRmgGenerationSpec(const uint8_t * data, size_t size);
+std::vector<uint8_t> encodeRmgGenerationSpec(const RmgGenerationSpec & spec);
+std::string serializeRmgGenerationSpecText(const RmgGenerationSpec & spec);
+RmgGenerationSpec parseRmgGenerationSpecText(const std::string & text);
+
 std::unique_ptr<CMap> generateMap(const RmgGenerationSpec & spec);
 std::unique_ptr<CMap> generateMapWithParallelism(const RmgGenerationSpec & spec, int parallelism);
 }

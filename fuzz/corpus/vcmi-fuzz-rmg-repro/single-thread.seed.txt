@@ -1,0 +1,5 @@
+# vcmi-fuzz-rmg-repro seed format v1
+seed=1
+singleThread=1
+parallelism=1
+creationDateTime=1725897600
