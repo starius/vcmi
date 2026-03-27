@@ -20,6 +20,7 @@ public:
 	
 	void process() override;
 	void init() override;
+	bool requiresExclusiveExecution() const override { return true; }
 
 	void initTerrainType();
 };
