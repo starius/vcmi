@@ -12,8 +12,10 @@
 
 #include "../lib/GameLibrary.h"
 #include "../lib/callback/EditorCallback.h"
+#include "../lib/filesystem/CMemoryBuffer.h"
 #include "../lib/json/JsonNode.h"
 #include "../lib/mapping/CMap.h"
+#include "../lib/mapping/MapFormatJson.h"
 #include "../lib/modding/ModScope.h"
 #include "../lib/rmg/CMapGenOptions.h"
 #include "../lib/rmg/CMapGenerator.h"
@@ -29,10 +31,12 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <numeric>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -71,6 +75,11 @@ struct BenchmarkOptions
 	int warmup = 2;
 	int runs = 10;
 	std::string outputCsv;
+	int hashScanStart = 1;
+	int hashScanCount = 0;
+	int hashScanStep = 1;
+	int hashScanWarmup = 1;
+	std::string hashScanDumpDir;
 	bool listTemplates = false;
 };
 
@@ -82,6 +91,8 @@ struct RunResult
 	size_t objectCount = 0;
 	std::string templateId;
 	std::string templateName;
+	std::string mapHash;
+	std::vector<ui8> serializedMap;
 };
 
 [[nodiscard]] std::string csvEscape(const std::string & value)
@@ -96,6 +107,89 @@ struct RunResult
 	}
 	result += '"';
 	return result;
+}
+
+[[nodiscard]] std::string waterToString(EWaterContent::EWaterContent water)
+{
+	switch(water)
+	{
+		case EWaterContent::NONE:
+			return "none";
+		case EWaterContent::NORMAL:
+			return "normal";
+		case EWaterContent::ISLANDS:
+			return "islands";
+		case EWaterContent::RANDOM:
+			return "random";
+	}
+	return "unknown";
+}
+
+[[nodiscard]] std::string monstersToString(EMonsterStrength::EMonsterStrength monsters)
+{
+	switch(monsters)
+	{
+		case EMonsterStrength::GLOBAL_WEAK:
+			return "weak";
+		case EMonsterStrength::GLOBAL_NORMAL:
+			return "normal";
+		case EMonsterStrength::GLOBAL_STRONG:
+			return "strong";
+		case EMonsterStrength::RANDOM:
+			return "random";
+	}
+	return "unknown";
+}
+
+[[nodiscard]] std::string schedulerToString(SchedulerMode scheduler)
+{
+	return scheduler == SchedulerMode::SINGLE ? "single" : "parallel";
+}
+
+[[nodiscard]] std::vector<ui8> serializeMapState(std::unique_ptr<CMap> map)
+{
+	CMemoryBuffer output;
+	{
+		CMapSaverJson saver(&output);
+		saver.saveMap(map);
+	}
+	return output.getBuffer();
+}
+
+[[nodiscard]] uint64_t fnv1a64(const std::vector<ui8> & data)
+{
+	uint64_t hash = 14695981039346656037ULL;
+	for(ui8 byte : data)
+	{
+		hash ^= static_cast<uint64_t>(byte);
+		hash *= 1099511628211ULL;
+	}
+	return hash;
+}
+
+[[nodiscard]] std::string toHex64(uint64_t value)
+{
+	std::ostringstream stream;
+	stream << std::hex << std::nouppercase << std::setw(16) << std::setfill('0') << value;
+	return stream.str();
+}
+
+void writeSerializedMap(const std::string & dumpDirectory, int seed, const std::string & mapHash, const std::vector<ui8> & data)
+{
+	if(dumpDirectory.empty())
+		return;
+
+	std::filesystem::create_directories(dumpDirectory);
+	const std::filesystem::path targetPath = std::filesystem::path(dumpDirectory) /
+		("seed_" + std::to_string(seed) + "_" + mapHash + ".vmap");
+
+	std::ofstream output(targetPath, std::ios::binary);
+	if(!output.is_open())
+		throw std::runtime_error("Failed to open hash-scan dump output: " + targetPath.string());
+
+	output.write(reinterpret_cast<const char *>(data.data()), static_cast<std::streamsize>(data.size()));
+	if(!output.good())
+		throw std::runtime_error("Failed to write hash-scan dump output: " + targetPath.string());
 }
 
 void ensureDevelopmentModeMarker()
@@ -251,7 +345,11 @@ void configurePlayers(CMapGenOptions & options, const BenchmarkOptions & benchma
 	}
 }
 
-RunResult runSingleGeneration(const BenchmarkOptions & benchmark, int seed, const std::shared_ptr<CRmgTemplate> & fileTemplate)
+RunResult runSingleGeneration(
+	const BenchmarkOptions & benchmark,
+	int seed,
+	const std::shared_ptr<CRmgTemplate> & fileTemplate,
+	bool computeMapHash = false)
 {
 	const int maxParallelism = benchmark.scheduler == SchedulerMode::SINGLE ? 1 : benchmark.threads;
 	tbb::global_control limitParallelism(tbb::global_control::max_allowed_parallelism, std::max(1, maxParallelism));
@@ -317,6 +415,11 @@ RunResult runSingleGeneration(const BenchmarkOptions & benchmark, int seed, cons
 		result.templateName = selectedTemplate->getName();
 		result.zoneCount = selectedTemplate->getZones().size();
 	}
+	if(computeMapHash)
+	{
+		result.serializedMap = serializeMapState(std::move(generatedMap));
+		result.mapHash = toHex64(fnv1a64(result.serializedMap));
+	}
 	return result;
 }
 
@@ -350,6 +453,14 @@ void validateArguments(const BenchmarkOptions & benchmark)
 		throw std::runtime_error("--threads must be at least 1.");
 	if(benchmark.warmup < 0 || benchmark.runs <= 0)
 		throw std::runtime_error("--warmup must be >= 0 and --runs must be >= 1.");
+	if(benchmark.hashScanCount < 0)
+		throw std::runtime_error("--hash-scan-count must be >= 0.");
+	if(benchmark.hashScanStep == 0)
+		throw std::runtime_error("--hash-scan-step must not be 0.");
+	if(benchmark.hashScanWarmup < 0)
+		throw std::runtime_error("--hash-scan-warmup must be >= 0.");
+	if(!benchmark.hashScanDumpDir.empty() && benchmark.hashScanCount == 0)
+		throw std::runtime_error("--hash-scan-dump-dir requires --hash-scan-count > 0.");
 	if(!benchmark.templatePath.empty() && !benchmark.templateId.empty())
 		throw std::runtime_error("Use either --template-id or --template-path, not both.");
 	if(benchmark.autoTemplate != "largest" && benchmark.autoTemplate != "random")
@@ -409,6 +520,11 @@ int main(int argc, char * argv[])
 		("threads", po::value<int>(&benchmark.threads)->default_value(benchmark.threads), "Max worker threads")
 		("warmup", po::value<int>(&benchmark.warmup)->default_value(benchmark.warmup), "Warmup runs")
 		("runs", po::value<int>(&benchmark.runs)->default_value(benchmark.runs), "Measured runs")
+		("hash-scan-start", po::value<int>(&benchmark.hashScanStart)->default_value(benchmark.hashScanStart), "Seed for first hash-scan generation")
+		("hash-scan-count", po::value<int>(&benchmark.hashScanCount)->default_value(benchmark.hashScanCount), "Number of hash-scan generations (0 disables hash scan)")
+		("hash-scan-step", po::value<int>(&benchmark.hashScanStep)->default_value(benchmark.hashScanStep), "Seed increment between hash-scan generations")
+		("hash-scan-warmup", po::value<int>(&benchmark.hashScanWarmup)->default_value(benchmark.hashScanWarmup), "Number of warmup generations before hash-scan output")
+		("hash-scan-dump-dir", po::value<std::string>(&benchmark.hashScanDumpDir)->default_value(benchmark.hashScanDumpDir), "Optional directory to dump serialized maps in hash-scan mode")
 		("output-csv", po::value<std::string>(&benchmark.outputCsv)->default_value(benchmark.outputCsv), "Optional CSV output path");
 
 	po::variables_map parsed;
@@ -463,6 +579,40 @@ int main(int argc, char * argv[])
 				<< " (" << fileTemplate->getId() << ")\n";
 		}
 
+		if(benchmark.hashScanCount > 0)
+		{
+			for(int i = 0; i < benchmark.hashScanWarmup; ++i)
+				(void)runSingleGeneration(benchmark, benchmark.hashScanStart, fileTemplate, false);
+
+			std::cout << "index,seed,width,height,levels,players,human_players,comp_only_players,water,monsters,scheduler,threads,timestamp,template_id,template_name,zones,objects,map_hash\n";
+			for(int i = 0; i < benchmark.hashScanCount; ++i)
+			{
+				const int seed = benchmark.hashScanStart + benchmark.hashScanStep * i;
+				const auto run = runSingleGeneration(benchmark, seed, fileTemplate, true);
+				writeSerializedMap(benchmark.hashScanDumpDir, run.seed, run.mapHash, run.serializedMap);
+				std::cout << i << ','
+					<< run.seed << ','
+					<< benchmark.width << ','
+					<< benchmark.height << ','
+					<< benchmark.levels << ','
+					<< benchmark.players << ','
+					<< benchmark.humanPlayers << ','
+					<< benchmark.compOnlyPlayers << ','
+					<< waterToString(benchmark.water) << ','
+					<< monstersToString(benchmark.monsters) << ','
+					<< schedulerToString(benchmark.scheduler) << ','
+					<< benchmark.threads << ','
+					<< benchmark.creationDateTime << ','
+					<< csvEscape(run.templateId) << ','
+					<< csvEscape(run.templateName) << ','
+					<< run.zoneCount << ','
+					<< run.objectCount << ','
+					<< run.mapHash << '\n';
+				std::cout.flush();
+			}
+			return EXIT_SUCCESS;
+		}
+
 		std::vector<RunResult> warmups;
 		std::vector<RunResult> runs;
 		warmups.reserve(benchmark.warmup);
@@ -470,12 +620,12 @@ int main(int argc, char * argv[])
 
 		for(int i = 0; i < benchmark.warmup; ++i)
 		{
-			warmups.push_back(runSingleGeneration(benchmark, benchmark.seed + benchmark.seedStep * i, fileTemplate));
+			warmups.push_back(runSingleGeneration(benchmark, benchmark.seed + benchmark.seedStep * i, fileTemplate, false));
 		}
 
 		for(int i = 0; i < benchmark.runs; ++i)
 		{
-			runs.push_back(runSingleGeneration(benchmark, benchmark.seed + benchmark.seedStep * (benchmark.warmup + i), fileTemplate));
+			runs.push_back(runSingleGeneration(benchmark, benchmark.seed + benchmark.seedStep * (benchmark.warmup + i), fileTemplate, false));
 		}
 
 		std::vector<double> measurements;
@@ -493,7 +643,7 @@ int main(int argc, char * argv[])
 		const auto & sample = runs.front();
 		std::cout << std::fixed << std::setprecision(2);
 		std::cout << "vcmi-rmg-bench summary\n";
-		std::cout << "  scheduler: " << (benchmark.scheduler == SchedulerMode::SINGLE ? "single" : "parallel")
+		std::cout << "  scheduler: " << schedulerToString(benchmark.scheduler)
 			<< ", threads: " << benchmark.threads << '\n';
 		std::cout << "  map: " << benchmark.width << 'x' << benchmark.height << 'x' << benchmark.levels
 			<< ", players: " << benchmark.players
@@ -524,7 +674,7 @@ int main(int argc, char * argv[])
 				csv << "warmup," << index++ << ',' << run.seed << ',' << run.milliseconds << ','
 					<< csvEscape(run.templateId) << ',' << csvEscape(run.templateName) << ','
 					<< run.zoneCount << ',' << run.objectCount << ','
-					<< (benchmark.scheduler == SchedulerMode::SINGLE ? "single" : "parallel") << ','
+					<< schedulerToString(benchmark.scheduler) << ','
 					<< benchmark.threads << ','
 					<< benchmark.width << ',' << benchmark.height << ',' << benchmark.levels << ','
 					<< benchmark.players << ',' << benchmark.humanPlayers << ',' << benchmark.compOnlyPlayers << '\n';
@@ -536,7 +686,7 @@ int main(int argc, char * argv[])
 				csv << "run," << index++ << ',' << run.seed << ',' << run.milliseconds << ','
 					<< csvEscape(run.templateId) << ',' << csvEscape(run.templateName) << ','
 					<< run.zoneCount << ',' << run.objectCount << ','
-					<< (benchmark.scheduler == SchedulerMode::SINGLE ? "single" : "parallel") << ','
+					<< schedulerToString(benchmark.scheduler) << ','
 					<< benchmark.threads << ','
 					<< benchmark.width << ',' << benchmark.height << ',' << benchmark.levels << ','
 					<< benchmark.players << ',' << benchmark.humanPlayers << ',' << benchmark.compOnlyPlayers << '\n';
