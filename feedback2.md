@@ -31,3 +31,21 @@ old1 `16460.06 ms`, new1 `43431.66 ms`, new2 `43887.37 ms`,
 old2 `16518.75 ms`.
 Old average: `16489.41 ms`. New average: `43659.52 ms`.
 Delta (new vs old): `+164.77%`.
+
+9. I also measured the same way for commit
+`57c3d4419511f84adf5407a16cc7197a4a1b9eee`, still against old baseline
+`f88934907797d3b84421efca11f8c79021ccf8d8`, using the same ABBA order
+and scenario (`vcmi:Clash of Dragons`, `252x252x2`, parallel,
+`warmup=1`, `runs=10`).
+
+On `vcmi-bench` (16 workers):
+old1 `8581.42 ms`, new1 `10937.25 ms`, new2 `10723.85 ms`,
+old2 `8548.22 ms`.
+Old average: `8564.82 ms`. New average: `10830.55 ms`.
+Delta (new vs old): `+26.45%`.
+
+On `vcmi-arm64` (8 workers):
+old1 `16402.30 ms`, new1 `21945.52 ms`, new2 `21749.49 ms`,
+old2 `16376.69 ms`.
+Old average: `16389.49 ms`. New average: `21847.51 ms`.
+Delta (new vs old): `+33.30%`.
