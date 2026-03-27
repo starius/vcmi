@@ -46,8 +46,10 @@ bool strictThreadInvariantMode()
 std::vector<ui8> serializeMapState(std::unique_ptr<CMap> map)
 {
 	CMemoryBuffer output;
-	CMapSaverJson saver(&output);
-	saver.saveMap(map);
+	{
+		CMapSaverJson saver(&output);
+		saver.saveMap(map);
+	}
 	return output.getBuffer();
 }
 
