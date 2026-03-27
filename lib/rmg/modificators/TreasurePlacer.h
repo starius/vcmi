@@ -29,6 +29,7 @@ public:
 	
 	void process() override;
 	void init() override;
+	bool requiresExclusiveExecution() const override { return true; }
 	char dump(const int3 &) override;
 	
 	void createTreasures(ObjectManager & manager);

@@ -57,6 +57,7 @@ public:
 
 	void process() override;
 	void init() override;
+	bool requiresExclusiveExecution() const override { return true; }
 
 	void addRequiredObject(const RequiredObjectInfo & info);
 	void addCloseObject(const RequiredObjectInfo & info);
