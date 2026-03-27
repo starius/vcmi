@@ -284,3 +284,14 @@ TEST(RmgDeterminism, ReproSeedParallelReplay)
 	const auto second = serializeMap(generateMap(reproSeed, reproCreationTime, false, reproParallelism));
 	EXPECT_TRUE(archivePayloadEquals(first, second, "repro parallel replay"));
 }
+
+TEST(RmgDeterminism, ReproSeedParallelReplaySecondCase)
+{
+	constexpr int reproSeed = 1'446'117'377;
+	constexpr std::time_t reproCreationTime = 1'725'897'613;
+	constexpr int reproParallelism = 16;
+
+	const auto first = serializeMap(generateMap(reproSeed, reproCreationTime, false, reproParallelism));
+	const auto second = serializeMap(generateMap(reproSeed, reproCreationTime, false, reproParallelism));
+	EXPECT_TRUE(archivePayloadEquals(first, second, "repro parallel replay second case"));
+}
