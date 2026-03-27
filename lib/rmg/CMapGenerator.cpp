@@ -466,7 +466,7 @@ void CMapGenerator::fillZones()
 			if(readyJobs.empty())
 				throw rmgException("No ready modificator in parallel RMG scheduling");
 
-			std::sort(readyJobs.begin(), readyJobs.end(), [](const auto & lhs, const auto & rhs)
+			std::stable_sort(readyJobs.begin(), readyJobs.end(), [](const auto & lhs, const auto & rhs)
 			{
 				if(lhs->getZoneId() != rhs->getZoneId())
 					return lhs->getZoneId() < rhs->getZoneId();
@@ -474,26 +474,29 @@ void CMapGenerator::fillZones()
 			});
 
 			std::vector<TModificators::value_type> exclusiveJobs;
-			std::vector<TModificators::value_type> regularJobs;
+			std::map<int, std::vector<TModificators::value_type>> regularJobsByZone;
 			exclusiveJobs.reserve(readyJobs.size());
-			regularJobs.reserve(readyJobs.size());
 
 			for(const auto & job : readyJobs)
 			{
 				if(job->requiresExclusiveExecution())
 					exclusiveJobs.push_back(job);
 				else
-					regularJobs.push_back(job);
+					regularJobsByZone[job->getZoneId()].push_back(job);
 			}
 
 			for(const auto & job : exclusiveJobs)
 				job->run();
 
-			if(!regularJobs.empty())
+			if(!regularJobsByZone.empty())
 			{
 				tbb::task_group pool;
-				for(const auto & job : regularJobs)
-					pool.run([job]() { job->run(); });
+				for(const auto & zoneJobs : regularJobsByZone)
+					pool.run([jobs = zoneJobs.second]()
+					{
+						for(const auto & job : jobs)
+							job->run();
+					});
 				pool.wait();
 			}
 

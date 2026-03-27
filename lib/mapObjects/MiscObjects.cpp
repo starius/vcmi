@@ -843,8 +843,14 @@ void CGArtifact::serializeJsonOptions(JsonSerializeFormat& handler)
 
 	if(handler.saving && ID == Obj::SPELL_SCROLL)
 	{
-		const auto & b = getArtifactInstance()->getFirstBonus(Selector::type()(BonusType::SPELL));
-		SpellID spellId(b->subtype.as<SpellID>());
+		SpellID spellId = SpellID::NONE;
+		const auto * artifactInstance = getArtifactInstance();
+		if(artifactInstance)
+		{
+			const auto bonus = artifactInstance->getFirstBonus(Selector::type()(BonusType::SPELL));
+			if(bonus)
+				spellId = SpellID(bonus->subtype.as<SpellID>());
+		}
 
 		handler.serializeId("spell", spellId, SpellID::NONE);
 	}
