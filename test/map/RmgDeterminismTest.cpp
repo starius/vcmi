@@ -273,3 +273,14 @@ TEST(RmgDeterminism, ParallelResultIsThreadCountInvariant)
 			"worker-count invariance 1 vs " + std::to_string(parallelism)));
 	}
 }
+
+TEST(RmgDeterminism, ReproSeedParallelReplay)
+{
+	constexpr int reproSeed = 16'711'681;
+	constexpr std::time_t reproCreationTime = 1'742'174'175;
+	constexpr int reproParallelism = 16;
+
+	const auto first = serializeMap(generateMap(reproSeed, reproCreationTime, false, reproParallelism));
+	const auto second = serializeMap(generateMap(reproSeed, reproCreationTime, false, reproParallelism));
+	EXPECT_TRUE(archivePayloadEquals(first, second, "repro parallel replay"));
+}
