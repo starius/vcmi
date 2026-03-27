@@ -25,3 +25,16 @@ TEST(CGArtifactRegression, RandomArtifactInstanceLookupIsSafe)
 	EXPECT_NO_THROW(instance = randomArtifact.getArtifactInstance());
 	EXPECT_EQ(instance, nullptr);
 }
+
+TEST(CGArtifactRegression, SpellScrollLookupWithoutInstanceIsSafe)
+{
+	EditorCallback cb(nullptr);
+	CMap map(&cb);
+	cb.setMap(&map);
+	CGArtifact spellScroll(&cb);
+	spellScroll.ID = Obj::SPELL_SCROLL;
+
+	const CArtifactInstance * instance = nullptr;
+	EXPECT_NO_THROW(instance = spellScroll.getArtifactInstance());
+	EXPECT_EQ(instance, nullptr);
+}

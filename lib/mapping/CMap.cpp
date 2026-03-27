@@ -27,6 +27,7 @@
 #include "../entities/artifact/CArtHandler.h"
 #include "../entities/hero/CHeroHandler.h"
 #include "../gameState/CGameState.h"
+#include "../mapObjects/CGDwelling.h"
 #include "../mapObjects/CGHeroInstance.h"
 #include "../mapObjects/CGTownInstance.h"
 #include "../mapObjects/CQuest.h"
@@ -836,9 +837,59 @@ void CMap::reindexObjects()
 		return lhs->instanceName < rhs->instanceName;
 	});
 
-	// instanceNames don't change
 	for (size_t i = 0; i < objects.size(); ++i)
 		objects[i]->id = ObjectInstanceID(i);
+
+	std::map<std::string, std::string> renamedInstanceNames;
+	renamedInstanceNames.clear();
+
+	for(const auto & object : objects)
+	{
+		const std::string generatedPrefix = object->getTypeName() + "_";
+		const bool hasGeneratedPrefix = object->instanceName.rfind(generatedPrefix, 0) == 0;
+		if(!hasGeneratedPrefix)
+			continue;
+
+		const std::string suffix = object->instanceName.substr(generatedPrefix.size());
+		const bool numericSuffix = !suffix.empty() && std::all_of(suffix.begin(), suffix.end(), [](unsigned char c)
+		{
+			return std::isdigit(c) != 0;
+		});
+		if(!numericSuffix)
+			continue;
+
+		const std::string deterministicName = generatedPrefix + std::to_string(object->id.getNum());
+		if(object->instanceName == deterministicName)
+			continue;
+
+		renamedInstanceNames.emplace(object->instanceName, deterministicName);
+		object->instanceName = deterministicName;
+	}
+
+	instanceNames.clear();
+	for(const auto & object : objects)
+		instanceNames[object->instanceName] = object;
+
+	if(!renamedInstanceNames.empty())
+	{
+		auto remapInstanceName = [&renamedInstanceNames](std::string & name)
+		{
+			if(const auto it = renamedInstanceNames.find(name); it != renamedInstanceNames.end())
+				name = it->second;
+		};
+
+		for(auto & player : players)
+			remapInstanceName(player.mainHeroInstance);
+
+		for(const auto & object : objects)
+		{
+			auto * dwelling = dynamic_cast<CGDwelling *>(object.get());
+			if(!dwelling || !dwelling->randomizationInfo || dwelling->randomizationInfo->instanceId.empty())
+				continue;
+
+			remapInstanceName(dwelling->randomizationInfo->instanceId);
+		}
+	}
 
 	for (auto & town : towns)
 		town = oldIndex.at(town.getNum())->id;
@@ -930,12 +981,18 @@ CArtifactInstance * CMap::createArtifact(const ArtifactID & artID, const SpellID
 
 CArtifactInstance * CMap::getArtifactInstance(const ArtifactInstanceID & artifactID)
 {
-	return artInstances.at(artifactID.getNum()).get();
+	const auto index = artifactID.getNum();
+	if(index < 0 || static_cast<size_t>(index) >= artInstances.size())
+		return nullptr;
+	return artInstances[static_cast<size_t>(index)].get();
 }
 
 const CArtifactInstance * CMap::getArtifactInstance(const ArtifactInstanceID & artifactID) const
 {
-	return artInstances.at(artifactID.getNum()).get();
+	const auto index = artifactID.getNum();
+	if(index < 0 || static_cast<size_t>(index) >= artInstances.size())
+		return nullptr;
+	return artInstances[static_cast<size_t>(index)].get();
 }
 
 const std::vector<ObjectInstanceID> & CMap::getAllTowns() const
