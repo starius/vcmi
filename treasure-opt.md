@@ -15,6 +15,26 @@ So the most promising optimization target is the `ObjectManager ->
 TreasurePlacer -> ObstaclePlacer` segment, with first focus on
 `TreasurePlacer` and the `ObjectManager` calls it triggers.
 
+## Baseline target
+
+Use this commit as the perf reference point for this optimization work:
+
+- baseline commit: `f88934907797d3b84421efca11f8c79021ccf8d8`
+
+Reference benchmark data (same scenario, `vcmi-bench`, `threads=16`,
+`warmup=1`, `runs=10`):
+
+- baseline old mean: `9053.29 ms`
+- compared new mean (before optimization pass): `15106.73 ms`
+- delta: `+66.86%`
+
+Target for this plan:
+
+- reduce slowdown versus baseline as much as possible while preserving all
+  determinism guarantees;
+- keep results within an acceptable budget (preferably <= `~30%` over
+  baseline in the canonical benchmark scenario).
+
 ## Do workers contend on global state now?
 
 There is no single global mutex that serializes all workers in this phase.
