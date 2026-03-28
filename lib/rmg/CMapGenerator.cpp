@@ -528,6 +528,41 @@ void CMapGenerator::fillZones()
 							zoneJobsWithoutTreasure.push_back(zoneJobs);
 					}
 
+					// Heavy treasure zones can dominate single workers and create long
+					// tail batches. Keep scheduling deterministic, but prioritize zones
+					// with larger expected treasure workload first.
+					std::map<int, uint64_t> treasureZoneScores;
+					for(const auto & zoneJobs : zoneJobsWithTreasure)
+					{
+						uint64_t score = 0;
+						const auto zoneIt = map->getZones().find(zoneJobs.first);
+						if(zoneIt != map->getZones().end() && zoneIt->second)
+						{
+							const auto & zoneRef = *zoneIt->second;
+							score += static_cast<uint64_t>(zoneRef.area()->getTilesVector().size());
+							for(const auto & info : zoneRef.getTreasureInfo())
+							{
+								const auto density = static_cast<uint64_t>(std::max(0, info.density));
+								const auto maxValue = static_cast<uint64_t>(std::max(0, info.max));
+								score += density * 64ULL;
+								score += maxValue / 100ULL;
+							}
+						}
+						score += static_cast<uint64_t>(zoneJobs.second.size()) * 1024ULL;
+						treasureZoneScores.emplace(zoneJobs.first, score);
+					}
+					std::stable_sort(zoneJobsWithTreasure.begin(), zoneJobsWithTreasure.end(),
+						[&treasureZoneScores](const auto & lhs, const auto & rhs)
+					{
+						const auto lhsIt = treasureZoneScores.find(lhs.first);
+						const auto rhsIt = treasureZoneScores.find(rhs.first);
+						const auto lhsScore = lhsIt != treasureZoneScores.end() ? lhsIt->second : 0ULL;
+						const auto rhsScore = rhsIt != treasureZoneScores.end() ? rhsIt->second : 0ULL;
+						if(lhsScore != rhsScore)
+							return lhsScore > rhsScore;
+						return lhs.first < rhs.first;
+					});
+
 					auto runZoneJobs = [](const std::vector<std::pair<int, std::vector<TModificators::value_type>>> & jobsByZone)
 					{
 						tbb::task_group pool;
