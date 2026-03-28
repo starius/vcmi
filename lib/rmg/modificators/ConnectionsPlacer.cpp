@@ -427,7 +427,10 @@ void ConnectionsPlacer::collectNeighbourZones()
 			continue;
 		
 		auto zid = map.getZoneID(i);
-		assert(zid != zone.getId());
+		if(zid == zone.getId())
+			continue;
+		if(!vstd::contains(map.getZones(), zid))
+			continue;
 		dNeighbourZones[zid].insert(i);
 	}
 }
