@@ -506,90 +506,102 @@ void CMapGenerator::fillZones()
 					regularJobsByZone[job->getZoneId()].push_back(job);
 			}
 
-				for(const auto & job : exclusiveJobs)
-					job->run();
+			for(const auto & job : exclusiveJobs)
+				job->run();
 
-				if(!regularJobsByZone.empty())
+			if(!regularJobsByZone.empty())
+			{
+				std::vector<std::pair<int, std::vector<TModificators::value_type>>> zoneJobsWithTreasure;
+				std::vector<std::pair<int, std::vector<TModificators::value_type>>> zoneJobsWithObjectManager;
+				std::vector<std::pair<int, std::vector<TModificators::value_type>>> zoneJobsWithoutSpecial;
+				zoneJobsWithTreasure.reserve(regularJobsByZone.size());
+				zoneJobsWithObjectManager.reserve(regularJobsByZone.size());
+				zoneJobsWithoutSpecial.reserve(regularJobsByZone.size());
+
+				for(const auto & zoneJobs : regularJobsByZone)
 				{
-					std::vector<std::pair<int, std::vector<TModificators::value_type>>> zoneJobsWithTreasure;
-					std::vector<std::pair<int, std::vector<TModificators::value_type>>> zoneJobsWithoutTreasure;
-					zoneJobsWithTreasure.reserve(regularJobsByZone.size());
-					zoneJobsWithoutTreasure.reserve(regularJobsByZone.size());
-
-					for(const auto & zoneJobs : regularJobsByZone)
+					const bool hasTreasurePlacer = std::any_of(zoneJobs.second.begin(), zoneJobs.second.end(), [](const auto & job)
 					{
-						const bool hasTreasurePlacer = std::any_of(zoneJobs.second.begin(), zoneJobs.second.end(), [](const auto & job)
-						{
-							return job->getName() == "TreasurePlacer";
-						});
-						if(hasTreasurePlacer)
-							zoneJobsWithTreasure.push_back(zoneJobs);
-						else
-							zoneJobsWithoutTreasure.push_back(zoneJobs);
-					}
-
-					// Heavy treasure zones can dominate single workers and create long
-					// tail batches. Keep scheduling deterministic, but prioritize zones
-					// with larger expected treasure workload first.
-					std::map<int, uint64_t> treasureZoneScores;
-					for(const auto & zoneJobs : zoneJobsWithTreasure)
+						return job->getName() == "TreasurePlacer";
+					});
+					const bool hasObjectManager = std::any_of(zoneJobs.second.begin(), zoneJobs.second.end(), [](const auto & job)
 					{
-						uint64_t score = 0;
-						const auto zoneIt = map->getZones().find(zoneJobs.first);
-						if(zoneIt != map->getZones().end() && zoneIt->second)
-						{
-							const auto & zoneRef = *zoneIt->second;
-							score += static_cast<uint64_t>(zoneRef.area()->getTilesVector().size());
-							for(const auto & info : zoneRef.getTreasureInfo())
-							{
-								const auto density = static_cast<uint64_t>(std::max(0, info.density));
-								const auto maxValue = static_cast<uint64_t>(std::max(0, info.max));
-								score += density * 64ULL;
-								score += maxValue / 100ULL;
-							}
-						}
-						score += static_cast<uint64_t>(zoneJobs.second.size()) * 1024ULL;
-						treasureZoneScores.emplace(zoneJobs.first, score);
-					}
-					std::stable_sort(zoneJobsWithTreasure.begin(), zoneJobsWithTreasure.end(),
-						[&treasureZoneScores](const auto & lhs, const auto & rhs)
-					{
-						const auto lhsIt = treasureZoneScores.find(lhs.first);
-						const auto rhsIt = treasureZoneScores.find(rhs.first);
-						const auto lhsScore = lhsIt != treasureZoneScores.end() ? lhsIt->second : 0ULL;
-						const auto rhsScore = rhsIt != treasureZoneScores.end() ? rhsIt->second : 0ULL;
-						if(lhsScore != rhsScore)
-							return lhsScore > rhsScore;
-						return lhs.first < rhs.first;
+						return job->getName() == "ObjectManager";
 					});
 
-					auto runZoneJobs = [](const std::vector<std::pair<int, std::vector<TModificators::value_type>>> & jobsByZone)
+					if(hasTreasurePlacer)
+						zoneJobsWithTreasure.push_back(zoneJobs);
+					else if(hasObjectManager)
+						zoneJobsWithObjectManager.push_back(zoneJobs);
+					else
+						zoneJobsWithoutSpecial.push_back(zoneJobs);
+				}
+
+				// Heavy treasure zones can dominate single workers and create long
+				// tail batches. Keep scheduling deterministic, but prioritize zones
+				// with larger expected treasure workload first.
+				std::map<int, uint64_t> treasureZoneScores;
+				for(const auto & zoneJobs : zoneJobsWithTreasure)
+				{
+					uint64_t score = 0;
+					const auto zoneIt = map->getZones().find(zoneJobs.first);
+					if(zoneIt != map->getZones().end() && zoneIt->second)
 					{
-						tbb::task_group pool;
-						for(const auto & zoneJobs : jobsByZone)
-							pool.run([jobs = zoneJobs.second]()
-							{
-								for(const auto & job : jobs)
-									job->run();
-							});
-						pool.wait();
-					};
+						const auto & zoneRef = *zoneIt->second;
+						score += static_cast<uint64_t>(zoneRef.area()->getTilesVector().size());
+						for(const auto & info : zoneRef.getTreasureInfo())
+						{
+							const auto density = static_cast<uint64_t>(std::max<int>(0, info.density));
+							const auto maxValue = static_cast<uint64_t>(std::max<int>(0, info.max));
+							score += density * 64ULL;
+							score += maxValue / 100ULL;
+						}
+					}
+					score += static_cast<uint64_t>(zoneJobs.second.size()) * 1024ULL;
+					treasureZoneScores.emplace(zoneJobs.first, score);
+				}
 
-					runZoneJobs(zoneJobsWithoutTreasure);
+				std::stable_sort(zoneJobsWithTreasure.begin(), zoneJobsWithTreasure.end(),
+					[&treasureZoneScores](const auto & lhs, const auto & rhs)
+				{
+					const auto lhsIt = treasureZoneScores.find(lhs.first);
+					const auto rhsIt = treasureZoneScores.find(rhs.first);
+					const auto lhsScore = lhsIt != treasureZoneScores.end() ? lhsIt->second : 0ULL;
+					const auto rhsScore = rhsIt != treasureZoneScores.end() ? rhsIt->second : 0ULL;
+					if(lhsScore != rhsScore)
+						return lhsScore > rhsScore;
+					return lhs.first < rhs.first;
+				});
 
-					std::vector<size_t> remainingTreasureIndices(zoneJobsWithTreasure.size());
-					std::iota(remainingTreasureIndices.begin(), remainingTreasureIndices.end(), 0);
-					while(!remainingTreasureIndices.empty())
+				auto runZoneJobs = [](const std::vector<std::pair<int, std::vector<TModificators::value_type>>> & jobsByZone)
+				{
+					tbb::task_group pool;
+					for(const auto & zoneJobs : jobsByZone)
+					{
+						pool.run([jobs = zoneJobs.second]()
+						{
+							for(const auto & job : jobs)
+								job->run();
+						});
+					}
+					pool.wait();
+				};
+
+				auto runConflictedZoneBatches = [&areNeighbourZones](const std::vector<std::pair<int, std::vector<TModificators::value_type>>> & jobsByZone)
+				{
+					std::vector<size_t> remainingIndices(jobsByZone.size());
+					std::iota(remainingIndices.begin(), remainingIndices.end(), 0);
+					while(!remainingIndices.empty())
 					{
 						std::vector<size_t> batchIndices;
 						std::vector<size_t> nextIndices;
-						for(const auto idx : remainingTreasureIndices)
+						for(const auto idx : remainingIndices)
 						{
-							const int zoneId = zoneJobsWithTreasure[idx].first;
+							const int zoneId = jobsByZone[idx].first;
 							bool conflictsWithBatch = false;
 							for(const auto pickedIdx : batchIndices)
 							{
-								if(areNeighbourZones(zoneId, zoneJobsWithTreasure[pickedIdx].first))
+								if(areNeighbourZones(zoneId, jobsByZone[pickedIdx].first))
 								{
 									conflictsWithBatch = true;
 									break;
@@ -605,16 +617,21 @@ void CMapGenerator::fillZones()
 						tbb::task_group pool;
 						for(const auto idx : batchIndices)
 						{
-							pool.run([jobs = zoneJobsWithTreasure[idx].second]()
+							pool.run([jobs = jobsByZone[idx].second]()
 							{
 								for(const auto & job : jobs)
 									job->run();
 							});
 						}
 						pool.wait();
-						remainingTreasureIndices.swap(nextIndices);
+						remainingIndices.swap(nextIndices);
 					}
-				}
+				};
+
+				runZoneJobs(zoneJobsWithoutSpecial);
+				runConflictedZoneBatches(zoneJobsWithObjectManager);
+				runZoneJobs(zoneJobsWithTreasure);
+			}
 
 			for(size_t i = 0; i < readyJobs.size(); ++i)
 				Progress::Progress::step();
