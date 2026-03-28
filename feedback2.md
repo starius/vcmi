@@ -49,3 +49,30 @@ old1 `16402.30 ms`, new1 `21945.52 ms`, new2 `21749.49 ms`,
 old2 `16376.69 ms`.
 Old average: `16389.49 ms`. New average: `21847.51 ms`.
 Delta (new vs old): `+33.30%`.
+
+10. I then applied two more targeted fixups while debugging parallel
+determinism regressions in this branch. In commit
+"rmg: make scheduler and connections deterministic" I made treasure job
+execution wave-stable by scheduling treasure-containing regular jobs in
+deterministic non-neighbor batches and I removed interleaving-dependent
+behavior from `ObjectManager::updateDistances` by replacing the opportunistic
+`try_to_lock` skip with a blocking zone lock. In the same area I switched
+`TreasurePlacer` to fetch prison heroes from the current zone's
+`PrisonHeroPlacer` instead of the first global one and stopped mutating the
+global quest artifact ban list during local treasure rolls. In commit
+"test: expand parallel determinism scaffolding" I added another
+worker-count-invariance regression (`seed=20`) so the fixed race is covered.
+
+11. On `vcmi-bench` with these updates (same source `HEAD`, seed range 1..20,
+fixed timestamp), the new parallel determinism checks pass and worker-count
+invariance is stable for the tested scenario: hash-scan output matches between
+`threads=8` and `threads=16` for all 20 seeds. Performance on the same setup
+for `vcmi:Clash of Dragons` `252x252x2` was `14541.78 ms` mean at 8 workers
+and `14569.90 ms` mean at 16 workers for 10 measured runs.
+
+12. I also performed a fresh cross-arch hash comparison for this same source
+revision on `vcmi-bench` (x86_64) and `vcmi-arm64` (aarch64), using the same
+benchmark binary source, same generation options, `threads=8`, and fixed
+timestamp `1742174175`. Result: outputs are still architecture-dependent in
+this scenario. Hash-scan differs for all tested seeds (1..20). Example for
+seed 1: x86_64 hash `01571f939f2384c5`, arm64 hash `22af0864402df54e`.
