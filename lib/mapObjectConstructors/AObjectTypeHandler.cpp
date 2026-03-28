@@ -207,7 +207,34 @@ void AObjectTypeHandler::addTemplate(JsonNode config)
 
 std::vector<std::shared_ptr<const ObjectTemplate>> AObjectTypeHandler::getTemplates() const
 {
-	return templates;
+	auto orderedTemplates = templates;
+	boost::sort(orderedTemplates, [](const auto & lhs, const auto & rhs)
+	{
+		const auto lhsAnimation = lhs->animationFile.getOriginalName();
+		const auto rhsAnimation = rhs->animationFile.getOriginalName();
+		if(lhsAnimation != rhsAnimation)
+			return lhsAnimation < rhsAnimation;
+
+		if(lhs->stringID != rhs->stringID)
+			return lhs->stringID < rhs->stringID;
+
+		if(lhs->id != rhs->id)
+			return lhs->id < rhs->id;
+
+		if(lhs->subid != rhs->subid)
+			return lhs->subid < rhs->subid;
+
+		if(lhs->printPriority != rhs->printPriority)
+			return lhs->printPriority < rhs->printPriority;
+
+		const auto lhsEditorAnimation = lhs->editorAnimationFile.getOriginalName();
+		const auto rhsEditorAnimation = rhs->editorAnimationFile.getOriginalName();
+		if(lhsEditorAnimation != rhsEditorAnimation)
+			return lhsEditorAnimation < rhsEditorAnimation;
+
+		return lhs->getVisitableOffset() < rhs->getVisitableOffset();
+	});
+	return orderedTemplates;
 }
 
 std::vector<BattleField> AObjectTypeHandler::getBattlefields() const

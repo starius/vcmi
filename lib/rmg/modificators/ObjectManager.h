@@ -25,7 +25,11 @@ struct DistanceMaximizeFunctor
 {
 	bool operator()(const TDistance & lhs, const TDistance & rhs) const
 	{
-		return (rhs.second > lhs.second);
+		if(lhs.second != rhs.second)
+			return lhs.second < rhs.second;
+
+		// Keep equal-distance extraction deterministic across platforms.
+		return rhs.first < lhs.first;
 	}
 };
 
@@ -94,6 +98,7 @@ protected:
 	rmg::Area objectsVisitableArea;
 	
 	boost::heap::priority_queue<TDistance, boost::heap::compare<DistanceMaximizeFunctor>> tilesByDistance;
+	size_t deterministicGuardOrdinal = 0;
 	
 };
 

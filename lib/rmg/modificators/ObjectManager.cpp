@@ -30,13 +30,60 @@
 #include "../../mapping/CMapEditManager.h"
 #include "../Functions.h"
 #include "../RmgObject.h"
+#include "../../CRandomGenerator.h"
 
 #include <vstd/RNG.h>
 
 VCMI_LIB_NAMESPACE_BEGIN
 
+namespace
+{
+// Quantize placement weights so tiny platform-specific float drift
+// is handled by deterministic coordinate tie-breakers.
+constexpr double PLACEMENT_WEIGHT_QUANT = 1024.0;
+
+int64_t canonicalizePlacementWeight(float weight)
+{
+	if(std::isnan(weight))
+		return std::numeric_limits<int64_t>::min();
+	if(std::isinf(weight))
+		return weight > 0 ? std::numeric_limits<int64_t>::max() : std::numeric_limits<int64_t>::min();
+	return std::llround(static_cast<double>(weight) * PLACEMENT_WEIGHT_QUANT);
+}
+
+uint64_t hashTileVector(const std::vector<int3> & tiles)
+{
+	uint64_t hash = 14695981039346656037ULL;
+	for(const auto & tile : tiles)
+	{
+		hash ^= static_cast<uint64_t>(tile.x + 2048);
+		hash *= 1099511628211ULL;
+		hash ^= static_cast<uint64_t>(tile.y + 2048);
+		hash *= 1099511628211ULL;
+		hash ^= static_cast<uint64_t>(tile.z + 2048);
+		hash *= 1099511628211ULL;
+	}
+	return hash;
+}
+
+size_t deterministicNearbyIndex(const CMapGenerator & generator, int zoneId, const std::vector<int3> & tiles, uint64_t candidatesHash, size_t ordinal, int objectId, int subId)
+{
+	std::string streamTag = "nearby:";
+	streamTag += std::to_string(ordinal);
+	streamTag += ":";
+	streamTag += std::to_string(objectId);
+	streamTag += ":";
+	streamTag += std::to_string(subId);
+	streamTag += ":";
+	streamTag += std::to_string(candidatesHash);
+	CRandomGenerator chooser(generator.deriveDeterministicSeed(zoneId, "ObjectManager", streamTag));
+	return static_cast<size_t>(chooser.nextInt64(0, static_cast<int64_t>(tiles.size()) - 1));
+}
+}
+
 void ObjectManager::process()
 {
+	deterministicGuardOrdinal = 0;
 	zone.fractalize();
 	createRequiredObjects();
 }
@@ -163,7 +210,7 @@ std::vector<CGObjectInstance*> ObjectManager::getMines() const
 
 int3 ObjectManager::findPlaceForObject(const rmg::Area & searchArea, rmg::Object & obj, const std::function<float(const int3)> & weightFunction, OptimizeType optimizer) const
 {
-	float bestWeight = 0.f;
+	int64_t bestWeightKey = std::numeric_limits<int64_t>::min();
 	int3 result(-1, -1, -1);
 
 	//Blocked area might not cover object position if it has an offset from (0,0)
@@ -202,13 +249,15 @@ int3 ObjectManager::findPlaceForObject(const rmg::Area & searchArea, rmg::Object
 			if(!searchArea.contains(obj.getArea()) || !searchArea.overlap(obj.getAccessibleArea()))
 				continue;
 
-			if (outsideTheMap())
+			if(outsideTheMap())
 				continue;
-			
+
 			float weight = weightFunction(tile);
-			if(weight > bestWeight)
+			const int64_t weightKey = canonicalizePlacementWeight(weight);
+			if(weightKey > bestWeightKey
+				|| (weightKey == bestWeightKey && (!result.isValid() || tile < result)))
 			{
-				bestWeight = weight;
+				bestWeightKey = weightKey;
 				result = tile;
 				if(!(optimizer & OptimizeType::WEIGHT))
 					break;
@@ -227,13 +276,15 @@ int3 ObjectManager::findPlaceForObject(const rmg::Area & searchArea, rmg::Object
 			if(!searchArea.contains(obj.getArea()) || !searchArea.overlap(obj.getAccessibleArea()))
 				continue;
 
-			if (outsideTheMap())
+			if(outsideTheMap())
 				continue;
-			
+
 			float weight = weightFunction(tile);
-			if(weight > bestWeight)
+			const int64_t weightKey = canonicalizePlacementWeight(weight);
+			if(weightKey > bestWeightKey
+				|| (weightKey == bestWeightKey && (!result.isValid() || tile < result)))
 			{
-				bestWeight = weight;
+				bestWeightKey = weightKey;
 				result = tile;
 				if(!(optimizer & OptimizeType::WEIGHT))
 					break;
@@ -348,9 +399,7 @@ rmg::Path ObjectManager::placeAndConnectObject(const rmg::Area & searchArea, rmg
 	{
 		pos = findPlaceForObject(possibleArea, obj, weightFunction, optimizer);
 		if(!pos.isValid())
-		{
 			return rmg::Path::invalid();
-		}
 		possibleArea.erase(pos); //do not place again at this point
 		auto accessibleArea = obj.getAccessibleArea(isGuarded) * cachedArea;
 		//we should exclude tiles which will be covered
@@ -388,9 +437,7 @@ rmg::Path ObjectManager::placeAndConnectObject(const rmg::Area & searchArea, rmg
 		auto path = zone.searchPath(accessibleArea, onlyStraight, subArea);
 		
 		if(path.valid())
-		{
 			return path;
-		}
 	}
 }
 
@@ -437,6 +484,7 @@ bool ObjectManager::createMonoliths()
 bool ObjectManager::createRequiredObjects()
 {
 	logGlobal->trace("Creating required objects");
+	size_t deterministicNearbyOrdinal = 0;
 	
 	RecursiveLock lock(externalAccessMutex); //In case someone adds more objects
 	for(const auto & objInfo : requiredObjects)
@@ -477,7 +525,10 @@ bool ObjectManager::createRequiredObjects()
 				continue;
 			}
 
-			rmgNearObject.setPosition(*RandomGeneratorUtil::nextItem(possibleArea.getTilesVector(), zone.getRand()));
+			const auto & nearbyTiles = possibleArea.getTilesVector();
+			const uint64_t nearbyHash = hashTileVector(nearbyTiles);
+			const auto nearbyIndex = deterministicNearbyIndex(generator, zone.getId(), nearbyTiles, nearbyHash, deterministicNearbyOrdinal++, nearby.obj->ID.getNum(), nearby.obj->subID.getNum());
+			rmgNearObject.setPosition(nearbyTiles[static_cast<size_t>(nearbyIndex)]);
 			placeObject(rmgNearObject, false, false, nearby.createRoad);
 		}
 	}
@@ -526,7 +577,10 @@ bool ObjectManager::createRequiredObjects()
 			continue;
 		}
 
-		rmgNearObject.setPosition(*RandomGeneratorUtil::nextItem(areaForObject.getTilesVector(), zone.getRand()));
+		const auto & nearbyTiles = areaForObject.getTilesVector();
+		const uint64_t nearbyHash = hashTileVector(nearbyTiles);
+		const auto nearbyIndex = deterministicNearbyIndex(generator, zone.getId(), nearbyTiles, nearbyHash, deterministicNearbyOrdinal++, nearby.obj->ID.getNum(), nearby.obj->subID.getNum());
+		rmgNearObject.setPosition(nearbyTiles[static_cast<size_t>(nearbyIndex)]);
 		placeObject(rmgNearObject, false, false);
 		auto path = zone.searchPath(rmgNearObject.getVisitablePosition(), false);
 		if (path.valid())
@@ -763,10 +817,17 @@ std::shared_ptr<CGCreature> ObjectManager::chooseGuard(si32 strength, bool zoneG
 	}
 	if(!possibleCreatures.empty())
 	{
-		creId = *RandomGeneratorUtil::nextItem(possibleCreatures, zone.getRand());
+		std::string guardTag = "guard:";
+		guardTag += std::to_string(deterministicGuardOrdinal++);
+		guardTag += ":";
+		guardTag += std::to_string(strength);
+		guardTag += ":";
+		guardTag += zoneGuard ? "zone" : "local";
+		CRandomGenerator guardRng(generator.deriveDeterministicSeed(zone.getId(), "ObjectManager", guardTag));
+		creId = *RandomGeneratorUtil::nextItem(possibleCreatures, guardRng);
 		amount = strength / creId.toEntity(LIBRARY)->getAIValue();
 		if (amount >= 4)
-			amount = static_cast<int>(amount * zone.getRand().nextDouble(0.75, 1.25));
+			amount = static_cast<int>(amount * guardRng.nextDouble(0.75, 1.25));
 	}
 	else //just pick any available creature
 	{

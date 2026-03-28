@@ -66,7 +66,7 @@ public:
 		const Object & dParent;
 	};
 	
-	Object() = default;
+	Object() : guarded(false), value(0) {}
 	Object(const Object & object);
 	Object(std::shared_ptr<CGObjectInstance> object);
 	Object(std::shared_ptr<CGObjectInstance> object, const int3 & position);

@@ -57,6 +57,7 @@ public:
 	
 protected:
 	bool isGuardNeededForTreasure(int value);
+	vstd::RNG & rng();
 	
 	ObjectInfo * getRandomObject(ui32 desiredValue, ui32 currentValue, bool allowLargeObjects);
 	std::vector<ObjectInfo*> prepareTreasurePile(const CTreasureInfo & treasureInfo);
@@ -93,6 +94,7 @@ protected:
 
 	std::vector<const CCreature *> creatures; //native creatures for this zone
 	std::vector<int> tierValues;
+	vstd::RNG * activeRng = nullptr;
 };
 
 VCMI_LIB_NAMESPACE_END

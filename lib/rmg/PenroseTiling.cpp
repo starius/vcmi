@@ -17,38 +17,56 @@
 
 VCMI_LIB_NAMESPACE_BEGIN
 
+namespace
+{
+constexpr double PENROSE_COORD_QUANT = 1e-6;
+
+int64_t quantizePenroseCoord(float value)
+{
+	return std::llround(static_cast<double>(value) / PENROSE_COORD_QUANT);
+}
+
+float canonicalizePenroseCoord(float value)
+{
+	return static_cast<float>(static_cast<double>(quantizePenroseCoord(value)) * PENROSE_COORD_QUANT);
+}
+}
+
 
 Point2D Point2D::operator * (float scale) const
 {
-	return Point2D(x() * scale, y() * scale);
+	return Point2D(canonicalizePenroseCoord(x() * scale), canonicalizePenroseCoord(y() * scale));
 }
 
 Point2D Point2D::operator / (float scale) const
 {
-	return Point2D(x() / scale, y() / scale);
+	return Point2D(canonicalizePenroseCoord(x() / scale), canonicalizePenroseCoord(y() / scale));
 }
 
 Point2D Point2D::operator + (const Point2D& other) const
 {
-	return Point2D(x() + other.x(), y() + other.y());
+	return Point2D(canonicalizePenroseCoord(x() + other.x()), canonicalizePenroseCoord(y() + other.y()));
 }
 
 Point2D Point2D::operator - (const Point2D& other) const
 {
-	return Point2D(x() - other.x(), y() - other.y());
+	return Point2D(canonicalizePenroseCoord(x() - other.x()), canonicalizePenroseCoord(y() - other.y()));
 }
 
 bool Point2D::operator < (const Point2D& other) const
 {
-	if (x() != other.x())
-		return x() < other.x();
+	const auto thisX = quantizePenroseCoord(x());
+	const auto otherX = quantizePenroseCoord(other.x());
+	if(thisX != otherX)
+		return thisX < otherX;
 
-	return y() < other.y();
+	return quantizePenroseCoord(y()) < quantizePenroseCoord(other.y());
 }
 
 bool Point2D::operator == (const Point2D& other) const
 {
-	return vstd::isAlmostEqual(x(), other.x()) && vstd::isAlmostEqual(y(), other.y());
+	return quantizePenroseCoord(x()) == quantizePenroseCoord(other.x())
+		&& quantizePenroseCoord(y()) == quantizePenroseCoord(other.y());
 }
 
 std::string Point2D::toString() const
@@ -87,7 +105,7 @@ Point2D Point2D::rotated(float radians) const
 	float newX = x() * cosAngle - y() * sinAngle;
 	float newY = x() * sinAngle + y() * cosAngle;
 
-	return Point2D(newX, newY);
+	return Point2D(canonicalizePenroseCoord(newX), canonicalizePenroseCoord(newY));
 }
 
 void PenroseTiling::split(Triangle& p, std::vector<Point2D>& points,
@@ -163,7 +181,8 @@ std::set<Point2D> PenroseTiling::generatePenroseTiling(size_t numZones, vstd::RN
 
 	for (auto& p : points)
 	{
-		p.x(p.x() * scale * BASE_SIZE);
+		p.x(canonicalizePenroseCoord(p.x() * scale * BASE_SIZE));
+		p.y(canonicalizePenroseCoord(p.y() * scale * BASE_SIZE));
 	}
 
 	std::set<Point2D> finalPoints;
@@ -183,6 +202,8 @@ std::set<Point2D> PenroseTiling::generatePenroseTiling(size_t numZones, vstd::RN
 	for (auto & point : points)
 	{
 		point = point + Point2D(0.5f, 0.5f);
+		point.x(canonicalizePenroseCoord(point.x()));
+		point.y(canonicalizePenroseCoord(point.y()));
 	}
 
 	// For 8XM8 map, only 650 out of 15971 points are in the range
