@@ -46,6 +46,12 @@ namespace
 {
 namespace po = boost::program_options;
 
+#if defined(__OPTIMIZE__) || defined(_MSC_VER)
+constexpr bool BENCH_COMPILED_WITH_OPTIMIZATION = true;
+#else
+constexpr bool BENCH_COMPILED_WITH_OPTIMIZATION = false;
+#endif
+
 enum class SchedulerMode
 {
 	SINGLE,
@@ -550,11 +556,16 @@ int main(int argc, char * argv[])
 	{
 		benchmark.water = parseWater(waterArg);
 		benchmark.monsters = parseMonsters(monstersArg);
-		benchmark.scheduler = parseScheduler(schedulerArg);
-		boost::algorithm::to_lower(benchmark.autoTemplate);
-		validateArguments(benchmark);
+			benchmark.scheduler = parseScheduler(schedulerArg);
+			boost::algorithm::to_lower(benchmark.autoTemplate);
+			validateArguments(benchmark);
+			if(!BENCH_COMPILED_WITH_OPTIMIZATION)
+			{
+				std::cerr << "warning: vcmi-rmg-bench was built without compiler "
+					"optimization flags; timing results will be misleading.\n";
+			}
 
-		ensureResourceWorkingDirectory(argv[0]);
+			ensureResourceWorkingDirectory(argv[0]);
 
 		std::unique_ptr<GameLibrary> library = std::make_unique<GameLibrary>();
 		LIBRARY = library.get();
