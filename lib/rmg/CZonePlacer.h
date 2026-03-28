@@ -28,8 +28,8 @@ class Zone;
 
 typedef std::vector<std::pair<TRmgTemplateZoneId, std::shared_ptr<Zone>>> TZoneVector;
 typedef std::map<TRmgTemplateZoneId, std::shared_ptr<Zone>> TZoneMap;
-typedef std::map<std::shared_ptr<Zone>, float3> TForceVector;
-typedef std::map<std::shared_ptr<Zone>, float> TDistanceVector;
+typedef std::map<TRmgTemplateZoneId, float3> TForceVector;
+typedef std::map<TRmgTemplateZoneId, float> TDistanceVector;
 typedef std::map<int, std::map<int, size_t>> TDistanceMap;
 
 class CZonePlacer

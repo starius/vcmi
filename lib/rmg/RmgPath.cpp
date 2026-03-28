@@ -28,7 +28,11 @@ struct NodeComparer
 {
 	bool operator()(const TDistance & lhs, const TDistance & rhs) const
 	{
-		return (rhs.second < lhs.second);
+		if(lhs.second != rhs.second)
+			return rhs.second < lhs.second;
+
+		// Keep equal-cost exploration deterministic across platforms.
+		return rhs.first < lhs.first;
 	}
 };
 boost::heap::priority_queue<TDistance, boost::heap::compare<NodeComparer>> createPriorityQueue()
@@ -119,12 +123,16 @@ Path Path::search(const Tileset & dst, bool straight, std::function<float(const 
 				float movementCost = moveCostFunction(currentNode, pos);
 
 				float distance = distances[currentNode] + movementCost; //we prefer to use already free paths
-				int bestDistanceSoFar = std::numeric_limits<int>::max();
+				float bestDistanceSoFar = std::numeric_limits<float>::max();
 				auto it = distances.find(pos);
 				if(it != distances.end())
-					bestDistanceSoFar = static_cast<int>(it->second);
+					bestDistanceSoFar = it->second;
 				
-				if(distance < bestDistanceSoFar)
+				const bool betterDistance = distance < bestDistanceSoFar;
+				const bool equalDistance = distance == bestDistanceSoFar;
+				const bool betterTieBreaker = equalDistance
+					&& (!vstd::contains(cameFrom, pos) || currentNode < cameFrom[pos]);
+				if(betterDistance || betterTieBreaker)
 				{
 					cameFrom[pos] = currentNode;
 					open.push(std::make_pair(pos, distance));

@@ -33,6 +33,7 @@
 #include "../../spells/CSpellHandler.h" //for choosing random spells
 #include "../../mapping/CMap.h"
 #include "../../mapping/CMapEditManager.h"
+#include "../../CRandomGenerator.h"
 
 #include <vstd/RNG.h>
 
@@ -45,6 +46,9 @@ void TreasurePlacer::process()
 		//No treasures at all
 		return;
 	}
+
+	CRandomGenerator unitRng(generator.deriveDeterministicSeed(zone.getId(), getName(), "main"));
+	activeRng = &unitRng;
 
 	tierValues = generator.getConfig().pandoraCreatureValues;
 	// Add all native creatures
@@ -64,6 +68,8 @@ void TreasurePlacer::process()
 	auto * m = zone.getModificator<ObjectManager>();
 	if(m)
 		createTreasures(*m);
+
+	activeRng = nullptr;
 }
 
 void TreasurePlacer::init()
@@ -296,7 +302,7 @@ void TreasurePlacer::addScrolls()
 				if(map.isAllowedSpell(spellID) && spellID.toSpell()->getLevel() == i + 1)
 					out.push_back(spellID);
 			}
-			auto * a = mapProxy->createScroll(*RandomGeneratorUtil::nextItem(out, zone.getRand()));
+			auto * a = mapProxy->createScroll(*RandomGeneratorUtil::nextItem(out, rng()));
 			obj->setArtifactInstance(a);
 			return obj;
 		};
@@ -418,7 +424,7 @@ void TreasurePlacer::addPandoraBoxesWithSpells()
 					spells.push_back(spellID.toSpell());
 			}
 			
-			RandomGeneratorUtil::randomShuffle(spells, zone.getRand());
+			RandomGeneratorUtil::randomShuffle(spells, rng());
 			Rewardable::VisitInfo reward;
 			for(int j = 0; j < std::min(12, static_cast<int>(spells.size())); j++)
 			{
@@ -451,7 +457,7 @@ void TreasurePlacer::addPandoraBoxesWithSpells()
 					spells.push_back(spellID.toSpell());
 			}
 			
-			RandomGeneratorUtil::randomShuffle(spells, zone.getRand());
+			RandomGeneratorUtil::randomShuffle(spells, rng());
 			Rewardable::VisitInfo reward;
 			for(int j = 0; j < std::min(15, static_cast<int>(spells.size())); j++)
 			{
@@ -483,7 +489,7 @@ void TreasurePlacer::addPandoraBoxesWithSpells()
 				spells.push_back(spellID.toSpell());
 		}
 		
-		RandomGeneratorUtil::randomShuffle(spells, zone.getRand());
+		RandomGeneratorUtil::randomShuffle(spells, rng());
 		Rewardable::VisitInfo reward;
 		for(int j = 0; j < std::min(60, static_cast<int>(spells.size())); j++)
 		{
@@ -530,7 +536,7 @@ void TreasurePlacer::addSeerHuts()
 		//14 creatures per town + 4 for each of gold / exp reward
 		possibleSeerHuts.reserve(14 + 4 + 4);
 		
-		RandomGeneratorUtil::randomShuffle(creatures, zone.getRand());
+		RandomGeneratorUtil::randomShuffle(creatures, rng());
 
 		auto setRandomArtifact = [qap](CGSeerHut * obj, ui32 rewardValue)
 		{
@@ -555,7 +561,7 @@ void TreasurePlacer::addSeerHuts()
 			if(!creaturesAmount)
 				continue;
 			
-			int randomAppearance = chooseRandomAppearance(zone.getRand(), Obj::SEER_HUT, zone.getTerrainType());
+			int randomAppearance = chooseRandomAppearance(rng(), Obj::SEER_HUT, zone.getTerrainType());
 			
 			// FIXME: Remove duplicated code for gold, exp and creaure reward
 			const auto rewardValue = static_cast<ui32>(((2 * (creature->getAIValue()) * creaturesAmount * (1 + static_cast<float>(map.getZoneCount(creature->getFactionID())) / map.getTotalZoneCount())) - 4000) / 3);
@@ -588,7 +594,7 @@ void TreasurePlacer::addSeerHuts()
 		static const int seerLevels = std::min(generator.getConfig().questValues.size(), generator.getConfig().questRewardValues.size());
 		for(int i = 0; i < seerLevels; i++) //seems that code for exp and gold reward is similar
 		{
-			int randomAppearance = chooseRandomAppearance(zone.getRand(), Obj::SEER_HUT, zone.getTerrainType());
+			int randomAppearance = chooseRandomAppearance(rng(), Obj::SEER_HUT, zone.getTerrainType());
 			
 			oi.setTemplates(Obj::SEER_HUT, randomAppearance, zone.getTerrainType());
 			const auto rewardValue = static_cast<ui32>(generator.getConfig().questRewardValues[i]);
@@ -644,7 +650,7 @@ void TreasurePlacer::addSeerHuts()
 		}
 		for (size_t i = 0; i < questArtsRemaining; i++)
 		{
-			addObjectToRandomPool(*RandomGeneratorUtil::nextItem(possibleSeerHuts, zone.getRand()));
+			addObjectToRandomPool(*RandomGeneratorUtil::nextItem(possibleSeerHuts, rng()));
 		}
 	}
 }
@@ -700,13 +706,18 @@ bool TreasurePlacer::isGuardNeededForTreasure(int value)
 	return zone.monsterStrength != EMonsterStrength::ZONE_NONE && value > minGuardedValue;
 }
 
+vstd::RNG & TreasurePlacer::rng()
+{
+	return activeRng ? *activeRng : zone.getRand();
+}
+
 std::vector<ObjectInfo*> TreasurePlacer::prepareTreasurePile(const CTreasureInfo& treasureInfo)
 {
 	std::vector<ObjectInfo*> objectInfos;
 	int maxValue = treasureInfo.max;
 	int minValue = treasureInfo.min;
 	
-	const ui32 desiredValue = zone.getRand().nextInt(minValue, maxValue);
+	const ui32 desiredValue = rng().nextInt(minValue, maxValue);
 	
 	int currentValue = 0;
 	bool hasLargeObject = false;
@@ -741,7 +752,7 @@ std::vector<ObjectInfo*> TreasurePlacer::prepareTreasurePile(const CTreasureInfo
 		if (currentValue >= minValue)
 		{
 			// 50% chance to end right here
-			if (zone.getRand().nextInt(0, 1) == 1)
+			if (rng().nextInt(0, 1) == 1)
 				break;
 		}
 	}
@@ -790,7 +801,7 @@ rmg::Object TreasurePlacer::constructTreasurePile(const std::vector<ObjectInfo*>
 			throw rmgException(boost::str(boost::format("Did not find template for object (%d,%d) at %s") % object->ID.getNum() % object->subID.getNum() % zone.getTerrainType().encode(zone.getTerrainType().getNum())));
 		}
 
-		object->appearance = *RandomGeneratorUtil::nextItem(templates, zone.getRand());
+		object->appearance = *RandomGeneratorUtil::nextItem(templates, rng());
 
 		//Put object in accessible area next to entrable area (excluding blockvis tiles)
 		if (!entrableArea.empty())
@@ -852,7 +863,7 @@ rmg::Object TreasurePlacer::constructTreasurePile(const std::vector<ObjectInfo*>
 				bestPositions = accessibleArea.getTilesVector();
 			}
 			
-			int3 nextPos = *RandomGeneratorUtil::nextItem(bestPositions, zone.getRand());
+			int3 nextPos = *RandomGeneratorUtil::nextItem(bestPositions, rng());
 			instance.setPosition(nextPos - rmgObject.getPosition());
 			
 			auto instanceAccessibleArea = instance.getAccessibleArea();
@@ -911,7 +922,7 @@ ObjectInfo * TreasurePlacer::getRandomObject(ui32 desiredValue, ui32 currentValu
 	}
 	else
 	{
-		int r = zone.getRand().nextInt(1, total);
+		int r = rng().nextInt(1, total);
 		auto sorter = [](const std::pair<ui32, ObjectInfo *> & rhs, const ui32 lhs) -> bool 
 		{
 			return static_cast<int>(rhs.first) < lhs; 
@@ -935,7 +946,13 @@ void TreasurePlacer::createTreasures(ObjectManager& manager)
 
 	auto valueComparator = [](const CTreasureInfo& lhs, const CTreasureInfo& rhs) -> bool
 	{
-		return lhs.max > rhs.max;
+		if(lhs.max != rhs.max)
+			return lhs.max > rhs.max;
+		if(lhs.min != rhs.min)
+			return lhs.min > rhs.min;
+		if(lhs.density != rhs.density)
+			return lhs.density > rhs.density;
+		return false;
 	};
 
 	auto restoreZoneLimits = [](const std::vector<ObjectInfo*>& treasurePile)
@@ -978,7 +995,11 @@ void TreasurePlacer::createTreasures(ObjectManager& manager)
 		const int DENSITY_CONSTANT = 400;
 		size_t count = (size * t->density) / DENSITY_CONSTANT;
 
-		const float minDistance = std::max<float>(std::sqrt(std::min<ui32>(t->min, 30000) / 10.0f / totalDensity), 1.0f);
+		const ui32 minDistanceNumerator = std::min<ui32>(t->min, 30000);
+		const ui32 minDistanceDenominator = static_cast<ui32>(10 * totalDensity);
+		si32 minDistance = 1;
+		while(static_cast<uint64_t>(minDistance) * static_cast<uint64_t>(minDistance) * minDistanceDenominator < minDistanceNumerator)
+			++minDistance;
 
 		size_t emergencyLoopFinish = 0;
 		while(treasures.size() < count && emergencyLoopFinish < count)
@@ -1041,7 +1062,7 @@ void TreasurePlacer::createTreasures(ObjectManager& manager)
 				{
 					searchArea.subtract(roads);
 
-					path = manager.placeAndConnectObject(searchArea, rmgObject, [this, &rmgObject, &minDistance, &manager, blockingGuardMaxValue, &roads, &nextToRoad](const int3& tile)
+					path = manager.placeAndConnectObject(searchArea, rmgObject, [this, &rmgObject, minDistance, &manager, blockingGuardMaxValue, &roads, &nextToRoad](const int3& tile)
 						{
 							float bestDistance = 10e9;
 							for (const auto& t : rmgObject.getArea().getTilesVector())
@@ -1222,7 +1243,17 @@ void TreasurePlacer::ObjectPool::sortPossibleObjects()
 {
 	boost::sort(possibleObjects, [](const ObjectInfo& oi1, const ObjectInfo& oi2) -> bool
 	{
-		return oi1.value < oi2.value;
+		if(oi1.value != oi2.value)
+			return oi1.value < oi2.value;
+		if(oi1.probability != oi2.probability)
+			return oi1.probability < oi2.probability;
+		if(oi1.primaryID != oi2.primaryID)
+			return oi1.primaryID < oi2.primaryID;
+		if(oi1.secondaryID != oi2.secondaryID)
+			return oi1.secondaryID < oi2.secondaryID;
+		if(oi1.maxPerZone != oi2.maxPerZone)
+			return oi1.maxPerZone < oi2.maxPerZone;
+		return oi1.templates.size() < oi2.templates.size();
 	});
 }
 

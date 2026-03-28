@@ -350,7 +350,7 @@ void CZonePlacer::placeZones(vstd::RNG * rand)
 	//0. set zone sizes and surface / underground level
 	prepareZones(zones, zonesVector, mapLevels, rand);
 
-	std::map<std::shared_ptr<Zone>, float3> bestSolution;
+	std::map<TRmgTemplateZoneId, float3> bestSolution;
 
 	TForceVector forces;
 	TForceVector totalForces; //  both attraction and pushback, overcomplicated?
@@ -384,7 +384,7 @@ void CZonePlacer::placeZones(vstd::RNG * rand)
 			bestTotalOverlap = totalOverlap;
 
 			for (const auto& zone : zones)
-				bestSolution[zone.second] = zone.second->getCenter();
+				bestSolution[zone.first] = zone.second->getCenter();
 		}
 
 #ifdef ZONE_PLACEMENT_LOG
@@ -401,7 +401,8 @@ void CZonePlacer::placeZones(vstd::RNG * rand)
 		attractConnectedZones(zones, forces, distances);
 		for(const auto & zone : forces)
 		{
-			zone.first->setCenter (zone.first->getCenter() + zone.second);
+			auto & currentZone = zones.at(zone.first);
+			currentZone->setCenter(currentZone->getCenter() + zone.second);
 			totalForces[zone.first] = zone.second; //override
 		}
 
@@ -409,7 +410,8 @@ void CZonePlacer::placeZones(vstd::RNG * rand)
 		separateOverlappingZones(zones, forces, overlaps);
 		for(const auto & zone : forces)
 		{
-			zone.first->setCenter (zone.first->getCenter() + zone.second);
+			auto & currentZone = zones.at(zone.first);
+			currentZone->setCenter(currentZone->getCenter() + zone.second);
 			totalForces[zone.first] += zone.second; //accumulate
 		}
 
@@ -435,7 +437,7 @@ void CZonePlacer::placeZones(vstd::RNG * rand)
 	logGlobal->trace("Best fitness reached: total distance %2.4f, total overlap %2.4f", bestTotalDistance, bestTotalOverlap);
 	for(const auto & zone : zones) //finalize zone positions
 	{
-		zone.second->setPos (cords (bestSolution[zone.second]));
+		zone.second->setPos(cords(bestSolution[zone.first]));
 #ifdef ZONE_PLACEMENT_LOG
 		logGlobal->trace("Placed zone %d at relative position %s and coordinates %s", zone.first, zone.second->getCenter().toString(), zone.second->getPos().toString());
 #endif
@@ -627,9 +629,9 @@ void CZonePlacer::attractConnectedZones(TZoneMap & zones, TForceVector & forces,
 			if (distance > minDistance)
 				totalDistance += (distance - minDistance);
 		}
-		distances[zone.second] = totalDistance;
+		distances[zone.second->getId()] = totalDistance;
 		forceVector.z = 0; //operator - doesn't preserve z coordinate :/
-		forces[zone.second] = forceVector;
+		forces[zone.second->getId()] = forceVector;
 	}
 }
 
@@ -707,9 +709,9 @@ void CZonePlacer::separateOverlappingZones(TZoneMap &zones, TForceVector &forces
 			}
 		}
 
-		overlaps[zone.second] = overlap;
+		overlaps[zone.second->getId()] = overlap;
 		forceVector.z = 0; //operator - doesn't preserve z coordinate :/
-		forces[zone.second] = forceVector;
+		forces[zone.second->getId()] = forceVector;
 	}
 }
 
@@ -726,7 +728,7 @@ void CZonePlacer::moveOneZone(TZoneMap& zones, TForceVector& totalForces, TDista
 	float totalOverlap = 0;
 	for (const auto& zone : distances) //find most misplaced zone
 	{
-		if (vstd::contains(lastSwappedZones, zone.first->getId()))
+		if (vstd::contains(lastSwappedZones, zone.first))
 		{
 			continue;
 		}
@@ -737,7 +739,7 @@ void CZonePlacer::moveOneZone(TZoneMap& zones, TForceVector& totalForces, TDista
 		float ratio = (zone.second + overlap) / static_cast<float>(totalForces[zone.first].mag());
 		if (ratio > maxDistanceMovementRatio)
 		{
-			misplacedZones.emplace_back(std::make_pair(ratio, zone.first));
+			misplacedZones.emplace_back(std::make_pair(ratio, zones.at(zone.first)));
 		}
 	}
 
@@ -1074,6 +1076,7 @@ void CZonePlacer::assignZones(vstd::RNG * rand)
 			map.getMapProxy()->drawTerrain(*rand, v, ETerrainId::SUBTERRANEAN);
 		}
 	}
+
 	logGlobal->info("Finished zone colouring");
 }
 
