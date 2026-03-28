@@ -189,7 +189,6 @@ ArtifactID QuestArtifactPlacer::drawRandomArtifact()
 		RandomGeneratorUtil::randomShuffle(questArtifacts, zone.getRand());
 		ArtifactID ret = questArtifacts.back();
 		questArtifacts.pop_back();
-		generator.banQuestArt(ret);
 		return ret;
 	}
 	else
@@ -202,7 +201,6 @@ void QuestArtifactPlacer::addRandomArtifact(const ArtifactID & artid)
 {
 	RecursiveLock lock(externalAccessMutex);
 	questArtifacts.push_back(artid);
-	generator.unbanQuestArt(artid);
 }
 
 VCMI_LIB_NAMESPACE_END

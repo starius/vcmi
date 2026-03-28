@@ -165,15 +165,9 @@ void TreasurePlacer::addPrisons()
 	auto prisonTemplates = LIBRARY->objtypeh->getHandlerFor(Obj::PRISON, 0)->getTemplates(zone.getTerrainType());
 	if (!prisonTemplates.empty())
 	{
-		PrisonHeroPlacer * prisonHeroPlacer = nullptr;
-		for(auto & z : map.getZones())
-		{
-			prisonHeroPlacer = z.second->getModificator<PrisonHeroPlacer>();
-		 	if (prisonHeroPlacer)
-			{
-				break;
-			}
-		}
+		auto * prisonHeroPlacer = zone.getModificator<PrisonHeroPlacer>();
+		if(!prisonHeroPlacer)
+			return;
 
 		//prisons
 		//levels 1, 5, 10, 20, 30
@@ -1090,24 +1084,24 @@ void TreasurePlacer::createTreasures(ObjectManager& manager)
 				}
 			}
 
-			if (path.valid())
-			{
-#ifdef TREASURE_PLACER_LOG
-				treasureArea.unite(rmgObject.getArea());
-				if (guarded)
+				if(path.valid())
 				{
-					guards.unite(rmgObject.instances().back()->getBlockedArea());
-					auto guardedArea = rmgObject.instances().back()->getAccessibleArea();
-					auto areaToBlock = rmgObject.getAccessibleArea(true) - guardedArea;
-					treasureBlockArea.unite(areaToBlock);
-				}
+#ifdef TREASURE_PLACER_LOG
+					treasureArea.unite(rmgObject.getArea());
+					if(guarded)
+					{
+						guards.unite(rmgObject.instances().back()->getBlockedArea());
+						auto guardedArea = rmgObject.instances().back()->getAccessibleArea();
+						auto areaToBlock = rmgObject.getAccessibleArea(true) - guardedArea;
+						treasureBlockArea.unite(areaToBlock);
+					}
 #endif
-				zone.connectPath(path);
-				manager.placeObject(rmgObject, guarded, true);
+					zone.connectPath(path);
+					manager.placeObject(rmgObject, guarded, true);
+				}
 			}
 		}
 	}
-}
 
 char TreasurePlacer::dump(const int3 & t)
 {

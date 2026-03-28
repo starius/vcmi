@@ -443,12 +443,33 @@ void CMapGenerator::fillZones()
 				throw rmgException("No ready modificator in single-thread RMG scheduling");
 		}
 	}
-	else
-	{
-		// Keep deterministic execution while still allowing parallelism:
-		// run all currently-ready jobs in a stable wave, wait, then continue.
-		while (!allJobs.empty())
+		else
 		{
+			// Keep deterministic execution while still allowing parallelism:
+			// run all currently-ready jobs in a stable wave, wait, then continue.
+			std::map<int, std::set<int>> zoneNeighbours;
+			for(const auto & zoneEntry : map->getZones())
+			{
+				const int zoneId = zoneEntry.first;
+				for(const auto & connection : zoneEntry.second->getConnections())
+				{
+					const int otherZoneId = connection.getOtherZoneId(zoneId);
+					if(otherZoneId == zoneId)
+						continue;
+					zoneNeighbours[zoneId].insert(otherZoneId);
+				}
+			}
+
+			auto areNeighbourZones = [&zoneNeighbours](int lhs, int rhs) -> bool
+			{
+				if(lhs == rhs)
+					return false;
+				const auto it = zoneNeighbours.find(lhs);
+				return it != zoneNeighbours.end() && it->second.count(rhs) > 0;
+			};
+
+			while (!allJobs.empty())
+			{
 			std::vector<TModificators::value_type> readyJobs;
 			for (auto it = allJobs.begin(); it != allJobs.end();)
 			{
@@ -485,20 +506,80 @@ void CMapGenerator::fillZones()
 					regularJobsByZone[job->getZoneId()].push_back(job);
 			}
 
-			for(const auto & job : exclusiveJobs)
-				job->run();
+				for(const auto & job : exclusiveJobs)
+					job->run();
 
-			if(!regularJobsByZone.empty())
-			{
-				tbb::task_group pool;
-				for(const auto & zoneJobs : regularJobsByZone)
-					pool.run([jobs = zoneJobs.second]()
+				if(!regularJobsByZone.empty())
+				{
+					std::vector<std::pair<int, std::vector<TModificators::value_type>>> zoneJobsWithTreasure;
+					std::vector<std::pair<int, std::vector<TModificators::value_type>>> zoneJobsWithoutTreasure;
+					zoneJobsWithTreasure.reserve(regularJobsByZone.size());
+					zoneJobsWithoutTreasure.reserve(regularJobsByZone.size());
+
+					for(const auto & zoneJobs : regularJobsByZone)
 					{
-						for(const auto & job : jobs)
-							job->run();
-					});
-				pool.wait();
-			}
+						const bool hasTreasurePlacer = std::any_of(zoneJobs.second.begin(), zoneJobs.second.end(), [](const auto & job)
+						{
+							return job->getName() == "TreasurePlacer";
+						});
+						if(hasTreasurePlacer)
+							zoneJobsWithTreasure.push_back(zoneJobs);
+						else
+							zoneJobsWithoutTreasure.push_back(zoneJobs);
+					}
+
+					auto runZoneJobs = [](const std::vector<std::pair<int, std::vector<TModificators::value_type>>> & jobsByZone)
+					{
+						tbb::task_group pool;
+						for(const auto & zoneJobs : jobsByZone)
+							pool.run([jobs = zoneJobs.second]()
+							{
+								for(const auto & job : jobs)
+									job->run();
+							});
+						pool.wait();
+					};
+
+					runZoneJobs(zoneJobsWithoutTreasure);
+
+					std::vector<size_t> remainingTreasureIndices(zoneJobsWithTreasure.size());
+					std::iota(remainingTreasureIndices.begin(), remainingTreasureIndices.end(), 0);
+					while(!remainingTreasureIndices.empty())
+					{
+						std::vector<size_t> batchIndices;
+						std::vector<size_t> nextIndices;
+						for(const auto idx : remainingTreasureIndices)
+						{
+							const int zoneId = zoneJobsWithTreasure[idx].first;
+							bool conflictsWithBatch = false;
+							for(const auto pickedIdx : batchIndices)
+							{
+								if(areNeighbourZones(zoneId, zoneJobsWithTreasure[pickedIdx].first))
+								{
+									conflictsWithBatch = true;
+									break;
+								}
+							}
+
+							if(conflictsWithBatch)
+								nextIndices.push_back(idx);
+							else
+								batchIndices.push_back(idx);
+						}
+
+						tbb::task_group pool;
+						for(const auto idx : batchIndices)
+						{
+							pool.run([jobs = zoneJobsWithTreasure[idx].second]()
+							{
+								for(const auto & job : jobs)
+									job->run();
+							});
+						}
+						pool.wait();
+						remainingTreasureIndices.swap(nextIndices);
+					}
+				}
 
 			for(size_t i = 0; i < readyJobs.size(); ++i)
 				Progress::Progress::step();

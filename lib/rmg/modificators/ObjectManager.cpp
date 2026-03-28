@@ -123,13 +123,9 @@ void ObjectManager::updateDistances(const int3 & pos)
 
 void ObjectManager::updateDistances(std::function<ui32(const int3 & tile)> distanceFunction)
 {
-	// Workaround to avoid deadlock when accessed from other zone
-	RecursiveLock lock(zone.areaMutex, std::try_to_lock);
-	if (!lock.owns_lock())
-	{
-		// Unsolvable problem of mutual access
-		return;
-	}
+	// Skipping this update on contention makes object spacing interleaving-dependent.
+	// Block here so every scheduled cross-zone update is applied deterministically.
+	Zone::Lock lock(zone.areaMutex);
 
 	const auto tiles = zone.areaPossible()->getTilesVector();
 	//RecursiveLock lock(externalAccessMutex);
