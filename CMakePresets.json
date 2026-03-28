@@ -173,7 +173,9 @@
             "description": "VCMI Linux GCC with benchmark tools",
             "inherits": "linux-gcc-release",
             "cacheVariables": {
-                "ENABLE_BENCHMARK": "ON"
+                "ENABLE_BENCHMARK": "ON",
+                "CMAKE_C_FLAGS_RELWITHDEBINFO": "-O2 -g -DNDEBUG",
+                "CMAKE_CXX_FLAGS_RELWITHDEBINFO": "-O2 -g -DNDEBUG"
             }
         },
         {
