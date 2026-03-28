@@ -76,3 +76,36 @@ benchmark binary source, same generation options, `threads=8`, and fixed
 timestamp `1742174175`. Result: outputs are still architecture-dependent in
 this scenario. Hash-scan differs for all tested seeds (1..20). Example for
 seed 1: x86_64 hash `01571f939f2384c5`, arm64 hash `22af0864402df54e`.
+
+13. I debugged the cross-arch divergence from item 12 and found multiple
+remaining architecture-sensitive paths in RMG internals. I fixed these in
+commit "rng: remove std distribution drift across arches" by making float and
+ordering decisions canonical (quantized comparisons, deterministic
+cross-platform tie-breakers, id-based keys instead of pointer identity) and by
+moving several random choices to deterministic derived RNG streams.
+
+14. During ARM hash-scan validation after that change, generation aborted in
+`ConnectionsPlacer::collectNeighbourZones` on `assert(zid != zone.getId())`.
+I fixed this in commit "rmg: make scheduler and connections deterministic" by
+handling geometry edge cases defensively: self-zone and missing zone ids are
+skipped instead of aborting. This removes architecture-specific crashes in that
+pass while keeping neighbor processing deterministic.
+
+15. I then re-ran cross-arch hash-scan on `vcmi:Clash of Dragons`,
+`252x252x2`, `threads=8`, `timestamp=1742174175`. Results are now stable.
+For seeds 1..3, both hosts produce identical hashes:
+seed 1 `27b76cacff43794b`, seed 2 `73242de2a511aab9`,
+seed 3 `f6eb77ad2e4d3931`.
+I also repeated x86 run twice and got byte-identical outputs.
+
+16. I added frozen hash coverage in commit
+"test: expand parallel determinism scaffolding". The determinism test now pins
+exact serialized map hashes for selected seeds and also checks worker-count
+invariance against those frozen values. These hashes were validated on both
+x86_64 and aarch64, so CI can catch both worker-count regressions and
+cross-architecture drift early.
+
+17. Validation status after these updates:
+- x86_64 (`vcmi-bench`): `RmgDeterminism` test suite passes.
+- aarch64 (`vcmi-arm64`): `RmgDeterminism` test suite passes with the same
+  frozen hashes.
