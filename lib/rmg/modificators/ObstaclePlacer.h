@@ -26,7 +26,6 @@ public:
 	
 	void process() override;
 	void init() override;
-	bool requiresExclusiveExecution() const override { return true; }
 
 	bool isInTheMap(const int3& tile) override;
 	
