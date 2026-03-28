@@ -1,4 +1,4 @@
-# RMG worker timelines (Clash of Dragons, 252x252x2)
+# RMG worker timeline DAGs (Clash of Dragons, 252x252x2)
 
 Scenario used for both diagrams:
 - template: `vcmi:Clash of Dragons`
@@ -13,1002 +13,1424 @@ Commits:
 - old: `f88934907797d3b84421efca11f8c79021ccf8d8`
 - new: `10959297f8a0004a6db66ebe5b921a43c3111551`
 
-These are per-worker timelines, not dependency/call graphs.
-Each chain is one worker thread. Each node is one consecutive work item
-executed by that worker.
+Legend:
+- solid edge `-->`: consecutive execution on the same worker (timeline chain)
+- dashed edge `-.->`: inter-thread dependency edge (DAG)
+- node format: `XX#N X.XXXs`
+  - `XX`: short task code
+  - `N`: task occurrence index in that run
+  - `X.XXXs`: wall duration of this work item
 
-Node format: `Job#N X.XXXs`
-- `Job`: modificator name
-- `N`: running occurrence index of that job in this run
-- `X.XXXs`: wall duration of that specific work item
+Task codes:
+- `PH` PrisonHeroPlacer, `WA` WaterAdopter, `TW` TownPlacer, `TE` TerrainPainter
+- `WP` WaterProxy, `CN` ConnectionsPlacer, `MI` MinePlacer, `OP` ObjectPlacer
+- `OM` ObjectManager, `RD` RoadPlacer, `OD` ObjectDistributor, `TR` TreasurePlacer
+- `WR` WaterRoutes, `RP` RockPlacer, `RF` RockFiller, `OB` ObstaclePlacer
+- `RV` RiverPlacer, `QA` QuestArtifactPlacer
 
-Wall-clock benchmark result:
+Wall-clock benchmark result for this capture:
 - old: `13705.32 ms`
 - new: `15755.33 ms`
 
-Observed worker chains with events: old `15`, new `16`.
+Graph sizes: old workers `15`, chain edges `220`, dependency edges `204`.
+Graph sizes: new workers `16`, chain edges `219`, dependency edges `211`.
 
-## Old timeline (`f889349...`)
+## Old timeline DAG (`f889349...`)
 
 ```mermaid
 flowchart LR
-  %% old
+  %% old timeline DAG
   subgraph W1["Worker 1"]
-    w1n1["PrisonHeroPlacer#1 0.000s"]
-    w1n2["WaterAdopter#1 0.000s"]
-    w1n3["WaterAdopter#2 0.000s"]
-    w1n4["WaterAdopter#19 0.801s"]
-    w1n5["TerrainPainter#1 0.067s"]
-    w1n6["TerrainPainter#15 1.947s"]
-    w1n7["ConnectionsPlacer#17 1.135s"]
-    w1n8["ObjectPlacer#16 0.000s"]
-    w1n9["ObjectManager#3 6.847s"]
-    w1n10["ObjectManager#9 21.968s"]
-    w1n11["TreasurePlacer#9 1.514s"]
-    w1n12["ObstaclePlacer#6 0.595s"]
-    w1n1 --> w1n2
-    w1n2 --> w1n3
-    w1n3 --> w1n4
-    w1n4 --> w1n5
-    w1n5 --> w1n6
-    w1n6 --> w1n7
-    w1n7 --> w1n8
-    w1n8 --> w1n9
-    w1n9 --> w1n10
-    w1n10 --> w1n11
-    w1n11 --> w1n12
+    n1["PH#1 0.000s"]
+    n2["WA#1 0.000s"]
+    n3["WA#2 0.000s"]
+    n37["WA#19 0.801s"]
+    n38["TE#1 0.067s"]
+    n53["TE#15 1.947s"]
+    n106["CN#17 1.135s"]
+    n108["OP#16 0.000s"]
+    n117["OM#3 6.847s"]
+    n149["OM#9 21.968s"]
+    n150["TR#9 1.514s"]
+    n151["OB#6 0.595s"]
   end
   subgraph W2["Worker 2"]
-    w2n1["WaterAdopter#3 0.000s"]
-    w2n2["WaterAdopter#5 0.000s"]
-    w2n3["WaterAdopter#7 0.000s"]
-    w2n4["WaterAdopter#17 0.707s"]
-    w2n5["TownPlacer#16 0.028s"]
-    w2n6["TownPlacer#18 1.958s"]
-    w2n7["TerrainPainter#19 0.441s"]
-    w2n8["WaterProxy#1 0.249s"]
-    w2n9["ConnectionsPlacer#13 0.863s"]
-    w2n10["MinePlacer#13 0.000s"]
-    w2n11["ObjectManager#17 45.766s"]
-    w2n12["RoadPlacer#16 0.314s"]
-    w2n13["TreasurePlacer#16 16.656s"]
-    w2n14["RockPlacer#3 0.007s"]
-    w2n15["ObstaclePlacer#8 0.226s"]
-    w2n16["RiverPlacer#7 0.160s"]
-    w2n17["QuestArtifactPlacer#8 0.000s"]
-    w2n1 --> w2n2
-    w2n2 --> w2n3
-    w2n3 --> w2n4
-    w2n4 --> w2n5
-    w2n5 --> w2n6
-    w2n6 --> w2n7
-    w2n7 --> w2n8
-    w2n8 --> w2n9
-    w2n9 --> w2n10
-    w2n10 --> w2n11
-    w2n11 --> w2n12
-    w2n12 --> w2n13
-    w2n13 --> w2n14
-    w2n14 --> w2n15
-    w2n15 --> w2n16
-    w2n16 --> w2n17
+    n4["WA#3 0.000s"]
+    n6["WA#5 0.000s"]
+    n8["WA#7 0.000s"]
+    n33["WA#17 0.707s"]
+    n34["TW#16 0.028s"]
+    n52["TW#18 1.958s"]
+    n57["TE#19 0.441s"]
+    n59["WP#1 0.249s"]
+    n96["CN#13 0.863s"]
+    n97["MI#13 0.000s"]
+    n167["OM#17 45.766s"]
+    n168["RD#16 0.314s"]
+    n180["TR#16 16.656s"]
+    n183["RP#3 0.007s"]
+    n192["OB#8 0.226s"]
+    n193["RV#7 0.160s"]
+    n223["QA#8 0.000s"]
   end
   subgraph W3["Worker 3"]
-    w3n1["WaterAdopter#4 0.000s"]
-    w3n2["WaterAdopter#6 0.000s"]
-    w3n3["WaterAdopter#8 0.000s"]
-    w3n4["WaterAdopter#9 0.000s"]
-    w3n5["TownPlacer#5 0.139s"]
-    w3n6["TownPlacer#12 0.000s"]
-    w3n7["TerrainPainter#3 0.265s"]
-    w3n8["TerrainPainter#17 1.845s"]
-    w3n9["ObjectDistributor#1 0.007s"]
-    w3n10["ConnectionsPlacer#11 0.703s"]
-    w3n11["ObjectPlacer#11 0.000s"]
-    w3n12["ObjectManager#19 48.629s"]
-    w3n13["RoadPlacer#18 0.617s"]
-    w3n14["TreasurePlacer#19 19.858s"]
-    w3n15["QuestArtifactPlacer#1 0.000s"]
-    w3n16["QuestArtifactPlacer#10 0.016s"]
-    w3n1 --> w3n2
-    w3n2 --> w3n3
-    w3n3 --> w3n4
-    w3n4 --> w3n5
-    w3n5 --> w3n6
-    w3n6 --> w3n7
-    w3n7 --> w3n8
-    w3n8 --> w3n9
-    w3n9 --> w3n10
-    w3n10 --> w3n11
-    w3n11 --> w3n12
-    w3n12 --> w3n13
-    w3n13 --> w3n14
-    w3n14 --> w3n15
-    w3n15 --> w3n16
+    n5["WA#4 0.000s"]
+    n7["WA#6 0.000s"]
+    n9["WA#8 0.000s"]
+    n10["WA#9 0.000s"]
+    n16["TW#5 0.139s"]
+    n26["TW#12 0.000s"]
+    n40["TE#3 0.265s"]
+    n55["TE#17 1.845s"]
+    n58["OD#1 0.007s"]
+    n90["CN#11 0.703s"]
+    n91["OP#11 0.000s"]
+    n172["OM#19 48.629s"]
+    n173["RD#18 0.617s"]
+    n215["TR#19 19.858s"]
+    n216["QA#1 0.000s"]
+    n225["QA#10 0.016s"]
   end
   subgraph W4["Worker 4"]
-    w4n1["WaterAdopter#10 0.000s"]
-    w4n2["TownPlacer#4 0.075s"]
-    w4n3["TerrainPainter#12 1.640s"]
-    w4n4["ConnectionsPlacer#1 0.096s"]
-    w4n5["ConnectionsPlacer#2 0.063s"]
-    w4n6["ConnectionsPlacer#7 0.216s"]
-    w4n7["MinePlacer#6 0.000s"]
-    w4n8["ObjectPlacer#8 0.000s"]
-    w4n9["ObjectManager#2 5.787s"]
-    w4n10["ObjectManager#14 34.788s"]
-    w4n11["RoadPlacer#13 0.203s"]
-    w4n12["TreasurePlacer#12 9.013s"]
-    w4n13["RockPlacer#9 0.046s"]
-    w4n14["RockFiller#1 1.943s"]
-    w4n15["ObstaclePlacer#11 0.996s"]
-    w4n16["RiverPlacer#11 0.412s"]
-    w4n17["QuestArtifactPlacer#11 0.019s"]
-    w4n1 --> w4n2
-    w4n2 --> w4n3
-    w4n3 --> w4n4
-    w4n4 --> w4n5
-    w4n5 --> w4n6
-    w4n6 --> w4n7
-    w4n7 --> w4n8
-    w4n8 --> w4n9
-    w4n9 --> w4n10
-    w4n10 --> w4n11
-    w4n11 --> w4n12
-    w4n12 --> w4n13
-    w4n13 --> w4n14
-    w4n14 --> w4n15
-    w4n15 --> w4n16
-    w4n16 --> w4n17
+    n11["WA#10 0.000s"]
+    n15["TW#4 0.075s"]
+    n49["TE#12 1.640s"]
+    n60["CN#1 0.096s"]
+    n61["CN#2 0.063s"]
+    n77["CN#7 0.216s"]
+    n79["MI#6 0.000s"]
+    n82["OP#8 0.000s"]
+    n116["OM#2 5.787s"]
+    n159["OM#14 34.788s"]
+    n161["RD#13 0.203s"]
+    n174["TR#12 9.013s"]
+    n189["RP#9 0.046s"]
+    n191["RF#1 1.943s"]
+    n198["OB#11 0.996s"]
+    n205["RV#11 0.412s"]
+    n226["QA#11 0.019s"]
   end
   subgraph W5["Worker 5"]
-    w5n1["TownPlacer#1 0.000s"]
-    w5n2["TownPlacer#2 0.000s"]
-    w5n3["TownPlacer#7 0.196s"]
-    w5n4["TownPlacer#9 0.000s"]
-    w5n5["TerrainPainter#4 0.410s"]
-    w5n6["TerrainPainter#18 1.779s"]
-    w5n7["ConnectionsPlacer#16 1.136s"]
-    w5n8["MinePlacer#16 0.000s"]
-    w5n9["MinePlacer#17 0.000s"]
-    w5n10["ObjectPlacer#17 0.000s"]
-    w5n11["ObjectManager#4 10.205s"]
-    w5n12["ObjectManager#15 33.706s"]
-    w5n13["RoadPlacer#14 0.312s"]
-    w5n14["TreasurePlacer#17 20.155s"]
-    w5n15["ObstaclePlacer#17 2.099s"]
-    w5n16["RiverPlacer#16 0.766s"]
-    w5n17["QuestArtifactPlacer#9 0.000s"]
-    w5n1 --> w5n2
-    w5n2 --> w5n3
-    w5n3 --> w5n4
-    w5n4 --> w5n5
-    w5n5 --> w5n6
-    w5n6 --> w5n7
-    w5n7 --> w5n8
-    w5n8 --> w5n9
-    w5n9 --> w5n10
-    w5n10 --> w5n11
-    w5n11 --> w5n12
-    w5n12 --> w5n13
-    w5n13 --> w5n14
-    w5n14 --> w5n15
-    w5n15 --> w5n16
-    w5n16 --> w5n17
+    n12["TW#1 0.000s"]
+    n13["TW#2 0.000s"]
+    n18["TW#7 0.196s"]
+    n21["TW#9 0.000s"]
+    n41["TE#4 0.410s"]
+    n56["TE#18 1.779s"]
+    n105["CN#16 1.136s"]
+    n107["MI#16 0.000s"]
+    n109["MI#17 0.000s"]
+    n110["OP#17 0.000s"]
+    n118["OM#4 10.205s"]
+    n163["OM#15 33.706s"]
+    n164["RD#14 0.312s"]
+    n190["TR#17 20.155s"]
+    n210["OB#17 2.099s"]
+    n211["RV#16 0.766s"]
+    n224["QA#9 0.000s"]
   end
   subgraph W6["Worker 6"]
-    w6n1["TownPlacer#3 0.000s"]
-    w6n2["TownPlacer#11 0.199s"]
-    w6n3["TerrainPainter#8 1.023s"]
-    w6n4["ConnectionsPlacer#9 0.545s"]
-    w6n5["ObjectPlacer#9 0.000s"]
-    w6n6["MinePlacer#9 0.000s"]
-    w6n7["ObjectManager#6 13.365s"]
-    w6n8["TreasurePlacer#4 1.379s"]
-    w6n9["ObstaclePlacer#2 1.111s"]
-    w6n10["RiverPlacer#2 0.526s"]
-    w6n11["RockPlacer#2 0.004s"]
-    w6n12["ObstaclePlacer#16 1.292s"]
-    w6n13["RiverPlacer#14 0.298s"]
-    w6n1 --> w6n2
-    w6n2 --> w6n3
-    w6n3 --> w6n4
-    w6n4 --> w6n5
-    w6n5 --> w6n6
-    w6n6 --> w6n7
-    w6n7 --> w6n8
-    w6n8 --> w6n9
-    w6n9 --> w6n10
-    w6n10 --> w6n11
-    w6n11 --> w6n12
-    w6n12 --> w6n13
+    n14["TW#3 0.000s"]
+    n24["TW#11 0.199s"]
+    n45["TE#8 1.023s"]
+    n84["CN#9 0.545s"]
+    n85["OP#9 0.000s"]
+    n86["MI#9 0.000s"]
+    n128["OM#6 13.365s"]
+    n130["TR#4 1.379s"]
+    n136["OB#2 1.111s"]
+    n137["RV#2 0.526s"]
+    n182["RP#2 0.004s"]
+    n203["OB#16 1.292s"]
+    n208["RV#14 0.298s"]
   end
   subgraph W7["Worker 7"]
-    w7n1["TownPlacer#6 0.193s"]
-    w7n2["TerrainPainter#6 0.641s"]
-    w7n3["ConnectionsPlacer#12 0.854s"]
-    w7n4["MinePlacer#12 0.000s"]
-    w7n5["ObjectPlacer#12 0.000s"]
-    w7n6["ObjectManager#1 3.255s"]
-    w7n7["ObjectManager#18 44.115s"]
-    w7n8["RoadPlacer#17 0.405s"]
-    w7n9["TreasurePlacer#18 19.573s"]
-    w7n10["ObstaclePlacer#18 0.720s"]
-    w7n11["RiverPlacer#17 0.128s"]
-    w7n12["QuestArtifactPlacer#2 0.000s"]
-    w7n13["QuestArtifactPlacer#3 0.000s"]
-    w7n14["QuestArtifactPlacer#5 0.000s"]
-    w7n15["QuestArtifactPlacer#13 0.033s"]
-    w7n1 --> w7n2
-    w7n2 --> w7n3
-    w7n3 --> w7n4
-    w7n4 --> w7n5
-    w7n5 --> w7n6
-    w7n6 --> w7n7
-    w7n7 --> w7n8
-    w7n8 --> w7n9
-    w7n9 --> w7n10
-    w7n10 --> w7n11
-    w7n11 --> w7n12
-    w7n12 --> w7n13
-    w7n13 --> w7n14
-    w7n14 --> w7n15
+    n17["TW#6 0.193s"]
+    n43["TE#6 0.641s"]
+    n93["CN#12 0.854s"]
+    n94["MI#12 0.000s"]
+    n95["OP#12 0.000s"]
+    n115["OM#1 3.255s"]
+    n169["OM#18 44.115s"]
+    n170["RD#17 0.405s"]
+    n212["TR#18 19.573s"]
+    n213["OB#18 0.720s"]
+    n214["RV#17 0.128s"]
+    n217["QA#2 0.000s"]
+    n218["QA#3 0.000s"]
+    n220["QA#5 0.000s"]
+    n228["QA#13 0.033s"]
   end
   subgraph W8["Worker 8"]
-    w8n1["WaterAdopter#11 0.198s"]
-    w8n2["TerrainPainter#11 1.561s"]
-    w8n3["ConnectionsPlacer#6 0.375s"]
-    w8n4["MinePlacer#7 0.000s"]
-    w8n5["MinePlacer#18 0.000s"]
-    w8n6["ObjectManager#10 32.335s"]
-    w8n7["RoadPlacer#9 0.145s"]
-    w8n8["TreasurePlacer#10 9.412s"]
-    w8n9["RockPlacer#6 0.037s"]
-    w8n10["ObstaclePlacer#15 1.257s"]
-    w8n11["RiverPlacer#13 0.324s"]
-    w8n12["QuestArtifactPlacer#16 0.058s"]
-    w8n1 --> w8n2
-    w8n2 --> w8n3
-    w8n3 --> w8n4
-    w8n4 --> w8n5
-    w8n5 --> w8n6
-    w8n6 --> w8n7
-    w8n7 --> w8n8
-    w8n8 --> w8n9
-    w8n9 --> w8n10
-    w8n10 --> w8n11
-    w8n11 --> w8n12
+    n19["WA#11 0.198s"]
+    n48["TE#11 1.561s"]
+    n75["CN#6 0.375s"]
+    n80["MI#7 0.000s"]
+    n113["MI#18 0.000s"]
+    n152["OM#10 32.335s"]
+    n153["RD#9 0.145s"]
+    n162["TR#10 9.412s"]
+    n186["RP#6 0.037s"]
+    n202["OB#15 1.257s"]
+    n207["RV#13 0.324s"]
+    n231["QA#16 0.058s"]
   end
   subgraph W9["Worker 9"]
-    w9n1["TownPlacer#8 0.199s"]
-    w9n2["TerrainPainter#5 0.536s"]
-    w9n3["ConnectionsPlacer#18 1.142s"]
-    w9n4["ObjectPlacer#18 0.000s"]
-    w9n5["ObjectManager#16 45.265s"]
-    w9n6["RoadPlacer#15 0.446s"]
-    w9n7["TreasurePlacer#15 15.077s"]
-    w9n8["ObstaclePlacer#7 0.777s"]
-    w9n9["RiverPlacer#6 0.111s"]
-    w9n10["RockPlacer#5 0.036s"]
-    w9n11["ObstaclePlacer#13 1.221s"]
-    w9n12["RiverPlacer#12 0.308s"]
-    w9n13["QuestArtifactPlacer#6 0.000s"]
-    w9n14["ObstaclePlacer#19 0.581s"]
-    w9n15["RiverPlacer#18 0.154s"]
-    w9n1 --> w9n2
-    w9n2 --> w9n3
-    w9n3 --> w9n4
-    w9n4 --> w9n5
-    w9n5 --> w9n6
-    w9n6 --> w9n7
-    w9n7 --> w9n8
-    w9n8 --> w9n9
-    w9n9 --> w9n10
-    w9n10 --> w9n11
-    w9n11 --> w9n12
-    w9n12 --> w9n13
-    w9n13 --> w9n14
-    w9n14 --> w9n15
+    n20["TW#8 0.199s"]
+    n42["TE#5 0.536s"]
+    n111["CN#18 1.142s"]
+    n112["OP#18 0.000s"]
+    n165["OM#16 45.265s"]
+    n166["RD#15 0.446s"]
+    n177["TR#15 15.077s"]
+    n178["OB#7 0.777s"]
+    n179["RV#6 0.111s"]
+    n185["RP#5 0.036s"]
+    n200["OB#13 1.221s"]
+    n206["RV#12 0.308s"]
+    n221["QA#6 0.000s"]
+    n234["OB#19 0.581s"]
+    n235["RV#18 0.154s"]
   end
   subgraph W10["Worker 10"]
-    w10n1["WaterAdopter#12 0.207s"]
-    w10n2["TownPlacer#10 0.000s"]
-    w10n3["TerrainPainter#14 1.949s"]
-    w10n4["ConnectionsPlacer#4 0.225s"]
-    w10n5["MinePlacer#1 0.000s"]
-    w10n6["ObjectPlacer#1 0.000s"]
-    w10n7["MinePlacer#2 0.000s"]
-    w10n8["ObjectPlacer#2 0.000s"]
-    w10n9["MinePlacer#3 0.000s"]
-    w10n10["ObjectPlacer#3 0.000s"]
-    w10n11["MinePlacer#4 0.000s"]
-    w10n12["ObjectPlacer#4 0.000s"]
-    w10n13["ObjectPlacer#5 0.000s"]
-    w10n14["ObjectPlacer#6 0.000s"]
-    w10n15["ObjectPlacer#7 0.000s"]
-    w10n16["MinePlacer#8 0.000s"]
-    w10n17["ObjectPlacer#10 0.000s"]
-    w10n18["WaterRoutes#1 0.496s"]
-    w10n19["ObjectManager#11 37.224s"]
-    w10n20["RoadPlacer#10 0.139s"]
-    w10n21["TreasurePlacer#11 10.503s"]
-    w10n22["RockPlacer#7 0.040s"]
-    w10n23["QuestArtifactPlacer#4 0.000s"]
-    w10n24["QuestArtifactPlacer#7 0.000s"]
-    w10n1 --> w10n2
-    w10n2 --> w10n3
-    w10n3 --> w10n4
-    w10n4 --> w10n5
-    w10n5 --> w10n6
-    w10n6 --> w10n7
-    w10n7 --> w10n8
-    w10n8 --> w10n9
-    w10n9 --> w10n10
-    w10n10 --> w10n11
-    w10n11 --> w10n12
-    w10n12 --> w10n13
-    w10n13 --> w10n14
-    w10n14 --> w10n15
-    w10n15 --> w10n16
-    w10n16 --> w10n17
-    w10n17 --> w10n18
-    w10n18 --> w10n19
-    w10n19 --> w10n20
-    w10n20 --> w10n21
-    w10n21 --> w10n22
-    w10n22 --> w10n23
-    w10n23 --> w10n24
+    n22["WA#12 0.207s"]
+    n23["TW#10 0.000s"]
+    n51["TE#14 1.949s"]
+    n63["CN#4 0.225s"]
+    n64["MI#1 0.000s"]
+    n65["OP#1 0.000s"]
+    n66["MI#2 0.000s"]
+    n67["OP#2 0.000s"]
+    n68["MI#3 0.000s"]
+    n69["OP#3 0.000s"]
+    n70["MI#4 0.000s"]
+    n71["OP#4 0.000s"]
+    n73["OP#5 0.000s"]
+    n76["OP#6 0.000s"]
+    n78["OP#7 0.000s"]
+    n83["MI#8 0.000s"]
+    n89["OP#10 0.000s"]
+    n114["WR#1 0.496s"]
+    n154["OM#11 37.224s"]
+    n155["RD#10 0.139s"]
+    n171["TR#11 10.503s"]
+    n187["RP#7 0.040s"]
+    n219["QA#4 0.000s"]
+    n222["QA#7 0.000s"]
   end
   subgraph W11["Worker 11"]
-    w11n1["WaterAdopter#13 0.217s"]
-    w11n2["TerrainPainter#10 1.391s"]
-    w11n3["ConnectionsPlacer#5 0.229s"]
-    w11n4["MinePlacer#5 0.000s"]
-    w11n5["ObjectManager#13 40.454s"]
-    w11n6["RoadPlacer#12 0.248s"]
-    w11n7["TreasurePlacer#14 16.771s"]
-    w11n8["ObstaclePlacer#10 0.719s"]
-    w11n9["RiverPlacer#9 0.116s"]
-    w11n10["RiverPlacer#15 0.405s"]
-    w11n11["QuestArtifactPlacer#18 0.073s"]
-    w11n1 --> w11n2
-    w11n2 --> w11n3
-    w11n3 --> w11n4
-    w11n4 --> w11n5
-    w11n5 --> w11n6
-    w11n6 --> w11n7
-    w11n7 --> w11n8
-    w11n8 --> w11n9
-    w11n9 --> w11n10
-    w11n10 --> w11n11
+    n25["WA#13 0.217s"]
+    n47["TE#10 1.391s"]
+    n72["CN#5 0.229s"]
+    n74["MI#5 0.000s"]
+    n158["OM#13 40.454s"]
+    n160["RD#12 0.248s"]
+    n176["TR#14 16.771s"]
+    n195["OB#10 0.719s"]
+    n197["RV#9 0.116s"]
+    n209["RV#15 0.405s"]
+    n233["QA#18 0.073s"]
   end
   subgraph W12["Worker 12"]
-    w12n1["WaterAdopter#14 0.373s"]
-    w12n2["TownPlacer#13 0.004s"]
-    w12n3["TerrainPainter#9 1.200s"]
-    w12n4["ConnectionsPlacer#15 1.082s"]
-    w12n5["MinePlacer#15 0.000s"]
-    w12n6["ObjectPlacer#15 0.000s"]
-    w12n7["ObjectManager#5 10.280s"]
-    w12n8["RoadPlacer#1 0.027s"]
-    w12n9["RoadPlacer#2 0.022s"]
-    w12n10["RoadPlacer#3 0.055s"]
-    w12n11["RoadPlacer#4 0.032s"]
-    w12n12["RoadPlacer#5 0.053s"]
-    w12n13["TreasurePlacer#1 0.656s"]
-    w12n14["TreasurePlacer#2 0.980s"]
-    w12n15["TreasurePlacer#3 1.229s"]
-    w12n16["TreasurePlacer#5 2.025s"]
-    w12n17["TreasurePlacer#7 1.941s"]
-    w12n18["ObstaclePlacer#4 1.073s"]
-    w12n19["RiverPlacer#4 1.033s"]
-    w12n20["RockPlacer#1 0.002s"]
-    w12n21["QuestArtifactPlacer#12 0.030s"]
-    w12n1 --> w12n2
-    w12n2 --> w12n3
-    w12n3 --> w12n4
-    w12n4 --> w12n5
-    w12n5 --> w12n6
-    w12n6 --> w12n7
-    w12n7 --> w12n8
-    w12n8 --> w12n9
-    w12n9 --> w12n10
-    w12n10 --> w12n11
-    w12n11 --> w12n12
-    w12n12 --> w12n13
-    w12n13 --> w12n14
-    w12n14 --> w12n15
-    w12n15 --> w12n16
-    w12n16 --> w12n17
-    w12n17 --> w12n18
-    w12n18 --> w12n19
-    w12n19 --> w12n20
-    w12n20 --> w12n21
+    n27["WA#14 0.373s"]
+    n28["TW#13 0.004s"]
+    n46["TE#9 1.200s"]
+    n102["CN#15 1.082s"]
+    n103["MI#15 0.000s"]
+    n104["OP#15 0.000s"]
+    n119["OM#5 10.280s"]
+    n120["RD#1 0.027s"]
+    n121["RD#2 0.022s"]
+    n122["RD#3 0.055s"]
+    n123["RD#4 0.032s"]
+    n124["RD#5 0.053s"]
+    n125["TR#1 0.656s"]
+    n126["TR#2 0.980s"]
+    n127["TR#3 1.229s"]
+    n134["TR#5 2.025s"]
+    n139["TR#7 1.941s"]
+    n142["OB#4 1.073s"]
+    n143["RV#4 1.033s"]
+    n181["RP#1 0.002s"]
+    n227["QA#12 0.030s"]
   end
   subgraph W13["Worker 13"]
-    w13n1["WaterAdopter#15 0.432s"]
-    w13n2["TownPlacer#14 0.000s"]
-    w13n3["TerrainPainter#7 0.843s"]
-    w13n4["ConnectionsPlacer#14 1.057s"]
-    w13n5["MinePlacer#14 0.000s"]
-    w13n6["ObjectPlacer#14 0.000s"]
-    w13n7["ObjectManager#12 39.257s"]
-    w13n8["RoadPlacer#11 0.259s"]
-    w13n9["TreasurePlacer#13 12.997s"]
-    w13n10["ObstaclePlacer#9 0.623s"]
-    w13n11["RiverPlacer#8 0.125s"]
-    w13n12["QuestArtifactPlacer#14 0.043s"]
-    w13n1 --> w13n2
-    w13n2 --> w13n3
-    w13n3 --> w13n4
-    w13n4 --> w13n5
-    w13n5 --> w13n6
-    w13n6 --> w13n7
-    w13n7 --> w13n8
-    w13n8 --> w13n9
-    w13n9 --> w13n10
-    w13n10 --> w13n11
-    w13n11 --> w13n12
+    n29["WA#15 0.432s"]
+    n30["TW#14 0.000s"]
+    n44["TE#7 0.843s"]
+    n99["CN#14 1.057s"]
+    n100["MI#14 0.000s"]
+    n101["OP#14 0.000s"]
+    n156["OM#12 39.257s"]
+    n157["RD#11 0.259s"]
+    n175["TR#13 12.997s"]
+    n194["OB#9 0.623s"]
+    n196["RV#8 0.125s"]
+    n229["QA#14 0.043s"]
   end
   subgraph W14["Worker 14"]
-    w14n1["WaterAdopter#16 0.609s"]
-    w14n2["TownPlacer#15 0.051s"]
-    w14n3["TerrainPainter#13 1.666s"]
-    w14n4["ConnectionsPlacer#10 0.700s"]
-    w14n5["MinePlacer#10 0.000s"]
-    w14n6["MinePlacer#11 0.000s"]
-    w14n7["ObjectManager#7 13.670s"]
-    w14n8["ObstaclePlacer#1 1.167s"]
-    w14n9["RoadPlacer#6 0.058s"]
-    w14n10["RoadPlacer#7 0.060s"]
-    w14n11["RiverPlacer#1 0.618s"]
-    w14n12["TreasurePlacer#6 1.142s"]
-    w14n13["ObstaclePlacer#3 0.655s"]
-    w14n14["RiverPlacer#3 0.779s"]
-    w14n15["RockPlacer#4 0.009s"]
-    w14n16["ObstaclePlacer#14 1.222s"]
-    w14n17["QuestArtifactPlacer#15 0.047s"]
-    w14n1 --> w14n2
-    w14n2 --> w14n3
-    w14n3 --> w14n4
-    w14n4 --> w14n5
-    w14n5 --> w14n6
-    w14n6 --> w14n7
-    w14n7 --> w14n8
-    w14n8 --> w14n9
-    w14n9 --> w14n10
-    w14n10 --> w14n11
-    w14n11 --> w14n12
-    w14n12 --> w14n13
-    w14n13 --> w14n14
-    w14n14 --> w14n15
-    w14n15 --> w14n16
-    w14n16 --> w14n17
+    n31["WA#16 0.609s"]
+    n32["TW#15 0.051s"]
+    n50["TE#13 1.666s"]
+    n87["CN#10 0.700s"]
+    n88["MI#10 0.000s"]
+    n92["MI#11 0.000s"]
+    n129["OM#7 13.670s"]
+    n131["OB#1 1.167s"]
+    n132["RD#6 0.058s"]
+    n133["RD#7 0.060s"]
+    n135["RV#1 0.618s"]
+    n138["TR#6 1.142s"]
+    n140["OB#3 0.655s"]
+    n141["RV#3 0.779s"]
+    n184["RP#4 0.009s"]
+    n201["OB#14 1.222s"]
+    n230["QA#15 0.047s"]
   end
   subgraph W15["Worker 15"]
-    w15n1["WaterAdopter#18 0.754s"]
-    w15n2["TownPlacer#17 0.026s"]
-    w15n3["TerrainPainter#2 0.090s"]
-    w15n4["TerrainPainter#16 1.972s"]
-    w15n5["ConnectionsPlacer#3 0.225s"]
-    w15n6["ConnectionsPlacer#8 0.154s"]
-    w15n7["ObjectPlacer#13 0.000s"]
-    w15n8["ObjectManager#8 24.676s"]
-    w15n9["RoadPlacer#8 0.098s"]
-    w15n10["TreasurePlacer#8 1.774s"]
-    w15n11["ObstaclePlacer#5 1.231s"]
-    w15n12["RiverPlacer#5 0.744s"]
-    w15n13["RockPlacer#8 0.041s"]
-    w15n14["ObstaclePlacer#12 1.058s"]
-    w15n15["RiverPlacer#10 0.346s"]
-    w15n16["QuestArtifactPlacer#17 0.062s"]
-    w15n1 --> w15n2
-    w15n2 --> w15n3
-    w15n3 --> w15n4
-    w15n4 --> w15n5
-    w15n5 --> w15n6
-    w15n6 --> w15n7
-    w15n7 --> w15n8
-    w15n8 --> w15n9
-    w15n9 --> w15n10
-    w15n10 --> w15n11
-    w15n11 --> w15n12
-    w15n12 --> w15n13
-    w15n13 --> w15n14
-    w15n14 --> w15n15
-    w15n15 --> w15n16
+    n35["WA#18 0.754s"]
+    n36["TW#17 0.026s"]
+    n39["TE#2 0.090s"]
+    n54["TE#16 1.972s"]
+    n62["CN#3 0.225s"]
+    n81["CN#8 0.154s"]
+    n98["OP#13 0.000s"]
+    n144["OM#8 24.676s"]
+    n145["RD#8 0.098s"]
+    n146["TR#8 1.774s"]
+    n147["OB#5 1.231s"]
+    n148["RV#5 0.744s"]
+    n188["RP#8 0.041s"]
+    n199["OB#12 1.058s"]
+    n204["RV#10 0.346s"]
+    n232["QA#17 0.062s"]
   end
+  n1 --> n2
+  n2 --> n3
+  n3 --> n37
+  n37 --> n38
+  n38 --> n53
+  n53 --> n106
+  n106 --> n108
+  n108 --> n117
+  n117 --> n149
+  n149 --> n150
+  n150 --> n151
+  n4 --> n6
+  n6 --> n8
+  n8 --> n33
+  n33 --> n34
+  n34 --> n52
+  n52 --> n57
+  n57 --> n59
+  n59 --> n96
+  n96 --> n97
+  n97 --> n167
+  n167 --> n168
+  n168 --> n180
+  n180 --> n183
+  n183 --> n192
+  n192 --> n193
+  n193 --> n223
+  n5 --> n7
+  n7 --> n9
+  n9 --> n10
+  n10 --> n16
+  n16 --> n26
+  n26 --> n40
+  n40 --> n55
+  n55 --> n58
+  n58 --> n90
+  n90 --> n91
+  n91 --> n172
+  n172 --> n173
+  n173 --> n215
+  n215 --> n216
+  n216 --> n225
+  n11 --> n15
+  n15 --> n49
+  n49 --> n60
+  n60 --> n61
+  n61 --> n77
+  n77 --> n79
+  n79 --> n82
+  n82 --> n116
+  n116 --> n159
+  n159 --> n161
+  n161 --> n174
+  n174 --> n189
+  n189 --> n191
+  n191 --> n198
+  n198 --> n205
+  n205 --> n226
+  n12 --> n13
+  n13 --> n18
+  n18 --> n21
+  n21 --> n41
+  n41 --> n56
+  n56 --> n105
+  n105 --> n107
+  n107 --> n109
+  n109 --> n110
+  n110 --> n118
+  n118 --> n163
+  n163 --> n164
+  n164 --> n190
+  n190 --> n210
+  n210 --> n211
+  n211 --> n224
+  n14 --> n24
+  n24 --> n45
+  n45 --> n84
+  n84 --> n85
+  n85 --> n86
+  n86 --> n128
+  n128 --> n130
+  n130 --> n136
+  n136 --> n137
+  n137 --> n182
+  n182 --> n203
+  n203 --> n208
+  n17 --> n43
+  n43 --> n93
+  n93 --> n94
+  n94 --> n95
+  n95 --> n115
+  n115 --> n169
+  n169 --> n170
+  n170 --> n212
+  n212 --> n213
+  n213 --> n214
+  n214 --> n217
+  n217 --> n218
+  n218 --> n220
+  n220 --> n228
+  n19 --> n48
+  n48 --> n75
+  n75 --> n80
+  n80 --> n113
+  n113 --> n152
+  n152 --> n153
+  n153 --> n162
+  n162 --> n186
+  n186 --> n202
+  n202 --> n207
+  n207 --> n231
+  n20 --> n42
+  n42 --> n111
+  n111 --> n112
+  n112 --> n165
+  n165 --> n166
+  n166 --> n177
+  n177 --> n178
+  n178 --> n179
+  n179 --> n185
+  n185 --> n200
+  n200 --> n206
+  n206 --> n221
+  n221 --> n234
+  n234 --> n235
+  n22 --> n23
+  n23 --> n51
+  n51 --> n63
+  n63 --> n64
+  n64 --> n65
+  n65 --> n66
+  n66 --> n67
+  n67 --> n68
+  n68 --> n69
+  n69 --> n70
+  n70 --> n71
+  n71 --> n73
+  n73 --> n76
+  n76 --> n78
+  n78 --> n83
+  n83 --> n89
+  n89 --> n114
+  n114 --> n154
+  n154 --> n155
+  n155 --> n171
+  n171 --> n187
+  n187 --> n219
+  n219 --> n222
+  n25 --> n47
+  n47 --> n72
+  n72 --> n74
+  n74 --> n158
+  n158 --> n160
+  n160 --> n176
+  n176 --> n195
+  n195 --> n197
+  n197 --> n209
+  n209 --> n233
+  n27 --> n28
+  n28 --> n46
+  n46 --> n102
+  n102 --> n103
+  n103 --> n104
+  n104 --> n119
+  n119 --> n120
+  n120 --> n121
+  n121 --> n122
+  n122 --> n123
+  n123 --> n124
+  n124 --> n125
+  n125 --> n126
+  n126 --> n127
+  n127 --> n134
+  n134 --> n139
+  n139 --> n142
+  n142 --> n143
+  n143 --> n181
+  n181 --> n227
+  n29 --> n30
+  n30 --> n44
+  n44 --> n99
+  n99 --> n100
+  n100 --> n101
+  n101 --> n156
+  n156 --> n157
+  n157 --> n175
+  n175 --> n194
+  n194 --> n196
+  n196 --> n229
+  n31 --> n32
+  n32 --> n50
+  n50 --> n87
+  n87 --> n88
+  n88 --> n92
+  n92 --> n129
+  n129 --> n131
+  n131 --> n132
+  n132 --> n133
+  n133 --> n135
+  n135 --> n138
+  n138 --> n140
+  n140 --> n141
+  n141 --> n184
+  n184 --> n201
+  n201 --> n230
+  n35 --> n36
+  n36 --> n39
+  n39 --> n54
+  n54 --> n62
+  n62 --> n81
+  n81 --> n98
+  n98 --> n144
+  n144 --> n145
+  n145 --> n146
+  n146 --> n147
+  n147 --> n148
+  n148 --> n188
+  n188 --> n199
+  n199 --> n204
+  n204 --> n232
+  n11 -.-> n12
+  n11 -.-> n13
+  n11 -.-> n14
+  n11 -.-> n16
+  n11 -.-> n17
+  n11 -.-> n18
+  n19 -.-> n20
+  n19 -.-> n21
+  n22 -.-> n24
+  n25 -.-> n26
+  n36 -.-> n38
+  n37 -.-> n39
+  n37 -.-> n40
+  n37 -.-> n41
+  n37 -.-> n42
+  n37 -.-> n43
+  n37 -.-> n44
+  n37 -.-> n45
+  n37 -.-> n46
+  n37 -.-> n47
+  n37 -.-> n48
+  n37 -.-> n49
+  n37 -.-> n50
+  n37 -.-> n51
+  n37 -.-> n52
+  n52 -.-> n53
+  n52 -.-> n54
+  n52 -.-> n55
+  n52 -.-> n56
+  n37 -.-> n57
+  n57 -.-> n58
+  n37 -.-> n59
+  n59 -.-> n60
+  n59 -.-> n61
+  n59 -.-> n62
+  n59 -.-> n63
+  n52 -.-> n64
+  n52 -.-> n65
+  n52 -.-> n66
+  n52 -.-> n67
+  n52 -.-> n68
+  n52 -.-> n69
+  n52 -.-> n70
+  n52 -.-> n71
+  n59 -.-> n72
+  n72 -.-> n73
+  n52 -.-> n74
+  n59 -.-> n75
+  n75 -.-> n76
+  n59 -.-> n77
+  n77 -.-> n78
+  n52 -.-> n79
+  n77 -.-> n80
+  n59 -.-> n81
+  n81 -.-> n82
+  n81 -.-> n83
+  n59 -.-> n84
+  n52 -.-> n85
+  n52 -.-> n86
+  n59 -.-> n87
+  n52 -.-> n88
+  n87 -.-> n89
+  n59 -.-> n90
+  n52 -.-> n91
+  n90 -.-> n92
+  n59 -.-> n93
+  n52 -.-> n94
+  n52 -.-> n95
+  n37 -.-> n96
+  n96 -.-> n98
+  n59 -.-> n99
+  n52 -.-> n100
+  n52 -.-> n101
+  n59 -.-> n102
+  n52 -.-> n103
+  n52 -.-> n104
+  n59 -.-> n105
+  n59 -.-> n106
+  n106 -.-> n107
+  n52 -.-> n108
+  n106 -.-> n109
+  n106 -.-> n110
+  n59 -.-> n111
+  n52 -.-> n112
+  n111 -.-> n113
+  n113 -.-> n115
+  n113 -.-> n116
+  n113 -.-> n117
+  n113 -.-> n118
+  n113 -.-> n119
+  n113 -.-> n120
+  n113 -.-> n121
+  n113 -.-> n122
+  n113 -.-> n123
+  n113 -.-> n124
+  n111 -.-> n125
+  n111 -.-> n126
+  n111 -.-> n127
+  n113 -.-> n128
+  n113 -.-> n129
+  n129 -.-> n130
+  n130 -.-> n131
+  n113 -.-> n132
+  n113 -.-> n133
+  n133 -.-> n134
+  n59 -.-> n135
+  n134 -.-> n136
+  n129 -.-> n137
+  n111 -.-> n138
+  n133 -.-> n139
+  n139 -.-> n140
+  n59 -.-> n141
+  n133 -.-> n142
+  n129 -.-> n143
+  n113 -.-> n144
+  n113 -.-> n145
+  n111 -.-> n146
+  n114 -.-> n147
+  n59 -.-> n148
+  n113 -.-> n149
+  n145 -.-> n150
+  n145 -.-> n151
+  n112 -.-> n152
+  n112 -.-> n153
+  n113 -.-> n154
+  n113 -.-> n155
+  n113 -.-> n156
+  n113 -.-> n157
+  n113 -.-> n158
+  n113 -.-> n159
+  n159 -.-> n160
+  n113 -.-> n161
+  n161 -.-> n162
+  n113 -.-> n163
+  n113 -.-> n164
+  n113 -.-> n165
+  n113 -.-> n166
+  n113 -.-> n167
+  n113 -.-> n168
+  n113 -.-> n169
+  n113 -.-> n170
+  n170 -.-> n171
+  n113 -.-> n172
+  n113 -.-> n173
+  n173 -.-> n174
+  n173 -.-> n175
+  n173 -.-> n176
+  n173 -.-> n177
+  n173 -.-> n178
+  n172 -.-> n179
+  n173 -.-> n180
+  n173 -.-> n181
+  n173 -.-> n182
+  n173 -.-> n183
+  n173 -.-> n184
+  n173 -.-> n185
+  n173 -.-> n186
+  n173 -.-> n187
+  n173 -.-> n188
+  n173 -.-> n189
+  n173 -.-> n190
+  n191 -.-> n192
+  n172 -.-> n193
+  n191 -.-> n194
+  n191 -.-> n195
+  n195 -.-> n196
+  n172 -.-> n197
+  n190 -.-> n198
+  n191 -.-> n199
+  n191 -.-> n200
+  n191 -.-> n201
+  n191 -.-> n202
+  n191 -.-> n203
+  n203 -.-> n204
+  n203 -.-> n205
+  n203 -.-> n206
+  n203 -.-> n207
+  n172 -.-> n208
+  n203 -.-> n209
+  n191 -.-> n210
+  n172 -.-> n211
+  n173 -.-> n212
+  n191 -.-> n213
+  n172 -.-> n214
+  n111 -.-> n215
+  n215 -.-> n217
+  n215 -.-> n218
+  n215 -.-> n219
+  n215 -.-> n220
+  n215 -.-> n221
+  n215 -.-> n222
+  n215 -.-> n223
+  n215 -.-> n224
+  n215 -.-> n225
+  n215 -.-> n226
+  n215 -.-> n227
+  n215 -.-> n228
+  n215 -.-> n229
+  n215 -.-> n230
+  n215 -.-> n231
+  n215 -.-> n232
+  n215 -.-> n233
+  n215 -.-> n234
+  n172 -.-> n235
 ```
 
-## New timeline (`10959297f...`)
+## New timeline DAG (`10959297f...`)
 
 ```mermaid
 flowchart LR
-  %% new
+  %% new timeline DAG
   subgraph W1["Worker 1"]
-    w1n1["WaterAdopter#1 0.000s"]
-    w1n2["WaterAdopter#15 0.210s"]
-    w1n3["TownPlacer#1 0.008s"]
-    w1n4["TownPlacer#2 0.005s"]
-    w1n5["TownPlacer#3 0.005s"]
-    w1n6["TownPlacer#4 0.003s"]
-    w1n7["TownPlacer#5 0.004s"]
-    w1n8["TownPlacer#6 0.000s"]
-    w1n9["TownPlacer#7 0.000s"]
-    w1n10["TownPlacer#8 0.000s"]
-    w1n11["TownPlacer#9 0.000s"]
-    w1n12["TownPlacer#10 0.000s"]
-    w1n13["TownPlacer#11 0.000s"]
-    w1n14["TownPlacer#12 0.000s"]
-    w1n15["TownPlacer#13 0.000s"]
-    w1n16["TownPlacer#14 0.006s"]
-    w1n17["TownPlacer#15 0.007s"]
-    w1n18["TownPlacer#16 0.008s"]
-    w1n19["TownPlacer#17 0.009s"]
-    w1n20["TownPlacer#18 0.005s"]
-    w1n21["TerrainPainter#1 0.227s"]
-    w1n22["TerrainPainter#2 0.031s"]
-    w1n23["TerrainPainter#3 0.032s"]
-    w1n24["TerrainPainter#4 0.033s"]
-    w1n25["TerrainPainter#5 0.021s"]
-    w1n26["TerrainPainter#6 0.030s"]
-    w1n27["TerrainPainter#7 0.022s"]
-    w1n28["TerrainPainter#8 0.009s"]
-    w1n29["TerrainPainter#9 0.008s"]
-    w1n30["TerrainPainter#10 0.014s"]
-    w1n31["TerrainPainter#11 0.026s"]
-    w1n32["TerrainPainter#12 0.006s"]
-    w1n33["TerrainPainter#13 0.022s"]
-    w1n34["TerrainPainter#14 0.024s"]
-    w1n35["TerrainPainter#15 0.032s"]
-    w1n36["TerrainPainter#16 0.042s"]
-    w1n37["TerrainPainter#17 0.053s"]
-    w1n38["TerrainPainter#18 0.052s"]
-    w1n39["TerrainPainter#19 0.037s"]
-    w1n40["WaterProxy#1 0.283s"]
-    w1n41["ConnectionsPlacer#1 0.002s"]
-    w1n42["ConnectionsPlacer#2 0.002s"]
-    w1n43["ConnectionsPlacer#3 0.003s"]
-    w1n44["ConnectionsPlacer#4 0.001s"]
-    w1n45["ConnectionsPlacer#5 0.021s"]
-    w1n46["ConnectionsPlacer#6 0.002s"]
-    w1n47["ConnectionsPlacer#7 0.004s"]
-    w1n48["ConnectionsPlacer#8 0.000s"]
-    w1n49["ConnectionsPlacer#9 0.002s"]
-    w1n50["ConnectionsPlacer#10 0.002s"]
-    w1n51["ConnectionsPlacer#11 0.005s"]
-    w1n52["ConnectionsPlacer#12 0.001s"]
-    w1n53["ConnectionsPlacer#13 0.003s"]
-    w1n54["ConnectionsPlacer#14 0.015s"]
-    w1n55["ConnectionsPlacer#15 0.028s"]
-    w1n56["ConnectionsPlacer#16 0.002s"]
-    w1n57["ConnectionsPlacer#17 0.015s"]
-    w1n58["ConnectionsPlacer#18 0.002s"]
-    w1n59["WaterRoutes#1 0.178s"]
-    w1n60["ObjectManager#19 2.574s"]
-    w1n61["RoadPlacer#13 0.356s"]
-    w1n62["TreasurePlacer#12 9.372s"]
-    w1n63["TreasurePlacer#17 3.837s"]
-    w1n64["TreasurePlacer#18 2.005s"]
-    w1n65["QuestArtifactPlacer#1 0.004s"]
-    w1n66["QuestArtifactPlacer#2 0.000s"]
-    w1n67["QuestArtifactPlacer#3 0.000s"]
-    w1n68["QuestArtifactPlacer#4 0.000s"]
-    w1n69["QuestArtifactPlacer#5 0.000s"]
-    w1n70["QuestArtifactPlacer#6 0.000s"]
-    w1n71["QuestArtifactPlacer#7 0.000s"]
-    w1n72["QuestArtifactPlacer#8 0.000s"]
-    w1n73["QuestArtifactPlacer#9 0.000s"]
-    w1n74["QuestArtifactPlacer#10 0.000s"]
-    w1n75["QuestArtifactPlacer#11 0.000s"]
-    w1n76["QuestArtifactPlacer#12 0.000s"]
-    w1n77["QuestArtifactPlacer#13 0.000s"]
-    w1n78["QuestArtifactPlacer#14 0.000s"]
-    w1n79["QuestArtifactPlacer#15 0.000s"]
-    w1n80["QuestArtifactPlacer#16 0.000s"]
-    w1n81["QuestArtifactPlacer#17 0.000s"]
-    w1n82["QuestArtifactPlacer#18 0.000s"]
-    w1n83["ObstaclePlacer#10 2.193s"]
-    w1n84["RiverPlacer#2 0.100s"]
-    w1n85["ObstaclePlacer#19 1.436s"]
-    w1n86["RiverPlacer#18 0.095s"]
-    w1n1 --> w1n2
-    w1n2 --> w1n3
-    w1n3 --> w1n4
-    w1n4 --> w1n5
-    w1n5 --> w1n6
-    w1n6 --> w1n7
-    w1n7 --> w1n8
-    w1n8 --> w1n9
-    w1n9 --> w1n10
-    w1n10 --> w1n11
-    w1n11 --> w1n12
-    w1n12 --> w1n13
-    w1n13 --> w1n14
-    w1n14 --> w1n15
-    w1n15 --> w1n16
-    w1n16 --> w1n17
-    w1n17 --> w1n18
-    w1n18 --> w1n19
-    w1n19 --> w1n20
-    w1n20 --> w1n21
-    w1n21 --> w1n22
-    w1n22 --> w1n23
-    w1n23 --> w1n24
-    w1n24 --> w1n25
-    w1n25 --> w1n26
-    w1n26 --> w1n27
-    w1n27 --> w1n28
-    w1n28 --> w1n29
-    w1n29 --> w1n30
-    w1n30 --> w1n31
-    w1n31 --> w1n32
-    w1n32 --> w1n33
-    w1n33 --> w1n34
-    w1n34 --> w1n35
-    w1n35 --> w1n36
-    w1n36 --> w1n37
-    w1n37 --> w1n38
-    w1n38 --> w1n39
-    w1n39 --> w1n40
-    w1n40 --> w1n41
-    w1n41 --> w1n42
-    w1n42 --> w1n43
-    w1n43 --> w1n44
-    w1n44 --> w1n45
-    w1n45 --> w1n46
-    w1n46 --> w1n47
-    w1n47 --> w1n48
-    w1n48 --> w1n49
-    w1n49 --> w1n50
-    w1n50 --> w1n51
-    w1n51 --> w1n52
-    w1n52 --> w1n53
-    w1n53 --> w1n54
-    w1n54 --> w1n55
-    w1n55 --> w1n56
-    w1n56 --> w1n57
-    w1n57 --> w1n58
-    w1n58 --> w1n59
-    w1n59 --> w1n60
-    w1n60 --> w1n61
-    w1n61 --> w1n62
-    w1n62 --> w1n63
-    w1n63 --> w1n64
-    w1n64 --> w1n65
-    w1n65 --> w1n66
-    w1n66 --> w1n67
-    w1n67 --> w1n68
-    w1n68 --> w1n69
-    w1n69 --> w1n70
-    w1n70 --> w1n71
-    w1n71 --> w1n72
-    w1n72 --> w1n73
-    w1n73 --> w1n74
-    w1n74 --> w1n75
-    w1n75 --> w1n76
-    w1n76 --> w1n77
-    w1n77 --> w1n78
-    w1n78 --> w1n79
-    w1n79 --> w1n80
-    w1n80 --> w1n81
-    w1n81 --> w1n82
-    w1n82 --> w1n83
-    w1n83 --> w1n84
-    w1n84 --> w1n85
-    w1n85 --> w1n86
+    n1["WA#1 0.000s"]
+    n16["WA#15 0.210s"]
+    n21["TW#1 0.008s"]
+    n22["TW#2 0.005s"]
+    n23["TW#3 0.005s"]
+    n24["TW#4 0.003s"]
+    n25["TW#5 0.004s"]
+    n26["TW#6 0.000s"]
+    n27["TW#7 0.000s"]
+    n28["TW#8 0.000s"]
+    n29["TW#9 0.000s"]
+    n30["TW#10 0.000s"]
+    n31["TW#11 0.000s"]
+    n32["TW#12 0.000s"]
+    n33["TW#13 0.000s"]
+    n34["TW#14 0.006s"]
+    n35["TW#15 0.007s"]
+    n36["TW#16 0.008s"]
+    n37["TW#17 0.009s"]
+    n38["TW#18 0.005s"]
+    n39["TE#1 0.227s"]
+    n40["TE#2 0.031s"]
+    n41["TE#3 0.032s"]
+    n42["TE#4 0.033s"]
+    n43["TE#5 0.021s"]
+    n44["TE#6 0.030s"]
+    n45["TE#7 0.022s"]
+    n46["TE#8 0.009s"]
+    n47["TE#9 0.008s"]
+    n48["TE#10 0.014s"]
+    n49["TE#11 0.026s"]
+    n50["TE#12 0.006s"]
+    n51["TE#13 0.022s"]
+    n52["TE#14 0.024s"]
+    n53["TE#15 0.032s"]
+    n54["TE#16 0.042s"]
+    n55["TE#17 0.053s"]
+    n56["TE#18 0.052s"]
+    n57["TE#19 0.037s"]
+    n59["WP#1 0.283s"]
+    n60["CN#1 0.002s"]
+    n61["CN#2 0.002s"]
+    n62["CN#3 0.003s"]
+    n63["CN#4 0.001s"]
+    n64["CN#5 0.021s"]
+    n65["CN#6 0.002s"]
+    n66["CN#7 0.004s"]
+    n67["CN#8 0.000s"]
+    n68["CN#9 0.002s"]
+    n69["CN#10 0.002s"]
+    n70["CN#11 0.005s"]
+    n71["CN#12 0.001s"]
+    n72["CN#13 0.003s"]
+    n73["CN#14 0.015s"]
+    n74["CN#15 0.028s"]
+    n75["CN#16 0.002s"]
+    n76["CN#17 0.015s"]
+    n77["CN#18 0.002s"]
+    n114["WR#1 0.178s"]
+    n133["OM#19 2.574s"]
+    n146["RD#13 0.356s"]
+    n164["TR#12 9.372s"]
+    n169["TR#17 3.837s"]
+    n170["TR#18 2.005s"]
+    n172["QA#1 0.004s"]
+    n173["QA#2 0.000s"]
+    n174["QA#3 0.000s"]
+    n175["QA#4 0.000s"]
+    n176["QA#5 0.000s"]
+    n177["QA#6 0.000s"]
+    n178["QA#7 0.000s"]
+    n179["QA#8 0.000s"]
+    n180["QA#9 0.000s"]
+    n181["QA#10 0.000s"]
+    n182["QA#11 0.000s"]
+    n183["QA#12 0.000s"]
+    n184["QA#13 0.000s"]
+    n185["QA#14 0.000s"]
+    n186["QA#15 0.000s"]
+    n187["QA#16 0.000s"]
+    n188["QA#17 0.000s"]
+    n189["QA#18 0.000s"]
+    n207["OB#10 2.193s"]
+    n209["RV#2 0.100s"]
+    n226["OB#19 1.436s"]
+    n235["RV#18 0.095s"]
   end
   subgraph W2["Worker 2"]
-    w2n1["PrisonHeroPlacer#1 0.000s"]
-    w2n2["WaterAdopter#17 0.247s"]
-    w2n3["MinePlacer#18 0.014s"]
-    w2n4["ObjectPlacer#18 0.000s"]
-    w2n5["ObjectManager#16 1.716s"]
-    w2n6["RoadPlacer#7 0.248s"]
-    w2n7["TreasurePlacer#2 0.345s"]
-    w2n8["ObstaclePlacer#5 0.615s"]
-    w2n9["RiverPlacer#7 0.220s"]
-    w2n10["ObstaclePlacer#13 0.577s"]
-    w2n1 --> w2n2
-    w2n2 --> w2n3
-    w2n3 --> w2n4
-    w2n4 --> w2n5
-    w2n5 --> w2n6
-    w2n6 --> w2n7
-    w2n7 --> w2n8
-    w2n8 --> w2n9
-    w2n9 --> w2n10
+    n2["PH#1 0.000s"]
+    n18["WA#17 0.247s"]
+    n112["MI#18 0.014s"]
+    n113["OP#18 0.000s"]
+    n130["OM#16 1.716s"]
+    n140["RD#7 0.248s"]
+    n154["TR#2 0.345s"]
+    n202["OB#5 0.615s"]
+    n214["RV#7 0.220s"]
+    n220["OB#13 0.577s"]
   end
   subgraph W3["Worker 3"]
-    w3n1["WaterAdopter#2 0.000s"]
-    w3n2["WaterAdopter#13 0.201s"]
-    w3n3["MinePlacer#6 0.001s"]
-    w3n4["ObjectPlacer#5 0.000s"]
-    w3n5["ObjectManager#15 1.681s"]
-    w3n6["RoadPlacer#10 0.259s"]
-    w3n7["RockPlacer#1 0.003s"]
-    w3n8["RockPlacer#8 0.020s"]
-    w3n9["RiverPlacer#4 0.185s"]
-    w3n10["ObstaclePlacer#14 0.607s"]
-    w3n11["RiverPlacer#12 0.045s"]
-    w3n1 --> w3n2
-    w3n2 --> w3n3
-    w3n3 --> w3n4
-    w3n4 --> w3n5
-    w3n5 --> w3n6
-    w3n6 --> w3n7
-    w3n7 --> w3n8
-    w3n8 --> w3n9
-    w3n9 --> w3n10
-    w3n10 --> w3n11
+    n3["WA#2 0.000s"]
+    n14["WA#13 0.201s"]
+    n86["MI#6 0.001s"]
+    n89["OP#5 0.000s"]
+    n129["OM#15 1.681s"]
+    n143["RD#10 0.259s"]
+    n190["RP#1 0.003s"]
+    n197["RP#8 0.020s"]
+    n211["RV#4 0.185s"]
+    n221["OB#14 0.607s"]
+    n229["RV#12 0.045s"]
   end
   subgraph W4["Worker 4"]
-    w4n1["WaterAdopter#3 0.000s"]
-    w4n2["WaterAdopter#4 0.000s"]
-    w4n3["WaterAdopter#5 0.000s"]
-    w4n4["WaterAdopter#6 0.000s"]
-    w4n5["WaterAdopter#7 0.000s"]
-    w4n6["MinePlacer#5 0.000s"]
-    w4n7["ObjectPlacer#11 0.000s"]
-    w4n8["ObjectManager#9 1.355s"]
-    w4n9["RoadPlacer#1 0.024s"]
-    w4n10["RoadPlacer#18 0.447s"]
-    w4n11["TreasurePlacer#1 1.315s"]
-    w4n12["ObstaclePlacer#1 0.105s"]
-    w4n13["TreasurePlacer#11 7.789s"]
-    w4n14["TreasurePlacer#16 3.674s"]
-    w4n15["TreasurePlacer#19 4.092s"]
-    w4n16["ObstaclePlacer#2 0.498s"]
-    w4n1 --> w4n2
-    w4n2 --> w4n3
-    w4n3 --> w4n4
-    w4n4 --> w4n5
-    w4n5 --> w4n6
-    w4n6 --> w4n7
-    w4n7 --> w4n8
-    w4n8 --> w4n9
-    w4n9 --> w4n10
-    w4n10 --> w4n11
-    w4n11 --> w4n12
-    w4n12 --> w4n13
-    w4n13 --> w4n14
-    w4n14 --> w4n15
-    w4n15 --> w4n16
+    n4["WA#3 0.000s"]
+    n5["WA#4 0.000s"]
+    n6["WA#5 0.000s"]
+    n7["WA#6 0.000s"]
+    n8["WA#7 0.000s"]
+    n85["MI#5 0.000s"]
+    n102["OP#11 0.000s"]
+    n123["OM#9 1.355s"]
+    n134["RD#1 0.024s"]
+    n151["RD#18 0.447s"]
+    n152["TR#1 1.315s"]
+    n153["OB#1 0.105s"]
+    n163["TR#11 7.789s"]
+    n168["TR#16 3.674s"]
+    n171["TR#19 4.092s"]
+    n199["OB#2 0.498s"]
   end
   subgraph W5["Worker 5"]
-    w5n1["WaterAdopter#8 0.000s"]
-    w5n2["MinePlacer#9 0.000s"]
-    w5n3["ObjectPlacer#6 0.000s"]
-    w5n4["ObjectManager#10 1.395s"]
-    w5n5["RoadPlacer#6 0.149s"]
-    w5n6["ObstaclePlacer#9 1.593s"]
-    w5n7["RiverPlacer#6 0.194s"]
-    w5n1 --> w5n2
-    w5n2 --> w5n3
-    w5n3 --> w5n4
-    w5n4 --> w5n5
-    w5n5 --> w5n6
-    w5n6 --> w5n7
+    n9["WA#8 0.000s"]
+    n91["MI#9 0.000s"]
+    n92["OP#6 0.000s"]
+    n124["OM#10 1.395s"]
+    n139["RD#6 0.149s"]
+    n206["OB#9 1.593s"]
+    n213["RV#6 0.194s"]
   end
   subgraph W6["Worker 6"]
-    w6n1["WaterAdopter#9 0.000s"]
-    w6n2["MinePlacer#3 0.000s"]
-    w6n3["ObjectPlacer#7 0.000s"]
-    w6n4["ObjectManager#2 0.191s"]
-    w6n5["ObjectManager#18 1.755s"]
-    w6n6["RoadPlacer#15 0.436s"]
-    w6n7["TreasurePlacer#3 0.989s"]
-    w6n8["RockPlacer#2 0.004s"]
-    w6n9["RockPlacer#9 0.059s"]
-    w6n10["RockFiller#1 0.878s"]
-    w6n11["ObstaclePlacer#17 1.180s"]
-    w6n12["RiverPlacer#11 0.014s"]
-    w6n1 --> w6n2
-    w6n2 --> w6n3
-    w6n3 --> w6n4
-    w6n4 --> w6n5
-    w6n5 --> w6n6
-    w6n6 --> w6n7
-    w6n7 --> w6n8
-    w6n8 --> w6n9
-    w6n9 --> w6n10
-    w6n10 --> w6n11
-    w6n11 --> w6n12
+    n10["WA#9 0.000s"]
+    n81["MI#3 0.000s"]
+    n93["OP#7 0.000s"]
+    n116["OM#2 0.191s"]
+    n132["OM#18 1.755s"]
+    n148["RD#15 0.436s"]
+    n155["TR#3 0.989s"]
+    n191["RP#2 0.004s"]
+    n198["RP#9 0.059s"]
+    n217["RF#1 0.878s"]
+    n224["OB#17 1.180s"]
+    n228["RV#11 0.014s"]
   end
   subgraph W7["Worker 7"]
-    w7n1["WaterAdopter#10 0.000s"]
-    w7n2["MinePlacer#2 0.000s"]
-    w7n3["ObjectPlacer#1 0.000s"]
-    w7n4["MinePlacer#4 0.000s"]
-    w7n5["ObjectPlacer#3 0.000s"]
-    w7n6["MinePlacer#15 0.000s"]
-    w7n7["ObjectPlacer#15 0.000s"]
-    w7n8["ObjectManager#8 1.306s"]
-    w7n9["RoadPlacer#5 0.146s"]
-    w7n10["TreasurePlacer#7 2.672s"]
-    w7n11["RockPlacer#5 0.010s"]
-    w7n1 --> w7n2
-    w7n2 --> w7n3
-    w7n3 --> w7n4
-    w7n4 --> w7n5
-    w7n5 --> w7n6
-    w7n6 --> w7n7
-    w7n7 --> w7n8
-    w7n8 --> w7n9
-    w7n9 --> w7n10
-    w7n10 --> w7n11
+    n11["WA#10 0.000s"]
+    n79["MI#2 0.000s"]
+    n80["OP#1 0.000s"]
+    n82["MI#4 0.000s"]
+    n84["OP#3 0.000s"]
+    n106["MI#15 0.000s"]
+    n107["OP#15 0.000s"]
+    n122["OM#8 1.306s"]
+    n138["RD#5 0.146s"]
+    n159["TR#7 2.672s"]
+    n194["RP#5 0.010s"]
   end
   subgraph W8["Worker 8"]
-    w8n1["WaterAdopter#11 0.067s"]
-    w8n2["MinePlacer#8 0.001s"]
-    w8n3["ObjectPlacer#13 0.000s"]
-    w8n4["ObjectManager#3 0.382s"]
-    w8n5["ObjectManager#14 1.237s"]
-    w8n6["RoadPlacer#2 0.027s"]
-    w8n7["RoadPlacer#14 0.371s"]
-    w8n8["RockPlacer#6 0.013s"]
-    w8n9["RiverPlacer#14 0.074s"]
-    w8n1 --> w8n2
-    w8n2 --> w8n3
-    w8n3 --> w8n4
-    w8n4 --> w8n5
-    w8n5 --> w8n6
-    w8n6 --> w8n7
-    w8n7 --> w8n8
-    w8n8 --> w8n9
+    n12["WA#11 0.067s"]
+    n90["MI#8 0.001s"]
+    n104["OP#13 0.000s"]
+    n117["OM#3 0.382s"]
+    n128["OM#14 1.237s"]
+    n135["RD#2 0.027s"]
+    n147["RD#14 0.371s"]
+    n195["RP#6 0.013s"]
+    n231["RV#14 0.074s"]
   end
   subgraph W9["Worker 9"]
-    w9n1["WaterAdopter#12 0.202s"]
-    w9n2["MinePlacer#14 0.004s"]
-    w9n3["ObjectPlacer#12 0.000s"]
-    w9n4["ObjectManager#4 0.828s"]
-    w9n5["RoadPlacer#17 0.464s"]
-    w9n6["TreasurePlacer#4 1.964s"]
-    w9n7["ObstaclePlacer#6 0.798s"]
-    w9n8["RiverPlacer#8 0.223s"]
-    w9n9["ObstaclePlacer#15 0.615s"]
-    w9n10["RiverPlacer#16 0.081s"]
-    w9n1 --> w9n2
-    w9n2 --> w9n3
-    w9n3 --> w9n4
-    w9n4 --> w9n5
-    w9n5 --> w9n6
-    w9n6 --> w9n7
-    w9n7 --> w9n8
-    w9n8 --> w9n9
-    w9n9 --> w9n10
+    n13["WA#12 0.202s"]
+    n100["MI#14 0.004s"]
+    n103["OP#12 0.000s"]
+    n118["OM#4 0.828s"]
+    n150["RD#17 0.464s"]
+    n156["TR#4 1.964s"]
+    n203["OB#6 0.798s"]
+    n215["RV#8 0.223s"]
+    n222["OB#15 0.615s"]
+    n233["RV#16 0.081s"]
   end
   subgraph W10["Worker 10"]
-    w10n1["WaterAdopter#14 0.205s"]
-    w10n2["MinePlacer#12 0.004s"]
-    w10n3["ObjectPlacer#14 0.000s"]
-    w10n4["ObjectManager#6 0.946s"]
-    w10n5["RoadPlacer#12 0.350s"]
-    w10n6["TreasurePlacer#9 7.068s"]
-    w10n7["TreasurePlacer#14 0.281s"]
-    w10n8["ObstaclePlacer#7 1.137s"]
-    w10n9["RiverPlacer#5 0.190s"]
-    w10n10["ObstaclePlacer#12 0.479s"]
-    w10n11["RiverPlacer#17 0.092s"]
-    w10n1 --> w10n2
-    w10n2 --> w10n3
-    w10n3 --> w10n4
-    w10n4 --> w10n5
-    w10n5 --> w10n6
-    w10n6 --> w10n7
-    w10n7 --> w10n8
-    w10n8 --> w10n9
-    w10n9 --> w10n10
-    w10n10 --> w10n11
+    n15["WA#14 0.205s"]
+    n98["MI#12 0.004s"]
+    n105["OP#14 0.000s"]
+    n120["OM#6 0.946s"]
+    n145["RD#12 0.350s"]
+    n161["TR#9 7.068s"]
+    n166["TR#14 0.281s"]
+    n204["OB#7 1.137s"]
+    n212["RV#5 0.190s"]
+    n219["OB#12 0.479s"]
+    n234["RV#17 0.092s"]
   end
   subgraph W11["Worker 11"]
-    w11n1["WaterAdopter#16 0.241s"]
-    w11n2["MinePlacer#11 0.002s"]
-    w11n3["ObjectPlacer#9 0.000s"]
-    w11n4["ObjectManager#1 0.189s"]
-    w11n5["ObjectManager#17 1.721s"]
-    w11n6["RoadPlacer#8 0.251s"]
-    w11n7["ObstaclePlacer#3 0.559s"]
-    w11n8["RiverPlacer#1 0.016s"]
-    w11n9["ObstaclePlacer#16 0.659s"]
-    w11n10["RiverPlacer#13 0.050s"]
-    w11n1 --> w11n2
-    w11n2 --> w11n3
-    w11n3 --> w11n4
-    w11n4 --> w11n5
-    w11n5 --> w11n6
-    w11n6 --> w11n7
-    w11n7 --> w11n8
-    w11n8 --> w11n9
-    w11n9 --> w11n10
+    n17["WA#16 0.241s"]
+    n96["MI#11 0.002s"]
+    n97["OP#9 0.000s"]
+    n115["OM#1 0.189s"]
+    n131["OM#17 1.721s"]
+    n141["RD#8 0.251s"]
+    n200["OB#3 0.559s"]
+    n208["RV#1 0.016s"]
+    n223["OB#16 0.659s"]
+    n230["RV#13 0.050s"]
   end
   subgraph W12["Worker 12"]
-    w12n1["WaterAdopter#18 0.265s"]
-    w12n2["MinePlacer#16 0.007s"]
-    w12n3["ObjectPlacer#16 0.000s"]
-    w12n4["ObjectManager#12 1.541s"]
-    w12n5["RoadPlacer#4 0.089s"]
-    w12n6["TreasurePlacer#6 2.430s"]
-    w12n7["TreasurePlacer#13 0.166s"]
-    w12n8["ObstaclePlacer#8 1.416s"]
-    w12n9["RiverPlacer#9 0.225s"]
-    w12n10["ObstaclePlacer#11 0.146s"]
-    w12n1 --> w12n2
-    w12n2 --> w12n3
-    w12n3 --> w12n4
-    w12n4 --> w12n5
-    w12n5 --> w12n6
-    w12n6 --> w12n7
-    w12n7 --> w12n8
-    w12n8 --> w12n9
-    w12n9 --> w12n10
+    n19["WA#18 0.265s"]
+    n108["MI#16 0.007s"]
+    n109["OP#16 0.000s"]
+    n126["OM#12 1.541s"]
+    n137["RD#4 0.089s"]
+    n158["TR#6 2.430s"]
+    n165["TR#13 0.166s"]
+    n205["OB#8 1.416s"]
+    n216["RV#9 0.225s"]
+    n218["OB#11 0.146s"]
   end
   subgraph W13["Worker 13"]
-    w13n1["WaterAdopter#19 0.275s"]
-    w13n2["ObjectDistributor#1 0.005s"]
-    w13n3["MinePlacer#17 0.010s"]
-    w13n4["ObjectPlacer#17 0.000s"]
-    w13n5["ObjectManager#11 1.507s"]
-    w13n6["RoadPlacer#3 0.030s"]
-    w13n7["TreasurePlacer#10 7.168s"]
-    w13n8["TreasurePlacer#15 2.096s"]
-    w13n9["RockPlacer#7 0.019s"]
-    w13n10["ObstaclePlacer#18 1.399s"]
-    w13n11["RiverPlacer#10 0.011s"]
-    w13n1 --> w13n2
-    w13n2 --> w13n3
-    w13n3 --> w13n4
-    w13n4 --> w13n5
-    w13n5 --> w13n6
-    w13n6 --> w13n7
-    w13n7 --> w13n8
-    w13n8 --> w13n9
-    w13n9 --> w13n10
-    w13n10 --> w13n11
+    n20["WA#19 0.275s"]
+    n58["OD#1 0.005s"]
+    n110["MI#17 0.010s"]
+    n111["OP#17 0.000s"]
+    n125["OM#11 1.507s"]
+    n136["RD#3 0.030s"]
+    n162["TR#10 7.168s"]
+    n167["TR#15 2.096s"]
+    n196["RP#7 0.019s"]
+    n225["OB#18 1.399s"]
+    n227["RV#10 0.011s"]
   end
   subgraph W14["Worker 14"]
-    w14n1["MinePlacer#1 0.000s"]
-    w14n2["ObjectPlacer#2 0.000s"]
-    w14n3["MinePlacer#10 0.000s"]
-    w14n4["ObjectPlacer#8 0.000s"]
-    w14n5["ObjectManager#7 1.208s"]
-    w14n6["RoadPlacer#11 0.293s"]
-    w14n7["TreasurePlacer#5 2.063s"]
-    w14n8["ObstaclePlacer#4 0.565s"]
-    w14n9["RiverPlacer#3 0.183s"]
-    w14n1 --> w14n2
-    w14n2 --> w14n3
-    w14n3 --> w14n4
-    w14n4 --> w14n5
-    w14n5 --> w14n6
-    w14n6 --> w14n7
-    w14n7 --> w14n8
-    w14n8 --> w14n9
+    n78["MI#1 0.000s"]
+    n83["OP#2 0.000s"]
+    n94["MI#10 0.000s"]
+    n95["OP#8 0.000s"]
+    n121["OM#7 1.208s"]
+    n144["RD#11 0.293s"]
+    n157["TR#5 2.063s"]
+    n201["OB#4 0.565s"]
+    n210["RV#3 0.183s"]
   end
   subgraph W15["Worker 15"]
-    w15n1["MinePlacer#7 0.000s"]
-    w15n2["ObjectPlacer#4 0.000s"]
-    w15n3["ObjectManager#13 1.543s"]
-    w15n4["RoadPlacer#9 0.254s"]
-    w15n5["RockPlacer#3 0.006s"]
-    w15n6["RiverPlacer#15 0.077s"]
-    w15n1 --> w15n2
-    w15n2 --> w15n3
-    w15n3 --> w15n4
-    w15n4 --> w15n5
-    w15n5 --> w15n6
+    n87["MI#7 0.000s"]
+    n88["OP#4 0.000s"]
+    n127["OM#13 1.543s"]
+    n142["RD#9 0.254s"]
+    n192["RP#3 0.006s"]
+    n232["RV#15 0.077s"]
   end
   subgraph W16["Worker 16"]
-    w16n1["MinePlacer#13 0.000s"]
-    w16n2["ObjectPlacer#10 0.000s"]
-    w16n3["ObjectManager#5 0.830s"]
-    w16n4["RoadPlacer#16 0.461s"]
-    w16n5["TreasurePlacer#8 4.652s"]
-    w16n6["RockPlacer#4 0.008s"]
-    w16n1 --> w16n2
-    w16n2 --> w16n3
-    w16n3 --> w16n4
-    w16n4 --> w16n5
-    w16n5 --> w16n6
+    n99["MI#13 0.000s"]
+    n101["OP#10 0.000s"]
+    n119["OM#5 0.830s"]
+    n149["RD#16 0.461s"]
+    n160["TR#8 4.652s"]
+    n193["RP#4 0.008s"]
   end
+  n1 --> n16
+  n16 --> n21
+  n21 --> n22
+  n22 --> n23
+  n23 --> n24
+  n24 --> n25
+  n25 --> n26
+  n26 --> n27
+  n27 --> n28
+  n28 --> n29
+  n29 --> n30
+  n30 --> n31
+  n31 --> n32
+  n32 --> n33
+  n33 --> n34
+  n34 --> n35
+  n35 --> n36
+  n36 --> n37
+  n37 --> n38
+  n38 --> n39
+  n39 --> n40
+  n40 --> n41
+  n41 --> n42
+  n42 --> n43
+  n43 --> n44
+  n44 --> n45
+  n45 --> n46
+  n46 --> n47
+  n47 --> n48
+  n48 --> n49
+  n49 --> n50
+  n50 --> n51
+  n51 --> n52
+  n52 --> n53
+  n53 --> n54
+  n54 --> n55
+  n55 --> n56
+  n56 --> n57
+  n57 --> n59
+  n59 --> n60
+  n60 --> n61
+  n61 --> n62
+  n62 --> n63
+  n63 --> n64
+  n64 --> n65
+  n65 --> n66
+  n66 --> n67
+  n67 --> n68
+  n68 --> n69
+  n69 --> n70
+  n70 --> n71
+  n71 --> n72
+  n72 --> n73
+  n73 --> n74
+  n74 --> n75
+  n75 --> n76
+  n76 --> n77
+  n77 --> n114
+  n114 --> n133
+  n133 --> n146
+  n146 --> n164
+  n164 --> n169
+  n169 --> n170
+  n170 --> n172
+  n172 --> n173
+  n173 --> n174
+  n174 --> n175
+  n175 --> n176
+  n176 --> n177
+  n177 --> n178
+  n178 --> n179
+  n179 --> n180
+  n180 --> n181
+  n181 --> n182
+  n182 --> n183
+  n183 --> n184
+  n184 --> n185
+  n185 --> n186
+  n186 --> n187
+  n187 --> n188
+  n188 --> n189
+  n189 --> n207
+  n207 --> n209
+  n209 --> n226
+  n226 --> n235
+  n2 --> n18
+  n18 --> n112
+  n112 --> n113
+  n113 --> n130
+  n130 --> n140
+  n140 --> n154
+  n154 --> n202
+  n202 --> n214
+  n214 --> n220
+  n3 --> n14
+  n14 --> n86
+  n86 --> n89
+  n89 --> n129
+  n129 --> n143
+  n143 --> n190
+  n190 --> n197
+  n197 --> n211
+  n211 --> n221
+  n221 --> n229
+  n4 --> n5
+  n5 --> n6
+  n6 --> n7
+  n7 --> n8
+  n8 --> n85
+  n85 --> n102
+  n102 --> n123
+  n123 --> n134
+  n134 --> n151
+  n151 --> n152
+  n152 --> n153
+  n153 --> n163
+  n163 --> n168
+  n168 --> n171
+  n171 --> n199
+  n9 --> n91
+  n91 --> n92
+  n92 --> n124
+  n124 --> n139
+  n139 --> n206
+  n206 --> n213
+  n10 --> n81
+  n81 --> n93
+  n93 --> n116
+  n116 --> n132
+  n132 --> n148
+  n148 --> n155
+  n155 --> n191
+  n191 --> n198
+  n198 --> n217
+  n217 --> n224
+  n224 --> n228
+  n11 --> n79
+  n79 --> n80
+  n80 --> n82
+  n82 --> n84
+  n84 --> n106
+  n106 --> n107
+  n107 --> n122
+  n122 --> n138
+  n138 --> n159
+  n159 --> n194
+  n12 --> n90
+  n90 --> n104
+  n104 --> n117
+  n117 --> n128
+  n128 --> n135
+  n135 --> n147
+  n147 --> n195
+  n195 --> n231
+  n13 --> n100
+  n100 --> n103
+  n103 --> n118
+  n118 --> n150
+  n150 --> n156
+  n156 --> n203
+  n203 --> n215
+  n215 --> n222
+  n222 --> n233
+  n15 --> n98
+  n98 --> n105
+  n105 --> n120
+  n120 --> n145
+  n145 --> n161
+  n161 --> n166
+  n166 --> n204
+  n204 --> n212
+  n212 --> n219
+  n219 --> n234
+  n17 --> n96
+  n96 --> n97
+  n97 --> n115
+  n115 --> n131
+  n131 --> n141
+  n141 --> n200
+  n200 --> n208
+  n208 --> n223
+  n223 --> n230
+  n19 --> n108
+  n108 --> n109
+  n109 --> n126
+  n126 --> n137
+  n137 --> n158
+  n158 --> n165
+  n165 --> n205
+  n205 --> n216
+  n216 --> n218
+  n20 --> n58
+  n58 --> n110
+  n110 --> n111
+  n111 --> n125
+  n125 --> n136
+  n136 --> n162
+  n162 --> n167
+  n167 --> n196
+  n196 --> n225
+  n225 --> n227
+  n78 --> n83
+  n83 --> n94
+  n94 --> n95
+  n95 --> n121
+  n121 --> n144
+  n144 --> n157
+  n157 --> n201
+  n201 --> n210
+  n87 --> n88
+  n88 --> n127
+  n127 --> n142
+  n142 --> n192
+  n192 --> n232
+  n99 --> n101
+  n101 --> n119
+  n119 --> n149
+  n149 --> n160
+  n160 --> n193
+  n20 -.-> n21
+  n20 -.-> n22
+  n20 -.-> n23
+  n20 -.-> n24
+  n20 -.-> n25
+  n20 -.-> n26
+  n20 -.-> n27
+  n20 -.-> n28
+  n20 -.-> n29
+  n20 -.-> n30
+  n20 -.-> n31
+  n20 -.-> n32
+  n20 -.-> n33
+  n20 -.-> n34
+  n20 -.-> n35
+  n20 -.-> n36
+  n20 -.-> n37
+  n20 -.-> n38
+  n20 -.-> n39
+  n20 -.-> n40
+  n20 -.-> n41
+  n20 -.-> n42
+  n20 -.-> n43
+  n20 -.-> n44
+  n20 -.-> n45
+  n20 -.-> n46
+  n20 -.-> n47
+  n20 -.-> n48
+  n20 -.-> n49
+  n20 -.-> n50
+  n20 -.-> n51
+  n20 -.-> n52
+  n20 -.-> n53
+  n20 -.-> n54
+  n20 -.-> n55
+  n20 -.-> n56
+  n20 -.-> n57
+  n57 -.-> n58
+  n20 -.-> n59
+  n20 -.-> n60
+  n20 -.-> n61
+  n20 -.-> n62
+  n20 -.-> n63
+  n20 -.-> n64
+  n20 -.-> n65
+  n20 -.-> n66
+  n20 -.-> n67
+  n20 -.-> n68
+  n20 -.-> n69
+  n20 -.-> n70
+  n20 -.-> n71
+  n20 -.-> n72
+  n20 -.-> n73
+  n20 -.-> n74
+  n20 -.-> n75
+  n20 -.-> n76
+  n20 -.-> n77
+  n77 -.-> n78
+  n77 -.-> n79
+  n77 -.-> n80
+  n77 -.-> n81
+  n77 -.-> n82
+  n77 -.-> n83
+  n77 -.-> n84
+  n77 -.-> n85
+  n77 -.-> n86
+  n77 -.-> n87
+  n77 -.-> n88
+  n77 -.-> n89
+  n77 -.-> n90
+  n77 -.-> n91
+  n77 -.-> n92
+  n77 -.-> n93
+  n77 -.-> n94
+  n77 -.-> n95
+  n77 -.-> n96
+  n77 -.-> n97
+  n77 -.-> n98
+  n77 -.-> n99
+  n77 -.-> n100
+  n77 -.-> n101
+  n77 -.-> n102
+  n77 -.-> n103
+  n77 -.-> n104
+  n77 -.-> n105
+  n77 -.-> n106
+  n77 -.-> n107
+  n77 -.-> n108
+  n77 -.-> n109
+  n77 -.-> n110
+  n77 -.-> n111
+  n77 -.-> n112
+  n77 -.-> n113
+  n113 -.-> n115
+  n113 -.-> n116
+  n113 -.-> n117
+  n113 -.-> n118
+  n113 -.-> n119
+  n113 -.-> n120
+  n113 -.-> n121
+  n113 -.-> n122
+  n113 -.-> n123
+  n113 -.-> n124
+  n113 -.-> n125
+  n113 -.-> n126
+  n113 -.-> n127
+  n113 -.-> n128
+  n113 -.-> n129
+  n77 -.-> n130
+  n113 -.-> n131
+  n113 -.-> n132
+  n113 -.-> n133
+  n133 -.-> n134
+  n133 -.-> n135
+  n133 -.-> n136
+  n133 -.-> n137
+  n133 -.-> n138
+  n133 -.-> n139
+  n133 -.-> n140
+  n133 -.-> n141
+  n133 -.-> n142
+  n133 -.-> n143
+  n133 -.-> n144
+  n133 -.-> n145
+  n113 -.-> n146
+  n133 -.-> n147
+  n133 -.-> n148
+  n133 -.-> n149
+  n133 -.-> n150
+  n133 -.-> n151
+  n133 -.-> n152
+  n133 -.-> n153
+  n151 -.-> n154
+  n151 -.-> n155
+  n151 -.-> n156
+  n151 -.-> n157
+  n151 -.-> n158
+  n151 -.-> n159
+  n151 -.-> n160
+  n151 -.-> n161
+  n151 -.-> n162
+  n133 -.-> n163
+  n151 -.-> n164
+  n151 -.-> n165
+  n151 -.-> n166
+  n151 -.-> n167
+  n133 -.-> n168
+  n151 -.-> n169
+  n151 -.-> n170
+  n133 -.-> n171
+  n171 -.-> n172
+  n171 -.-> n173
+  n171 -.-> n174
+  n171 -.-> n175
+  n171 -.-> n176
+  n171 -.-> n177
+  n171 -.-> n178
+  n171 -.-> n179
+  n171 -.-> n180
+  n171 -.-> n181
+  n171 -.-> n182
+  n171 -.-> n183
+  n171 -.-> n184
+  n171 -.-> n185
+  n171 -.-> n186
+  n171 -.-> n187
+  n171 -.-> n188
+  n171 -.-> n189
+  n151 -.-> n190
+  n151 -.-> n191
+  n151 -.-> n192
+  n151 -.-> n193
+  n151 -.-> n194
+  n151 -.-> n195
+  n151 -.-> n196
+  n151 -.-> n197
+  n151 -.-> n198
+  n133 -.-> n199
+  n171 -.-> n200
+  n171 -.-> n201
+  n171 -.-> n202
+  n171 -.-> n203
+  n171 -.-> n204
+  n171 -.-> n205
+  n171 -.-> n206
+  n171 -.-> n207
+  n207 -.-> n208
+  n207 -.-> n210
+  n207 -.-> n211
+  n207 -.-> n212
+  n207 -.-> n213
+  n207 -.-> n214
+  n207 -.-> n215
+  n207 -.-> n216
+  n217 -.-> n218
+  n217 -.-> n219
+  n217 -.-> n220
+  n217 -.-> n221
+  n217 -.-> n222
+  n217 -.-> n223
+  n171 -.-> n224
+  n217 -.-> n225
+  n217 -.-> n226
+  n226 -.-> n227
+  n226 -.-> n228
+  n226 -.-> n229
+  n226 -.-> n230
+  n226 -.-> n231
+  n226 -.-> n232
+  n226 -.-> n233
+  n226 -.-> n234
 ```
