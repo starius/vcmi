@@ -128,3 +128,24 @@ because each generation is currently very slow on this host:
 
 This confirms performance is still outside the target budget and needs a
 separate optimization pass before final merge.
+
+19. I profiled the ARM slowdown and found the extreme outlier (`~163s`) was
+not from generation logic. The `linux-gcc-bench` build cache on that host had
+`CMAKE_CXX_FLAGS_RELWITHDEBINFO` and `CMAKE_C_FLAGS_RELWITHDEBINFO` set to
+empty, so benchmark binaries were effectively built without optimization.
+This also explained the very low effective CPU usage in perf stats despite
+parallel mode. I added a fixup to commit "perf: add headless RMG benchmark
+CLI" so the bench preset now sets explicit RelWithDebInfo flags
+(`-O2 -g -DNDEBUG`) and reconfigure repairs poisoned cache values. I also
+added a runtime warning in `vcmi-rmg-bench` for unoptimized builds.
+
+20. After this fix, ARM benchmark runs no longer show the broken outlier.
+With `vcmi:Clash of Dragons`, `252x252x2`, `threads=8`, `warmup=1`, `runs=2`,
+timestamp `1742174175`:
+- old mean: `14527.58 ms`
+- new mean: `25812.20 ms`
+- delta: `+77.67%`
+
+This does not solve the remaining algorithmic slowdown, but it removes the
+benchmark-environment artifact that made ARM results look an order of
+magnitude worse than reality.
