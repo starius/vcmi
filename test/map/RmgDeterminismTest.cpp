@@ -295,3 +295,13 @@ TEST(RmgDeterminism, ReproSeedParallelReplaySecondCase)
 	const auto second = serializeMap(generateMap(reproSeed, reproCreationTime, false, reproParallelism));
 	EXPECT_TRUE(archivePayloadEquals(first, second, "repro parallel replay second case"));
 }
+
+TEST(RmgDeterminism, ReproSeedWorkerCountInvariantThirdCase)
+{
+	constexpr int reproSeed = 20;
+	constexpr std::time_t reproCreationTime = 1'742'174'175;
+
+	const auto onEightWorkers = serializeMap(generateMap(reproSeed, reproCreationTime, false, 8));
+	const auto onSixteenWorkers = serializeMap(generateMap(reproSeed, reproCreationTime, false, 16));
+	EXPECT_TRUE(archivePayloadEquals(onEightWorkers, onSixteenWorkers, "repro worker-count invariance third case"));
+}
