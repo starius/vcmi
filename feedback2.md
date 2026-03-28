@@ -109,3 +109,22 @@ cross-architecture drift early.
 - x86_64 (`vcmi-bench`): `RmgDeterminism` test suite passes.
 - aarch64 (`vcmi-arm64`): `RmgDeterminism` test suite passes with the same
   frozen hashes.
+
+18. I re-benchmarked baseline `f88934907797d3b84421efca11f8c79021ccf8d8`
+against current `HEAD` on both hosts after the latest cross-arch fixes.
+Scenario: `vcmi:Clash of Dragons`, `252x252x2`, parallel scheduler,
+timestamp `1742174175`.
+
+On `vcmi-bench` (x86_64, 16 workers), both runs used `warmup=1`, `runs=10`:
+- old mean: `9053.29 ms`
+- new mean: `15106.73 ms`
+- delta: `+66.86%`
+
+On `vcmi-arm64` (aarch64, 8 workers), both runs used `warmup=1`, `runs=2`
+because each generation is currently very slow on this host:
+- old mean: `14826.10 ms`
+- new mean: `162969.64 ms`
+- delta: `+999.21%`
+
+This confirms performance is still outside the target budget and needs a
+separate optimization pass before final merge.
