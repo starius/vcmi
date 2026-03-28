@@ -23,7 +23,9 @@
 #include "../mock/mock_IGameInfoCallback.h"
 
 #include <algorithm>
+#include <array>
 #include <fstream>
+#include <iomanip>
 #include <map>
 #include <sstream>
 #include <tbb/global_control.h>
@@ -140,6 +142,30 @@ std::map<std::string, std::string> extractArchivePayload(const std::vector<ui8> 
 	}
 
 	return payloadByName;
+}
+
+uint64_t fnv1a64(const std::vector<ui8> & data)
+{
+	uint64_t hash = 14695981039346656037ULL;
+	for(ui8 byte : data)
+	{
+		hash ^= static_cast<uint64_t>(byte);
+		hash *= 1099511628211ULL;
+	}
+	return hash;
+}
+
+std::string toHex64(uint64_t value)
+{
+	std::ostringstream stream;
+	stream << std::hex << std::nouppercase << std::setw(16) << std::setfill('0') << value;
+	return stream.str();
+}
+
+std::string mapHashHex(int randomSeed, std::time_t creationDateTime, bool singleThread, int parallelism)
+{
+	const auto serialized = serializeMap(generateMap(randomSeed, creationDateTime, singleThread, parallelism));
+	return toHex64(fnv1a64(serialized));
 }
 
 ::testing::AssertionResult archivePayloadEquals(
@@ -304,4 +330,41 @@ TEST(RmgDeterminism, ReproSeedWorkerCountInvariantThirdCase)
 	const auto onEightWorkers = serializeMap(generateMap(reproSeed, reproCreationTime, false, 8));
 	const auto onSixteenWorkers = serializeMap(generateMap(reproSeed, reproCreationTime, false, 16));
 	EXPECT_TRUE(archivePayloadEquals(onEightWorkers, onSixteenWorkers, "repro worker-count invariance third case"));
+}
+
+TEST(RmgDeterminism, FrozenHashesSingleScheduler)
+{
+	constexpr std::time_t frozenTime = TEST_CREATION_TIME;
+	constexpr int frozenParallelism = TEST_SINGLE_THREAD_PARALLELISM;
+	const std::array<std::pair<int, const char *>, 4> frozenCases = {{
+		{1337, "d2988fa30b81056d"},
+		{1338, "19fb73fd0edab063"},
+		{1339, "7d8f8fde14db71f0"},
+		{1340, "5b0af5e6dc32184c"},
+	}};
+
+	for(const auto & [seed, expectedHash] : frozenCases)
+	{
+		const auto actualHash = mapHashHex(seed, frozenTime, true, frozenParallelism);
+		EXPECT_EQ(actualHash, expectedHash) << "single scheduler hash mismatch for seed " << seed;
+	}
+}
+
+TEST(RmgDeterminism, FrozenHashesParallelSchedulerWorkerInvariant)
+{
+	constexpr std::time_t frozenTime = TEST_CREATION_TIME;
+	const std::array<std::pair<int, const char *>, 4> frozenCases = {{
+		{1337, "79dc7a006d5e948b"},
+		{1338, "19fb73fd0edab063"},
+		{1339, "7d8f8fde14db71f0"},
+		{1340, "5b0af5e6dc32184c"},
+	}};
+
+	for(const auto & [seed, expectedHash] : frozenCases)
+	{
+		const auto hashOnOneWorker = mapHashHex(seed, frozenTime, false, 1);
+		const auto hashOnEightWorkers = mapHashHex(seed, frozenTime, false, TEST_PARALLEL_PARALLELISM);
+		EXPECT_EQ(hashOnOneWorker, expectedHash) << "parallel hash mismatch for seed " << seed;
+		EXPECT_EQ(hashOnEightWorkers, expectedHash) << "parallel hash mismatch on 8 workers for seed " << seed;
+	}
 }
