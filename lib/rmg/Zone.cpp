@@ -57,6 +57,12 @@ float3 Zone::getCenter() const
 
 void Zone::setCenter(const float3 &f)
 {
+	constexpr float CENTER_QUANT_SCALE = 10000000.0f;
+	auto quantizeCenter = [](float value) -> float
+	{
+		return std::round(value * CENTER_QUANT_SCALE) / CENTER_QUANT_SCALE;
+	};
+
 	//limit boundaries to (0,1) square
 	
 	//alternate solution - wrap zone around unitary square. If it doesn't fit on one side, will come out on the opposite side
@@ -69,6 +75,11 @@ void Zone::setCenter(const float3 &f)
 		center.x = 1 - std::abs(center.x);
 	if(center.y < 0)
 		center.y = 1 - std::abs(center.y);
+
+	// Keep iterative zone placement numerically stable across architectures.
+	center.x = quantizeCenter(center.x);
+	center.y = quantizeCenter(center.y);
+	center.z = quantizeCenter(center.z);
 }
 
 int3 Zone::getPos() const
