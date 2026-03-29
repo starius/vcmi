@@ -614,7 +614,16 @@ void CMapGenerator::fillZones()
 					}
 				};
 
-				runConflictedZoneBatches(zoneJobsWithoutSpecial);
+				auto runZoneJobsSequentially = [](const std::vector<std::pair<int, std::vector<TModificators::value_type>>> & jobsByZone)
+				{
+					for(const auto & zoneJobs : jobsByZone)
+						for(const auto & job : zoneJobs.second)
+							job->run();
+				};
+
+				// Some regular modificators share global map state outside neighbour
+				// relationships; keep this wave order deterministic and serial.
+				runZoneJobsSequentially(zoneJobsWithoutSpecial);
 				runConflictedZoneBatches(zoneJobsWithObjectManager);
 				runConflictedZoneBatches(zoneJobsWithTreasure);
 			}
