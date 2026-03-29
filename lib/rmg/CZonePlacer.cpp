@@ -28,6 +28,30 @@
 
 VCMI_LIB_NAMESPACE_BEGIN
 
+namespace
+{
+constexpr double ZONE_SCORE_QUANT = 1e-5;
+
+int64_t canonicalizeZoneScore(float value)
+{
+	if(std::isnan(value))
+		return std::numeric_limits<int64_t>::max();
+	if(std::isinf(value))
+		return value > 0 ? std::numeric_limits<int64_t>::max() : std::numeric_limits<int64_t>::min();
+	return std::llround(static_cast<double>(value) / ZONE_SCORE_QUANT);
+}
+
+uint64_t canonicalizeZoneFitness(double value)
+{
+	if(!std::isfinite(value) || value <= 0.0)
+		return 0;
+	const long double scaled = static_cast<long double>(value) * 1000000.0L;
+	if(scaled >= static_cast<long double>(std::numeric_limits<uint64_t>::max()))
+		return std::numeric_limits<uint64_t>::max();
+	return static_cast<uint64_t>(std::llround(scaled));
+}
+}
+
 //#define ZONE_PLACEMENT_LOG true
 
 CZonePlacer::CZonePlacer(RmgMap & map)
@@ -370,8 +394,13 @@ void CZonePlacer::placeZones(vstd::RNG * rand)
 			totalOverlap += overlap;
 		}
 
+		const double currentFitnessRaw = (totalDistance + 1.0) * (totalOverlap + 1.0);
+		const double bestFitnessRaw = (bestTotalDistance + 1.0) * (bestTotalOverlap + 1.0);
+		const uint64_t currentFitness = canonicalizeZoneFitness(currentFitnessRaw);
+		const uint64_t bestFitness = canonicalizeZoneFitness(bestFitnessRaw);
+
 		//check fitness function
-		if ((totalDistance + 1) * (totalOverlap + 1) < (bestTotalDistance + 1) * (bestTotalOverlap + 1))
+		if(currentFitness < bestFitness)
 		{
 			//multiplication is better for auto-scaling, but stops working if one factor is 0
 			improvement = true;
@@ -720,6 +749,7 @@ void CZonePlacer::moveOneZone(TZoneMap& zones, TForceVector& totalForces, TDista
 	//The more zones, the greater total distance expected
 	//Also, higher stiffness make expected movement lower
 	const int maxDistanceMovementRatio = zones.size() * zones.size() * (stiffnessConstant / stifness);
+	const int64_t maxDistanceMovementRatioKey = canonicalizeZoneScore(static_cast<float>(maxDistanceMovementRatio));
 
 	typedef std::pair<float, std::shared_ptr<Zone>> Misplacement;
 	std::vector<Misplacement> misplacedZones;
@@ -737,7 +767,9 @@ void CZonePlacer::moveOneZone(TZoneMap& zones, TForceVector& totalForces, TDista
 		totalOverlap += overlap;
 		//if distance to actual movement is long, the zone is misplaced
 		float ratio = (zone.second + overlap) / static_cast<float>(totalForces[zone.first].mag());
-		if (ratio > maxDistanceMovementRatio)
+		if(std::isnan(ratio))
+			continue;
+		if (canonicalizeZoneScore(ratio) > maxDistanceMovementRatioKey)
 		{
 			misplacedZones.emplace_back(std::make_pair(ratio, zones.at(zone.first)));
 		}
@@ -748,8 +780,10 @@ void CZonePlacer::moveOneZone(TZoneMap& zones, TForceVector& totalForces, TDista
 
 	boost::sort(misplacedZones, [](const Misplacement & lhs, const Misplacement & rhs)
 	{
-		if(!vstd::isAlmostEqual(lhs.first, rhs.first))
-			return lhs.first > rhs.first; //Largest displacement first
+		const int64_t lhsKey = canonicalizeZoneScore(lhs.first);
+		const int64_t rhsKey = canonicalizeZoneScore(rhs.first);
+		if(lhsKey != rhsKey)
+			return lhsKey > rhsKey; //Largest displacement first
 
 		return lhs.second->getId() < rhs.second->getId();
 	});
@@ -818,11 +852,13 @@ void CZonePlacer::moveOneZone(TZoneMap& zones, TForceVector& totalForces, TDista
 	auto misplacedZone = misplacedZones.front().second;
 	float3 ourCenter = misplacedZone->getCenter();
 		
-	if ((totalDistance / (bestTotalDistance + 1)) > (totalOverlap / (bestTotalOverlap + 1)))
+	const int64_t distancePressure = canonicalizeZoneScore(static_cast<float>(totalDistance / (bestTotalDistance + 1)));
+	const int64_t overlapPressure = canonicalizeZoneScore(static_cast<float>(totalOverlap / (bestTotalOverlap + 1)));
+	if (distancePressure > overlapPressure)
 	{
 		//Move one zone towards most distant zone to reduce distance
 
-		float maxDistance = 0;
+		int64_t maxDistanceKey = std::numeric_limits<int64_t>::min();
 		for (const auto & con : misplacedZone->getConnections())
 		{
 			if (con.getConnectionType() == rmg::EConnectionType::REPULSIVE)
@@ -831,10 +867,12 @@ void CZonePlacer::moveOneZone(TZoneMap& zones, TForceVector& totalForces, TDista
 			}
 
 			auto otherZone = zones[con.getOtherZoneId(misplacedZone->getId())];
-			float distance = static_cast<float>(otherZone->getCenter().dist2dSQ(ourCenter));
-			if (distance > maxDistance)
+			const float distance = static_cast<float>(otherZone->getCenter().dist2dSQ(ourCenter));
+			const int64_t distanceKey = canonicalizeZoneScore(distance);
+			if(distanceKey > maxDistanceKey
+				|| (distanceKey == maxDistanceKey && (!targetZone || otherZone->getId() < targetZone->getId())))
 			{
-				maxDistance = distance;
+				maxDistanceKey = distanceKey;
 				targetZone = otherZone;
 			}
 		}
@@ -853,7 +891,7 @@ void CZonePlacer::moveOneZone(TZoneMap& zones, TForceVector& totalForces, TDista
 	{
 		//Move misplaced zone away from overlapping zone
 
-		float maxOverlap = 0;
+		int64_t maxOverlapKey = std::numeric_limits<int64_t>::min();
 		for(const auto & otherZone : zones)
 		{
 			float3 otherZoneCenter = otherZone.second->getCenter();
@@ -861,10 +899,12 @@ void CZonePlacer::moveOneZone(TZoneMap& zones, TForceVector& totalForces, TDista
 			if (otherZone.second == misplacedZone || otherZoneCenter.z != ourCenter.z)
 				continue;
 
-			auto distance = static_cast<float>(otherZoneCenter.dist2dSQ(ourCenter));
-			if (distance > maxOverlap)
+			const float distance = static_cast<float>(otherZoneCenter.dist2dSQ(ourCenter));
+			const int64_t distanceKey = canonicalizeZoneScore(distance);
+			if(distanceKey > maxOverlapKey
+				|| (distanceKey == maxOverlapKey && (!targetZone || otherZone.second->getId() < targetZone->getId())))
 			{
-				maxOverlap = distance;
+				maxOverlapKey = distanceKey;
 				targetZone = otherZone.second;
 			}
 		}
@@ -937,17 +977,18 @@ void CZonePlacer::assignZones(vstd::RNG * rand)
 			for(pos.y = 0; pos.y < height; pos.y++)
 			{
 				Zone * closestZone = nullptr;
-				float closestScore = std::numeric_limits<float>::max();
+				int64_t closestScoreKey = std::numeric_limits<int64_t>::max();
 				for(const auto & zone : zonesOnLevel[pos.z])
 				{
 					const float distance = static_cast<float>(pos.dist2dSQ(zone.second->getPos()));
 					const float score = distance / zone.second->getSize();
+					const int64_t scoreKey = canonicalizeZoneScore(score);
 					if(!closestZone
-						|| score < closestScore
-						|| (vstd::isAlmostEqual(score, closestScore) && zone.second->getId() < closestZone->getId()))
+						|| scoreKey < closestScoreKey
+						|| (scoreKey == closestScoreKey && zone.second->getId() < closestZone->getId()))
 					{
 						closestZone = zone.second.get();
-						closestScore = score;
+						closestScoreKey = scoreKey;
 					}
 				}
 				closestZone->area()->add(pos); //closest tile belongs to zone
@@ -991,18 +1032,19 @@ void CZonePlacer::assignZones(vstd::RNG * rand)
 		{
 			size_t closestZoneIndex = 0;
 			bool hasClosestZone = false;
-			float closestScore = std::numeric_limits<float>::max();
+			int64_t closestScoreKey = std::numeric_limits<int64_t>::max();
 			for(size_t zoneIndex = 0; zoneIndex < levelZones.size(); zoneIndex++)
 			{
 				const auto & zone = levelZones[zoneIndex];
 				const float distance = zone->getCenter().dist2dSQ(float3(vertex.x(), vertex.y(), level));
 				const float score = distance / zone->getSize();
+				const int64_t scoreKey = canonicalizeZoneScore(score);
 				if(!hasClosestZone
-					|| score < closestScore
-					|| (vstd::isAlmostEqual(score, closestScore) && zone->getId() < levelZones[closestZoneIndex]->getId()))
+					|| scoreKey < closestScoreKey
+					|| (scoreKey == closestScoreKey && zone->getId() < levelZones[closestZoneIndex]->getId()))
 				{
 					closestZoneIndex = zoneIndex;
-					closestScore = score;
+					closestScoreKey = scoreKey;
 					hasClosestZone = true;
 				}
 			}
@@ -1016,19 +1058,20 @@ void CZonePlacer::assignZones(vstd::RNG * rand)
 			for (pos.y = 0; pos.y < height; pos.y++)
 			{
 				Zone * closestZone = nullptr;
-				float closestDistance = std::numeric_limits<float>::max();
+				int64_t closestDistanceKey = std::numeric_limits<int64_t>::max();
 				for(size_t zoneIndex = 0; zoneIndex < levelZones.size(); zoneIndex++)
 				{
 					const auto & zone = levelZones[zoneIndex];
 					for (const auto & vertex : zoneVertices[zoneIndex])
 					{
 						const float distance = metric(pos, vertex);
+						const int64_t distanceKey = canonicalizeZoneScore(distance);
 						if(!closestZone
-							|| distance < closestDistance
-							|| (vstd::isAlmostEqual(distance, closestDistance) && zone->getId() < closestZone->getId()))
+							|| distanceKey < closestDistanceKey
+							|| (distanceKey == closestDistanceKey && zone->getId() < closestZone->getId()))
 						{
 							closestZone = zone.get();
-							closestDistance = distance;
+							closestDistanceKey = distanceKey;
 						}
 					}
 				}
@@ -1036,6 +1079,72 @@ void CZonePlacer::assignZones(vstd::RNG * rand)
 				//Tile closest to vertex belongs to zone
 				closestZone->area()->add(pos);
 				map.setZoneID(pos, closestZone->getId());
+			}
+		}
+
+		std::vector<std::shared_ptr<Zone>> emptyZones;
+		std::map<TRmgTemplateZoneId, size_t> zoneSizes;
+		for(const auto & zone : zonesOnLevel[level])
+		{
+			const size_t size = zone.second->area()->getTilesVector().size();
+			zoneSizes[zone.first] = size;
+			if(size == 0)
+				emptyZones.push_back(zone.second);
+		}
+
+		if(!emptyZones.empty())
+		{
+			std::sort(emptyZones.begin(), emptyZones.end(), [](const auto & lhs, const auto & rhs)
+			{
+				return lhs->getId() < rhs->getId();
+			});
+
+			for(const auto & emptyZone : emptyZones)
+			{
+				bool foundDonor = false;
+				int64_t bestDistanceKey = std::numeric_limits<int64_t>::max();
+				int3 bestTile;
+				TRmgTemplateZoneId bestDonorId = -1;
+				const int3 targetPos = emptyZone->getPos();
+
+				for(int x = 0; x < width; ++x)
+				{
+					for(int y = 0; y < height; ++y)
+					{
+						const int3 tile(x, y, level);
+						const TRmgTemplateZoneId donorZoneId = map.getZoneID(tile);
+						if(donorZoneId == emptyZone->getId())
+							continue;
+
+						const auto donorIt = zonesOnLevel[level].find(donorZoneId);
+						if(donorIt == zonesOnLevel[level].end())
+							continue;
+						if(zoneSizes[donorZoneId] <= 1)
+							continue;
+
+						const int64_t distanceKey = canonicalizeZoneScore(metric(tile, targetPos));
+						if(!foundDonor
+							|| distanceKey < bestDistanceKey
+							|| (distanceKey == bestDistanceKey && tile < bestTile)
+							|| (distanceKey == bestDistanceKey && tile == bestTile && donorZoneId < bestDonorId))
+						{
+							foundDonor = true;
+							bestDistanceKey = distanceKey;
+							bestTile = tile;
+							bestDonorId = donorZoneId;
+						}
+					}
+				}
+
+				if(!foundDonor)
+					continue;
+
+				auto donorZone = zonesOnLevel[level].at(bestDonorId);
+				donorZone->area()->erase(bestTile);
+				emptyZone->area()->add(bestTile);
+				map.setZoneID(bestTile, emptyZone->getId());
+				zoneSizes[bestDonorId]--;
+				zoneSizes[emptyZone->getId()]++;
 			}
 		}
 

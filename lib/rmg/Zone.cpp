@@ -57,10 +57,12 @@ float3 Zone::getCenter() const
 
 void Zone::setCenter(const float3 &f)
 {
-	constexpr float CENTER_QUANT_SCALE = 10000000.0f;
-	auto quantizeCenter = [](float value) -> float
+	// Small maps are more sensitive to tiny placement drift due coarse tile
+	// granularity; use slightly stronger quantization there.
+	const float centerQuantScale = (map.width() <= 72 && map.height() <= 72) ? 20000.0f : 100000.0f;
+	auto quantizeCenter = [centerQuantScale](float value) -> float
 	{
-		return std::round(value * CENTER_QUANT_SCALE) / CENTER_QUANT_SCALE;
+		return std::round(value * centerQuantScale) / centerQuantScale;
 	};
 
 	//limit boundaries to (0,1) square
