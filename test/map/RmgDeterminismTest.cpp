@@ -562,15 +562,25 @@ TEST(RmgDeterminism, CoreScenarioMatrixThreadInvariant)
 	{
 		for(const int seed : seeds)
 		{
-			const int alternateWorkerCount = deterministicWorkerCount(scenario, seed);
-			const auto baseline = serializeMap(generateMap(scenario, seed, TEST_CREATION_TIME, false, 1));
-			const auto alternate = serializeMap(generateMap(
-				scenario, seed, TEST_CREATION_TIME, false, alternateWorkerCount));
-			EXPECT_TRUE(archivePayloadEquals(
-				baseline, alternate,
-				"core scenario worker invariance: " + describeScenario(scenario)
-					+ " seed=" + std::to_string(seed)
-					+ " workers=1 vs " + std::to_string(alternateWorkerCount)));
+			try
+			{
+				const int alternateWorkerCount = deterministicWorkerCount(scenario, seed);
+				const auto baseline = serializeMap(generateMap(scenario, seed, TEST_CREATION_TIME, false, 1));
+				const auto alternate = serializeMap(generateMap(
+					scenario, seed, TEST_CREATION_TIME, false, alternateWorkerCount));
+				EXPECT_TRUE(archivePayloadEquals(
+					baseline, alternate,
+					"core scenario worker invariance: " + describeScenario(scenario)
+						+ " seed=" + std::to_string(seed)
+						+ " workers=1 vs " + std::to_string(alternateWorkerCount)));
+			}
+			catch(const std::exception & ex)
+			{
+				FAIL() << "core scenario worker invariance threw exception for "
+					   << describeScenario(scenario)
+					   << " seed=" << seed
+					   << " error=" << ex.what();
+			}
 		}
 	}
 }
@@ -581,15 +591,25 @@ TEST(RmgDeterminism, DISABLED_ExtendedScenarioSeedSweepThreadInvariant)
 	{
 		for(int seed = 1; seed <= 48; ++seed)
 		{
-			const int alternateWorkerCount = deterministicWorkerCount(scenario, seed);
-			const auto baseline = serializeMap(generateMap(scenario, seed, TEST_CREATION_TIME, false, 1));
-			const auto alternate = serializeMap(generateMap(
-				scenario, seed, TEST_CREATION_TIME, false, alternateWorkerCount));
-			ASSERT_TRUE(archivePayloadEquals(
-				baseline, alternate,
-				"extended scenario sweep mismatch: " + describeScenario(scenario)
-					+ " seed=" + std::to_string(seed)
-					+ " workers=1 vs " + std::to_string(alternateWorkerCount)));
+			try
+			{
+				const int alternateWorkerCount = deterministicWorkerCount(scenario, seed);
+				const auto baseline = serializeMap(generateMap(scenario, seed, TEST_CREATION_TIME, false, 1));
+				const auto alternate = serializeMap(generateMap(
+					scenario, seed, TEST_CREATION_TIME, false, alternateWorkerCount));
+				ASSERT_TRUE(archivePayloadEquals(
+					baseline, alternate,
+					"extended scenario sweep mismatch: " + describeScenario(scenario)
+						+ " seed=" + std::to_string(seed)
+						+ " workers=1 vs " + std::to_string(alternateWorkerCount)));
+			}
+			catch(const std::exception & ex)
+			{
+				FAIL() << "extended scenario sweep threw exception for "
+					   << describeScenario(scenario)
+					   << " seed=" << seed
+					   << " error=" << ex.what();
+			}
 		}
 	}
 }
