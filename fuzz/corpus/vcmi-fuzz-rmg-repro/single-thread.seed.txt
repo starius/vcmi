@@ -1,5 +1,13 @@
-# vcmi-fuzz-rmg-repro seed format v1
+# vcmi-fuzz-rmg-repro seed format v2
 seed=1
 singleThread=1
 parallelism=1
 creationDateTime=1725897600
+width=36
+height=36
+levels=1
+humanOrCpuPlayers=2
+compOnlyPlayers=0
+waterContent=normal
+monsterStrength=normal
+templateSelector=0

@@ -8,6 +8,14 @@ Each `*.txt` file is a deterministic seed config:
 - `singleThread=<0|1>`
 - `parallelism=<int>`
 - `creationDateTime=<unix timestamp>`
+- `width=<36|72|108|252>`
+- `height=<36|72|108|252>`
+- `levels=<1|2>`
+- `humanOrCpuPlayers=<1..4>`
+- `compOnlyPlayers=<0..2>`
+- `waterContent=<none|normal|islands>`
+- `monsterStrength=<weak|normal|strong>`
+- `templateSelector=<int>`
 
 The fuzzer itself consumes binary corpus entries. Convert text seeds to a
 temporary binary corpus before fuzzing:
