@@ -79,6 +79,40 @@ size_t deterministicNearbyIndex(const CMapGenerator & generator, int zoneId, con
 	CRandomGenerator chooser(generator.deriveDeterministicSeed(zoneId, "ObjectManager", streamTag));
 	return static_cast<size_t>(chooser.nextInt64(0, static_cast<int64_t>(tiles.size()) - 1));
 }
+
+std::tuple<int, int, int, int, int, int, int, int, int, int, int, int, int, int, int>
+requiredObjectInfoSortKey(const RequiredObjectInfo & info)
+{
+	const CGObjectInstance * obj = info.obj.get();
+	const CGObjectInstance * target = info.nearbyTarget;
+	const int3 objPos = obj ? obj->pos : int3(-1, -1, -1);
+	const int3 targetPos = target ? target->pos : int3(-1, -1, -1);
+
+	return std::make_tuple(
+		obj ? obj->ID.getNum() : -1,
+		obj ? obj->subID.getNum() : -1,
+		target ? target->ID.getNum() : -1,
+		target ? target->subID.getNum() : -1,
+		static_cast<int>(info.guardStrength),
+		info.createRoad ? 1 : 0,
+		objPos.z,
+		objPos.y,
+		objPos.x,
+		targetPos.z,
+		targetPos.y,
+		targetPos.x,
+		info.pos.z,
+		info.pos.y,
+		info.pos.x);
+}
+
+void sortRequiredObjectInfosDeterministically(std::vector<RequiredObjectInfo> & infos)
+{
+	std::stable_sort(infos.begin(), infos.end(), [](const RequiredObjectInfo & lhs, const RequiredObjectInfo & rhs)
+	{
+		return requiredObjectInfoSortKey(lhs) < requiredObjectInfoSortKey(rhs);
+	});
+}
 }
 
 void ObjectManager::process()
@@ -445,6 +479,7 @@ bool ObjectManager::createMonoliths()
 {
 	// Special case for Junction zone only
 	logGlobal->trace("Creating Monoliths");
+	sortRequiredObjectInfosDeterministically(requiredObjects);
 	for(const auto & objInfo : requiredObjects)
 	{
 		if (objInfo.obj->ID != Obj::MONOLITH_TWO_WAY)
@@ -487,6 +522,9 @@ bool ObjectManager::createRequiredObjects()
 	size_t deterministicNearbyOrdinal = 0;
 	
 	RecursiveLock lock(externalAccessMutex); //In case someone adds more objects
+	sortRequiredObjectInfosDeterministically(requiredObjects);
+	sortRequiredObjectInfosDeterministically(closeObjects);
+	sortRequiredObjectInfosDeterministically(nearbyObjects);
 	for(const auto & objInfo : requiredObjects)
 	{
 		rmg::Object rmgObject(objInfo.obj);

@@ -573,20 +573,6 @@ void CMapGenerator::fillZones()
 					return lhs.first < rhs.first;
 				});
 
-				auto runZoneJobs = [](const std::vector<std::pair<int, std::vector<TModificators::value_type>>> & jobsByZone)
-				{
-					tbb::task_group pool;
-					for(const auto & zoneJobs : jobsByZone)
-					{
-						pool.run([jobs = zoneJobs.second]()
-						{
-							for(const auto & job : jobs)
-								job->run();
-						});
-					}
-					pool.wait();
-				};
-
 				auto runConflictedZoneBatches = [&areNeighbourZones](const std::vector<std::pair<int, std::vector<TModificators::value_type>>> & jobsByZone)
 				{
 					std::vector<size_t> remainingIndices(jobsByZone.size());
@@ -628,9 +614,9 @@ void CMapGenerator::fillZones()
 					}
 				};
 
-				runZoneJobs(zoneJobsWithoutSpecial);
+				runConflictedZoneBatches(zoneJobsWithoutSpecial);
 				runConflictedZoneBatches(zoneJobsWithObjectManager);
-				runZoneJobs(zoneJobsWithTreasure);
+				runConflictedZoneBatches(zoneJobsWithTreasure);
 			}
 
 			for(size_t i = 0; i < readyJobs.size(); ++i)
