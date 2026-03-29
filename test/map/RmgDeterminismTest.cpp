@@ -35,25 +35,143 @@ namespace
 constexpr int TEST_RANDOM_SEED = 1337;
 constexpr int TEST_SINGLE_THREAD_PARALLELISM = 1;
 constexpr int TEST_PARALLEL_PARALLELISM = 8;
+constexpr int TEST_MAX_PARALLELISM = 16;
 constexpr std::time_t TEST_CREATION_TIME = 1'725'897'600;
-const std::string TEST_TEMPLATE_ID = "2SM2a";
 const std::string TEST_TEMPLATE_DATA_PATH = "test/rmg/1.json";
 const CMap * gMapForCallbackLookup = nullptr;
 
-std::shared_ptr<CRmgTemplate> loadTemplate()
+struct DeterminismScenario
 {
+	std::string id;
+	std::string templateId;
+	int width;
+	int height;
+	int levels;
+	int humanOrCpuPlayers;
+	int compOnlyPlayers;
+	EWaterContent::EWaterContent waterContent;
+	EMonsterStrength::EMonsterStrength monsterStrength;
+};
+
+const DeterminismScenario & defaultScenario()
+{
+	static const DeterminismScenario scenario = {
+		"2SM2a-small-l1-default",
+		"2SM2a",
+		CMapHeader::MAP_SIZE_SMALL,
+		CMapHeader::MAP_SIZE_SMALL,
+		1,
+		2,
+		0,
+		EWaterContent::RANDOM,
+		EMonsterStrength::RANDOM,
+	};
+	return scenario;
+}
+
+const std::vector<DeterminismScenario> & coreScenarios()
+{
+	static const std::vector<DeterminismScenario> scenarios = {
+		defaultScenario(),
+		{
+			"2SM2a-small-l2-no-water-weak",
+			"2SM2a",
+			CMapHeader::MAP_SIZE_SMALL,
+			CMapHeader::MAP_SIZE_SMALL,
+			2,
+			2,
+			0,
+			EWaterContent::NONE,
+			EMonsterStrength::GLOBAL_WEAK,
+		},
+		{
+			"2SM2a-small-l2-islands-strong",
+			"2SM2a",
+			CMapHeader::MAP_SIZE_SMALL,
+			CMapHeader::MAP_SIZE_SMALL,
+			2,
+			2,
+			0,
+			EWaterContent::ISLANDS,
+			EMonsterStrength::GLOBAL_STRONG,
+		},
+		{
+			"2LM2a-large-l1-normal",
+			"2LM2a",
+			CMapHeader::MAP_SIZE_LARGE,
+			CMapHeader::MAP_SIZE_LARGE,
+			1,
+			2,
+			0,
+			EWaterContent::NORMAL,
+			EMonsterStrength::GLOBAL_NORMAL,
+		},
+		{
+			"2LM2a-large-l1-no-water",
+			"2LM2a",
+			CMapHeader::MAP_SIZE_LARGE,
+			CMapHeader::MAP_SIZE_LARGE,
+			1,
+			2,
+			0,
+			EWaterContent::NONE,
+			EMonsterStrength::GLOBAL_WEAK,
+		},
+		{
+			"2LM2a-large-l1-islands-strong",
+			"2LM2a",
+			CMapHeader::MAP_SIZE_LARGE,
+			CMapHeader::MAP_SIZE_LARGE,
+			1,
+			2,
+			0,
+			EWaterContent::ISLANDS,
+			EMonsterStrength::GLOBAL_STRONG,
+		},
+	};
+
+	return scenarios;
+}
+
+std::shared_ptr<CRmgTemplate> loadTemplate(const std::string & templateId)
+{
+	static std::map<std::string, std::shared_ptr<CRmgTemplate>> templateCache;
+	const auto cacheIt = templateCache.find(templateId);
+	if(cacheIt != templateCache.end())
+		return cacheIt->second;
+
 	JsonNode testData(JsonPath::builtin(TEST_TEMPLATE_DATA_PATH));
 	testData.setModScope(ModScope::scopeBuiltin(), true);
+	if(testData[templateId].isNull())
+		throw std::runtime_error("Missing determinism test template: " + templateId);
 
 	auto result = std::make_shared<CRmgTemplate>();
-	result->setId(TEST_TEMPLATE_ID);
+	result->setId(templateId);
 
-	JsonDeserializer handler(nullptr, testData[TEST_TEMPLATE_ID]);
+	JsonDeserializer handler(nullptr, testData[templateId]);
 	result->serializeJson(handler);
 	result->afterLoad();
 	result->validate();
 
+	templateCache.emplace(templateId, result);
 	return result;
+}
+
+int requiredStandardPlayersForTemplate(const CRmgTemplate & mapTemplate)
+{
+	int requiredPlayers = 1;
+	for(const auto & [zoneId, zone] : mapTemplate.getZones())
+	{
+		(void)zoneId;
+		if(!zone)
+			continue;
+
+		const auto owner = zone->getOwner();
+		if(owner)
+			requiredPlayers = std::max(requiredPlayers, *owner);
+	}
+
+	return requiredPlayers;
 }
 
 IGameInfoCallbackMock & getDummyCallback()
@@ -76,22 +194,66 @@ IGameInfoCallbackMock & getDummyCallback()
 	return callback;
 }
 
-std::unique_ptr<CMap> generateMap(int randomSeed, std::time_t creationDateTime, bool singleThread, int parallelism)
+uint64_t stableHash64(const std::string & value)
+{
+	uint64_t hash = 14695981039346656037ULL;
+	for(unsigned char ch : value)
+	{
+		hash ^= static_cast<uint64_t>(ch);
+		hash *= 1099511628211ULL;
+	}
+	return hash;
+}
+
+int deterministicWorkerCount(const DeterminismScenario & scenario, int randomSeed)
+{
+	const uint64_t hash = stableHash64(scenario.id + "#" + std::to_string(randomSeed));
+	const int workers = static_cast<int>((hash % TEST_MAX_PARALLELISM) + 1ULL);
+	return workers == 1 ? TEST_MAX_PARALLELISM : workers;
+}
+
+std::string describeScenario(const DeterminismScenario & scenario)
+{
+	std::ostringstream output;
+	output << scenario.id
+		   << " template=" << scenario.templateId
+		   << " size=" << scenario.width << "x" << scenario.height << "x" << scenario.levels
+		   << " players=" << scenario.humanOrCpuPlayers << "+" << scenario.compOnlyPlayers
+		   << " water=" << static_cast<int>(scenario.waterContent)
+		   << " monsters=" << static_cast<int>(scenario.monsterStrength);
+	return output.str();
+}
+
+std::unique_ptr<CMap> generateMap(
+	const DeterminismScenario & scenario,
+	int randomSeed,
+	std::time_t creationDateTime,
+	bool singleThread,
+	int parallelism)
 {
 	const int effectiveParallelism = singleThread ? 1 : parallelism;
 	tbb::global_control limitParallelism(tbb::global_control::max_allowed_parallelism, effectiveParallelism);
 
-	auto mapTemplate = loadTemplate();
+	auto mapTemplate = loadTemplate(scenario.templateId);
+	const int standardPlayers = std::max(
+		scenario.humanOrCpuPlayers, requiredStandardPlayersForTemplate(*mapTemplate));
 	CMapGenOptions options;
 	options.setMapTemplate(mapTemplate.get());
-	options.setWidth(CMapHeader::MAP_SIZE_SMALL);
-	options.setHeight(CMapHeader::MAP_SIZE_SMALL);
-	options.setLevels(1);
-	options.setHumanOrCpuPlayerCount(2);
-	options.setCompOnlyPlayerCount(0);
-	options.setPlayerTypeForStandardPlayer(PlayerColor(0), EPlayerType::HUMAN);
-	options.setPlayerTypeForStandardPlayer(PlayerColor(1), EPlayerType::AI);
+	options.setWidth(scenario.width);
+	options.setHeight(scenario.height);
+	options.setLevels(scenario.levels);
+	options.setHumanOrCpuPlayerCount(static_cast<si8>(standardPlayers));
+	options.setCompOnlyPlayerCount(static_cast<si8>(scenario.compOnlyPlayers));
+	options.setWaterContent(scenario.waterContent);
+	options.setMonsterStrength(scenario.monsterStrength);
+	for(int playerIndex = 0; playerIndex < standardPlayers; ++playerIndex)
+	{
+		const auto playerType = playerIndex == 0 ? EPlayerType::HUMAN : EPlayerType::AI;
+		options.setPlayerTypeForStandardPlayer(PlayerColor(playerIndex), playerType);
+	}
+
 	auto & callback = getDummyCallback();
+	gMapForCallbackLookup = nullptr;
 	CMapGenerator generator(options, &callback, randomSeed);
 	generator.setSingleThread(singleThread);
 
@@ -162,9 +324,14 @@ std::string toHex64(uint64_t value)
 	return stream.str();
 }
 
-std::string mapHashHex(int randomSeed, std::time_t creationDateTime, bool singleThread, int parallelism)
+std::string mapHashHex(
+	const DeterminismScenario & scenario,
+	int randomSeed,
+	std::time_t creationDateTime,
+	bool singleThread,
+	int parallelism)
 {
-	const auto serialized = serializeMap(generateMap(randomSeed, creationDateTime, singleThread, parallelism));
+	const auto serialized = serializeMap(generateMap(scenario, randomSeed, creationDateTime, singleThread, parallelism));
 	return toHex64(fnv1a64(serialized));
 }
 
@@ -224,8 +391,11 @@ std::string mapHashHex(int randomSeed, std::time_t creationDateTime, bool single
 
 TEST(RmgDeterminism, SameSeedProducesSameSerializedMap)
 {
-	const auto first = serializeMap(generateMap(TEST_RANDOM_SEED, TEST_CREATION_TIME, true, TEST_SINGLE_THREAD_PARALLELISM));
-	const auto second = serializeMap(generateMap(TEST_RANDOM_SEED, TEST_CREATION_TIME, true, TEST_SINGLE_THREAD_PARALLELISM));
+	const auto & scenario = defaultScenario();
+	const auto first = serializeMap(generateMap(
+		scenario, TEST_RANDOM_SEED, TEST_CREATION_TIME, true, TEST_SINGLE_THREAD_PARALLELISM));
+	const auto second = serializeMap(generateMap(
+		scenario, TEST_RANDOM_SEED, TEST_CREATION_TIME, true, TEST_SINGLE_THREAD_PARALLELISM));
 	EXPECT_TRUE(archivePayloadEquals(first, second, "single-thread replay"));
 }
 
@@ -234,8 +404,9 @@ TEST(RmgDeterminism, CreationTimestampCanBeOverridden)
 	constexpr std::time_t timestampA = TEST_CREATION_TIME;
 	constexpr std::time_t timestampB = TEST_CREATION_TIME + 86400;
 
-	auto mapA = generateMap(TEST_RANDOM_SEED, timestampA, true, TEST_SINGLE_THREAD_PARALLELISM);
-	auto mapB = generateMap(TEST_RANDOM_SEED, timestampB, true, TEST_SINGLE_THREAD_PARALLELISM);
+	const auto & scenario = defaultScenario();
+	auto mapA = generateMap(scenario, TEST_RANDOM_SEED, timestampA, true, TEST_SINGLE_THREAD_PARALLELISM);
+	auto mapB = generateMap(scenario, TEST_RANDOM_SEED, timestampB, true, TEST_SINGLE_THREAD_PARALLELISM);
 	EXPECT_EQ(mapA->creationDateTime, timestampA);
 	EXPECT_EQ(mapB->creationDateTime, timestampB);
 
@@ -261,14 +432,15 @@ TEST(RmgDeterminism, AreaTilesVectorIsSorted)
 
 TEST(RmgDeterminism, DeterministicSeedDerivationIsStable)
 {
-	auto mapTemplate = loadTemplate();
+	const auto & scenario = defaultScenario();
+	auto mapTemplate = loadTemplate(scenario.templateId);
 	CMapGenOptions options;
 	options.setMapTemplate(mapTemplate.get());
-	options.setWidth(CMapHeader::MAP_SIZE_SMALL);
-	options.setHeight(CMapHeader::MAP_SIZE_SMALL);
-	options.setLevels(1);
-	options.setHumanOrCpuPlayerCount(2);
-	options.setCompOnlyPlayerCount(0);
+	options.setWidth(scenario.width);
+	options.setHeight(scenario.height);
+	options.setLevels(scenario.levels);
+	options.setHumanOrCpuPlayerCount(static_cast<si8>(scenario.humanOrCpuPlayers));
+	options.setCompOnlyPlayerCount(static_cast<si8>(scenario.compOnlyPlayers));
 	options.setPlayerTypeForStandardPlayer(PlayerColor(0), EPlayerType::HUMAN);
 	options.setPlayerTypeForStandardPlayer(PlayerColor(1), EPlayerType::AI);
 	CMapGenerator generator(options, nullptr, TEST_RANDOM_SEED);
@@ -282,18 +454,23 @@ TEST(RmgDeterminism, DeterministicSeedDerivationIsStable)
 
 TEST(RmgDeterminism, ParallelSameSeedProducesSameSerializedMap)
 {
-	const auto first = serializeMap(generateMap(TEST_RANDOM_SEED, TEST_CREATION_TIME, false, TEST_PARALLEL_PARALLELISM));
-	const auto second = serializeMap(generateMap(TEST_RANDOM_SEED, TEST_CREATION_TIME, false, TEST_PARALLEL_PARALLELISM));
+	const auto & scenario = defaultScenario();
+	const auto first = serializeMap(generateMap(
+		scenario, TEST_RANDOM_SEED, TEST_CREATION_TIME, false, TEST_PARALLEL_PARALLELISM));
+	const auto second = serializeMap(generateMap(
+		scenario, TEST_RANDOM_SEED, TEST_CREATION_TIME, false, TEST_PARALLEL_PARALLELISM));
 	EXPECT_TRUE(archivePayloadEquals(first, second, "parallel replay"));
 }
 
 TEST(RmgDeterminism, ParallelResultIsThreadCountInvariant)
 {
-	const auto baseline = serializeMap(generateMap(TEST_RANDOM_SEED, TEST_CREATION_TIME, false, 1));
+	const auto & scenario = defaultScenario();
+	const auto baseline = serializeMap(generateMap(scenario, TEST_RANDOM_SEED, TEST_CREATION_TIME, false, 1));
 
 	for(const int parallelism : {2, 4, 8})
 	{
-		const auto candidate = serializeMap(generateMap(TEST_RANDOM_SEED, TEST_CREATION_TIME, false, parallelism));
+		const auto candidate = serializeMap(generateMap(
+			scenario, TEST_RANDOM_SEED, TEST_CREATION_TIME, false, parallelism));
 		EXPECT_TRUE(archivePayloadEquals(
 			baseline, candidate,
 			"worker-count invariance 1 vs " + std::to_string(parallelism)));
@@ -305,9 +482,12 @@ TEST(RmgDeterminism, ReproSeedParallelReplay)
 	constexpr int reproSeed = 16'711'681;
 	constexpr std::time_t reproCreationTime = 1'742'174'175;
 	constexpr int reproParallelism = 16;
+	const auto & scenario = defaultScenario();
 
-	const auto first = serializeMap(generateMap(reproSeed, reproCreationTime, false, reproParallelism));
-	const auto second = serializeMap(generateMap(reproSeed, reproCreationTime, false, reproParallelism));
+	const auto first = serializeMap(generateMap(
+		scenario, reproSeed, reproCreationTime, false, reproParallelism));
+	const auto second = serializeMap(generateMap(
+		scenario, reproSeed, reproCreationTime, false, reproParallelism));
 	EXPECT_TRUE(archivePayloadEquals(first, second, "repro parallel replay"));
 }
 
@@ -316,9 +496,12 @@ TEST(RmgDeterminism, ReproSeedParallelReplaySecondCase)
 	constexpr int reproSeed = 1'446'117'377;
 	constexpr std::time_t reproCreationTime = 1'725'897'613;
 	constexpr int reproParallelism = 16;
+	const auto & scenario = defaultScenario();
 
-	const auto first = serializeMap(generateMap(reproSeed, reproCreationTime, false, reproParallelism));
-	const auto second = serializeMap(generateMap(reproSeed, reproCreationTime, false, reproParallelism));
+	const auto first = serializeMap(generateMap(
+		scenario, reproSeed, reproCreationTime, false, reproParallelism));
+	const auto second = serializeMap(generateMap(
+		scenario, reproSeed, reproCreationTime, false, reproParallelism));
 	EXPECT_TRUE(archivePayloadEquals(first, second, "repro parallel replay second case"));
 }
 
@@ -326,14 +509,16 @@ TEST(RmgDeterminism, ReproSeedWorkerCountInvariantThirdCase)
 {
 	constexpr int reproSeed = 20;
 	constexpr std::time_t reproCreationTime = 1'742'174'175;
+	const auto & scenario = defaultScenario();
 
-	const auto onEightWorkers = serializeMap(generateMap(reproSeed, reproCreationTime, false, 8));
-	const auto onSixteenWorkers = serializeMap(generateMap(reproSeed, reproCreationTime, false, 16));
+	const auto onEightWorkers = serializeMap(generateMap(scenario, reproSeed, reproCreationTime, false, 8));
+	const auto onSixteenWorkers = serializeMap(generateMap(scenario, reproSeed, reproCreationTime, false, 16));
 	EXPECT_TRUE(archivePayloadEquals(onEightWorkers, onSixteenWorkers, "repro worker-count invariance third case"));
 }
 
 TEST(RmgDeterminism, FrozenHashesSingleScheduler)
 {
+	const auto & scenario = defaultScenario();
 	constexpr std::time_t frozenTime = TEST_CREATION_TIME;
 	constexpr int frozenParallelism = TEST_SINGLE_THREAD_PARALLELISM;
 	const std::array<std::pair<int, const char *>, 4> frozenCases = {{
@@ -345,13 +530,14 @@ TEST(RmgDeterminism, FrozenHashesSingleScheduler)
 
 	for(const auto & [seed, expectedHash] : frozenCases)
 	{
-		const auto actualHash = mapHashHex(seed, frozenTime, true, frozenParallelism);
+		const auto actualHash = mapHashHex(scenario, seed, frozenTime, true, frozenParallelism);
 		EXPECT_EQ(actualHash, expectedHash) << "single scheduler hash mismatch for seed " << seed;
 	}
 }
 
 TEST(RmgDeterminism, FrozenHashesParallelSchedulerWorkerInvariant)
 {
+	const auto & scenario = defaultScenario();
 	constexpr std::time_t frozenTime = TEST_CREATION_TIME;
 	const std::array<std::pair<int, const char *>, 4> frozenCases = {{
 		{1337, "79dc7a006d5e948b"},
@@ -362,9 +548,48 @@ TEST(RmgDeterminism, FrozenHashesParallelSchedulerWorkerInvariant)
 
 	for(const auto & [seed, expectedHash] : frozenCases)
 	{
-		const auto hashOnOneWorker = mapHashHex(seed, frozenTime, false, 1);
-		const auto hashOnEightWorkers = mapHashHex(seed, frozenTime, false, TEST_PARALLEL_PARALLELISM);
+		const auto hashOnOneWorker = mapHashHex(scenario, seed, frozenTime, false, 1);
+		const auto hashOnEightWorkers = mapHashHex(scenario, seed, frozenTime, false, TEST_PARALLEL_PARALLELISM);
 		EXPECT_EQ(hashOnOneWorker, expectedHash) << "parallel hash mismatch for seed " << seed;
 		EXPECT_EQ(hashOnEightWorkers, expectedHash) << "parallel hash mismatch on 8 workers for seed " << seed;
+	}
+}
+
+TEST(RmgDeterminism, CoreScenarioMatrixThreadInvariant)
+{
+	const std::array<int, 3> seeds = {{11, 1337, 2026}};
+	for(const auto & scenario : coreScenarios())
+	{
+		for(const int seed : seeds)
+		{
+			const int alternateWorkerCount = deterministicWorkerCount(scenario, seed);
+			const auto baseline = serializeMap(generateMap(scenario, seed, TEST_CREATION_TIME, false, 1));
+			const auto alternate = serializeMap(generateMap(
+				scenario, seed, TEST_CREATION_TIME, false, alternateWorkerCount));
+			EXPECT_TRUE(archivePayloadEquals(
+				baseline, alternate,
+				"core scenario worker invariance: " + describeScenario(scenario)
+					+ " seed=" + std::to_string(seed)
+					+ " workers=1 vs " + std::to_string(alternateWorkerCount)));
+		}
+	}
+}
+
+TEST(RmgDeterminism, DISABLED_ExtendedScenarioSeedSweepThreadInvariant)
+{
+	for(const auto & scenario : coreScenarios())
+	{
+		for(int seed = 1; seed <= 48; ++seed)
+		{
+			const int alternateWorkerCount = deterministicWorkerCount(scenario, seed);
+			const auto baseline = serializeMap(generateMap(scenario, seed, TEST_CREATION_TIME, false, 1));
+			const auto alternate = serializeMap(generateMap(
+				scenario, seed, TEST_CREATION_TIME, false, alternateWorkerCount));
+			ASSERT_TRUE(archivePayloadEquals(
+				baseline, alternate,
+				"extended scenario sweep mismatch: " + describeScenario(scenario)
+					+ " seed=" + std::to_string(seed)
+					+ " workers=1 vs " + std::to_string(alternateWorkerCount)));
+		}
 	}
 }
