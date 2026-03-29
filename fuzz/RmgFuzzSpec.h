@@ -11,6 +11,7 @@
 #pragma once
 
 #include "../lib/mapping/CMap.h"
+#include "../lib/rmg/CRmgTemplate.h"
 
 #include <ctime>
 #include <cstdint>
@@ -26,6 +27,14 @@ struct RmgGenerationSpec
 	bool singleThread;
 	int parallelism;
 	std::time_t creationDateTime;
+	int width;
+	int height;
+	int levels;
+	int humanOrCpuPlayers;
+	int compOnlyPlayers;
+	EWaterContent::EWaterContent waterContent;
+	EMonsterStrength::EMonsterStrength monsterStrength;
+	int templateSelector;
 };
 
 RmgGenerationSpec decodeRmgGenerationSpec(const uint8_t * data, size_t size);

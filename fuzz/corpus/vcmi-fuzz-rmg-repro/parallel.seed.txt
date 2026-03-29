@@ -1,5 +1,13 @@
-# vcmi-fuzz-rmg-repro seed format v1
+# vcmi-fuzz-rmg-repro seed format v2
 seed=1
 singleThread=0
-parallelism=1
+parallelism=8
 creationDateTime=1725897616
+width=108
+height=108
+levels=2
+humanOrCpuPlayers=3
+compOnlyPlayers=1
+waterContent=islands
+monsterStrength=strong
+templateSelector=3
