@@ -451,12 +451,21 @@ void CMapGenerator::fillZones()
 			for(const auto & zoneEntry : map->getZones())
 			{
 				const int zoneId = zoneEntry.first;
-				for(const auto & connection : zoneEntry.second->getConnections())
+				const auto & zoneTiles = zoneEntry.second->area()->getTilesVector();
+				for(const auto & tile : zoneTiles)
 				{
-					const int otherZoneId = connection.getOtherZoneId(zoneId);
-					if(otherZoneId == zoneId)
-						continue;
-					zoneNeighbours[zoneId].insert(otherZoneId);
+					for(const auto & dir : int3::getDirs())
+					{
+						const int3 adjacent = tile + dir;
+						if(!map->isOnMap(adjacent))
+							continue;
+
+						const int otherZoneId = map->getZoneID(adjacent);
+						if(otherZoneId == zoneId)
+							continue;
+
+						zoneNeighbours[zoneId].insert(otherZoneId);
+					}
 				}
 			}
 
