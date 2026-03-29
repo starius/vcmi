@@ -544,6 +544,31 @@ TEST(RmgDeterminism, FrozenHashesParallelSchedulerWorkerInvariant)
 	}
 }
 
+TEST(RmgDeterminism, FrozenHashesReproSeedSmallIslandsWorkerInvariant)
+{
+	const DeterminismScenario scenario = {
+		"2SM2a-small-l2-islands-strong",
+		"2SM2a",
+		CMapHeader::MAP_SIZE_SMALL,
+		CMapHeader::MAP_SIZE_SMALL,
+		2,
+		2,
+		0,
+		EWaterContent::ISLANDS,
+		EMonsterStrength::GLOBAL_STRONG,
+	};
+
+	constexpr int frozenSeed = 98945;
+	constexpr std::time_t frozenTime = 1'725'897'600;
+	constexpr const char * expectedHash = "93dccc3ee4c1a6fb";
+
+	const auto hashOnOneWorker = mapHashHex(scenario, frozenSeed, frozenTime, false, 1);
+	const auto hashOnSixteenWorkers = mapHashHex(scenario, frozenSeed, frozenTime, false, 16);
+
+	EXPECT_EQ(hashOnOneWorker, expectedHash);
+	EXPECT_EQ(hashOnSixteenWorkers, expectedHash);
+}
+
 TEST(RmgDeterminism, CoreScenarioMatrixThreadInvariant)
 {
 	const std::array<int, 3> seeds = {{11, 1337, 2026}};
