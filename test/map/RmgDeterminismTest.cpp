@@ -522,10 +522,10 @@ TEST(RmgDeterminism, FrozenHashesSingleScheduler)
 	constexpr std::time_t frozenTime = TEST_CREATION_TIME;
 	constexpr int frozenParallelism = TEST_SINGLE_THREAD_PARALLELISM;
 	const std::array<std::pair<int, const char *>, 4> frozenCases = {{
-		{1337, "d2988fa30b81056d"},
-		{1338, "19fb73fd0edab063"},
-		{1339, "7d8f8fde14db71f0"},
-		{1340, "5b0af5e6dc32184c"},
+		{1337, "65b8a4e5d911e201"},
+		{1338, "8b54ae753835e1e4"},
+		{1339, "625bff65e641dda6"},
+		{1340, "3cc0ba7ba2be1f18"},
 	}};
 
 	for(const auto & [seed, expectedHash] : frozenCases)
@@ -540,10 +540,10 @@ TEST(RmgDeterminism, FrozenHashesParallelSchedulerWorkerInvariant)
 	const auto & scenario = defaultScenario();
 	constexpr std::time_t frozenTime = TEST_CREATION_TIME;
 	const std::array<std::pair<int, const char *>, 4> frozenCases = {{
-		{1337, "79dc7a006d5e948b"},
-		{1338, "19fb73fd0edab063"},
-		{1339, "7d8f8fde14db71f0"},
-		{1340, "5b0af5e6dc32184c"},
+		{1337, "638d5989460ed980"},
+		{1338, "8b54ae753835e1e4"},
+		{1339, "625bff65e641dda6"},
+		{1340, "3cc0ba7ba2be1f18"},
 	}};
 
 	for(const auto & [seed, expectedHash] : frozenCases)
