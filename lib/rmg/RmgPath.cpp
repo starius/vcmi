@@ -22,8 +22,27 @@ const std::function<float(const int3 &, const int3 &)> Path::DEFAULT_MOVEMENT_FU
 	return 1.f;
 };
 
+namespace
+{
+constexpr double PATH_COST_QUANT = 1024.0;
+
+int64_t canonicalizePathCost(float value)
+{
+	if(std::isnan(value))
+		return std::numeric_limits<int64_t>::max() / 4;
+	if(std::isinf(value))
+		return value > 0 ? std::numeric_limits<int64_t>::max() / 4 : std::numeric_limits<int64_t>::min() / 4;
+	const long double scaled = static_cast<long double>(value) * PATH_COST_QUANT;
+	if(scaled >= static_cast<long double>(std::numeric_limits<int64_t>::max()))
+		return std::numeric_limits<int64_t>::max();
+	if(scaled <= static_cast<long double>(std::numeric_limits<int64_t>::min()))
+		return std::numeric_limits<int64_t>::min();
+	return static_cast<int64_t>(std::llround(scaled));
+}
+}
+
 //A* priority queue
-using TDistance = std::pair<int3, float>;
+using TDistance = std::pair<int3, int64_t>;
 struct NodeComparer
 {
 	bool operator()(const TDistance & lhs, const TDistance & rhs) const
@@ -84,11 +103,11 @@ Path Path::search(const Tileset & dst, bool straight, std::function<float(const 
 	Tileset closed;    // The set of nodes already evaluated.
 	auto open = createPriorityQueue(); // The set of tentative nodes to be evaluated, initially containing the start node
 	std::map<int3, int3> cameFrom;  // The map of navigated nodes.
-	std::map<int3, float> distances;
+	std::map<int3, int64_t> distances;
 	
 	cameFrom[src] = int3(-1, -1, -1); //first node points to finish condition
 	distances[src] = 0;
-	open.push(std::make_pair(src, 0.f));
+	open.push(std::make_pair(src, 0));
 	// Cost from start along best known path.
 	
 	while(!open.empty())
@@ -121,9 +140,10 @@ Path Path::search(const Tileset & dst, bool straight, std::function<float(const 
 					return;
 				
 				float movementCost = moveCostFunction(currentNode, pos);
+				const int64_t movementCostKey = canonicalizePathCost(movementCost);
 
-				float distance = distances[currentNode] + movementCost; //we prefer to use already free paths
-				float bestDistanceSoFar = std::numeric_limits<float>::max();
+				int64_t distance = distances[currentNode] + movementCostKey; //we prefer to use already free paths
+				int64_t bestDistanceSoFar = std::numeric_limits<int64_t>::max();
 				auto it = distances.find(pos);
 				if(it != distances.end())
 					bestDistanceSoFar = it->second;
