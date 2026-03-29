@@ -633,7 +633,10 @@ void CMapGenerator::fillZones()
 				// Some regular modificators share global map state outside neighbour
 				// relationships; keep this wave order deterministic and serial.
 				runZoneJobsSequentially(zoneJobsWithoutSpecial);
-				runConflictedZoneBatches(zoneJobsWithObjectManager);
+				// ObjectManager mutates shared map state in ways not limited to
+				// zone-neighbour overlap, so keep it serial to avoid race-driven
+				// map drift across thread counts and platforms.
+				runZoneJobsSequentially(zoneJobsWithObjectManager);
 				runConflictedZoneBatches(zoneJobsWithTreasure);
 			}
 
