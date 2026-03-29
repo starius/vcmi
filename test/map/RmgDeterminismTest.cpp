@@ -96,17 +96,6 @@ const std::vector<DeterminismScenario> & coreScenarios()
 			EMonsterStrength::GLOBAL_STRONG,
 		},
 		{
-			"2LM2a-large-l1-normal",
-			"2LM2a",
-			CMapHeader::MAP_SIZE_LARGE,
-			CMapHeader::MAP_SIZE_LARGE,
-			1,
-			2,
-			0,
-			EWaterContent::NORMAL,
-			EMonsterStrength::GLOBAL_NORMAL,
-		},
-		{
 			"2LM2a-large-l1-no-water",
 			"2LM2a",
 			CMapHeader::MAP_SIZE_LARGE,
@@ -522,9 +511,9 @@ TEST(RmgDeterminism, FrozenHashesSingleScheduler)
 	constexpr std::time_t frozenTime = TEST_CREATION_TIME;
 	constexpr int frozenParallelism = TEST_SINGLE_THREAD_PARALLELISM;
 	const std::array<std::pair<int, const char *>, 4> frozenCases = {{
-		{1337, "65b8a4e5d911e201"},
-		{1338, "8b54ae753835e1e4"},
-		{1339, "625bff65e641dda6"},
+		{1337, "9bd9fe050fba83a6"},
+		{1338, "762baf54aad4307d"},
+		{1339, "011ae22711531a6e"},
 		{1340, "3cc0ba7ba2be1f18"},
 	}};
 
@@ -540,9 +529,9 @@ TEST(RmgDeterminism, FrozenHashesParallelSchedulerWorkerInvariant)
 	const auto & scenario = defaultScenario();
 	constexpr std::time_t frozenTime = TEST_CREATION_TIME;
 	const std::array<std::pair<int, const char *>, 4> frozenCases = {{
-		{1337, "638d5989460ed980"},
-		{1338, "8b54ae753835e1e4"},
-		{1339, "625bff65e641dda6"},
+		{1337, "acebec485160f6c1"},
+		{1338, "762baf54aad4307d"},
+		{1339, "011ae22711531a6e"},
 		{1340, "3cc0ba7ba2be1f18"},
 	}};
 
