@@ -19,7 +19,7 @@ VCMI_LIB_NAMESPACE_BEGIN
 
 namespace
 {
-constexpr double PENROSE_COORD_QUANT = 1e-6;
+constexpr double PENROSE_COORD_QUANT = 1e-5;
 
 int64_t quantizePenroseCoord(float value)
 {
