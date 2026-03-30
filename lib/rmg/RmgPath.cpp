@@ -259,33 +259,41 @@ Path::MoveCostFunction Path::createCurvedCostFunction(const Area & border)
 
 float Path::distanceToCubicBezier(const int3 & point, const int3 & p0, const int3 & p1, const int3 & p2, const int3 & p3)
 {
-	// Approximate distance to cubic Bezier curve by sampling
-	// B(t) = (1-t)³P0 + 3(1-t)²tP1 + 3(1-t)t²P2 + t³P3
-	constexpr int SAMPLES = 20;
-	float minDistSq = std::numeric_limits<float>::max();
+	// Sample the Bezier curve in deterministic fixed-point space.
+	// This avoids cross-architecture float drift when scoring paths.
+	constexpr int64_t SAMPLES = 20;
+	constexpr int64_t DEN = SAMPLES * SAMPLES * SAMPLES;
+	uint64_t minDistSqNum = std::numeric_limits<uint64_t>::max();
 
-	for(int i = 0; i <= SAMPLES; ++i)
+	for(int64_t i = 0; i <= SAMPLES; ++i)
 	{
-		float t = static_cast<float>(i) / SAMPLES;
-		float oneMinusT = 1.0f - t;
-		float oneMinusT2 = oneMinusT * oneMinusT;
-		float oneMinusT3 = oneMinusT2 * oneMinusT;
-		float t2 = t * t;
-		float t3 = t2 * t;
+		const int64_t oneMinus = SAMPLES - i;
+		const int64_t b0 = oneMinus * oneMinus * oneMinus;
+		const int64_t b1 = 3 * oneMinus * oneMinus * i;
+		const int64_t b2 = 3 * oneMinus * i * i;
+		const int64_t b3 = i * i * i;
 
-		// Cubic Bezier formula
-		float bx = oneMinusT3 * p0.x + 3.0f * oneMinusT2 * t * p1.x + 3.0f * oneMinusT * t2 * p2.x + t3 * p3.x;
-		float by = oneMinusT3 * p0.y + 3.0f * oneMinusT2 * t * p1.y + 3.0f * oneMinusT * t2 * p2.y + t3 * p3.y;
+		const int64_t bxNum = b0 * static_cast<int64_t>(p0.x)
+			+ b1 * static_cast<int64_t>(p1.x)
+			+ b2 * static_cast<int64_t>(p2.x)
+			+ b3 * static_cast<int64_t>(p3.x);
+		const int64_t byNum = b0 * static_cast<int64_t>(p0.y)
+			+ b1 * static_cast<int64_t>(p1.y)
+			+ b2 * static_cast<int64_t>(p2.y)
+			+ b3 * static_cast<int64_t>(p3.y);
 
-		float dx = point.x - bx;
-		float dy = point.y - by;
-		float distSq = dx * dx + dy * dy;
+		const int64_t pxNum = static_cast<int64_t>(point.x) * DEN;
+		const int64_t pyNum = static_cast<int64_t>(point.y) * DEN;
+		const int64_t dx = pxNum - bxNum;
+		const int64_t dy = pyNum - byNum;
+		const uint64_t distSqNum = static_cast<uint64_t>(dx * dx + dy * dy);
 
-		if(distSq < minDistSq)
-			minDistSq = distSq;
+		if(distSqNum < minDistSqNum)
+			minDistSqNum = distSqNum;
 	}
 
-	return minDistSq;
+	constexpr double denSq = static_cast<double>(DEN) * static_cast<double>(DEN);
+	return static_cast<float>(static_cast<double>(minDistSqNum) / denSq);
 }
 
 Path::MoveCostFunction Path::createBezierCostFunction(const int3 & p0, const int3 & p1, const int3 & p2, const int3 & p3)
