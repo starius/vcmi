@@ -45,7 +45,7 @@ uint64_t canonicalizeZoneFitness(double value)
 {
 	if(!std::isfinite(value) || value <= 0.0)
 		return 0;
-	const long double scaled = static_cast<long double>(value) * 1000000.0L;
+	const long double scaled = static_cast<long double>(value) * 10000.0L;
 	if(scaled >= static_cast<long double>(std::numeric_limits<uint64_t>::max()))
 		return std::numeric_limits<uint64_t>::max();
 	return static_cast<uint64_t>(std::llround(scaled));
