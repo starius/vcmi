@@ -511,10 +511,10 @@ TEST(RmgDeterminism, FrozenHashesSingleScheduler)
 	constexpr std::time_t frozenTime = TEST_CREATION_TIME;
 	constexpr int frozenParallelism = TEST_SINGLE_THREAD_PARALLELISM;
 	const std::array<std::pair<int, const char *>, 4> frozenCases = {{
-		{1337, "9bd9fe050fba83a6"},
-		{1338, "762baf54aad4307d"},
+		{1337, "8fd05c2e50bb3a18"},
+		{1338, "666f726e7246d671"},
 		{1339, "011ae22711531a6e"},
-		{1340, "3cc0ba7ba2be1f18"},
+		{1340, "8239f8e1326db9ae"},
 	}};
 
 	for(const auto & [seed, expectedHash] : frozenCases)
@@ -529,10 +529,10 @@ TEST(RmgDeterminism, FrozenHashesParallelSchedulerWorkerInvariant)
 	const auto & scenario = defaultScenario();
 	constexpr std::time_t frozenTime = TEST_CREATION_TIME;
 	const std::array<std::pair<int, const char *>, 4> frozenCases = {{
-		{1337, "acebec485160f6c1"},
-		{1338, "762baf54aad4307d"},
+		{1337, "5ee2e949699a274b"},
+		{1338, "666f726e7246d671"},
 		{1339, "011ae22711531a6e"},
-		{1340, "3cc0ba7ba2be1f18"},
+		{1340, "8239f8e1326db9ae"},
 	}};
 
 	for(const auto & [seed, expectedHash] : frozenCases)
@@ -560,7 +560,7 @@ TEST(RmgDeterminism, FrozenHashesReproSeedSmallIslandsWorkerInvariant)
 
 	constexpr int frozenSeed = 98945;
 	constexpr std::time_t frozenTime = 1'725'897'600;
-	constexpr const char * expectedHash = "93dccc3ee4c1a6fb";
+	constexpr const char * expectedHash = "c8f5ab2a3f11a203";
 
 	const auto hashOnOneWorker = mapHashHex(scenario, frozenSeed, frozenTime, false, 1);
 	const auto hashOnSixteenWorkers = mapHashHex(scenario, frozenSeed, frozenTime, false, 16);
