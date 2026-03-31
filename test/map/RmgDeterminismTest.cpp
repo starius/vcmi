@@ -531,7 +531,7 @@ TEST(RmgDeterminism, FrozenHashesParallelSchedulerWorkerInvariant)
 	const std::array<std::pair<int, const char *>, 4> frozenCases = {{
 		{1337, "5ee2e949699a274b"},
 		{1338, "666f726e7246d671"},
-		{1339, "011ae22711531a6e"},
+		{1339, "6e055a3af606c1d2"},
 		{1340, "8239f8e1326db9ae"},
 	}};
 

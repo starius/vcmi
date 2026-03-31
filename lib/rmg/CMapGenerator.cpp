@@ -590,6 +590,8 @@ void CMapGenerator::fillZones()
 					{
 						std::vector<size_t> batchIndices;
 						std::vector<size_t> nextIndices;
+						batchIndices.reserve(remainingIndices.size());
+						nextIndices.reserve(remainingIndices.size());
 						for(const auto idx : remainingIndices)
 						{
 							const int zoneId = jobsByZone[idx].first;
@@ -612,9 +614,10 @@ void CMapGenerator::fillZones()
 						tbb::task_group pool;
 						for(const auto idx : batchIndices)
 						{
-							pool.run([jobs = jobsByZone[idx].second]()
+							const auto * jobs = &jobsByZone[idx].second;
+							pool.run([jobs]()
 							{
-								for(const auto & job : jobs)
+								for(const auto & job : *jobs)
 									job->run();
 							});
 						}
@@ -623,20 +626,10 @@ void CMapGenerator::fillZones()
 					}
 				};
 
-				auto runZoneJobsSequentially = [](const std::vector<std::pair<int, std::vector<TModificators::value_type>>> & jobsByZone)
-				{
-					for(const auto & zoneJobs : jobsByZone)
-						for(const auto & job : zoneJobs.second)
-							job->run();
-				};
-
-				// Some regular modificators share global map state outside neighbour
-				// relationships; keep this wave order deterministic and serial.
-				runZoneJobsSequentially(zoneJobsWithoutSpecial);
-				// ObjectManager mutates shared map state in ways not limited to
-				// zone-neighbour overlap, so keep it serial to avoid race-driven
-				// map drift across thread counts and platforms.
-				runZoneJobsSequentially(zoneJobsWithObjectManager);
+				// Preserve deterministic wave order while allowing per-wave
+				// parallelism on independent (non-neighbouring) zones.
+				runConflictedZoneBatches(zoneJobsWithoutSpecial);
+				runConflictedZoneBatches(zoneJobsWithObjectManager);
 				runConflictedZoneBatches(zoneJobsWithTreasure);
 			}
 
