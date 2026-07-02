@@ -15,6 +15,7 @@ set(test_SRCS
  		CMemoryBufferTest.cpp
  		CVcmiTestConfig.cpp
  		JsonComparer.cpp
+		../client/mcp/McpProtocol.cpp
 
  		battle/BattleHexTest.cpp
  		battle/CBattleInfoCallbackTest.cpp
@@ -37,6 +38,8 @@ set(test_SRCS
 
 		game/CGameStateTest.cpp
 		game/HeroRecruitmentTest.cpp
+
+		client/mcp/McpProtocolTest.cpp
 
 		json/JsonTests.cpp
 
