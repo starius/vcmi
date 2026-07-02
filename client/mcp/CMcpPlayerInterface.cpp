@@ -10,6 +10,7 @@
 #include "StdInc.h"
 #include "CMcpPlayerInterface.h"
 
+#include "McpGameHelpers.h"
 #include "McpHttpServer.h"
 
 #include "../../lib/CPlayerState.h"
@@ -30,17 +31,21 @@
 #include "../../lib/logging/CLogger.h"
 #include "../../lib/mapObjects/CGHeroInstance.h"
 #include "../../lib/mapObjects/CGTownInstance.h"
+#include "../../lib/mapObjects/CGDwelling.h"
 #include "../../lib/mapObjects/army/CArmedInstance.h"
 #include "../../lib/mapObjects/army/CStackInstance.h"
 #include "../../lib/mapping/TerrainTile.h"
 #include "../../lib/networkPacks/Component.h"
+#include "../../lib/networkPacks/PacksForClient.h"
 #include "../../lib/networkPacks/PacksForClientBattle.h"
+#include "../../lib/networkPacks/PacksForServer.h"
 #include "../../lib/pathfinder/CGPathNode.h"
 #include "../../lib/pathfinder/PathfinderOptions.h"
 #include "../../lib/texts/MetaString.h"
 
 #include <algorithm>
 #include <chrono>
+#include <condition_variable>
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
@@ -78,6 +83,20 @@ bool readBool(const JsonNode & node, const std::string & field, bool defaultValu
 	return node[field].Bool();
 }
 
+std::string readString(const JsonNode & node, const std::string & field)
+{
+	if(!node[field].isString())
+		throw std::invalid_argument("Missing or non-string argument: " + field);
+	return node[field].String();
+}
+
+std::optional<std::string> readOptionalString(const JsonNode & node, const std::string & field)
+{
+	if(!hasField(node, field))
+		return std::nullopt;
+	return readString(node, field);
+}
+
 int32_t readInteger(const JsonNode & node, const std::string & field, int32_t defaultValue)
 {
 	if(!hasField(node, field))
@@ -110,6 +129,15 @@ JsonNode jsonPosition(const int3 & position)
 	node["x"] = JsonNode(position.x);
 	node["y"] = JsonNode(position.y);
 	node["z"] = JsonNode(position.z);
+	return node;
+}
+
+JsonNode jsonPositions(const std::vector<int3> & positions)
+{
+	JsonNode node;
+	node.Vector();
+	for(const int3 & position : positions)
+		node.Vector().push_back(jsonPosition(position));
 	return node;
 }
 
@@ -162,6 +190,28 @@ JsonNode jsonArmy(const CCreatureSet & army)
 	return node;
 }
 
+JsonNode jsonRecruitOption(const CGDwelling * dwelling, const CArmedInstance * destination, int32_t level)
+{
+	JsonNode node;
+	if(level < 0 || level >= static_cast<int32_t>(dwelling->creatures.size()))
+		return node;
+	if(dwelling->creatures[level].second.empty())
+		return node;
+
+	const CreatureID creatureID = dwelling->creatures[level].second.back();
+	const CCreature * creature = creatureID.toCreature();
+	const int32_t available = static_cast<int32_t>(dwelling->creatures[level].first);
+	node["source_id"] = JsonNode(dwelling->id.getNum());
+	node["destination_id"] = JsonNode(destination ? destination->id.getNum() : dwelling->id.getNum());
+	node["level"] = JsonNode(level);
+	node["creature_id"] = JsonNode(creatureID.getNum());
+	node["creature"] = JsonNode(creature ? jsonText(creature->getNameSingularTranslated()) : "");
+	node["available"] = JsonNode(available);
+	if(creature)
+		node["cost"] = jsonResources(creature->getFullRecruitCost());
+	return node;
+}
+
 JsonNode jsonHero(const CGHeroInstance * hero)
 {
 	JsonNode node;
@@ -205,6 +255,15 @@ JsonNode jsonTown(const CGTownInstance * town)
 	node["buildings"].Vector();
 	for(const BuildingID & building : town->getBuildings())
 		node["buildings"].Vector().push_back(JsonNode(building.getNum()));
+
+	node["recruitOptions"].Vector();
+	const CArmedInstance * destination = town->getUpperArmy();
+	for(int32_t level = 0; level < static_cast<int32_t>(town->creatures.size()); ++level)
+	{
+		JsonNode option = jsonRecruitOption(town, destination, level);
+		if(option.isStruct() && option["available"].Integer() > 0)
+			node["recruitOptions"].Vector().push_back(option);
+	}
 
 	return node;
 }
@@ -765,11 +824,23 @@ void CMcpPlayerInterface::configureProtocol()
 
 	protocol.registerTool({
 		"vcmi.get_state",
-		"Returns current visible player state as JSON.",
-		makeObjectSchema({}, {}),
+		"Returns current visible player state as JSON, optionally filtered by selectors.",
+		makeObjectSchema({{"select", "array"}, {"since_revision", "integer"}, {"max_updates", "integer"}}, {}),
 		[this](const JsonNode & arguments)
 		{
-			return traceToolResult("vcmi.get_state", arguments, makeJsonResult(makeStateJson()));
+			return traceToolResult("vcmi.get_state", arguments, makeJsonResult(makeStateJson(arguments)));
+		}
+	});
+
+	protocol.registerTool({
+		"vcmi.get_updates",
+		"Returns revisioned visible state updates since a previous revision.",
+		makeObjectSchema({{"since_revision", "integer"}, {"max_updates", "integer"}}, {"since_revision"}),
+		[this](const JsonNode & arguments)
+		{
+			const uint64_t sinceRevision = static_cast<uint64_t>(std::max<int32_t>(0, readInteger(arguments, "since_revision")));
+			const size_t maxUpdates = static_cast<size_t>(readClampedInteger(arguments, "max_updates", 200, 1, 1000));
+			return traceToolResult("vcmi.get_updates", arguments, makeJsonResult(makeUpdatesJson(sinceRevision, maxUpdates)));
 		}
 	});
 
@@ -804,6 +875,16 @@ void CMcpPlayerInterface::configureProtocol()
 	});
 
 	protocol.registerTool({
+		"vcmi.get_reachable",
+		"Returns this-day reachable tiles, reachable objects, path previews, and route ids for an owned hero.",
+		makeObjectSchema({{"hero_id", "integer"}, {"radius", "integer"}, {"max_options", "integer"}, {"include_future_turns", "boolean"}}, {"hero_id"}),
+		[this](const JsonNode & arguments)
+		{
+			return traceToolResult("vcmi.get_reachable", arguments, makeJsonResult(makeReachableJson(arguments)));
+		}
+	});
+
+	protocol.registerTool({
 		"vcmi.get_battle_state",
 		"Returns visible battle state and legal actions for the currently active stack.",
 		makeObjectSchema({}, {}),
@@ -825,8 +906,18 @@ void CMcpPlayerInterface::configureProtocol()
 					return traceToolResult("vcmi.end_turn", arguments, makeToolError("No active turn to end"));
 				turnActive = false;
 			}
-			cb->endTurn();
-			return traceToolResult("vcmi.end_turn", arguments, makeOkResult("turn ended"));
+			RequestWaitResult request = submitAndWaitForRequest(typeid(EndTurn), [this]
+			{
+				cb->endTurn();
+			});
+			JsonNode result = jsonRequestWaitResult(request);
+			result["message"] = JsonNode(request.applied ? "turn ended" : "end turn rejected by server");
+			if(!request.applied)
+			{
+				std::lock_guard lock(interfaceMutex);
+				turnActive = true;
+			}
+			return traceToolResult("vcmi.end_turn", arguments, request.applied ? makeJsonResult(result) : makeToolError(result.toCompactString()));
 		}
 	});
 
@@ -853,10 +944,11 @@ void CMcpPlayerInterface::configureProtocol()
 
 	protocol.registerTool({
 		"vcmi.move_hero",
-		"Moves an owned hero to an adventure-map tile.",
-		makeObjectSchema({{"hero_id", "integer"}, {"x", "integer"}, {"y", "integer"}, {"z", "integer"}, {"transit", "boolean"}}, {"hero_id", "x", "y"}),
+		"Moves an owned hero to an adventure-map tile using a pathfinder-generated route.",
+		makeObjectSchema({{"hero_id", "integer"}, {"x", "integer"}, {"y", "integer"}, {"z", "integer"}, {"route_id", "string"}}, {"hero_id", "x", "y"}),
 		[this](const JsonNode & arguments)
 		{
+			std::lock_guard actionLock(actionMutex);
 			const CGHeroInstance * hero = cb->getHero(ObjectInstanceID(readInteger(arguments, "hero_id")));
 			if(!hero)
 				return traceToolResult("vcmi.move_hero", arguments, makeToolError("Unknown hero id"));
@@ -864,18 +956,34 @@ void CMcpPlayerInterface::configureProtocol()
 				return traceToolResult("vcmi.move_hero", arguments, makeToolError("Hero is not owned by this MCP player"));
 
 			int z = hasField(arguments, "z") ? readInteger(arguments, "z") : hero->visitablePos().z;
-			bool transit = readBool(arguments, "transit", false);
-			cb->moveHero(hero, int3(readInteger(arguments, "x"), readInteger(arguments, "y"), z), transit);
-			return traceToolResult("vcmi.move_hero", arguments, makeOkResult("move requested"));
+			RoutePlan route = makeRoutePlan(hero, int3(readInteger(arguments, "x"), readInteger(arguments, "y"), z), readOptionalString(arguments, "route_id"));
+			if(!route.ok)
+				return traceToolResult("vcmi.move_hero", arguments, makeToolError(route.error));
+
+			RequestWaitResult request = submitAndWaitForRequest(typeid(MoveHero), [this, hero, route]
+			{
+				cb->moveHero(hero, route.requestPath, route.transit, route.layer);
+			});
+
+			JsonNode result = jsonRequestWaitResult(request);
+			result["message"] = JsonNode(request.applied ? "move applied" : "move rejected by server");
+			result["route_id"] = JsonNode(route.routeID);
+			result["destination"] = jsonPosition(route.destination);
+			result["submittedPath"] = jsonPositions(route.requestPath);
+			if(const CGHeroInstance * updatedHero = cb->getHero(hero->id))
+				result["hero"] = jsonHero(updatedHero);
+
+			return traceToolResult("vcmi.move_hero", arguments, request.applied ? makeJsonResult(result) : makeToolError(result.toCompactString()));
 		}
 	});
 
 	protocol.registerTool({
 		"vcmi.move_hero_to_object",
-		"Moves an owned hero to a visible object target returned by vcmi.get_movement_options or vcmi.get_visible_map.",
-		makeObjectSchema({{"hero_id", "integer"}, {"object_id", "integer"}, {"transit", "boolean"}}, {"hero_id", "object_id"}),
+		"Moves an owned hero to a visible reachable object target returned by vcmi.get_reachable.",
+		makeObjectSchema({{"hero_id", "integer"}, {"object_id", "integer"}, {"route_id", "string"}}, {"hero_id", "object_id"}),
 		[this](const JsonNode & arguments)
 		{
+			std::lock_guard actionLock(actionMutex);
 			const CGHeroInstance * hero = cb->getHero(ObjectInstanceID(readInteger(arguments, "hero_id")));
 			if(!hero)
 				return traceToolResult("vcmi.move_hero_to_object", arguments, makeToolError("Unknown hero id"));
@@ -887,31 +995,25 @@ void CMcpPlayerInterface::configureProtocol()
 				return traceToolResult("vcmi.move_hero_to_object", arguments, makeToolError("Unknown or not visible object id"));
 
 			const int3 destination = object->visitablePos();
-			EPathfindingLayer layer = EPathfindingLayer::AUTO;
+			RoutePlan route = makeRoutePlan(hero, destination, readOptionalString(arguments, "route_id"));
+			if(!route.ok)
+				return traceToolResult("vcmi.move_hero_to_object", arguments, makeToolError(route.error));
+
+			RequestWaitResult request = submitAndWaitForRequest(typeid(MoveHero), [this, hero, route]
 			{
-				std::shared_lock gameStateLock(CGameState::mutex);
-				if(!cb->isInTheMap(destination))
-					return traceToolResult("vcmi.move_hero_to_object", arguments, makeToolError("Object destination is outside of the map"));
+				cb->moveHero(hero, route.requestPath, route.transit, route.layer);
+			});
 
-				CPathsInfo paths(cb->getMapSize(), hero);
-				auto config = std::make_shared<SingleHeroPathfinderConfig>(paths, *cb, hero);
-				cb->calculatePaths(config);
-				const CGPathNode * pathNode = paths.getPathInfo(destination);
-				if(!pathNode || !pathNode->reachable() || pathNode->turns != 0)
-					return traceToolResult("vcmi.move_hero_to_object", arguments, makeToolError("Object is not reachable this turn"));
-				layer = pathNode->layer;
-			}
-
-			bool transit = readBool(arguments, "transit", false);
-			cb->moveHero(hero, destination, transit, layer);
-
-			JsonNode result;
-			result["ok"] = JsonNode(true);
-			result["message"] = JsonNode("move to object requested");
+			JsonNode result = jsonRequestWaitResult(request);
+			result["message"] = JsonNode(request.applied ? "move to object applied" : "move to object rejected by server");
 			result["object_id"] = JsonNode(object->id.getNum());
 			result["destination"] = jsonPosition(destination);
-			result["layer"] = jsonPathLayer(layer);
-			return traceToolResult("vcmi.move_hero_to_object", arguments, makeJsonResult(result));
+			result["route_id"] = JsonNode(route.routeID);
+			result["layer"] = jsonPathLayer(route.layer);
+			result["submittedPath"] = jsonPositions(route.requestPath);
+			if(const CGHeroInstance * updatedHero = cb->getHero(hero->id))
+				result["hero"] = jsonHero(updatedHero);
+			return traceToolResult("vcmi.move_hero_to_object", arguments, request.applied ? makeJsonResult(result) : makeToolError(result.toCompactString()));
 		}
 	});
 
@@ -921,14 +1023,37 @@ void CMcpPlayerInterface::configureProtocol()
 		makeObjectSchema({{"town_id", "integer"}, {"building_id", "integer"}}, {"town_id", "building_id"}),
 		[this](const JsonNode & arguments)
 		{
+			std::lock_guard actionLock(actionMutex);
 			const CGTownInstance * town = cb->getTown(ObjectInstanceID(readInteger(arguments, "town_id")));
 			if(!town)
 				return traceToolResult("vcmi.build_town_building", arguments, makeToolError("Unknown town id"));
 			if(town->tempOwner != playerID)
 				return traceToolResult("vcmi.build_town_building", arguments, makeToolError("Town is not owned by this MCP player"));
 
-			bool accepted = cb->buildBuilding(town, BuildingID(readInteger(arguments, "building_id")));
-			return traceToolResult("vcmi.build_town_building", arguments, accepted ? makeOkResult("build requested") : makeToolError("Build request was rejected by the client callback"));
+			const BuildingID buildingID(readInteger(arguments, "building_id"));
+			bool accepted = false;
+			RequestWaitResult request = submitAndWaitForRequest(typeid(BuildStructure), [&]
+			{
+				accepted = cb->buildBuilding(town, buildingID);
+			});
+			if(!accepted)
+				return traceToolResult("vcmi.build_town_building", arguments, makeToolError("Build request was rejected by the client callback"));
+
+			JsonNode result = jsonRequestWaitResult(request);
+			result["message"] = JsonNode(request.applied ? "build applied" : "build rejected by server");
+			result["town_id"] = JsonNode(town->id.getNum());
+			result["building_id"] = JsonNode(buildingID.getNum());
+			return traceToolResult("vcmi.build_town_building", arguments, request.applied ? makeJsonResult(result) : makeToolError(result.toCompactString()));
+		}
+	});
+
+	protocol.registerTool({
+		"vcmi.execute_plan",
+		"Executes a sequential batch of day-plan actions until completion or a stop condition.",
+		makeObjectSchema({{"plan_id", "string"}, {"actions", "array"}, {"dry_run", "boolean"}, {"return_select", "array"}, {"max_updates", "integer"}}, {"actions"}),
+		[this](const JsonNode & arguments)
+		{
+			return traceToolResult("vcmi.execute_plan", arguments, executePlan(arguments));
 		}
 	});
 
@@ -1179,9 +1304,189 @@ void CMcpPlayerInterface::startHttpServer()
 	}
 }
 
+CMcpPlayerInterface::RequestWaitResult CMcpPlayerInterface::submitAndWaitForRequest(const std::type_info & requestType, const std::function<void()> & submit)
+{
+	PendingRequest request;
+	request.token = ++nextRequestToken;
+	request.typeName = requestType.name();
+
+	{
+		std::lock_guard lock(requestMutex);
+		pendingRequest = request;
+	}
+
+	submit();
+
+	std::unique_lock lock(requestMutex);
+	if(!pendingRequest || pendingRequest->token != request.token || pendingRequest->requestID < 0)
+	{
+		pendingRequest.reset();
+		return {};
+	}
+
+	requestCv.wait_for(lock, std::chrono::seconds(10), [&]
+	{
+		return pendingRequest && pendingRequest->token == request.token && pendingRequest->realized;
+	});
+
+	RequestWaitResult result;
+	if(pendingRequest && pendingRequest->token == request.token)
+	{
+		result.sent = pendingRequest->requestID >= 0;
+		result.realized = pendingRequest->realized;
+		result.applied = pendingRequest->applied;
+		result.requestID = pendingRequest->requestID;
+		result.packType = pendingRequest->packType;
+		pendingRequest.reset();
+	}
+	return result;
+}
+
+JsonNode CMcpPlayerInterface::jsonRequestWaitResult(const RequestWaitResult & request) const
+{
+	JsonNode result;
+	result["ok"] = JsonNode(request.sent && request.realized && request.applied);
+	result["sent"] = JsonNode(request.sent);
+	result["realized"] = JsonNode(request.realized);
+	result["applied"] = JsonNode(request.applied);
+	result["requestId"] = JsonNode(request.requestID);
+	result["packType"] = JsonNode(static_cast<int32_t>(request.packType));
+	if(request.sent && !request.realized)
+		result["error"] = JsonNode("Timed out waiting for server request result");
+	else if(!request.sent)
+		result["error"] = JsonNode("No matching request was sent");
+	else if(!request.applied)
+		result["error"] = JsonNode("Server rejected the request");
+	return result;
+}
+
+void CMcpPlayerInterface::appendStateUpdate(const std::string & type, JsonNode data) const
+{
+	std::lock_guard lock(updatesMutex);
+	JsonNode update = Mcp::makeRevisionedUpdate(++stateRevision, type, std::move(data));
+	update["time"] = JsonNode(timestampUtc());
+	updateJournal.push_back(update);
+	while(updateJournal.size() > 2000)
+		updateJournal.pop_front();
+}
+
+JsonNode CMcpPlayerInterface::makeUpdatesJson(uint64_t sinceRevision, size_t maxUpdates) const
+{
+	std::lock_guard lock(updatesMutex);
+	JsonNode result = Mcp::collectUpdatesSince(updateJournal, sinceRevision, maxUpdates);
+	result["currentRevision"] = JsonNode(static_cast<int64_t>(stateRevision));
+	return result;
+}
+
+CMcpPlayerInterface::RoutePlan CMcpPlayerInterface::makeRoutePlan(const CGHeroInstance * hero, const int3 & destination, std::optional<std::string> expectedRouteID) const
+{
+	RoutePlan result;
+	if(!cb)
+	{
+		result.error = "MCP player interface is not initialized";
+		return result;
+	}
+
+	std::shared_lock gameStateLock(CGameState::mutex);
+	if(!cb->isInTheMap(destination))
+	{
+		result.error = "Destination is outside of the map";
+		return result;
+	}
+	if(destination == hero->visitablePos())
+	{
+		result.error = "Destination is the hero current tile";
+		return result;
+	}
+
+	CPathsInfo paths(cb->getMapSize(), hero);
+	auto config = std::make_shared<SingleHeroPathfinderConfig>(paths, *cb, hero);
+	cb->calculatePaths(config);
+
+	const CGPathNode * pathNode = paths.getPathInfo(destination);
+	if(!pathNode || !pathNode->reachable())
+	{
+		result.error = "Destination is not reachable";
+		return result;
+	}
+	if(pathNode->turns != 0)
+	{
+		result.error = "Destination is not reachable this turn";
+		return result;
+	}
+	if(pathNode->accessible == EPathAccessibility::NOT_SET || pathNode->accessible == EPathAccessibility::BLOCKED)
+	{
+		result.error = "Destination is blocked";
+		return result;
+	}
+
+	CGPath path;
+	if(!paths.getPath(path, destination, pathNode->layer))
+	{
+		result.error = "Could not reconstruct path to destination";
+		return result;
+	}
+
+	result.destination = destination;
+	result.layer = pathNode->layer;
+	result.transit = pathNode->layer == EPathfindingLayer::AIR || pathNode->layer == EPathfindingLayer::WATER;
+	result.routeID = Mcp::makeRouteId(
+		hero->id.getNum(),
+		hero->visitablePos().x,
+		hero->visitablePos().y,
+		hero->visitablePos().z,
+		destination.x,
+		destination.y,
+		destination.z,
+		pathNode->layer.getNum(),
+		pathNode->moveRemains);
+	result.pathPreview = jsonPathPreview(paths, destination, pathNode->layer, 30);
+
+	if(expectedRouteID && *expectedRouteID != result.routeID)
+	{
+		result.error = "route_id is stale for the hero current position or destination";
+		return result;
+	}
+
+	EPathfindingLayer currentLayer = pathNode->layer;
+	for(auto it = path.nodes.rbegin(); it != path.nodes.rend(); ++it)
+	{
+		const CGPathNode & node = *it;
+		if(node.coord == hero->visitablePos())
+			continue;
+		if(node.isTeleportAction())
+			break;
+		if(node.turns != 0)
+			break;
+		if(node.layer != currentLayer)
+			break;
+
+		result.requestPath.push_back(hero->convertFromVisitablePos(node.coord));
+
+		const int3 guardingPosition = cb->guardingCreaturePosition(node.coord);
+		if(guardingPosition.isValid())
+			break;
+		if(!cb->getVisitableObjs(node.coord).empty())
+			break;
+	}
+
+	if(result.requestPath.empty())
+	{
+		result.error = "Path has no executable movement steps";
+		return result;
+	}
+
+	result.ok = true;
+	return result;
+}
+
 JsonNode CMcpPlayerInterface::makeStateJson() const
 {
 	JsonNode state;
+	{
+		std::lock_guard lock(updatesMutex);
+		state["revision"] = JsonNode(static_cast<int64_t>(stateRevision));
+	}
 
 	{
 		std::lock_guard lock(interfaceMutex);
@@ -1227,7 +1532,32 @@ JsonNode CMcpPlayerInterface::makeStateJson() const
 		if(town)
 			state["towns"].Vector().push_back(jsonTown(town));
 
+	state["tavern"]["towns"].Vector();
+	for(const CGTownInstance * town : cb->getTownsInfo(true))
+	{
+		if(!town || town->tempOwner != playerID)
+			continue;
+
+		JsonNode tavern;
+		tavern["town_id"] = JsonNode(town->id.getNum());
+		tavern["town"] = JsonNode(jsonText(town->getNameTranslated()));
+		tavern["heroes"].Vector();
+		for(const CGHeroInstance * hero : cb->getAvailableHeroes(town))
+			if(hero)
+				tavern["heroes"].Vector().push_back(jsonHero(hero));
+		state["tavern"]["towns"].Vector().push_back(tavern);
+	}
+
 	return state;
+}
+
+JsonNode CMcpPlayerInterface::makeStateJson(const JsonNode & arguments) const
+{
+	Mcp::StateSelection selection = Mcp::readStateSelection(arguments);
+	JsonNode state = makeStateJson();
+	if(selection.sinceRevision || selection.sections.count("updates") != 0)
+		state["updates"] = makeUpdatesJson(selection.sinceRevision.value_or(0), selection.maxUpdates);
+	return Mcp::filterStateBySelection(state, selection);
 }
 
 JsonNode CMcpPlayerInterface::makeActionSpaceJson() const
@@ -1235,16 +1565,19 @@ JsonNode CMcpPlayerInterface::makeActionSpaceJson() const
 	JsonNode actionSpace;
 	actionSpace["purpose"] = JsonNode("Use this payload to choose one legal VCMI MCP tool call for the current player.");
 	actionSpace["rules"].Vector().push_back(JsonNode("Call vcmi.get_state or vcmi.get_action_space before choosing an action."));
-	actionSpace["rules"].Vector().push_back(JsonNode("Use only object ids returned by vcmi.get_state or vcmi.get_action_space."));
-	actionSpace["rules"].Vector().push_back(JsonNode("Use vcmi.get_visible_map and vcmi.get_movement_options for normal player-visible map and pathfinding information."));
-	actionSpace["rules"].Vector().push_back(JsonNode("Use vcmi.get_battle_state when battle.activeStack or battle.activeTactics is true."));
+	actionSpace["rules"].Vector().push_back(JsonNode("Use vcmi.get_reachable before moving heroes; prefer route_id-based movement or vcmi.execute_plan."));
+	actionSpace["rules"].Vector().push_back(JsonNode("Use only object ids, route ids, and coordinates returned by MCP payloads."));
+	actionSpace["rules"].Vector().push_back(JsonNode("Battle is auto-handled by the MCP interface; focus planning on adventure-map and town actions."));
 	actionSpace["rules"].Vector().push_back(JsonNode("If a tool returns isError=true, inspect vcmi.get_state again before retrying."));
 	actionSpace["rules"].Vector().push_back(JsonNode("If unsure and turn.active is true, vcmi.end_turn is a valid conservative action."));
 
 	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.get_state", "Read current visible player state."));
+	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.get_updates", "Read revisioned visible state changes since a previous state revision."));
 	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.get_action_space", "Read current guidance, object ids, and action candidates."));
 	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.get_visible_map", "Read visible adventure-map tiles and objects around a center or owned hero."));
 	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.get_movement_options", "Read pathfinder-derived movement and visible object targets for an owned hero."));
+	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.get_reachable", "Read route-id movement targets and reachable objects for an owned hero."));
+	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.execute_plan", "Execute a sequential batch of town, recruitment, movement, query, and turn actions."));
 	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.get_battle_state", "Read battle stacks, active stack, and legal battle action candidates."));
 	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.end_turn", "End the active adventure-map turn."));
 	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.answer_query", "Answer the pending query/dialog using query_id and optional answer."));
@@ -1369,13 +1702,11 @@ JsonNode CMcpPlayerInterface::makeActionSpaceJson() const
 		movementOptions["arguments"]["max_options"] = JsonNode(80);
 		actionSpace["currentActions"].Vector().push_back(movementOptions);
 
-		JsonNode action = jsonAction("vcmi.move_hero", "Move this owned hero. Destination must be reachable and visible to the player.");
-		action["arguments"]["hero_id"] = hero["id"];
-		action["arguments"]["x"] = hero["position"]["x"];
-		action["arguments"]["y"] = hero["position"]["y"];
-		action["arguments"]["z"] = hero["position"]["z"];
-		action["notes"].Vector().push_back(JsonNode("Replace x/y/z with the intended destination. The server validates the move."));
-		actionSpace["currentActions"].Vector().push_back(action);
+		JsonNode reachable = jsonAction("vcmi.get_reachable", "Inspect this-day reachable route-id targets for this owned hero.");
+		reachable["arguments"]["hero_id"] = hero["id"];
+		reachable["arguments"]["radius"] = JsonNode(12);
+		reachable["arguments"]["max_options"] = JsonNode(120);
+		actionSpace["currentActions"].Vector().push_back(reachable);
 	}
 
 	actionSpace["buildOptions"].Vector();
@@ -1614,11 +1945,22 @@ JsonNode CMcpPlayerInterface::makeMovementOptionsJson(const JsonNode & arguments
 
 		JsonNode option = jsonPathNode(*pathNode);
 		option["path"] = jsonPathPreview(paths, position, pathNode->layer, 20);
+		option["route_id"] = JsonNode(Mcp::makeRouteId(
+			hero->id.getNum(),
+			hero->visitablePos().x,
+			hero->visitablePos().y,
+			hero->visitablePos().z,
+			position.x,
+			position.y,
+			position.z,
+			pathNode->layer.getNum(),
+			pathNode->moveRemains));
 		option["suggestedTool"] = JsonNode("vcmi.move_hero");
 		option["arguments"]["hero_id"] = JsonNode(hero->id.getNum());
 		option["arguments"]["x"] = JsonNode(position.x);
 		option["arguments"]["y"] = JsonNode(position.y);
 		option["arguments"]["z"] = JsonNode(position.z);
+		option["arguments"]["route_id"] = option["route_id"];
 
 		const CGObjectInstance * topObject = cb->getTopObj(position);
 		if(topObject)
@@ -1635,9 +1977,12 @@ JsonNode CMcpPlayerInterface::makeMovementOptionsJson(const JsonNode & arguments
 				JsonNode target;
 				target["object"] = jsonMapObject(topObject, playerID, hero);
 				target["path"] = jsonPathNode(*pathNode);
+				target["route_id"] = option["route_id"];
+				target["pathPreview"] = option["path"];
 				target["suggestedTool"] = JsonNode("vcmi.move_hero_to_object");
 				target["arguments"]["hero_id"] = JsonNode(hero->id.getNum());
 				target["arguments"]["object_id"] = JsonNode(topObject->id.getNum());
+				target["arguments"]["route_id"] = option["route_id"];
 				result["objectTargets"].Vector().push_back(target);
 			}
 		}
@@ -1657,6 +2002,355 @@ JsonNode CMcpPlayerInterface::makeMovementOptionsJson(const JsonNode & arguments
 	result["movementOptionCount"] = JsonNode(static_cast<int32_t>(result["movementOptions"].Vector().size()));
 	result["objectTargetCount"] = JsonNode(static_cast<int32_t>(result["objectTargets"].Vector().size()));
 	return result;
+}
+
+JsonNode CMcpPlayerInterface::makeReachableJson(const JsonNode & arguments) const
+{
+	JsonNode result = makeMovementOptionsJson(arguments);
+	result["purpose"] = JsonNode("Reachable this-day movement targets. Use route_id with vcmi.move_hero, vcmi.move_hero_to_object, or vcmi.execute_plan.");
+	result["reachableTiles"] = result["movementOptions"];
+	result["reachableObjects"] = result["objectTargets"];
+	return result;
+}
+
+Mcp::Protocol::ToolResult CMcpPlayerInterface::executePlan(const JsonNode & arguments)
+{
+	std::lock_guard actionLock(actionMutex);
+	if(!hasField(arguments, "actions") || !arguments["actions"].isVector())
+		return makeToolError("Missing or non-array argument: actions");
+
+	const bool dryRun = readBool(arguments, "dry_run", false);
+	const size_t maxUpdates = static_cast<size_t>(readClampedInteger(arguments, "max_updates", 200, 1, 1000));
+	uint64_t fromRevision = 0;
+	{
+		std::lock_guard lock(updatesMutex);
+		fromRevision = stateRevision;
+	}
+
+	JsonNode result;
+	result["ok"] = JsonNode(true);
+	result["status"] = JsonNode("completed");
+	result["plan_id"] = hasField(arguments, "plan_id") ? JsonNode(readString(arguments, "plan_id")) : JsonNode();
+	result["dryRun"] = JsonNode(dryRun);
+	result["fromRevision"] = JsonNode(static_cast<int64_t>(fromRevision));
+	result["executed"].Vector();
+	result["failed"].Vector();
+	result["remaining"].Vector();
+
+	auto stopWithFailure = [&](JsonNode actionResult, size_t failedIndex)
+	{
+		result["ok"] = JsonNode(false);
+		result["status"] = JsonNode("partial");
+		result["failed"].Vector().push_back(actionResult);
+		for(size_t index = failedIndex + 1; index < arguments["actions"].Vector().size(); ++index)
+			result["remaining"].Vector().push_back(arguments["actions"].Vector()[index]);
+	};
+
+	for(size_t index = 0; index < arguments["actions"].Vector().size(); ++index)
+	{
+		const JsonNode & action = arguments["actions"].Vector()[index];
+		JsonNode actionResult;
+		actionResult["index"] = JsonNode(static_cast<int32_t>(index));
+		if(hasField(action, "id"))
+			actionResult["id"] = action["id"];
+		if(!hasField(action, "type"))
+		{
+			actionResult["ok"] = JsonNode(false);
+			actionResult["error"] = JsonNode("Plan action is missing type");
+			stopWithFailure(actionResult, index);
+			break;
+		}
+
+		const std::string type = readString(action, "type");
+		actionResult["type"] = JsonNode(type);
+
+		if(!dryRun)
+		{
+			std::lock_guard lock(interfaceMutex);
+			if(pendingQuery && type != "answer_query")
+			{
+				actionResult["ok"] = JsonNode(false);
+				actionResult["error"] = JsonNode("Pending query must be answered before continuing plan execution");
+				actionResult["pendingQuery"] = makePendingQueryJson();
+				stopWithFailure(actionResult, index);
+				break;
+			}
+			if(activeBattleID != BattleID::NONE || activeTacticsBattleID != BattleID::NONE)
+			{
+				actionResult["ok"] = JsonNode(false);
+				actionResult["error"] = JsonNode("Battle is active; plan execution paused for auto-battle resolution");
+				stopWithFailure(actionResult, index);
+				break;
+			}
+		}
+
+		if(type == "build")
+		{
+			const CGTownInstance * town = cb->getTown(ObjectInstanceID(readInteger(action, "town_id")));
+			if(!town || town->tempOwner != playerID)
+			{
+				actionResult["ok"] = JsonNode(false);
+				actionResult["error"] = JsonNode("Unknown town or town is not owned by this MCP player");
+				stopWithFailure(actionResult, index);
+				break;
+			}
+			const BuildingID buildingID(readInteger(action, "building_id"));
+			if(cb->canBuildStructure(town, buildingID) != EBuildingState::ALLOWED)
+			{
+				actionResult["ok"] = JsonNode(false);
+				actionResult["error"] = JsonNode("Building is not currently allowed");
+				stopWithFailure(actionResult, index);
+				break;
+			}
+			actionResult["town_id"] = JsonNode(town->id.getNum());
+			actionResult["building_id"] = JsonNode(buildingID.getNum());
+			if(!dryRun)
+			{
+				bool accepted = false;
+				RequestWaitResult request = submitAndWaitForRequest(typeid(BuildStructure), [&]
+				{
+					accepted = cb->buildBuilding(town, buildingID);
+				});
+				actionResult["request"] = jsonRequestWaitResult(request);
+				actionResult["ok"] = JsonNode(accepted && request.applied);
+				if(!accepted || !request.applied)
+				{
+					actionResult["error"] = JsonNode("Build action was rejected");
+					stopWithFailure(actionResult, index);
+					break;
+				}
+			}
+			else
+			{
+				actionResult["ok"] = JsonNode(true);
+			}
+			result["executed"].Vector().push_back(actionResult);
+			continue;
+		}
+
+		if(type == "recruit")
+		{
+			const int32_t sourceID = hasField(action, "source_id") ? readInteger(action, "source_id") : readInteger(action, "town_id");
+			const CGObjectInstance * sourceObject = cb->getObj(ObjectInstanceID(sourceID), false);
+			const CGDwelling * dwelling = dynamic_cast<const CGDwelling *>(sourceObject);
+			const CGTownInstance * town = dynamic_cast<const CGTownInstance *>(sourceObject);
+			const CArmedInstance * destination = town ? town->getUpperArmy() : dynamic_cast<const CArmedInstance *>(sourceObject);
+			if(hasField(action, "destination_id"))
+				destination = dynamic_cast<const CArmedInstance *>(cb->getObj(ObjectInstanceID(readInteger(action, "destination_id")), false));
+
+			if(!dwelling || !destination || dwelling->tempOwner != playerID)
+			{
+				actionResult["ok"] = JsonNode(false);
+				actionResult["error"] = JsonNode("Unknown recruitment source, destination, or source is not owned by this MCP player");
+				stopWithFailure(actionResult, index);
+				break;
+			}
+
+			const int32_t level = readInteger(action, "level");
+			if(level < 0 || level >= static_cast<int32_t>(dwelling->creatures.size()) || dwelling->creatures[level].second.empty())
+			{
+				actionResult["ok"] = JsonNode(false);
+				actionResult["error"] = JsonNode("Recruitment level is not available");
+				stopWithFailure(actionResult, index);
+				break;
+			}
+
+			const CreatureID creatureID = hasField(action, "creature_id") ? CreatureID(readInteger(action, "creature_id")) : dwelling->creatures[level].second.back();
+			if(!vstd::contains(dwelling->creatures[level].second, creatureID))
+			{
+				actionResult["ok"] = JsonNode(false);
+				actionResult["error"] = JsonNode("creature_id is not available at this recruitment level");
+				stopWithFailure(actionResult, index);
+				break;
+			}
+
+			int32_t amount = readInteger(action, "amount", static_cast<int32_t>(dwelling->creatures[level].first));
+			amount = std::clamp<int32_t>(amount, 0, static_cast<int32_t>(dwelling->creatures[level].first));
+			if(const CCreature * creature = creatureID.toCreature())
+			{
+				const int32_t affordable = cb->getResourceAmount() / creature->getFullRecruitCost();
+				amount = std::min(amount, affordable);
+			}
+			if(amount <= 0)
+			{
+				actionResult["ok"] = JsonNode(false);
+				actionResult["error"] = JsonNode("No recruitable or affordable creatures for this action");
+				stopWithFailure(actionResult, index);
+				break;
+			}
+
+			actionResult["source_id"] = JsonNode(dwelling->id.getNum());
+			actionResult["destination_id"] = JsonNode(destination->id.getNum());
+			actionResult["level"] = JsonNode(level);
+			actionResult["creature_id"] = JsonNode(creatureID.getNum());
+			actionResult["amount"] = JsonNode(amount);
+			if(!dryRun)
+			{
+				RequestWaitResult request = submitAndWaitForRequest(typeid(RecruitCreatures), [&]
+				{
+					cb->recruitCreatures(dwelling, destination, creatureID, amount, level);
+				});
+				actionResult["request"] = jsonRequestWaitResult(request);
+				actionResult["ok"] = JsonNode(request.applied);
+				if(!request.applied)
+				{
+					actionResult["error"] = JsonNode("Recruit action was rejected");
+					stopWithFailure(actionResult, index);
+					break;
+				}
+			}
+			else
+			{
+				actionResult["ok"] = JsonNode(true);
+			}
+			result["executed"].Vector().push_back(actionResult);
+			continue;
+		}
+
+		if(type == "move_hero" || type == "visit_object")
+		{
+			const CGHeroInstance * hero = cb->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+			if(!hero || hero->tempOwner != playerID)
+			{
+				actionResult["ok"] = JsonNode(false);
+				actionResult["error"] = JsonNode("Unknown hero or hero is not owned by this MCP player");
+				stopWithFailure(actionResult, index);
+				break;
+			}
+
+			int3 destination;
+			if(type == "visit_object")
+			{
+				const CGObjectInstance * object = cb->getObj(ObjectInstanceID(readInteger(action, "object_id")), false);
+				if(!object)
+				{
+					actionResult["ok"] = JsonNode(false);
+					actionResult["error"] = JsonNode("Unknown or not visible object_id");
+					stopWithFailure(actionResult, index);
+					break;
+				}
+				destination = object->visitablePos();
+				actionResult["object_id"] = JsonNode(object->id.getNum());
+			}
+			else
+			{
+				const int z = hasField(action, "z") ? readInteger(action, "z") : hero->visitablePos().z;
+				destination = int3(readInteger(action, "x"), readInteger(action, "y"), z);
+			}
+
+			RoutePlan route = makeRoutePlan(hero, destination, readOptionalString(action, "route_id"));
+			if(!route.ok)
+			{
+				actionResult["ok"] = JsonNode(false);
+				actionResult["error"] = JsonNode(route.error);
+				stopWithFailure(actionResult, index);
+				break;
+			}
+
+			actionResult["route_id"] = JsonNode(route.routeID);
+			actionResult["destination"] = jsonPosition(route.destination);
+			actionResult["submittedPath"] = jsonPositions(route.requestPath);
+			if(!dryRun)
+			{
+				RequestWaitResult request = submitAndWaitForRequest(typeid(MoveHero), [this, hero, route]
+				{
+					cb->moveHero(hero, route.requestPath, route.transit, route.layer);
+				});
+				actionResult["request"] = jsonRequestWaitResult(request);
+				actionResult["ok"] = JsonNode(request.applied);
+				if(const CGHeroInstance * updatedHero = cb->getHero(hero->id))
+					actionResult["hero"] = jsonHero(updatedHero);
+				if(!request.applied)
+				{
+					actionResult["error"] = JsonNode("Move action was rejected");
+					stopWithFailure(actionResult, index);
+					break;
+				}
+			}
+			else
+			{
+				actionResult["ok"] = JsonNode(true);
+			}
+			result["executed"].Vector().push_back(actionResult);
+			continue;
+		}
+
+		if(type == "answer_query")
+		{
+			QueryID queryID(readInteger(action, "query_id"));
+			std::optional<int32_t> answer;
+			if(hasField(action, "answer"))
+				answer = readInteger(action, "answer");
+			if(!dryRun)
+			{
+				int requestID = cb->sendQueryReply(answer, queryID);
+				clearPendingQuery(queryID);
+				actionResult["requestId"] = JsonNode(requestID);
+			}
+			actionResult["ok"] = JsonNode(true);
+			result["executed"].Vector().push_back(actionResult);
+			continue;
+		}
+
+		if(type == "end_turn")
+		{
+			if(!dryRun)
+			{
+				{
+					std::lock_guard lock(interfaceMutex);
+					if(!turnActive)
+					{
+						actionResult["ok"] = JsonNode(false);
+						actionResult["error"] = JsonNode("No active turn to end");
+						stopWithFailure(actionResult, index);
+						break;
+					}
+					turnActive = false;
+				}
+				RequestWaitResult request = submitAndWaitForRequest(typeid(EndTurn), [this]
+				{
+					cb->endTurn();
+				});
+				actionResult["request"] = jsonRequestWaitResult(request);
+				actionResult["ok"] = JsonNode(request.applied);
+				if(!request.applied)
+				{
+					std::lock_guard lock(interfaceMutex);
+					turnActive = true;
+					actionResult["error"] = JsonNode("End turn action was rejected");
+					stopWithFailure(actionResult, index);
+					break;
+				}
+			}
+			else
+			{
+				actionResult["ok"] = JsonNode(true);
+			}
+			result["executed"].Vector().push_back(actionResult);
+			result["status"] = JsonNode("turn_ended");
+			break;
+		}
+
+		actionResult["ok"] = JsonNode(false);
+		actionResult["error"] = JsonNode("Unsupported plan action type: " + type);
+		stopWithFailure(actionResult, index);
+		break;
+	}
+
+	{
+		std::lock_guard lock(updatesMutex);
+		result["toRevision"] = JsonNode(static_cast<int64_t>(stateRevision));
+	}
+	result["updates"] = makeUpdatesJson(fromRevision, maxUpdates);
+	if(hasField(arguments, "return_select"))
+	{
+		JsonNode stateArgs;
+		stateArgs["select"] = arguments["return_select"];
+		stateArgs["since_revision"] = JsonNode(static_cast<int64_t>(fromRevision));
+		stateArgs["max_updates"] = JsonNode(static_cast<int32_t>(maxUpdates));
+		result["state"] = makeStateJson(stateArgs);
+	}
+	return makeJsonResult(result);
 }
 
 JsonNode CMcpPlayerInterface::makeBattleStateJson() const
@@ -1728,18 +2422,62 @@ JsonNode CMcpPlayerInterface::makeBattleStateJson() const
 	return state;
 }
 
+void CMcpPlayerInterface::performAutoBattleAction(const BattleID & battleID, const CStack * stack)
+{
+	if(!cb || !stack)
+		return;
+
+	auto battle = cb->getBattle(battleID);
+	if(!battle || battle->battleIsFinished())
+		return;
+	if(battle->battleGetOwner(stack) != playerID)
+		return;
+
+	for(const CStack * target : battle->battleGetStacks(CBattleInfoEssentials::ONLY_ENEMY, false))
+	{
+		if(target && battle->battleCanShoot(stack, target->getPosition()))
+		{
+			cb->battleMakeUnitAction(battleID, BattleAction::makeShotAttack(stack, target));
+			return;
+		}
+	}
+
+	const BattleHexArray availableHexes = battle->battleGetAvailableHexes(stack, false);
+	for(const CStack * target : battle->battleGetStacks(CBattleInfoEssentials::ONLY_ENEMY, false))
+	{
+		if(!target || !battle->battleCanAttackUnit(stack, target))
+			continue;
+
+		for(const BattleHex::EDir direction : BattleHex::hexagonalDirections())
+		{
+			if(!battle->battleCanAttackHex(availableHexes, stack, target->getPosition(), direction))
+				continue;
+
+			const BattleHex attackFrom = battle->fromWhichHexAttack(stack, target->getPosition(), direction);
+			if(attackFrom.isValid())
+			{
+				cb->battleMakeUnitAction(battleID, BattleAction::makeMeleeAttack(stack, target, attackFrom));
+				return;
+			}
+		}
+	}
+
+	if(!stack->waitedThisTurn)
+		cb->battleMakeUnitAction(battleID, BattleAction::makeWait(stack));
+	else
+		cb->battleMakeUnitAction(battleID, BattleAction::makeDefend(stack));
+}
+
 std::string CMcpPlayerInterface::makeAgentGuideText() const
 {
 	return
 		"VCMI MCP agent guide\n"
-		"1. Call vcmi.get_action_space first. It lists the current tools, ids, and action candidates.\n"
-		"2. Call vcmi.get_state when you need full current player state.\n"
-		"3. Call vcmi.get_visible_map for visible adventure-map tiles/objects and vcmi.get_movement_options before moving a hero.\n"
-		"4. In battle, call vcmi.get_battle_state and choose one listed legal battle action.\n"
-		"5. Use only ids, coordinates, and battle hexes returned by MCP payloads.\n"
-		"6. Prefer concrete progress: build an allowed town building, move an owned hero to a visible target, answer a pending query, or handle battle/tactics.\n"
-		"7. If no useful action is clear and turn.active is true, call vcmi.end_turn.\n"
-		"8. If a tool result has isError=true, read state/action-space again before retrying.\n";
+		"1. Call vcmi.get_state with selectors and vcmi.get_reachable for route-id movement planning.\n"
+		"2. Prefer vcmi.execute_plan to submit a day plan with builds, recruitment, movement, queries, and end_turn.\n"
+		"3. Use only ids, route_id values, and coordinates returned by MCP payloads.\n"
+		"4. Movement results mean the server applied or rejected the request; inspect structured failures before retrying.\n"
+		"5. Battle is auto-handled by the MCP interface. Focus on adventure-map and town planning.\n"
+		"6. Use vcmi.get_updates with the last revision instead of rereading full state after every small action.\n";
 }
 
 std::string CMcpPlayerInterface::makeStateText() const
@@ -1815,6 +2553,12 @@ void CMcpPlayerInterface::setPendingQuery(QueryID queryID, const std::string & t
 	event["type"] = JsonNode(type);
 	event["data"] = pendingQuery->data;
 	appendTraceEvent(event);
+
+	JsonNode update;
+	update["query_id"] = JsonNode(queryID.getNum());
+	update["queryType"] = JsonNode(type);
+	update["data"] = pendingQuery->data;
+	appendStateUpdate("query.pending", update);
 }
 
 void CMcpPlayerInterface::clearPendingQuery(QueryID queryID)
@@ -1828,6 +2572,10 @@ void CMcpPlayerInterface::clearPendingQuery(QueryID queryID)
 	event["player"] = JsonNode(playerID.toString());
 	event["query_id"] = JsonNode(queryID.getNum());
 	appendTraceEvent(event);
+
+	JsonNode update;
+	update["query_id"] = JsonNode(queryID.getNum());
+	appendStateUpdate("query.cleared", update);
 }
 
 void CMcpPlayerInterface::yourTurn(QueryID queryID)
@@ -1844,29 +2592,35 @@ void CMcpPlayerInterface::yourTurn(QueryID queryID)
 		event["query_id"] = JsonNode(queryID.getNum());
 	appendTraceEvent(event);
 
+	JsonNode update;
+	update["player"] = JsonNode(playerID.toString());
+	if(queryID.hasValue())
+		update["query_id"] = JsonNode(queryID.getNum());
+	appendStateUpdate("turn.started", update);
+
 	if(queryID.hasValue())
 		cb->selectionMade(0, queryID);
 }
 
 void CMcpPlayerInterface::yourTacticPhase(const BattleID & battleID, int distance)
 {
-	std::lock_guard lock(interfaceMutex);
-	activeTacticsBattleID = battleID;
-
 	JsonNode event;
 	event["event"] = JsonNode("tactics_phase_started");
 	event["player"] = JsonNode(playerID.toString());
 	event["battle_id"] = JsonNode(battleID.getNum());
 	event["distance"] = JsonNode(distance);
 	appendTraceEvent(event);
+
+	JsonNode update;
+	update["battle_id"] = JsonNode(battleID.getNum());
+	update["distance"] = JsonNode(distance);
+	appendStateUpdate("battle.tacticsStarted", update);
+
+	cb->battleMakeTacticAction(battleID, BattleAction::makeEndOFTacticPhase(cb->getBattle(battleID)->battleGetTacticsSide()));
 }
 
 void CMcpPlayerInterface::activeStack(const BattleID & battleID, const CStack * stack)
 {
-	std::lock_guard lock(interfaceMutex);
-	activeBattleID = battleID;
-	activeStackToMove = stack;
-
 	JsonNode event;
 	event["event"] = JsonNode("battle_stack_active");
 	event["player"] = JsonNode(playerID.toString());
@@ -1877,6 +2631,13 @@ void CMcpPlayerInterface::activeStack(const BattleID & battleID, const CStack * 
 		event["stack"]["name"] = JsonNode(jsonText(stack->getName()));
 	}
 	appendTraceEvent(event);
+
+	JsonNode update;
+	update["battle_id"] = JsonNode(battleID.getNum());
+	if(stack)
+		update["stack"] = jsonBattleStack(*cb->getBattle(battleID), stack);
+	appendStateUpdate("battle.stackAutoAction", update);
+	performAutoBattleAction(battleID, stack);
 }
 
 void CMcpPlayerInterface::battleStart(const BattleID & battleID, const CCreatureSet * army1, const CCreatureSet * army2, int3 tile, const CGHeroInstance * hero1, const CGHeroInstance * hero2, BattleSide side, bool replayAllowed)
@@ -1893,6 +2654,7 @@ void CMcpPlayerInterface::battleStart(const BattleID & battleID, const CCreature
 	event["attackerArmySlots"] = JsonNode(army1 ? static_cast<int32_t>(army1->Slots().size()) : 0);
 	event["defenderArmySlots"] = JsonNode(army2 ? static_cast<int32_t>(army2->Slots().size()) : 0);
 	appendTraceEvent(event);
+	appendStateUpdate("battle.started", event);
 }
 
 void CMcpPlayerInterface::battleEnd(const BattleID & battleID, const BattleResult * br, QueryID queryID)
@@ -1921,6 +2683,7 @@ void CMcpPlayerInterface::battleEnd(const BattleID & battleID, const BattleResul
 		event["attacker"] = JsonNode(br->attacker.toString());
 	}
 	appendTraceEvent(event);
+	appendStateUpdate("battle.ended", event);
 }
 
 void CMcpPlayerInterface::heroGotLevel(const CGHeroInstance * hero, PrimarySkill pskill, std::vector<SecondarySkill> & skills, QueryID queryID)
@@ -1997,4 +2760,179 @@ void CMcpPlayerInterface::showMapObjectSelectDialog(QueryID askID, const Compone
 std::optional<BattleAction> CMcpPlayerInterface::makeSurrenderRetreatDecision(const BattleID & battleID, const BattleStateInfoForRetreat & battleState)
 {
 	return std::nullopt;
+}
+
+void CMcpPlayerInterface::buildChanged(const CGTownInstance * town, BuildingID buildingID, int what)
+{
+	JsonNode data;
+	data["town_id"] = JsonNode(town ? town->id.getNum() : ObjectInstanceID::NONE.getNum());
+	if(town)
+		data["town"] = jsonTown(town);
+	data["building_id"] = JsonNode(buildingID.getNum());
+	data["change"] = JsonNode(what == 1 ? "built" : what == 2 ? "demolished" : "changed");
+	appendStateUpdate("town.buildingChanged", data);
+}
+
+void CMcpPlayerInterface::heroMoved(const TryMoveHero & details, bool verbose)
+{
+	JsonNode data;
+	data["hero_id"] = JsonNode(details.id.getNum());
+	data["start"] = jsonPosition(details.start);
+	data["end"] = jsonPosition(details.end);
+	data["result"] = JsonNode(static_cast<int32_t>(details.result));
+	if(const CGHeroInstance * hero = cb ? cb->getHero(details.id) : nullptr)
+		data["hero"] = jsonHero(hero);
+	appendStateUpdate("hero.moved", data);
+}
+
+void CMcpPlayerInterface::heroCreated(const CGHeroInstance * hero)
+{
+	JsonNode data;
+	if(hero)
+		data["hero"] = jsonHero(hero);
+	appendStateUpdate("hero.created", data);
+}
+
+void CMcpPlayerInterface::heroVisit(const CGHeroInstance * visitor, const CGObjectInstance * visitedObj, bool start)
+{
+	JsonNode data;
+	if(visitor)
+		data["hero"] = jsonHero(visitor);
+	if(visitedObj)
+		data["object"] = jsonMapObject(visitedObj, playerID, visitor);
+	data["start"] = JsonNode(start);
+	appendStateUpdate("hero.visit", data);
+}
+
+void CMcpPlayerInterface::heroManaPointsChanged(const CGHeroInstance * hero)
+{
+	JsonNode data;
+	if(hero)
+		data["hero"] = jsonHero(hero);
+	appendStateUpdate("hero.manaChanged", data);
+}
+
+void CMcpPlayerInterface::heroMovePointsChanged(const CGHeroInstance * hero)
+{
+	JsonNode data;
+	if(hero)
+		data["hero"] = jsonHero(hero);
+	appendStateUpdate("hero.movementChanged", data);
+}
+
+void CMcpPlayerInterface::tileHidden(const FowTilesType & pos)
+{
+	JsonNode data;
+	data["tiles"].Vector();
+	for(const int3 & tile : pos)
+		data["tiles"].Vector().push_back(jsonPosition(tile));
+	appendStateUpdate("visibility.hidden", data);
+}
+
+void CMcpPlayerInterface::tileRevealed(const FowTilesType & pos)
+{
+	JsonNode data;
+	data["tiles"].Vector();
+	for(const int3 & tile : pos)
+		data["tiles"].Vector().push_back(jsonPosition(tile));
+	appendStateUpdate("visibility.revealed", data);
+}
+
+void CMcpPlayerInterface::availableCreaturesChanged(const CGDwelling * town)
+{
+	JsonNode data;
+	if(town)
+	{
+		data["source_id"] = JsonNode(town->id.getNum());
+		data["recruitOptions"].Vector();
+		for(int32_t level = 0; level < static_cast<int32_t>(town->creatures.size()); ++level)
+		{
+			JsonNode option = jsonRecruitOption(town, town, level);
+			if(option.isStruct())
+				data["recruitOptions"].Vector().push_back(option);
+		}
+	}
+	appendStateUpdate("recruitment.availableChanged", data);
+}
+
+void CMcpPlayerInterface::beforeObjectPropertyChanged(const SetObjectProperty * sop)
+{
+}
+
+void CMcpPlayerInterface::objectPropertyChanged(const SetObjectProperty * sop)
+{
+	JsonNode data;
+	if(sop)
+	{
+		data["object_id"] = JsonNode(sop->id.getNum());
+		data["property"] = JsonNode(static_cast<int32_t>(sop->what));
+		data["identifier"] = JsonNode(sop->identifier.getNum());
+		if(cb)
+		{
+			const CGObjectInstance * object = cb->getObj(sop->id, false);
+			if(object)
+				data["object"] = jsonMapObject(object, playerID, nullptr);
+		}
+	}
+	appendStateUpdate("object.changed", data);
+}
+
+void CMcpPlayerInterface::objectRemoved(const CGObjectInstance * obj, const PlayerColor & initiator)
+{
+	JsonNode data;
+	if(obj)
+		data["object"] = jsonMapObject(obj, playerID, nullptr);
+	data["initiator"] = JsonNode(initiator.toString());
+	appendStateUpdate("object.removed", data);
+}
+
+void CMcpPlayerInterface::playerStartsTurn(PlayerColor player)
+{
+	JsonNode data;
+	data["player"] = JsonNode(player.toString());
+	appendStateUpdate("player.turnStarted", data);
+}
+
+void CMcpPlayerInterface::playerEndsTurn(PlayerColor player)
+{
+	JsonNode data;
+	data["player"] = JsonNode(player.toString());
+	appendStateUpdate("player.turnEnded", data);
+}
+
+void CMcpPlayerInterface::requestSent(const CPackForServer * pack, int requestID)
+{
+	JsonNode data;
+	data["requestId"] = JsonNode(requestID);
+	if(pack)
+		data["type"] = JsonNode(typeid(*pack).name());
+	appendStateUpdate("request.sent", data);
+
+	std::lock_guard lock(requestMutex);
+	if(pendingRequest && pack && pendingRequest->requestID < 0 && pendingRequest->typeName == typeid(*pack).name())
+	{
+		pendingRequest->requestID = requestID;
+		requestCv.notify_all();
+	}
+}
+
+void CMcpPlayerInterface::requestRealized(PackageApplied * pa)
+{
+	JsonNode data;
+	if(pa)
+	{
+		data["requestId"] = JsonNode(static_cast<int32_t>(pa->requestID));
+		data["packType"] = JsonNode(static_cast<int32_t>(pa->packType));
+		data["result"] = JsonNode(pa->result);
+	}
+	appendStateUpdate("request.realized", data);
+
+	std::lock_guard lock(requestMutex);
+	if(pendingRequest && pa && pendingRequest->requestID == static_cast<int>(pa->requestID))
+	{
+		pendingRequest->packType = pa->packType;
+		pendingRequest->realized = true;
+		pendingRequest->applied = pa->result;
+		requestCv.notify_all();
+	}
 }
