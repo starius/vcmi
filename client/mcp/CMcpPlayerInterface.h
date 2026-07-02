@@ -15,6 +15,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
 
 class McpHttpServer;
 
@@ -32,22 +33,29 @@ class CMcpPlayerInterface : public CGlobalAI
 	std::unique_ptr<McpHttpServer> httpServer;
 
 	mutable std::mutex interfaceMutex;
+	mutable std::mutex traceMutex;
 	bool turnActive = false;
 	std::optional<PendingQuery> pendingQuery;
 	BattleID activeBattleID = BattleID::NONE;
 	const CStack * activeStackToMove = nullptr;
 	BattleID activeTacticsBattleID = BattleID::NONE;
+	std::string tracePath;
+	mutable uint64_t traceSequence = 0;
 
 	void configureProtocol();
 	void startHttpServer();
 
 	JsonNode makeStateJson() const;
+	JsonNode makeActionSpaceJson() const;
+	std::string makeAgentGuideText() const;
 	std::string makeStateText() const;
 	JsonNode makePendingQueryJson() const;
 
 	Mcp::Protocol::ToolResult makeOkResult(const std::string & message = "ok") const;
 	Mcp::Protocol::ToolResult makeJsonResult(const JsonNode & node) const;
 	Mcp::Protocol::ToolResult makeToolError(const std::string & message) const;
+	Mcp::Protocol::ToolResult traceToolResult(const std::string & toolName, const JsonNode & arguments, Mcp::Protocol::ToolResult result) const;
+	void appendTraceEvent(JsonNode event) const;
 
 	void setPendingQuery(QueryID queryID, const std::string & type, JsonNode data);
 	void clearPendingQuery(QueryID queryID);

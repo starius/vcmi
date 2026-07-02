@@ -75,6 +75,94 @@ curl -s http://127.0.0.1:3033/mcp \
 
 The same state is also available as the MCP resource `vcmi://state`.
 
+## ChatGPT connector demo
+
+For a ChatGPT web connector demo, run a VCMI game with MCP controlling red and `Nullkiller2` controlling the other player colors.
+
+The demo supports three connection modes through `VCMI_MCP_CONNECTION`:
+
+- `server`: expose the local MCP listener through a public HTTPS URL, for example ngrok or cloudflared
+- `tunnel`: keep the listener private and connect it through OpenAI Secure MCP Tunnel
+- `local`: run only the local MCP listener for curl, tests, or local agents
+
+Server URL mode is the fastest path for Developer Mode testing. OpenAI's Apps SDK deployment docs show the same local-development pattern with a tunnel such as ngrok, mapping an HTTPS public URL ending in `/mcp` to a local MCP listener. ChatGPT Developer Mode supports remote MCP over SSE or streaming HTTP, with OAuth, No Authentication, or Mixed Authentication.
+
+Run the game:
+
+```bash
+cd /tmp/vcmi-mcp-build-release/bin
+VCMI_MCP_CONNECTION=server VCMI_MCP_PORT=3033 VCMI_CLIENT=./vcmiclient \
+  /root/vcmi-dd-sonar-clean/client/mcp/examples/run_chatgpt_demo.sh
+```
+
+In another shell on the same host, expose it with a public HTTPS forwarder and use the printed URL with `/mcp` in ChatGPT:
+
+```bash
+ngrok http 3033
+# use https://<subdomain>.ngrok.app/mcp
+```
+
+If ngrok is not configured on the host, cloudflared quick tunnels can be used for ad hoc testing:
+
+```bash
+cloudflared tunnel --url http://127.0.0.1:3033
+# use https://<subdomain>.trycloudflare.com/mcp
+```
+
+The demo script can also start one of these forwarders:
+
+```bash
+VCMI_MCP_CONNECTION=server VCMI_MCP_FORWARDER=cloudflared \
+  VCMI_CLIENT=./vcmiclient \
+  /root/vcmi-dd-sonar-clean/client/mcp/examples/run_chatgpt_demo.sh
+```
+
+On a Nix-based host without a global `cloudflared` install:
+
+```bash
+CLOUDFLARED="$(nix --extra-experimental-features 'nix-command flakes' build --no-link --print-out-paths nixpkgs#cloudflared)/bin/cloudflared"
+VCMI_MCP_CONNECTION=server VCMI_MCP_FORWARDER=cloudflared \
+  VCMI_CLOUDFLARED="$CLOUDFLARED" VCMI_CLIENT=./vcmiclient \
+  /root/vcmi-dd-sonar-clean/client/mcp/examples/run_chatgpt_demo.sh
+```
+
+The script prints the MCP endpoint and creates a directory like `/tmp/vcmi-chatgpt-demo-YYYYMMDDTHHMMSSZ` containing:
+
+- `mcp-red.jsonl`: MCP lifecycle and tool-call trace
+- `vcmiclient.stdout.log`: stdout/stderr from the client
+- `forwarder.log`: forwarder output when `VCMI_MCP_FORWARDER` is used
+- VCMI log files written via `--logLocation`
+
+In ChatGPT Developer Mode, create an app from the public server URL and choose `No Authentication` for this quick demo. Leave `VCMI_MCP_TOKEN` empty for that path; ChatGPT does not present arbitrary static API keys in Developer Mode. `VCMI_MCP_TOKEN` remains useful for curl, local scripts, and API clients that can set `Authorization: Bearer <token>`.
+
+For tunnel mode instead, create a tunnel in OpenAI Platform tunnel settings, then run `tunnel-client` on the same host that can reach VCMI:
+
+```bash
+export CONTROL_PLANE_API_KEY="sk-..."
+
+tunnel-client init \
+  --profile vcmi-mcp \
+  --tunnel-id tunnel_... \
+  --mcp-server-url http://127.0.0.1:3033/mcp
+
+tunnel-client doctor --profile vcmi-mcp --explain
+tunnel-client run --profile vcmi-mcp
+```
+
+Start VCMI with `VCMI_MCP_CONNECTION=tunnel` for that workflow. In ChatGPT connector settings, choose `Tunnel` as the connection type and select or paste the tunnel id. The demo MCP listener still binds only to `127.0.0.1`; no inbound firewall rule or public tunnel URL is needed.
+
+For this tunnel demo, do not set `VCMI_MCP_TOKEN` unless your tunnel profile is configured to forward the matching `Authorization: Bearer` header. The listener is private to localhost, and tunnel access is controlled by OpenAI tunnel identity and workspace permissions.
+
+Suggested ChatGPT prompt:
+
+```text
+Use the VCMI connector. Call vcmi.get_action_space first so you can see the current API, object ids, and candidate actions. Then call vcmi.get_state if you need more detail. Choose one useful legal action for red. Prefer building an allowed town building, moving an owned hero, answering a pending query, or handling battle/tactics. If no useful action is clear, call vcmi.end_turn. After every action, summarize the tool result and call vcmi.get_action_space again.
+```
+
+ChatGPT receives the complete callable API through MCP `tools/list`. The `vcmi.get_action_space` tool is an additional game-aware helper that returns the currently relevant object ids, build options, pending query id, battle flags, and action candidates.
+
+If you have an X/VNC display and want a spectator window instead of headless mode, set `VCMI_GUI=1` before running the script.
+
 ## Local LLM smoke agent
 
 `client/mcp/examples/vcmi_mcp_llm_agent.py` is a minimal one-step agent that connects an OpenAI-compatible local model server to the VCMI MCP HTTP endpoint. It reads `vcmi.get_state`, asks the model for one JSON action, and calls the selected MCP tool.
@@ -120,6 +208,7 @@ The smoke agent intentionally allows only a small action set (`vcmi.end_turn`, `
 Current tools:
 
 - `vcmi.get_state`: returns visible player state as JSON text
+- `vcmi.get_action_space`: returns action guidance, current object ids, build options, and relevant action candidates
 - `vcmi.move_hero`: requests movement of an owned hero to `x`, `y`, optional `z`
 - `vcmi.end_turn`: ends the active adventure-map turn
 - `vcmi.answer_query`: answers a pending VCMI query/dialog by `query_id` and optional integer `answer`
@@ -136,6 +225,14 @@ The state payload includes:
 - owned heroes with position, movement, mana, level, primary skills, and army
 - owned towns with position, heroes, buildings, fort level, and garrison
 - minimal battle/tactics activity flags
+
+Additional MCP resources:
+
+- `vcmi://state`: same JSON as `vcmi.get_state`
+- `vcmi://action-space`: same JSON as `vcmi.get_action_space`
+- `vcmi://agent-guide`: short text operating guide for an LLM agent
+
+Set `VCMI_MCP_TRACE=/path/to/file.jsonl` or `VCMI_MCP_TRACE_DIR=/path/to/dir` to record MCP lifecycle and tool-call trace events as JSON Lines.
 
 ## Development Notes
 

@@ -19,6 +19,8 @@
 #include "../../lib/battle/CPlayerBattleCallback.h"
 #include "../../lib/callback/CCallback.h"
 #include "../../lib/constants/StringConstants.h"
+#include "../../lib/entities/building/CBuilding.h"
+#include "../../lib/entities/faction/CTown.h"
 #include "../../lib/gameState/CGameState.h"
 #include "../../lib/logging/CLogger.h"
 #include "../../lib/mapObjects/CGHeroInstance.h"
@@ -29,9 +31,14 @@
 #include "../../lib/texts/MetaString.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <cstdlib>
+#include <fstream>
+#include <iomanip>
 #include <limits>
 #include <shared_mutex>
+#include <sstream>
 
 namespace
 {
@@ -168,6 +175,17 @@ JsonNode jsonTown(const CGTownInstance * town)
 	return node;
 }
 
+JsonNode jsonBuildOption(const CGTownInstance * town, const CBuilding * building)
+{
+	JsonNode node;
+	node["town_id"] = JsonNode(town->id.getNum());
+	node["town"] = JsonNode(town->getNameTranslated());
+	node["building_id"] = JsonNode(building->bid.getNum());
+	node["building"] = JsonNode(building->getNameTranslated());
+	node["cost"] = jsonResources(building->resources);
+	return node;
+}
+
 std::optional<uint16_t> readPortFromEnvironment()
 {
 	const char * portValue = std::getenv("VCMI_MCP_PORT");
@@ -194,6 +212,166 @@ std::string readTokenFromEnvironment()
 	return token ? token : "";
 }
 
+std::string readTracePathFromEnvironment(PlayerColor playerID)
+{
+	const char * tracePath = std::getenv("VCMI_MCP_TRACE");
+	if(tracePath && *tracePath)
+		return tracePath;
+
+	const char * traceDir = std::getenv("VCMI_MCP_TRACE_DIR");
+	if(traceDir && *traceDir)
+	{
+		std::string path(traceDir);
+		if(path.back() != '/')
+			path += '/';
+		path += "vcmi-mcp-";
+		path += playerID.toString();
+		path += ".jsonl";
+		return path;
+	}
+
+	return "";
+}
+
+std::string timestampUtc()
+{
+	const auto now = std::chrono::system_clock::now();
+	const auto seconds = std::chrono::system_clock::to_time_t(now);
+	const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+
+	std::tm utcTime {};
+#ifdef _WIN32
+	gmtime_s(&utcTime, &seconds);
+#else
+	gmtime_r(&seconds, &utcTime);
+#endif
+
+	std::ostringstream out;
+	out << std::put_time(&utcTime, "%Y-%m-%dT%H:%M:%S");
+	out << '.' << std::setfill('0') << std::setw(3) << milliseconds.count() << 'Z';
+	return out.str();
+}
+
+void writeJsonString(std::ostream & out, const std::string & value)
+{
+	static constexpr char HEX_DIGITS[] = "0123456789abcdef";
+
+	out << '"';
+	for(unsigned char character : value)
+	{
+		switch(character)
+		{
+			case '"':
+				out << "\\\"";
+				break;
+			case '\\':
+				out << "\\\\";
+				break;
+			case '\b':
+				out << "\\b";
+				break;
+			case '\f':
+				out << "\\f";
+				break;
+			case '\n':
+				out << "\\n";
+				break;
+			case '\r':
+				out << "\\r";
+				break;
+			case '\t':
+				out << "\\t";
+				break;
+			default:
+				if(character < 0x20)
+				{
+					out << "\\u00";
+					out << HEX_DIGITS[character >> 4];
+					out << HEX_DIGITS[character & 0x0f];
+				}
+				else
+				{
+					out << character;
+				}
+				break;
+		}
+	}
+	out << '"';
+}
+
+void writeJsonLineValue(std::ostream & out, const JsonNode & node)
+{
+	switch(node.getType())
+	{
+		case JsonNode::JsonType::DATA_NULL:
+			out << "null";
+			break;
+		case JsonNode::JsonType::DATA_BOOL:
+			out << (node.Bool() ? "true" : "false");
+			break;
+		case JsonNode::JsonType::DATA_FLOAT:
+		{
+			const double value = node.Float();
+			if(std::isfinite(value))
+				out << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
+			else
+				out << "null";
+			break;
+		}
+		case JsonNode::JsonType::DATA_STRING:
+			writeJsonString(out, node.String());
+			break;
+		case JsonNode::JsonType::DATA_VECTOR:
+		{
+			out << '[';
+			bool first = true;
+			for(const JsonNode & child : node.Vector())
+			{
+				if(!first)
+					out << ',';
+				first = false;
+				writeJsonLineValue(out, child);
+			}
+			out << ']';
+			break;
+		}
+		case JsonNode::JsonType::DATA_STRUCT:
+		{
+			out << '{';
+			bool first = true;
+			for(const auto & [key, child] : node.Struct())
+			{
+				if(!first)
+					out << ',';
+				first = false;
+				writeJsonString(out, key);
+				out << ':';
+				writeJsonLineValue(out, child);
+			}
+			out << '}';
+			break;
+		}
+		case JsonNode::JsonType::DATA_INTEGER:
+			out << node.Integer();
+			break;
+	}
+}
+
+std::string toJsonLine(const JsonNode & node)
+{
+	std::ostringstream out;
+	writeJsonLineValue(out, node);
+	return out.str();
+}
+
+JsonNode jsonAction(const std::string & tool, const std::string & description)
+{
+	JsonNode node;
+	node["tool"] = JsonNode(tool);
+	node["description"] = JsonNode(description);
+	return node;
+}
+
 }
 
 CMcpPlayerInterface::CMcpPlayerInterface() = default;
@@ -205,6 +383,15 @@ void CMcpPlayerInterface::initGameInterface(std::shared_ptr<Environment> ENV, st
 	human = false;
 	dllName = "McpAI";
 	playerID = cb->getPlayerID().value_or(PlayerColor::CANNOT_DETERMINE);
+	tracePath = readTracePathFromEnvironment(playerID);
+	if(!tracePath.empty())
+	{
+		JsonNode event;
+		event["event"] = JsonNode("mcp_interface_started");
+		event["player"] = JsonNode(playerID.toString());
+		appendTraceEvent(event);
+		logGlobal->info("MCP trace for player %s will be written to %s", playerID.toString(), tracePath);
+	}
 
 	configureProtocol();
 	startHttpServer();
@@ -214,6 +401,10 @@ CMcpPlayerInterface::~CMcpPlayerInterface() = default;
 
 void CMcpPlayerInterface::finish()
 {
+	JsonNode event;
+	event["event"] = JsonNode("mcp_interface_finished");
+	event["player"] = JsonNode(playerID.toString());
+	appendTraceEvent(event);
 	httpServer.reset();
 }
 
@@ -230,13 +421,45 @@ void CMcpPlayerInterface::configureProtocol()
 		}
 	});
 
+	protocol.registerResource({
+		"vcmi://action-space",
+		"Current VCMI action space",
+		"Available MCP actions and current object ids for the controlled player.",
+		"application/json",
+		[this]
+		{
+			return makeActionSpaceJson().toCompactString();
+		}
+	});
+
+	protocol.registerResource({
+		"vcmi://agent-guide",
+		"VCMI MCP agent guide",
+		"Short operating guide for an LLM controlling VCMI through MCP.",
+		"text/plain",
+		[this]
+		{
+			return makeAgentGuideText();
+		}
+	});
+
 	protocol.registerTool({
 		"vcmi.get_state",
 		"Returns current visible player state as JSON.",
 		makeObjectSchema({}, {}),
-		[this](const JsonNode &)
+		[this](const JsonNode & arguments)
 		{
-			return makeJsonResult(makeStateJson());
+			return traceToolResult("vcmi.get_state", arguments, makeJsonResult(makeStateJson()));
+		}
+	});
+
+	protocol.registerTool({
+		"vcmi.get_action_space",
+		"Returns current MCP action guidance, usable object ids, and currently relevant action candidates.",
+		makeObjectSchema({}, {}),
+		[this](const JsonNode & arguments)
+		{
+			return traceToolResult("vcmi.get_action_space", arguments, makeJsonResult(makeActionSpaceJson()));
 		}
 	});
 
@@ -244,16 +467,16 @@ void CMcpPlayerInterface::configureProtocol()
 		"vcmi.end_turn",
 		"Ends the current adventure-map turn.",
 		makeObjectSchema({}, {}),
-		[this](const JsonNode &)
+		[this](const JsonNode & arguments)
 		{
 			{
 				std::lock_guard lock(interfaceMutex);
 				if(!turnActive)
-					return makeToolError("No active turn to end");
+					return traceToolResult("vcmi.end_turn", arguments, makeToolError("No active turn to end"));
 				turnActive = false;
 			}
 			cb->endTurn();
-			return makeOkResult("turn ended");
+			return traceToolResult("vcmi.end_turn", arguments, makeOkResult("turn ended"));
 		}
 	});
 
@@ -274,7 +497,7 @@ void CMcpPlayerInterface::configureProtocol()
 			JsonNode result;
 			result["ok"] = JsonNode(true);
 			result["requestId"] = JsonNode(requestID);
-			return makeJsonResult(result);
+			return traceToolResult("vcmi.answer_query", arguments, makeJsonResult(result));
 		}
 	});
 
@@ -286,14 +509,14 @@ void CMcpPlayerInterface::configureProtocol()
 		{
 			const CGHeroInstance * hero = cb->getHero(ObjectInstanceID(readInteger(arguments, "hero_id")));
 			if(!hero)
-				return makeToolError("Unknown hero id");
+				return traceToolResult("vcmi.move_hero", arguments, makeToolError("Unknown hero id"));
 			if(hero->tempOwner != playerID)
-				return makeToolError("Hero is not owned by this MCP player");
+				return traceToolResult("vcmi.move_hero", arguments, makeToolError("Hero is not owned by this MCP player"));
 
 			int z = hasField(arguments, "z") ? readInteger(arguments, "z") : hero->visitablePos().z;
 			bool transit = readBool(arguments, "transit", false);
 			cb->moveHero(hero, int3(readInteger(arguments, "x"), readInteger(arguments, "y"), z), transit);
-			return makeOkResult("move requested");
+			return traceToolResult("vcmi.move_hero", arguments, makeOkResult("move requested"));
 		}
 	});
 
@@ -305,12 +528,12 @@ void CMcpPlayerInterface::configureProtocol()
 		{
 			const CGTownInstance * town = cb->getTown(ObjectInstanceID(readInteger(arguments, "town_id")));
 			if(!town)
-				return makeToolError("Unknown town id");
+				return traceToolResult("vcmi.build_town_building", arguments, makeToolError("Unknown town id"));
 			if(town->tempOwner != playerID)
-				return makeToolError("Town is not owned by this MCP player");
+				return traceToolResult("vcmi.build_town_building", arguments, makeToolError("Town is not owned by this MCP player"));
 
 			bool accepted = cb->buildBuilding(town, BuildingID(readInteger(arguments, "building_id")));
-			return accepted ? makeOkResult("build requested") : makeToolError("Build request was rejected by the client callback");
+			return traceToolResult("vcmi.build_town_building", arguments, accepted ? makeOkResult("build requested") : makeToolError("Build request was rejected by the client callback"));
 		}
 	});
 
@@ -318,7 +541,7 @@ void CMcpPlayerInterface::configureProtocol()
 		"vcmi.battle_defend",
 		"Defends with the currently active battle stack.",
 		makeObjectSchema({}, {}),
-		[this](const JsonNode &)
+		[this](const JsonNode & arguments)
 		{
 			BattleID battleID = BattleID::NONE;
 			const CStack * stack = nullptr;
@@ -331,10 +554,10 @@ void CMcpPlayerInterface::configureProtocol()
 			}
 
 			if(!stack)
-				return makeToolError("No active battle stack");
+				return traceToolResult("vcmi.battle_defend", arguments, makeToolError("No active battle stack"));
 
 			cb->battleMakeUnitAction(battleID, BattleAction::makeDefend(stack));
-			return makeOkResult("battle defend requested");
+			return traceToolResult("vcmi.battle_defend", arguments, makeOkResult("battle defend requested"));
 		}
 	});
 
@@ -342,7 +565,7 @@ void CMcpPlayerInterface::configureProtocol()
 		"vcmi.battle_wait",
 		"Waits with the currently active battle stack.",
 		makeObjectSchema({}, {}),
-		[this](const JsonNode &)
+		[this](const JsonNode & arguments)
 		{
 			BattleID battleID = BattleID::NONE;
 			const CStack * stack = nullptr;
@@ -355,10 +578,10 @@ void CMcpPlayerInterface::configureProtocol()
 			}
 
 			if(!stack)
-				return makeToolError("No active battle stack");
+				return traceToolResult("vcmi.battle_wait", arguments, makeToolError("No active battle stack"));
 
 			cb->battleMakeUnitAction(battleID, BattleAction::makeWait(stack));
-			return makeOkResult("battle wait requested");
+			return traceToolResult("vcmi.battle_wait", arguments, makeOkResult("battle wait requested"));
 		}
 	});
 
@@ -366,7 +589,7 @@ void CMcpPlayerInterface::configureProtocol()
 		"vcmi.battle_end_tactics",
 		"Ends the current tactics phase.",
 		makeObjectSchema({}, {}),
-		[this](const JsonNode &)
+		[this](const JsonNode & arguments)
 		{
 			BattleID battleID = BattleID::NONE;
 			{
@@ -376,10 +599,10 @@ void CMcpPlayerInterface::configureProtocol()
 			}
 
 			if(battleID == BattleID::NONE)
-				return makeToolError("No active tactics phase");
+				return traceToolResult("vcmi.battle_end_tactics", arguments, makeToolError("No active tactics phase"));
 
 			cb->battleMakeTacticAction(battleID, BattleAction::makeEndOFTacticPhase(cb->getBattle(battleID)->battleGetTacticsSide()));
-			return makeOkResult("tactics phase ended");
+			return traceToolResult("vcmi.battle_end_tactics", arguments, makeOkResult("tactics phase ended"));
 		}
 	});
 }
@@ -399,6 +622,12 @@ void CMcpPlayerInterface::startHttpServer()
 			httpServer = std::make_unique<McpHttpServer>(protocol, portToTry, authToken);
 			httpServer->start();
 			logGlobal->info("MCP interface for player %s listening on http://127.0.0.1:%d/mcp", playerID.toString(), httpServer->getPort());
+			JsonNode event;
+			event["event"] = JsonNode("mcp_http_started");
+			event["player"] = JsonNode(playerID.toString());
+			event["url"] = JsonNode("http://127.0.0.1:" + std::to_string(httpServer->getPort()) + "/mcp");
+			event["authRequired"] = JsonNode(!authToken.empty());
+			appendTraceEvent(event);
 			return;
 		}
 		catch(const std::exception & exception)
@@ -460,6 +689,144 @@ JsonNode CMcpPlayerInterface::makeStateJson() const
 	return state;
 }
 
+JsonNode CMcpPlayerInterface::makeActionSpaceJson() const
+{
+	JsonNode actionSpace;
+	actionSpace["purpose"] = JsonNode("Use this payload to choose one legal VCMI MCP tool call for the current player.");
+	actionSpace["rules"].Vector().push_back(JsonNode("Call vcmi.get_state or vcmi.get_action_space before choosing an action."));
+	actionSpace["rules"].Vector().push_back(JsonNode("Use only object ids returned by vcmi.get_state or vcmi.get_action_space."));
+	actionSpace["rules"].Vector().push_back(JsonNode("If a tool returns isError=true, inspect vcmi.get_state again before retrying."));
+	actionSpace["rules"].Vector().push_back(JsonNode("If unsure and turn.active is true, vcmi.end_turn is a valid conservative action."));
+
+	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.get_state", "Read current visible player state."));
+	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.get_action_space", "Read current guidance, object ids, and action candidates."));
+	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.end_turn", "End the active adventure-map turn."));
+	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.answer_query", "Answer the pending query/dialog using query_id and optional answer."));
+	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.move_hero", "Move an owned hero to x, y, optional z."));
+	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.build_town_building", "Build a currently allowed building in an owned town."));
+	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.battle_defend", "Defend with the active battle stack."));
+	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.battle_wait", "Wait with the active battle stack."));
+	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.battle_end_tactics", "End the current tactics phase."));
+
+	const JsonNode state = makeStateJson();
+	actionSpace["stateSummary"]["turnActive"] = state["turn"]["active"];
+	actionSpace["stateSummary"]["pendingQuery"] = state["pendingQuery"];
+	actionSpace["stateSummary"]["battle"] = state["battle"];
+
+	actionSpace["objectIds"]["heroes"].Vector();
+	for(const JsonNode & hero : state["heroes"].Vector())
+	{
+		JsonNode heroRef;
+		heroRef["hero_id"] = hero["id"];
+		heroRef["name"] = hero["name"];
+		heroRef["position"] = hero["position"];
+		heroRef["movement"] = hero["movement"];
+		actionSpace["objectIds"]["heroes"].Vector().push_back(heroRef);
+	}
+
+	actionSpace["objectIds"]["towns"].Vector();
+	for(const JsonNode & town : state["towns"].Vector())
+	{
+		JsonNode townRef;
+		townRef["town_id"] = town["id"];
+		townRef["name"] = town["name"];
+		townRef["position"] = town["position"];
+		actionSpace["objectIds"]["towns"].Vector().push_back(townRef);
+	}
+
+	actionSpace["currentActions"].Vector();
+	if(state["turn"]["active"].Bool())
+	{
+		JsonNode action = jsonAction("vcmi.end_turn", "End the current turn.");
+		action["arguments"].Struct();
+		actionSpace["currentActions"].Vector().push_back(action);
+	}
+
+	if(!state["pendingQuery"].isNull())
+	{
+		JsonNode action = jsonAction("vcmi.answer_query", "Answer the currently pending VCMI query/dialog.");
+		action["arguments"]["query_id"] = state["pendingQuery"]["id"];
+		action["arguments"]["answer"] = JsonNode(0);
+		action["notes"].Vector().push_back(JsonNode("Use answer=0 for the first/default option unless the query data indicates another choice."));
+		actionSpace["currentActions"].Vector().push_back(action);
+	}
+
+	if(state["battle"]["activeStack"].Bool())
+	{
+		JsonNode defend = jsonAction("vcmi.battle_defend", "Defend with the active battle stack.");
+		defend["arguments"].Struct();
+		actionSpace["currentActions"].Vector().push_back(defend);
+
+		JsonNode wait = jsonAction("vcmi.battle_wait", "Wait with the active battle stack.");
+		wait["arguments"].Struct();
+		actionSpace["currentActions"].Vector().push_back(wait);
+	}
+
+	if(state["battle"]["activeTactics"].Bool())
+	{
+		JsonNode action = jsonAction("vcmi.battle_end_tactics", "End the current tactics phase.");
+		action["arguments"].Struct();
+		actionSpace["currentActions"].Vector().push_back(action);
+	}
+
+	for(const JsonNode & hero : state["heroes"].Vector())
+	{
+		JsonNode action = jsonAction("vcmi.move_hero", "Move this owned hero. Destination must be reachable and visible to the player.");
+		action["arguments"]["hero_id"] = hero["id"];
+		action["arguments"]["x"] = hero["position"]["x"];
+		action["arguments"]["y"] = hero["position"]["y"];
+		action["arguments"]["z"] = hero["position"]["z"];
+		action["notes"].Vector().push_back(JsonNode("Replace x/y/z with the intended destination. The server validates the move."));
+		actionSpace["currentActions"].Vector().push_back(action);
+	}
+
+	actionSpace["buildOptions"].Vector();
+	if(cb)
+	{
+		std::shared_lock gameStateLock(CGameState::mutex);
+		for(const CGTownInstance * town : cb->getTownsInfo(true))
+		{
+			if(!town || town->tempOwner != playerID)
+				continue;
+
+			for(const auto & buildingEntry : town->getTown()->buildings)
+			{
+				const CBuilding * building = buildingEntry.second.get();
+				if(!building || building->mode != CBuilding::BUILD_NORMAL)
+					continue;
+
+				if(cb->canBuildStructure(town, building->bid) == EBuildingState::ALLOWED)
+				{
+					JsonNode option = jsonBuildOption(town, building);
+					actionSpace["buildOptions"].Vector().push_back(option);
+
+					JsonNode action = jsonAction("vcmi.build_town_building", "Build this currently allowed town building.");
+					action["arguments"]["town_id"] = option["town_id"];
+					action["arguments"]["building_id"] = option["building_id"];
+					action["building"] = option["building"];
+					action["town"] = option["town"];
+					action["cost"] = option["cost"];
+					actionSpace["currentActions"].Vector().push_back(action);
+				}
+			}
+		}
+	}
+
+	return actionSpace;
+}
+
+std::string CMcpPlayerInterface::makeAgentGuideText() const
+{
+	return
+		"VCMI MCP agent guide\n"
+		"1. Call vcmi.get_action_space first. It lists the current tools, ids, and action candidates.\n"
+		"2. Call vcmi.get_state when you need full current player state.\n"
+		"3. Use only ids and coordinates from MCP state/action-space payloads.\n"
+		"4. Prefer concrete progress: build an allowed town building, move an owned hero, answer a pending query, or handle battle/tactics.\n"
+		"5. If no useful action is clear and turn.active is true, call vcmi.end_turn.\n"
+		"6. If a tool result has isError=true, read state/action-space again before retrying.\n";
+}
+
 std::string CMcpPlayerInterface::makeStateText() const
 {
 	return makeStateJson().toCompactString();
@@ -495,10 +862,44 @@ Mcp::Protocol::ToolResult CMcpPlayerInterface::makeToolError(const std::string &
 	return Mcp::Protocol::makeTextResult(message, true);
 }
 
+Mcp::Protocol::ToolResult CMcpPlayerInterface::traceToolResult(const std::string & toolName, const JsonNode & arguments, Mcp::Protocol::ToolResult result) const
+{
+	JsonNode event;
+	event["event"] = JsonNode("tool_call");
+	event["player"] = JsonNode(playerID.toString());
+	event["tool"] = JsonNode(toolName);
+	event["arguments"] = arguments;
+	event["result"] = result.result;
+	appendTraceEvent(event);
+	return result;
+}
+
+void CMcpPlayerInterface::appendTraceEvent(JsonNode event) const
+{
+	if(tracePath.empty())
+		return;
+
+	std::lock_guard lock(traceMutex);
+	event["sequence"] = JsonNode(static_cast<int64_t>(++traceSequence));
+	event["time"] = JsonNode(timestampUtc());
+
+	std::ofstream traceFile(tracePath, std::ios::app);
+	if(traceFile)
+		traceFile << toJsonLine(event) << '\n';
+}
+
 void CMcpPlayerInterface::setPendingQuery(QueryID queryID, const std::string & type, JsonNode data)
 {
 	std::lock_guard lock(interfaceMutex);
 	pendingQuery = PendingQuery{queryID, type, std::move(data)};
+
+	JsonNode event;
+	event["event"] = JsonNode("pending_query_set");
+	event["player"] = JsonNode(playerID.toString());
+	event["query_id"] = JsonNode(queryID.getNum());
+	event["type"] = JsonNode(type);
+	event["data"] = pendingQuery->data;
+	appendTraceEvent(event);
 }
 
 void CMcpPlayerInterface::clearPendingQuery(QueryID queryID)
@@ -506,6 +907,12 @@ void CMcpPlayerInterface::clearPendingQuery(QueryID queryID)
 	std::lock_guard lock(interfaceMutex);
 	if(pendingQuery && pendingQuery->id == queryID)
 		pendingQuery.reset();
+
+	JsonNode event;
+	event["event"] = JsonNode("pending_query_cleared");
+	event["player"] = JsonNode(playerID.toString());
+	event["query_id"] = JsonNode(queryID.getNum());
+	appendTraceEvent(event);
 }
 
 void CMcpPlayerInterface::yourTurn(QueryID queryID)
@@ -515,6 +922,13 @@ void CMcpPlayerInterface::yourTurn(QueryID queryID)
 		turnActive = true;
 	}
 
+	JsonNode event;
+	event["event"] = JsonNode("turn_started");
+	event["player"] = JsonNode(playerID.toString());
+	if(queryID.hasValue())
+		event["query_id"] = JsonNode(queryID.getNum());
+	appendTraceEvent(event);
+
 	if(queryID.hasValue())
 		cb->selectionMade(0, queryID);
 }
@@ -523,6 +937,13 @@ void CMcpPlayerInterface::yourTacticPhase(const BattleID & battleID, int distanc
 {
 	std::lock_guard lock(interfaceMutex);
 	activeTacticsBattleID = battleID;
+
+	JsonNode event;
+	event["event"] = JsonNode("tactics_phase_started");
+	event["player"] = JsonNode(playerID.toString());
+	event["battle_id"] = JsonNode(battleID.getNum());
+	event["distance"] = JsonNode(distance);
+	appendTraceEvent(event);
 }
 
 void CMcpPlayerInterface::activeStack(const BattleID & battleID, const CStack * stack)
@@ -530,6 +951,17 @@ void CMcpPlayerInterface::activeStack(const BattleID & battleID, const CStack * 
 	std::lock_guard lock(interfaceMutex);
 	activeBattleID = battleID;
 	activeStackToMove = stack;
+
+	JsonNode event;
+	event["event"] = JsonNode("battle_stack_active");
+	event["player"] = JsonNode(playerID.toString());
+	event["battle_id"] = JsonNode(battleID.getNum());
+	if(stack)
+	{
+		event["stack"]["id"] = JsonNode(static_cast<int32_t>(stack->unitId()));
+		event["stack"]["name"] = JsonNode(stack->getName());
+	}
+	appendTraceEvent(event);
 }
 
 void CMcpPlayerInterface::heroGotLevel(const CGHeroInstance * hero, PrimarySkill pskill, std::vector<SecondarySkill> & skills, QueryID queryID)
