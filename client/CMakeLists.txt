@@ -66,6 +66,10 @@ set(vcmiclientcommon_SRCS
 	lobby/RandomMapTab.cpp
 	lobby/SelectionTab.cpp
 
+	mcp/CMcpPlayerInterface.cpp
+	mcp/McpHttpServer.cpp
+	mcp/McpProtocol.cpp
+
 	mainmenu/CCampaignScreen.cpp
 	mainmenu/CMainMenu.cpp
 	mainmenu/CPrologEpilogVideo.cpp
@@ -467,6 +471,9 @@ set(vcmiclientcommon_HEADERS
 	HeroMovementController.h
 	GameChatHandler.h
 	LobbyClientNetPackVisitors.h
+	mcp/CMcpPlayerInterface.h
+	mcp/McpHttpServer.h
+	mcp/McpProtocol.h
 	ServerRunner.h
 	resource.h
 	UIHelper.h

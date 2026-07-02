@@ -33,6 +33,7 @@ Client is responsible for:
 - displaying state of game to human player
 - capturing player's actions and sending requests to server
 - displaying changes in state of game indicated by server
+- exposing the experimental client-side [MCP interface](MCP.md) when a player is assigned `McpAI`
 
 ### Rendering of graphics
 

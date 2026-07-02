@@ -21,6 +21,7 @@
 #include "GameInstance.h"
 #include "gui/WindowHandler.h"
 #include "mapView/mapHandler.h"
+#include "mcp/CMcpPlayerInterface.h"
 
 #include "../lib/CConfigHandler.h"
 #include "../lib/GameLibrary.h"
@@ -42,8 +43,18 @@
 #include "../lib/serializer/GameConnection.h"
 
 #include <memory>
+#include <string_view>
 #include <vcmi/events/EventBus.h>
 
+namespace
+{
+constexpr std::string_view MCP_AI_NAME = "McpAI";
+
+bool isMcpAIName(const std::string & name)
+{
+	return name == MCP_AI_NAME;
+}
+}
 
 #ifdef VCMI_ANDROID
 #include "lib/CAndroidVMHelper.h"
@@ -235,7 +246,10 @@ void CClient::initPlayerInterfaces()
 
 				auto AiToGive = aiNameForPlayer(playerInfo.second, false, alliedToHuman);
 				logNetwork->info("Player %s will be lead by %s", color.toString(), AiToGive);
-				installNewPlayerInterface(AIFactory::createAdventureAI(AiToGive), color);
+				if(isMcpAIName(AiToGive))
+					installNewPlayerInterface(std::make_shared<CMcpPlayerInterface>(), color);
+				else
+					installNewPlayerInterface(AIFactory::createAdventureAI(AiToGive), color);
 			}
 			else
 			{
@@ -284,6 +298,9 @@ std::optional<PlayerColor> CClient::findPlayerColorForSpectatorInterface() const
 
 std::string CClient::aiNameForPlayer(const PlayerSettings & ps, bool battleAI, bool alliedToHuman) const
 {
+	if(!battleAI && isMcpAIName(ps.name))
+		return ps.name;
+
 	if(ps.name.size() && AIFactory::isAvailableAdventureAI(ps.name))
 		return ps.name;
 
