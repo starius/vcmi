@@ -20,11 +20,14 @@ DEFAULT_MODEL = "local-model"
 SYSTEM_PROMPT = """You control one VCMI player through MCP tools.
 Return only one JSON object and no Markdown.
 The JSON object must have exactly these keys:
-{"tool":"vcmi.end_turn","arguments":{},"reason":"short reason"}
+{"tool":"vcmi.execute_plan","arguments":{"actions":[]},"reason":"short reason"}
 
 Allowed tools for this smoke agent:
+- vcmi.get_state with {"select": ["summary", "resources", "heroes", "towns"], "since_revision": number}
+- vcmi.get_updates with {"since_revision": number, "max_updates": number}
 - vcmi.get_visible_map with {"hero_id": number, "radius": number}
-- vcmi.get_movement_options with {"hero_id": number, "radius": number, "max_options": number}
+- vcmi.get_reachable with {"hero_id": number, "radius": number, "max_options": number}
+- vcmi.execute_plan with {"actions": array, "dry_run": boolean, "return_select": array}
 - vcmi.get_battle_state with {}
 - vcmi.end_turn with {}
 - vcmi.move_hero with {"hero_id": number, "x": number, "y": number, "z": number}
@@ -39,6 +42,8 @@ Allowed tools for this smoke agent:
 - vcmi.battle_end_tactics with {}
 
 Rules:
+- Prefer vcmi.execute_plan for build, recruit, movement, query-answer, and end-turn batches.
+- For movement, use only route_id values, object ids, and coordinates present in the input JSON.
 - If unsure, choose vcmi.end_turn.
 - Use only ids, coordinates, and battle hexes that appear in the action-space JSON.
 - Do not invent tools.
@@ -87,16 +92,18 @@ def post_json(url, payload, headers, timeout):
 	return json.loads(body)
 
 
-def call_model(args, action_space_json, tools):
+def call_model(args, state_json, action_space_json, tools):
 	base_url = args.openai_base_url.rstrip("/")
 	url = base_url + "/chat/completions"
 	tool_names = [tool.get("name", "") for tool in tools]
 	user_prompt = (
 		"Available MCP tools:\n"
 		+ json.dumps(tool_names, indent=2)
+		+ "\n\nSelected VCMI state JSON:\n"
+		+ state_json
 		+ "\n\nCurrent VCMI action-space JSON:\n"
 		+ action_space_json
-		+ "\n\nChoose the next single action."
+		+ "\n\nChoose the next single MCP call. Prefer one vcmi.execute_plan when possible."
 	)
 	payload = {
 		"model": args.model,
@@ -158,8 +165,11 @@ def normalize_action(raw_response):
 		raise ValueError("model action field 'arguments' must be an object")
 
 	allowed_tools = {
+		"vcmi.get_state",
+		"vcmi.get_updates",
 		"vcmi.get_visible_map",
-		"vcmi.get_movement_options",
+		"vcmi.get_reachable",
+		"vcmi.execute_plan",
 		"vcmi.get_battle_state",
 		"vcmi.end_turn",
 		"vcmi.move_hero",
@@ -202,14 +212,23 @@ def run_once(args):
 	print("MCP server:", json.dumps(initialize.get("serverInfo", {}), sort_keys=True))
 
 	tools = mcp.request("tools/list").get("tools", [])
+	state_result = mcp.request("tools/call", {
+		"name": "vcmi.get_state",
+		"arguments": {
+			"select": ["summary", "resources", "heroes", "towns", "tavern"],
+			"max_updates": 50,
+		},
+	})
+	state_json = tool_result_text(state_result)
 	action_space_result = mcp.request("tools/call", {
 		"name": "vcmi.get_action_space",
 		"arguments": {},
 	})
 	action_space_json = tool_result_text(action_space_result)
+	print("State bytes:", len(state_json))
 	print("Action-space bytes:", len(action_space_json))
 
-	raw_response = call_model(args, action_space_json, tools)
+	raw_response = call_model(args, state_json, action_space_json, tools)
 	print("Model response:", raw_response.strip())
 	try:
 		action = normalize_action(raw_response)
