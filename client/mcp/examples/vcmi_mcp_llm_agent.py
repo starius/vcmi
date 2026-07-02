@@ -23,13 +23,24 @@ The JSON object must have exactly these keys:
 {"tool":"vcmi.end_turn","arguments":{},"reason":"short reason"}
 
 Allowed tools for this smoke agent:
+- vcmi.get_visible_map with {"hero_id": number, "radius": number}
+- vcmi.get_movement_options with {"hero_id": number, "radius": number, "max_options": number}
+- vcmi.get_battle_state with {}
 - vcmi.end_turn with {}
 - vcmi.move_hero with {"hero_id": number, "x": number, "y": number, "z": number}
+- vcmi.move_hero_to_object with {"hero_id": number, "object_id": number}
 - vcmi.build_town_building with {"town_id": number, "building_id": number}
+- vcmi.answer_query with {"query_id": number, "answer": number}
+- vcmi.battle_defend with {}
+- vcmi.battle_wait with {}
+- vcmi.battle_move with {"hex": number}
+- vcmi.battle_shoot with {"target_stack_id": number}
+- vcmi.battle_melee_attack with {"target_stack_id": number, "attack_from_hex": number}
+- vcmi.battle_end_tactics with {}
 
 Rules:
 - If unsure, choose vcmi.end_turn.
-- Use only ids and coordinates that appear in the state.
+- Use only ids, coordinates, and battle hexes that appear in the action-space JSON.
 - Do not invent tools.
 """
 
@@ -76,15 +87,15 @@ def post_json(url, payload, headers, timeout):
 	return json.loads(body)
 
 
-def call_model(args, state_json, tools):
+def call_model(args, action_space_json, tools):
 	base_url = args.openai_base_url.rstrip("/")
 	url = base_url + "/chat/completions"
 	tool_names = [tool.get("name", "") for tool in tools]
 	user_prompt = (
 		"Available MCP tools:\n"
 		+ json.dumps(tool_names, indent=2)
-		+ "\n\nCurrent VCMI state JSON:\n"
-		+ state_json
+		+ "\n\nCurrent VCMI action-space JSON:\n"
+		+ action_space_json
 		+ "\n\nChoose the next single action."
 	)
 	payload = {
@@ -147,9 +158,20 @@ def normalize_action(raw_response):
 		raise ValueError("model action field 'arguments' must be an object")
 
 	allowed_tools = {
+		"vcmi.get_visible_map",
+		"vcmi.get_movement_options",
+		"vcmi.get_battle_state",
 		"vcmi.end_turn",
 		"vcmi.move_hero",
+		"vcmi.move_hero_to_object",
 		"vcmi.build_town_building",
+		"vcmi.answer_query",
+		"vcmi.battle_defend",
+		"vcmi.battle_wait",
+		"vcmi.battle_move",
+		"vcmi.battle_shoot",
+		"vcmi.battle_melee_attack",
+		"vcmi.battle_end_tactics",
 	}
 	if tool not in allowed_tools:
 		raise ValueError(f"model selected unsupported tool: {tool}")
@@ -180,14 +202,14 @@ def run_once(args):
 	print("MCP server:", json.dumps(initialize.get("serverInfo", {}), sort_keys=True))
 
 	tools = mcp.request("tools/list").get("tools", [])
-	state_result = mcp.request("tools/call", {
-		"name": "vcmi.get_state",
+	action_space_result = mcp.request("tools/call", {
+		"name": "vcmi.get_action_space",
 		"arguments": {},
 	})
-	state_json = tool_result_text(state_result)
-	print("State bytes:", len(state_json))
+	action_space_json = tool_result_text(action_space_result)
+	print("Action-space bytes:", len(action_space_json))
 
-	raw_response = call_model(args, state_json, tools)
+	raw_response = call_model(args, action_space_json, tools)
 	print("Model response:", raw_response.strip())
 	try:
 		action = normalize_action(raw_response)
@@ -216,7 +238,7 @@ def parse_args(argv):
 	parser.add_argument("--openai-api-key", default=os.environ.get("OPENAI_API_KEY"))
 	parser.add_argument("--model", default=os.environ.get("OPENAI_MODEL", DEFAULT_MODEL))
 	parser.add_argument("--temperature", type=float, default=0.0)
-	parser.add_argument("--max-tokens", type=int, default=96)
+	parser.add_argument("--max-tokens", type=int, default=160)
 	parser.add_argument("--timeout", type=float, default=30)
 	parser.add_argument("--dry-run", action="store_true")
 	parser.add_argument("--no-fallback-end-turn", dest="fallback_end_turn", action="store_false")

@@ -156,7 +156,7 @@ For this tunnel demo, do not set `VCMI_MCP_TOKEN` unless your tunnel profile is 
 Suggested ChatGPT prompt:
 
 ```text
-Use the VCMI connector. Call vcmi.get_action_space first so you can see the current API, object ids, and candidate actions. Then call vcmi.get_state if you need more detail. Choose one useful legal action for red. Prefer building an allowed town building, moving an owned hero, answering a pending query, or handling battle/tactics. If no useful action is clear, call vcmi.end_turn. After every action, summarize the tool result and call vcmi.get_action_space again.
+Use the VCMI connector. Call vcmi.get_action_space first so you can see the current API, object ids, and candidate actions. Use vcmi.get_visible_map and vcmi.get_movement_options before moving heroes. Use vcmi.get_battle_state during battles. Choose one useful legal action for red. Prefer building an allowed town building, moving an owned hero to a visible target, answering a pending query, or handling battle/tactics. If no useful action is clear, call vcmi.end_turn. After every action, summarize the tool result and call vcmi.get_action_space again.
 ```
 
 ChatGPT receives the complete callable API through MCP `tools/list`. The `vcmi.get_action_space` tool is an additional game-aware helper that returns the currently relevant object ids, build options, pending query id, battle flags, and action candidates.
@@ -165,7 +165,7 @@ If you have an X/VNC display and want a spectator window instead of headless mod
 
 ## Local LLM smoke agent
 
-`client/mcp/examples/vcmi_mcp_llm_agent.py` is a minimal one-step agent that connects an OpenAI-compatible local model server to the VCMI MCP HTTP endpoint. It reads `vcmi.get_state`, asks the model for one JSON action, and calls the selected MCP tool.
+`client/mcp/examples/vcmi_mcp_llm_agent.py` is a minimal one-step agent that connects an OpenAI-compatible local model server to the VCMI MCP HTTP endpoint. It reads `vcmi.get_action_space`, asks the model for one JSON tool call, and calls the selected MCP tool.
 
 Example with `llama.cpp` serving a local GGUF model:
 
@@ -201,7 +201,7 @@ OPENAI_MODEL=local-model \
 python3 client/mcp/examples/vcmi_mcp_llm_agent.py
 ```
 
-The smoke agent intentionally allows only a small action set (`vcmi.end_turn`, `vcmi.move_hero`, `vcmi.build_town_building`). If the model returns invalid JSON or an unsupported tool, the script falls back to `vcmi.end_turn` unless `--no-fallback-end-turn` is passed.
+The smoke agent allows the main read/action tools but still performs only one tool call. If the model returns invalid JSON or an unsupported tool, the script falls back to `vcmi.end_turn` unless `--no-fallback-end-turn` is passed.
 
 ## Tools
 
@@ -209,12 +209,19 @@ Current tools:
 
 - `vcmi.get_state`: returns visible player state as JSON text
 - `vcmi.get_action_space`: returns action guidance, current object ids, build options, and relevant action candidates
+- `vcmi.get_visible_map`: returns player-visible adventure-map tiles and visible/owned objects around an owned hero or coordinate window
+- `vcmi.get_movement_options`: returns pathfinder-derived destinations and visible object targets for an owned hero
+- `vcmi.get_battle_state`: returns visible battle stacks, active stack metadata, legal move hexes, and legal attack targets
 - `vcmi.move_hero`: requests movement of an owned hero to `x`, `y`, optional `z`
+- `vcmi.move_hero_to_object`: requests movement of an owned hero to a visible object id returned by map or movement tools
 - `vcmi.end_turn`: ends the active adventure-map turn
 - `vcmi.answer_query`: answers a pending VCMI query/dialog by `query_id` and optional integer `answer`
 - `vcmi.build_town_building`: requests construction by numeric town and building id
 - `vcmi.battle_defend`: defends with the active battle stack
 - `vcmi.battle_wait`: waits with the active battle stack
+- `vcmi.battle_move`: moves the active battle stack to a legal battle hex
+- `vcmi.battle_shoot`: shoots a legal target stack with the active battle stack
+- `vcmi.battle_melee_attack`: performs a melee attack against a legal target stack, optionally using a returned `attack_from_hex`
 - `vcmi.battle_end_tactics`: ends the active tactics phase
 
 The state payload includes:
@@ -226,13 +233,24 @@ The state payload includes:
 - owned towns with position, heroes, buildings, fort level, and garrison
 - minimal battle/tactics activity flags
 
+The visible map and movement payloads are bounded by request arguments (`radius`, `max_tiles`, `max_options`) to keep LLM context manageable. `full_visible=true` on `vcmi.get_visible_map` scans all currently revealed tiles but is still capped by `max_tiles`.
+
+Visibility rules:
+
+- Map reads use the player callback (`getTile`, `getObj`, `getTopObj`, `getTilesInRange`, `isVisibleFor`) and do not expose hidden fog-of-war tiles.
+- Visible object lists filter every object id through `getObj`, so hidden events and hidden map objects are omitted.
+- Owned heroes and towns are included through the same player-specific state APIs a normal player interface uses.
+- Movement options are calculated with `SingleHeroPathfinderConfig` through the player callback and only emitted for visible destinations.
+- Battle state is limited to battles involving the controlled player and data available through `CPlayerBattleCallback`.
+
 Additional MCP resources:
 
 - `vcmi://state`: same JSON as `vcmi.get_state`
 - `vcmi://action-space`: same JSON as `vcmi.get_action_space`
+- `vcmi://battle-state`: same JSON as `vcmi.get_battle_state`
 - `vcmi://agent-guide`: short text operating guide for an LLM agent
 
-Set `VCMI_MCP_TRACE=/path/to/file.jsonl` or `VCMI_MCP_TRACE_DIR=/path/to/dir` to record MCP lifecycle and tool-call trace events as JSON Lines.
+Set `VCMI_MCP_TRACE=/path/to/file.jsonl` or `VCMI_MCP_TRACE_DIR=/path/to/dir` to record MCP lifecycle and tool-call trace events as JSON Lines. The trace includes interface start/finish, HTTP listener start, turn start, pending-query changes, tactics phase, active stack, battle start/end, and every MCP tool call with arguments and result.
 
 ## Development Notes
 

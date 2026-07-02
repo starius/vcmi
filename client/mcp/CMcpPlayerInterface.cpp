@@ -14,9 +14,14 @@
 
 #include "../../lib/CPlayerState.h"
 #include "../../lib/CStack.h"
+#include "../../lib/RiverHandler.h"
+#include "../../lib/RoadHandler.h"
 #include "../../lib/ResourceSet.h"
+#include "../../lib/TerrainHandler.h"
 #include "../../lib/battle/BattleAction.h"
+#include "../../lib/battle/BattleHexArray.h"
 #include "../../lib/battle/CPlayerBattleCallback.h"
+#include "../../lib/battle/IBattleState.h"
 #include "../../lib/callback/CCallback.h"
 #include "../../lib/constants/StringConstants.h"
 #include "../../lib/entities/building/CBuilding.h"
@@ -27,7 +32,11 @@
 #include "../../lib/mapObjects/CGTownInstance.h"
 #include "../../lib/mapObjects/army/CArmedInstance.h"
 #include "../../lib/mapObjects/army/CStackInstance.h"
+#include "../../lib/mapping/TerrainTile.h"
 #include "../../lib/networkPacks/Component.h"
+#include "../../lib/networkPacks/PacksForClientBattle.h"
+#include "../../lib/pathfinder/CGPathNode.h"
+#include "../../lib/pathfinder/PathfinderOptions.h"
 #include "../../lib/texts/MetaString.h"
 
 #include <algorithm>
@@ -37,8 +46,11 @@
 #include <fstream>
 #include <iomanip>
 #include <limits>
+#include <optional>
+#include <set>
 #include <shared_mutex>
 #include <sstream>
+#include <tuple>
 
 namespace
 {
@@ -64,6 +76,18 @@ bool readBool(const JsonNode & node, const std::string & field, bool defaultValu
 	if(!node[field].isBool())
 		throw std::invalid_argument("Non-boolean argument: " + field);
 	return node[field].Bool();
+}
+
+int32_t readInteger(const JsonNode & node, const std::string & field, int32_t defaultValue)
+{
+	if(!hasField(node, field))
+		return defaultValue;
+	return readInteger(node, field);
+}
+
+int32_t readClampedInteger(const JsonNode & node, const std::string & field, int32_t defaultValue, int32_t minValue, int32_t maxValue)
+{
+	return std::clamp(readInteger(node, field, defaultValue), minValue, maxValue);
 }
 
 JsonNode makeObjectSchema(std::initializer_list<std::pair<const char *, const char *>> properties, std::initializer_list<const char *> required)
@@ -109,6 +133,16 @@ JsonNode jsonResources(const ResourceSet & resources)
 	return node;
 }
 
+std::string jsonText(std::string value)
+{
+	for(char & character : value)
+	{
+		if(static_cast<unsigned char>(character) < 0x20)
+			character = ' ';
+	}
+	return value;
+}
+
 JsonNode jsonArmy(const CCreatureSet & army)
 {
 	JsonNode node;
@@ -122,7 +156,7 @@ JsonNode jsonArmy(const CCreatureSet & army)
 		stack["slot"] = JsonNode(slot.first.getNum());
 		stack["creatureId"] = JsonNode(slot.second->getCreatureID().getNum());
 		stack["count"] = JsonNode(slot.second->getCount());
-		stack["name"] = JsonNode(slot.second->getName());
+		stack["name"] = JsonNode(jsonText(slot.second->getName()));
 		node.Vector().push_back(stack);
 	}
 	return node;
@@ -132,7 +166,7 @@ JsonNode jsonHero(const CGHeroInstance * hero)
 {
 	JsonNode node;
 	node["id"] = JsonNode(hero->id.getNum());
-	node["name"] = JsonNode(hero->getNameTranslated());
+	node["name"] = JsonNode(jsonText(hero->getNameTranslated()));
 	node["position"] = jsonPosition(hero->visitablePos());
 	node["owner"] = JsonNode(hero->tempOwner.toString());
 	node["level"] = JsonNode(static_cast<int32_t>(hero->level));
@@ -160,7 +194,7 @@ JsonNode jsonTown(const CGTownInstance * town)
 {
 	JsonNode node;
 	node["id"] = JsonNode(town->id.getNum());
-	node["name"] = JsonNode(town->getNameTranslated());
+	node["name"] = JsonNode(jsonText(town->getNameTranslated()));
 	node["position"] = jsonPosition(town->visitablePos());
 	node["owner"] = JsonNode(town->tempOwner.toString());
 	node["fortLevel"] = JsonNode(static_cast<int32_t>(town->fortLevel()));
@@ -175,13 +209,288 @@ JsonNode jsonTown(const CGTownInstance * town)
 	return node;
 }
 
+std::string battleSideName(BattleSide side)
+{
+	switch(side)
+	{
+		case BattleSide::ATTACKER:
+			return "attacker";
+		case BattleSide::DEFENDER:
+			return "defender";
+		case BattleSide::NONE:
+			return "none";
+		case BattleSide::INVALID:
+			return "invalid";
+		case BattleSide::ALL_KNOWING:
+			return "all_knowing";
+	}
+	return "unknown";
+}
+
+std::string pathAccessibilityName(EPathAccessibility accessibility)
+{
+	switch(accessibility)
+	{
+		case EPathAccessibility::NOT_SET:
+			return "not_set";
+		case EPathAccessibility::ACCESSIBLE:
+			return "accessible";
+		case EPathAccessibility::VISITABLE:
+			return "visitable";
+		case EPathAccessibility::GUARDED:
+			return "guarded";
+		case EPathAccessibility::BLOCKVIS:
+			return "blocking_visitable";
+		case EPathAccessibility::FLYABLE:
+			return "flyable";
+		case EPathAccessibility::BLOCKED:
+			return "blocked";
+	}
+	return "unknown";
+}
+
+std::string pathActionName(EPathNodeAction action)
+{
+	switch(action)
+	{
+		case EPathNodeAction::UNKNOWN:
+			return "unknown";
+		case EPathNodeAction::EMBARK:
+			return "embark";
+		case EPathNodeAction::DISEMBARK:
+			return "disembark";
+		case EPathNodeAction::NORMAL:
+			return "normal";
+		case EPathNodeAction::BATTLE:
+			return "battle";
+		case EPathNodeAction::VISIT:
+			return "visit";
+		case EPathNodeAction::BLOCKING_VISIT:
+			return "blocking_visit";
+		case EPathNodeAction::TELEPORT_NORMAL:
+			return "teleport_normal";
+		case EPathNodeAction::TELEPORT_BLOCKING_VISIT:
+			return "teleport_blocking_visit";
+		case EPathNodeAction::TELEPORT_BATTLE:
+			return "teleport_battle";
+	}
+	return "unknown";
+}
+
+JsonNode jsonPathLayer(const EPathfindingLayer & layer)
+{
+	JsonNode node;
+	node["id"] = JsonNode(layer.getNum());
+	if(layer >= EPathfindingLayer::LAND && layer < EPathfindingLayer::NUM_LAYERS)
+		node["name"] = JsonNode(NPathfindingLayer::names[layer.getNum()]);
+	return node;
+}
+
+JsonNode jsonMapObject(const CGObjectInstance * object, PlayerColor player, const CGHeroInstance * contextHero)
+{
+	JsonNode node;
+	node["id"] = JsonNode(object->id.getNum());
+	node["typeId"] = JsonNode(object->ID.getNum());
+	node["subtypeId"] = JsonNode(object->subID.getNum());
+	node["type"] = JsonNode(jsonText(object->getTypeName()));
+	node["subtype"] = JsonNode(jsonText(object->getSubtypeName()));
+	node["name"] = JsonNode(jsonText(object->getObjectName()));
+	node["hoverText"] = JsonNode(jsonText(contextHero ? object->getHoverText(contextHero) : object->getHoverText(player)));
+	node["owner"] = JsonNode(object->tempOwner.toString());
+	node["position"] = jsonPosition(object->visitablePos());
+	node["anchorPosition"] = jsonPosition(object->anchorPos());
+	node["topVisiblePosition"] = jsonPosition(object->getTopVisiblePos());
+	node["isVisitable"] = JsonNode(object->isVisitable());
+	node["isBlockedVisitable"] = JsonNode(object->isBlockedVisitable());
+	node["isRemovable"] = JsonNode(object->isRemovable());
+	node["passableForPlayer"] = JsonNode(object->passableFor(player));
+	return node;
+}
+
+void addVisibleObjectFromId(JsonNode & objects, std::set<int32_t> & seenObjects, const CCallback & callback, ObjectInstanceID id, PlayerColor player, const CGHeroInstance * contextHero)
+{
+	const CGObjectInstance * object = callback.getObj(id, false);
+	if(!object)
+		return;
+	if(!seenObjects.insert(object->id.getNum()).second)
+		return;
+	objects.Vector().push_back(jsonMapObject(object, player, contextHero));
+}
+
+JsonNode jsonTerrainTile(const TerrainTile & tile, const int3 & position, const CCallback & callback, PlayerColor player)
+{
+	JsonNode node;
+	node["position"] = jsonPosition(position);
+	node["terrain"]["id"] = JsonNode(tile.getTerrainID().getNum());
+	node["terrain"]["name"] = JsonNode(tile.getTerrain() ? jsonText(tile.getTerrain()->getNameTranslated()) : "");
+	node["terrain"]["isLand"] = JsonNode(tile.isLand());
+	node["terrain"]["isWater"] = JsonNode(tile.isWater());
+	node["terrain"]["isPassable"] = JsonNode(tile.getTerrain() ? tile.getTerrain()->isPassable() : false);
+	node["river"]["id"] = JsonNode(tile.getRiverID().getNum());
+	node["river"]["name"] = JsonNode(tile.getRiver() ? jsonText(tile.getRiver()->getNameTranslated()) : "");
+	node["road"]["id"] = JsonNode(tile.getRoadID().getNum());
+	node["road"]["name"] = JsonNode(tile.getRoad() ? jsonText(tile.getRoad()->getNameTranslated()) : "");
+	node["hasRiver"] = JsonNode(tile.hasRiver());
+	node["hasRoad"] = JsonNode(tile.hasRoad());
+	node["blocked"] = JsonNode(tile.blocked());
+	node["visitable"] = JsonNode(tile.visitable());
+	node["diggingStatus"] = JsonNode(static_cast<int32_t>(callback.getTileDigStatus(position, false)));
+
+	node["visitableObjectIds"].Vector();
+	for(const ObjectInstanceID & objectID : tile.visitableObjects)
+	{
+		const CGObjectInstance * object = callback.getObj(objectID, false);
+		if(object)
+			node["visitableObjectIds"].Vector().push_back(JsonNode(object->id.getNum()));
+	}
+
+	node["blockingObjectIds"].Vector();
+	for(const ObjectInstanceID & objectID : tile.blockingObjects)
+	{
+		const CGObjectInstance * object = callback.getObj(objectID, false);
+		if(object)
+			node["blockingObjectIds"].Vector().push_back(JsonNode(object->id.getNum()));
+	}
+
+	const CGObjectInstance * topObject = callback.getTopObj(position);
+	node["topObjectId"] = jsonObjectId(topObject);
+
+	const int3 guardingPosition = callback.guardingCreaturePosition(position);
+	if(guardingPosition.isValid() && callback.isInTheMap(guardingPosition) && callback.isVisibleFor(guardingPosition, player))
+		node["guardingCreaturePosition"] = jsonPosition(guardingPosition);
+
+	return node;
+}
+
+JsonNode jsonPathPreview(const CPathsInfo & paths, const int3 & destination, const EPathfindingLayer & layer, size_t maxNodes)
+{
+	JsonNode node;
+	node["positions"].Vector();
+	node["truncated"] = JsonNode(false);
+
+	CGPath path;
+	if(!paths.getPath(path, destination, layer))
+		return node;
+
+	size_t emitted = 0;
+	for(auto it = path.nodes.rbegin(); it != path.nodes.rend(); ++it)
+	{
+		if(emitted >= maxNodes)
+		{
+			node["truncated"] = JsonNode(true);
+			break;
+		}
+		node["positions"].Vector().push_back(jsonPosition(it->coord));
+		++emitted;
+	}
+	return node;
+}
+
+JsonNode jsonPathNode(const CGPathNode & pathNode)
+{
+	JsonNode node;
+	node["destination"] = jsonPosition(pathNode.coord);
+	node["layer"] = jsonPathLayer(pathNode.layer);
+	node["turns"] = JsonNode(static_cast<int32_t>(pathNode.turns));
+	node["movementRemaining"] = JsonNode(pathNode.moveRemains);
+	node["cost"].Float() = pathNode.cost;
+	node["accessibility"] = JsonNode(pathAccessibilityName(pathNode.accessible));
+	node["pathAction"] = JsonNode(pathActionName(pathNode.action));
+	node["isTeleportAction"] = JsonNode(pathNode.isTeleportAction());
+	return node;
+}
+
+JsonNode jsonBattleStack(const CPlayerBattleCallback & battle, const CStack * stack)
+{
+	JsonNode node;
+	node["id"] = JsonNode(static_cast<int32_t>(stack->unitId()));
+	node["name"] = JsonNode(jsonText(stack->getName()));
+	node["creatureId"] = JsonNode(stack->creatureId().getNum());
+	node["side"] = JsonNode(battleSideName(stack->unitSide()));
+	node["sideId"] = JsonNode(static_cast<int32_t>(stack->unitSide()));
+	node["owner"] = JsonNode(battle.battleGetOwner(stack).toString());
+	node["initialOwner"] = JsonNode(stack->unitOwner().toString());
+	node["slot"] = JsonNode(stack->unitSlot().getNum());
+	node["position"] = jsonBattleHex(stack->getPosition());
+	node["count"] = JsonNode(stack->getCount());
+	node["baseCount"] = JsonNode(stack->unitBaseAmount());
+	node["killed"] = JsonNode(stack->getKilled());
+	node["alive"] = JsonNode(stack->alive());
+	node["doubleWide"] = JsonNode(stack->doubleWide());
+	node["waiting"] = JsonNode(stack->waiting);
+	node["waitedThisTurn"] = JsonNode(stack->waitedThisTurn);
+	node["defending"] = JsonNode(stack->defending);
+	node["canShoot"] = JsonNode(battle.battleCanShoot(stack));
+	node["shots"]["available"] = JsonNode(stack->shots.available());
+	node["shots"]["total"] = JsonNode(stack->shots.total());
+	return node;
+}
+
+JsonNode jsonBattleHexList(const BattleHexArray & hexes)
+{
+	JsonNode node;
+	node.Vector();
+	for(const BattleHex & hex : hexes)
+		node.Vector().push_back(jsonBattleHex(hex));
+	return node;
+}
+
+JsonNode jsonBattleLegalActions(const CPlayerBattleCallback & battle, const CStack * activeStack)
+{
+	JsonNode node;
+	node["activeStackId"] = JsonNode(static_cast<int32_t>(activeStack->unitId()));
+	node["canWait"] = JsonNode(!activeStack->waitedThisTurn);
+	node["canDefend"] = JsonNode(true);
+	node["moveHexes"] = jsonBattleHexList(battle.battleGetAvailableHexes(activeStack, false));
+	node["shootTargets"].Vector();
+	node["meleeTargets"].Vector();
+
+	const BattleHexArray availableHexes = battle.battleGetAvailableHexes(activeStack, false);
+	for(const CStack * target : battle.battleGetStacks(CBattleInfoEssentials::ONLY_ENEMY, true))
+	{
+		if(!target)
+			continue;
+
+		if(battle.battleCanShoot(activeStack, target->getPosition()))
+		{
+			JsonNode action;
+			action["target_stack_id"] = JsonNode(static_cast<int32_t>(target->unitId()));
+			action["target"] = JsonNode(jsonText(target->getName()));
+			action["target_position"] = jsonBattleHex(target->getPosition());
+			node["shootTargets"].Vector().push_back(action);
+		}
+
+		if(!battle.battleCanAttackUnit(activeStack, target))
+			continue;
+
+		for(const BattleHex::EDir direction : BattleHex::hexagonalDirections())
+		{
+			if(!battle.battleCanAttackHex(availableHexes, activeStack, target->getPosition(), direction))
+				continue;
+
+			const BattleHex attackFrom = battle.fromWhichHexAttack(activeStack, target->getPosition(), direction);
+			if(!attackFrom.isValid())
+				continue;
+
+			JsonNode action;
+			action["target_stack_id"] = JsonNode(static_cast<int32_t>(target->unitId()));
+			action["target"] = JsonNode(jsonText(target->getName()));
+			action["target_position"] = jsonBattleHex(target->getPosition());
+			action["attack_from_hex"] = jsonBattleHex(attackFrom);
+			node["meleeTargets"].Vector().push_back(action);
+		}
+	}
+
+	return node;
+}
+
 JsonNode jsonBuildOption(const CGTownInstance * town, const CBuilding * building)
 {
 	JsonNode node;
 	node["town_id"] = JsonNode(town->id.getNum());
-	node["town"] = JsonNode(town->getNameTranslated());
+	node["town"] = JsonNode(jsonText(town->getNameTranslated()));
 	node["building_id"] = JsonNode(building->bid.getNum());
-	node["building"] = JsonNode(building->getNameTranslated());
+	node["building"] = JsonNode(jsonText(building->getNameTranslated()));
 	node["cost"] = jsonResources(building->resources);
 	return node;
 }
@@ -433,6 +742,17 @@ void CMcpPlayerInterface::configureProtocol()
 	});
 
 	protocol.registerResource({
+		"vcmi://battle-state",
+		"Current VCMI battle state",
+		"Battle state visible to the MCP-controlled player, if any battle is active.",
+		"application/json",
+		[this]
+		{
+			return makeBattleStateJson().toCompactString();
+		}
+	});
+
+	protocol.registerResource({
 		"vcmi://agent-guide",
 		"VCMI MCP agent guide",
 		"Short operating guide for an LLM controlling VCMI through MCP.",
@@ -460,6 +780,36 @@ void CMcpPlayerInterface::configureProtocol()
 		[this](const JsonNode & arguments)
 		{
 			return traceToolResult("vcmi.get_action_space", arguments, makeJsonResult(makeActionSpaceJson()));
+		}
+	});
+
+	protocol.registerTool({
+		"vcmi.get_visible_map",
+		"Returns visible adventure-map tiles and visible objects around a center or owned hero.",
+		makeObjectSchema({{"hero_id", "integer"}, {"x", "integer"}, {"y", "integer"}, {"z", "integer"}, {"radius", "integer"}, {"full_visible", "boolean"}, {"include_tiles", "boolean"}, {"include_objects", "boolean"}, {"max_tiles", "integer"}}, {}),
+		[this](const JsonNode & arguments)
+		{
+			return traceToolResult("vcmi.get_visible_map", arguments, makeJsonResult(makeVisibleMapJson(arguments)));
+		}
+	});
+
+	protocol.registerTool({
+		"vcmi.get_movement_options",
+		"Returns pathfinder-derived visible movement destinations and object targets for an owned hero.",
+		makeObjectSchema({{"hero_id", "integer"}, {"radius", "integer"}, {"max_options", "integer"}, {"include_future_turns", "boolean"}}, {"hero_id"}),
+		[this](const JsonNode & arguments)
+		{
+			return traceToolResult("vcmi.get_movement_options", arguments, makeJsonResult(makeMovementOptionsJson(arguments)));
+		}
+	});
+
+	protocol.registerTool({
+		"vcmi.get_battle_state",
+		"Returns visible battle state and legal actions for the currently active stack.",
+		makeObjectSchema({}, {}),
+		[this](const JsonNode & arguments)
+		{
+			return traceToolResult("vcmi.get_battle_state", arguments, makeJsonResult(makeBattleStateJson()));
 		}
 	});
 
@@ -517,6 +867,51 @@ void CMcpPlayerInterface::configureProtocol()
 			bool transit = readBool(arguments, "transit", false);
 			cb->moveHero(hero, int3(readInteger(arguments, "x"), readInteger(arguments, "y"), z), transit);
 			return traceToolResult("vcmi.move_hero", arguments, makeOkResult("move requested"));
+		}
+	});
+
+	protocol.registerTool({
+		"vcmi.move_hero_to_object",
+		"Moves an owned hero to a visible object target returned by vcmi.get_movement_options or vcmi.get_visible_map.",
+		makeObjectSchema({{"hero_id", "integer"}, {"object_id", "integer"}, {"transit", "boolean"}}, {"hero_id", "object_id"}),
+		[this](const JsonNode & arguments)
+		{
+			const CGHeroInstance * hero = cb->getHero(ObjectInstanceID(readInteger(arguments, "hero_id")));
+			if(!hero)
+				return traceToolResult("vcmi.move_hero_to_object", arguments, makeToolError("Unknown hero id"));
+			if(hero->tempOwner != playerID)
+				return traceToolResult("vcmi.move_hero_to_object", arguments, makeToolError("Hero is not owned by this MCP player"));
+
+			const CGObjectInstance * object = cb->getObj(ObjectInstanceID(readInteger(arguments, "object_id")), false);
+			if(!object)
+				return traceToolResult("vcmi.move_hero_to_object", arguments, makeToolError("Unknown or not visible object id"));
+
+			const int3 destination = object->visitablePos();
+			EPathfindingLayer layer = EPathfindingLayer::AUTO;
+			{
+				std::shared_lock gameStateLock(CGameState::mutex);
+				if(!cb->isInTheMap(destination))
+					return traceToolResult("vcmi.move_hero_to_object", arguments, makeToolError("Object destination is outside of the map"));
+
+				CPathsInfo paths(cb->getMapSize(), hero);
+				auto config = std::make_shared<SingleHeroPathfinderConfig>(paths, *cb, hero);
+				cb->calculatePaths(config);
+				const CGPathNode * pathNode = paths.getPathInfo(destination);
+				if(!pathNode || !pathNode->reachable() || pathNode->turns != 0)
+					return traceToolResult("vcmi.move_hero_to_object", arguments, makeToolError("Object is not reachable this turn"));
+				layer = pathNode->layer;
+			}
+
+			bool transit = readBool(arguments, "transit", false);
+			cb->moveHero(hero, destination, transit, layer);
+
+			JsonNode result;
+			result["ok"] = JsonNode(true);
+			result["message"] = JsonNode("move to object requested");
+			result["object_id"] = JsonNode(object->id.getNum());
+			result["destination"] = jsonPosition(destination);
+			result["layer"] = jsonPathLayer(layer);
+			return traceToolResult("vcmi.move_hero_to_object", arguments, makeJsonResult(result));
 		}
 	});
 
@@ -586,6 +981,152 @@ void CMcpPlayerInterface::configureProtocol()
 	});
 
 	protocol.registerTool({
+		"vcmi.battle_move",
+		"Moves the currently active battle stack to a legal battlefield hex.",
+		makeObjectSchema({{"hex", "integer"}}, {"hex"}),
+		[this](const JsonNode & arguments)
+		{
+			BattleID battleID = BattleID::NONE;
+			const CStack * stack = nullptr;
+			{
+				std::lock_guard lock(interfaceMutex);
+				battleID = activeBattleID;
+				stack = activeStackToMove;
+			}
+			if(!stack)
+				return traceToolResult("vcmi.battle_move", arguments, makeToolError("No active battle stack"));
+
+			auto battle = cb->getBattle(battleID);
+			const BattleHex destination(static_cast<si16>(readInteger(arguments, "hex")));
+			if(!destination.isValid())
+				return traceToolResult("vcmi.battle_move", arguments, makeToolError("Invalid battle hex"));
+			if(!battle->battleGetAvailableHexes(stack, false).contains(destination))
+				return traceToolResult("vcmi.battle_move", arguments, makeToolError("Battle hex is not reachable by active stack"));
+
+			{
+				std::lock_guard lock(interfaceMutex);
+				if(activeBattleID == battleID && activeStackToMove == stack)
+				{
+					activeBattleID = BattleID::NONE;
+					activeStackToMove = nullptr;
+				}
+			}
+			cb->battleMakeUnitAction(battleID, BattleAction::makeMove(stack, destination));
+			return traceToolResult("vcmi.battle_move", arguments, makeOkResult("battle move requested"));
+		}
+	});
+
+	protocol.registerTool({
+		"vcmi.battle_shoot",
+		"Shoots a target stack with the currently active battle stack.",
+		makeObjectSchema({{"target_stack_id", "integer"}}, {"target_stack_id"}),
+		[this](const JsonNode & arguments)
+		{
+			BattleID battleID = BattleID::NONE;
+			const CStack * stack = nullptr;
+			{
+				std::lock_guard lock(interfaceMutex);
+				battleID = activeBattleID;
+				stack = activeStackToMove;
+			}
+			if(!stack)
+				return traceToolResult("vcmi.battle_shoot", arguments, makeToolError("No active battle stack"));
+
+			auto battle = cb->getBattle(battleID);
+			const CStack * target = battle->battleGetStackByID(readInteger(arguments, "target_stack_id"));
+			if(!target)
+				return traceToolResult("vcmi.battle_shoot", arguments, makeToolError("Unknown target stack id"));
+			if(!battle->battleCanShoot(stack, target->getPosition()))
+				return traceToolResult("vcmi.battle_shoot", arguments, makeToolError("Active stack cannot shoot this target"));
+
+			{
+				std::lock_guard lock(interfaceMutex);
+				if(activeBattleID == battleID && activeStackToMove == stack)
+				{
+					activeBattleID = BattleID::NONE;
+					activeStackToMove = nullptr;
+				}
+			}
+			cb->battleMakeUnitAction(battleID, BattleAction::makeShotAttack(stack, target));
+			return traceToolResult("vcmi.battle_shoot", arguments, makeOkResult("battle shot requested"));
+		}
+	});
+
+	protocol.registerTool({
+		"vcmi.battle_melee_attack",
+		"Performs a melee attack with the currently active battle stack.",
+		makeObjectSchema({{"target_stack_id", "integer"}, {"attack_from_hex", "integer"}}, {"target_stack_id"}),
+		[this](const JsonNode & arguments)
+		{
+			BattleID battleID = BattleID::NONE;
+			const CStack * stack = nullptr;
+			{
+				std::lock_guard lock(interfaceMutex);
+				battleID = activeBattleID;
+				stack = activeStackToMove;
+			}
+			if(!stack)
+				return traceToolResult("vcmi.battle_melee_attack", arguments, makeToolError("No active battle stack"));
+
+			auto battle = cb->getBattle(battleID);
+			const CStack * target = battle->battleGetStackByID(readInteger(arguments, "target_stack_id"));
+			if(!target)
+				return traceToolResult("vcmi.battle_melee_attack", arguments, makeToolError("Unknown target stack id"));
+			if(!battle->battleCanAttackUnit(stack, target))
+				return traceToolResult("vcmi.battle_melee_attack", arguments, makeToolError("Active stack cannot attack this target"));
+
+			BattleHex attackFrom;
+			const BattleHexArray availableHexes = battle->battleGetAvailableHexes(stack, false);
+			auto findLegalAttackFrom = [&](std::optional<BattleHex> requested) -> std::optional<BattleHex>
+			{
+				for(const BattleHex::EDir direction : BattleHex::hexagonalDirections())
+				{
+					if(!battle->battleCanAttackHex(availableHexes, stack, target->getPosition(), direction))
+						continue;
+
+					const BattleHex candidate = battle->fromWhichHexAttack(stack, target->getPosition(), direction);
+					if(!candidate.isValid())
+						continue;
+					if(!requested || candidate == *requested)
+						return candidate;
+				}
+				return std::nullopt;
+			};
+
+			if(hasField(arguments, "attack_from_hex"))
+			{
+				attackFrom = BattleHex(static_cast<si16>(readInteger(arguments, "attack_from_hex")));
+				if(!attackFrom.isValid())
+					return traceToolResult("vcmi.battle_melee_attack", arguments, makeToolError("Invalid attack_from_hex"));
+				auto legalAttackFrom = findLegalAttackFrom(attackFrom);
+				if(!legalAttackFrom)
+					return traceToolResult("vcmi.battle_melee_attack", arguments, makeToolError("attack_from_hex is not legal for this target"));
+				attackFrom = *legalAttackFrom;
+			}
+			else
+			{
+				auto legalAttackFrom = findLegalAttackFrom(std::nullopt);
+				if(legalAttackFrom)
+					attackFrom = *legalAttackFrom;
+			}
+
+			if(!attackFrom.isValid())
+				return traceToolResult("vcmi.battle_melee_attack", arguments, makeToolError("Target is not reachable for melee attack"));
+
+			{
+				std::lock_guard lock(interfaceMutex);
+				if(activeBattleID == battleID && activeStackToMove == stack)
+				{
+					activeBattleID = BattleID::NONE;
+					activeStackToMove = nullptr;
+				}
+			}
+			cb->battleMakeUnitAction(battleID, BattleAction::makeMeleeAttack(stack, target, attackFrom));
+			return traceToolResult("vcmi.battle_melee_attack", arguments, makeOkResult("battle melee attack requested"));
+		}
+	});
+
+	protocol.registerTool({
 		"vcmi.battle_end_tactics",
 		"Ends the current tactics phase.",
 		makeObjectSchema({}, {}),
@@ -650,13 +1191,13 @@ JsonNode CMcpPlayerInterface::makeStateJson() const
 		state["battle"]["activeStack"] = JsonNode(activeStackToMove != nullptr);
 		if(activeTacticsBattleID != BattleID::NONE)
 			state["battle"]["tacticsBattleId"] = JsonNode(activeTacticsBattleID.getNum());
-		if(activeStackToMove)
-		{
-			state["battle"]["battleId"] = JsonNode(activeBattleID.getNum());
-			state["battle"]["stack"]["id"] = JsonNode(static_cast<int32_t>(activeStackToMove->unitId()));
-			state["battle"]["stack"]["name"] = JsonNode(activeStackToMove->getName());
-			state["battle"]["stack"]["side"] = JsonNode(static_cast<int32_t>(activeStackToMove->unitSide()));
-			state["battle"]["stack"]["position"] = jsonBattleHex(activeStackToMove->getPosition());
+	if(activeStackToMove)
+	{
+		state["battle"]["battleId"] = JsonNode(activeBattleID.getNum());
+		state["battle"]["stack"]["id"] = JsonNode(static_cast<int32_t>(activeStackToMove->unitId()));
+		state["battle"]["stack"]["name"] = JsonNode(jsonText(activeStackToMove->getName()));
+		state["battle"]["stack"]["side"] = JsonNode(static_cast<int32_t>(activeStackToMove->unitSide()));
+		state["battle"]["stack"]["position"] = jsonBattleHex(activeStackToMove->getPosition());
 		}
 	}
 
@@ -695,23 +1236,34 @@ JsonNode CMcpPlayerInterface::makeActionSpaceJson() const
 	actionSpace["purpose"] = JsonNode("Use this payload to choose one legal VCMI MCP tool call for the current player.");
 	actionSpace["rules"].Vector().push_back(JsonNode("Call vcmi.get_state or vcmi.get_action_space before choosing an action."));
 	actionSpace["rules"].Vector().push_back(JsonNode("Use only object ids returned by vcmi.get_state or vcmi.get_action_space."));
+	actionSpace["rules"].Vector().push_back(JsonNode("Use vcmi.get_visible_map and vcmi.get_movement_options for normal player-visible map and pathfinding information."));
+	actionSpace["rules"].Vector().push_back(JsonNode("Use vcmi.get_battle_state when battle.activeStack or battle.activeTactics is true."));
 	actionSpace["rules"].Vector().push_back(JsonNode("If a tool returns isError=true, inspect vcmi.get_state again before retrying."));
 	actionSpace["rules"].Vector().push_back(JsonNode("If unsure and turn.active is true, vcmi.end_turn is a valid conservative action."));
 
 	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.get_state", "Read current visible player state."));
 	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.get_action_space", "Read current guidance, object ids, and action candidates."));
+	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.get_visible_map", "Read visible adventure-map tiles and objects around a center or owned hero."));
+	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.get_movement_options", "Read pathfinder-derived movement and visible object targets for an owned hero."));
+	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.get_battle_state", "Read battle stacks, active stack, and legal battle action candidates."));
 	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.end_turn", "End the active adventure-map turn."));
 	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.answer_query", "Answer the pending query/dialog using query_id and optional answer."));
 	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.move_hero", "Move an owned hero to x, y, optional z."));
+	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.move_hero_to_object", "Move an owned hero to a visible object target."));
 	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.build_town_building", "Build a currently allowed building in an owned town."));
 	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.battle_defend", "Defend with the active battle stack."));
 	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.battle_wait", "Wait with the active battle stack."));
+	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.battle_move", "Move the active battle stack to a legal hex."));
+	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.battle_shoot", "Shoot a legal target stack."));
+	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.battle_melee_attack", "Attack a legal target stack in melee."));
 	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.battle_end_tactics", "End the current tactics phase."));
 
 	const JsonNode state = makeStateJson();
+	const JsonNode battleState = makeBattleStateJson();
 	actionSpace["stateSummary"]["turnActive"] = state["turn"]["active"];
 	actionSpace["stateSummary"]["pendingQuery"] = state["pendingQuery"];
 	actionSpace["stateSummary"]["battle"] = state["battle"];
+	actionSpace["stateSummary"]["activeBattles"] = JsonNode(static_cast<int32_t>(battleState["battles"].Vector().size()));
 
 	actionSpace["objectIds"]["heroes"].Vector();
 	for(const JsonNode & hero : state["heroes"].Vector())
@@ -753,6 +1305,10 @@ JsonNode CMcpPlayerInterface::makeActionSpaceJson() const
 
 	if(state["battle"]["activeStack"].Bool())
 	{
+		JsonNode inspectBattle = jsonAction("vcmi.get_battle_state", "Inspect legal battle actions for the active stack.");
+		inspectBattle["arguments"].Struct();
+		actionSpace["currentActions"].Vector().push_back(inspectBattle);
+
 		JsonNode defend = jsonAction("vcmi.battle_defend", "Defend with the active battle stack.");
 		defend["arguments"].Struct();
 		actionSpace["currentActions"].Vector().push_back(defend);
@@ -760,6 +1316,37 @@ JsonNode CMcpPlayerInterface::makeActionSpaceJson() const
 		JsonNode wait = jsonAction("vcmi.battle_wait", "Wait with the active battle stack.");
 		wait["arguments"].Struct();
 		actionSpace["currentActions"].Vector().push_back(wait);
+	}
+
+	for(const JsonNode & battle : battleState["battles"].Vector())
+	{
+		if(!hasField(battle, "legalActions"))
+			continue;
+
+		const JsonNode & legal = battle["legalActions"];
+		if(!legal["moveHexes"].Vector().empty())
+		{
+			JsonNode action = jsonAction("vcmi.battle_move", "Move the active battle stack to this legal hex.");
+			action["arguments"]["hex"] = legal["moveHexes"].Vector().front()["id"];
+			actionSpace["currentActions"].Vector().push_back(action);
+		}
+
+		for(const JsonNode & target : legal["shootTargets"].Vector())
+		{
+			JsonNode action = jsonAction("vcmi.battle_shoot", "Shoot this legal target stack.");
+			action["arguments"]["target_stack_id"] = target["target_stack_id"];
+			action["target"] = target["target"];
+			actionSpace["currentActions"].Vector().push_back(action);
+		}
+
+		for(const JsonNode & target : legal["meleeTargets"].Vector())
+		{
+			JsonNode action = jsonAction("vcmi.battle_melee_attack", "Melee attack this legal target stack.");
+			action["arguments"]["target_stack_id"] = target["target_stack_id"];
+			action["arguments"]["attack_from_hex"] = target["attack_from_hex"]["id"];
+			action["target"] = target["target"];
+			actionSpace["currentActions"].Vector().push_back(action);
+		}
 	}
 
 	if(state["battle"]["activeTactics"].Bool())
@@ -771,6 +1358,17 @@ JsonNode CMcpPlayerInterface::makeActionSpaceJson() const
 
 	for(const JsonNode & hero : state["heroes"].Vector())
 	{
+		JsonNode visibleMap = jsonAction("vcmi.get_visible_map", "Inspect visible map around this owned hero.");
+		visibleMap["arguments"]["hero_id"] = hero["id"];
+		visibleMap["arguments"]["radius"] = JsonNode(8);
+		actionSpace["currentActions"].Vector().push_back(visibleMap);
+
+		JsonNode movementOptions = jsonAction("vcmi.get_movement_options", "Inspect legal movement destinations and visible object targets for this owned hero.");
+		movementOptions["arguments"]["hero_id"] = hero["id"];
+		movementOptions["arguments"]["radius"] = JsonNode(12);
+		movementOptions["arguments"]["max_options"] = JsonNode(80);
+		actionSpace["currentActions"].Vector().push_back(movementOptions);
+
 		JsonNode action = jsonAction("vcmi.move_hero", "Move this owned hero. Destination must be reachable and visible to the player.");
 		action["arguments"]["hero_id"] = hero["id"];
 		action["arguments"]["x"] = hero["position"]["x"];
@@ -815,16 +1413,333 @@ JsonNode CMcpPlayerInterface::makeActionSpaceJson() const
 	return actionSpace;
 }
 
+JsonNode CMcpPlayerInterface::makeVisibleMapJson(const JsonNode & arguments) const
+{
+	JsonNode result;
+	result["ok"] = JsonNode(false);
+	result["player"]["id"] = JsonNode(playerID.getNum());
+	result["player"]["color"] = JsonNode(playerID.toString());
+	if(!cb)
+	{
+		result["error"] = JsonNode("MCP player interface is not initialized");
+		return result;
+	}
+
+	const bool fullVisible = readBool(arguments, "full_visible", false);
+	const bool includeTiles = readBool(arguments, "include_tiles", true);
+	const bool includeObjects = readBool(arguments, "include_objects", true);
+	const int32_t radius = readClampedInteger(arguments, "radius", 8, 0, 30);
+	const int32_t maxTiles = readClampedInteger(arguments, "max_tiles", fullVisible ? 1500 : 500, 1, 5000);
+
+	std::shared_lock gameStateLock(CGameState::mutex);
+
+	const CGHeroInstance * contextHero = nullptr;
+	int3 center(0, 0, 0);
+	if(hasField(arguments, "hero_id"))
+	{
+		contextHero = cb->getHero(ObjectInstanceID(readInteger(arguments, "hero_id")));
+		if(!contextHero)
+		{
+			result["error"] = JsonNode("Unknown hero id");
+			return result;
+		}
+		if(contextHero->tempOwner != playerID)
+		{
+			result["error"] = JsonNode("Hero is not owned by this MCP player");
+			return result;
+		}
+		center = contextHero->visitablePos();
+	}
+	else if(hasField(arguments, "x") || hasField(arguments, "y"))
+	{
+		center = int3(
+			readInteger(arguments, "x", 0),
+			readInteger(arguments, "y", 0),
+			readInteger(arguments, "z", 0));
+	}
+	else
+	{
+		const auto heroes = cb->getHeroesInfo();
+		if(!heroes.empty() && heroes.front())
+		{
+			contextHero = heroes.front();
+			center = contextHero->visitablePos();
+		}
+	}
+
+	if(!fullVisible && !cb->isInTheMap(center))
+	{
+		result["error"] = JsonNode("Center is outside of the map");
+		return result;
+	}
+
+	result["ok"] = JsonNode(true);
+	result["mapSize"] = jsonPosition(cb->getMapSize());
+	result["center"] = jsonPosition(center);
+	result["radius"] = JsonNode(radius);
+	result["fullVisible"] = JsonNode(fullVisible);
+	result["visibility"] = JsonNode("revealed tiles and visible/owned objects only");
+	result["truncated"] = JsonNode(false);
+	result["tiles"].Vector();
+	result["objects"].Vector();
+
+	std::set<int32_t> seenObjects;
+	int32_t visitedTiles = 0;
+
+	auto emitTile = [&](const int3 & position)
+	{
+		if(visitedTiles >= maxTiles)
+		{
+			result["truncated"] = JsonNode(true);
+			return;
+		}
+		if(!cb->isInTheMap(position) || !cb->isVisibleFor(position, playerID))
+			return;
+
+		const TerrainTile * tile = cb->getTile(position, false);
+		if(!tile)
+			return;
+
+		++visitedTiles;
+		if(includeTiles)
+			result["tiles"].Vector().push_back(jsonTerrainTile(*tile, position, *cb, playerID));
+
+		if(includeObjects)
+		{
+			for(const ObjectInstanceID & objectID : tile->visitableObjects)
+				addVisibleObjectFromId(result["objects"], seenObjects, *cb, objectID, playerID, contextHero);
+			for(const ObjectInstanceID & objectID : tile->blockingObjects)
+				addVisibleObjectFromId(result["objects"], seenObjects, *cb, objectID, playerID, contextHero);
+			const CGObjectInstance * topObject = cb->getTopObj(position);
+			if(topObject)
+				addVisibleObjectFromId(result["objects"], seenObjects, *cb, topObject->id, playerID, contextHero);
+		}
+	};
+
+	if(fullVisible)
+	{
+		const int3 mapSize = cb->getMapSize();
+		for(int z = 0; z < mapSize.z && !result["truncated"].Bool(); ++z)
+			for(int x = 0; x < mapSize.x && !result["truncated"].Bool(); ++x)
+				for(int y = 0; y < mapSize.y && !result["truncated"].Bool(); ++y)
+					emitTile(int3(x, y, z));
+	}
+	else
+	{
+		FowTilesType tiles;
+		cb->getTilesInRange(tiles, center, radius, ETileVisibility::REVEALED, playerID);
+		for(const int3 & position : tiles)
+		{
+			if(result["truncated"].Bool())
+				break;
+			emitTile(position);
+		}
+	}
+
+	result["tileCount"] = JsonNode(visitedTiles);
+	result["objectCount"] = JsonNode(static_cast<int32_t>(seenObjects.size()));
+	return result;
+}
+
+JsonNode CMcpPlayerInterface::makeMovementOptionsJson(const JsonNode & arguments) const
+{
+	JsonNode result;
+	result["ok"] = JsonNode(false);
+	result["visibility"] = JsonNode("movement options are calculated from player-visible callback data");
+	if(!cb)
+	{
+		result["error"] = JsonNode("MCP player interface is not initialized");
+		return result;
+	}
+
+	const CGHeroInstance * hero = cb->getHero(ObjectInstanceID(readInteger(arguments, "hero_id")));
+	if(!hero)
+	{
+		result["error"] = JsonNode("Unknown hero id");
+		return result;
+	}
+	if(hero->tempOwner != playerID)
+	{
+		result["error"] = JsonNode("Hero is not owned by this MCP player");
+		return result;
+	}
+
+	const int32_t radius = readClampedInteger(arguments, "radius", 12, 1, 30);
+	const int32_t maxOptions = readClampedInteger(arguments, "max_options", 80, 1, 300);
+	const bool includeFutureTurns = readBool(arguments, "include_future_turns", false);
+
+	struct MovementCandidate
+	{
+		JsonNode json;
+		float cost;
+		int32_t turns;
+		int32_t x;
+		int32_t y;
+		int32_t z;
+	};
+
+	std::vector<MovementCandidate> candidates;
+	std::set<int32_t> seenTargetObjects;
+
+	std::shared_lock gameStateLock(CGameState::mutex);
+
+	CPathsInfo paths(cb->getMapSize(), hero);
+	auto config = std::make_shared<SingleHeroPathfinderConfig>(paths, *cb, hero);
+	cb->calculatePaths(config);
+
+	FowTilesType tiles;
+	cb->getTilesInRange(tiles, hero->visitablePos(), radius, ETileVisibility::REVEALED, playerID);
+
+	result["ok"] = JsonNode(true);
+	result["hero"] = jsonHero(hero);
+	result["radius"] = JsonNode(radius);
+	result["currentTurnOnly"] = JsonNode(!includeFutureTurns);
+	result["movementOptions"].Vector();
+	result["objectTargets"].Vector();
+
+	for(const int3 & position : tiles)
+	{
+		if(position == hero->visitablePos())
+			continue;
+		if(!cb->isInTheMap(position) || !cb->isVisibleFor(position, playerID))
+			continue;
+
+		const CGPathNode * pathNode = paths.getPathInfo(position);
+		if(!pathNode || !pathNode->reachable())
+			continue;
+		if(!includeFutureTurns && pathNode->turns != 0)
+			continue;
+		if(pathNode->accessible == EPathAccessibility::NOT_SET || pathNode->accessible == EPathAccessibility::BLOCKED)
+			continue;
+
+		JsonNode option = jsonPathNode(*pathNode);
+		option["path"] = jsonPathPreview(paths, position, pathNode->layer, 20);
+		option["suggestedTool"] = JsonNode("vcmi.move_hero");
+		option["arguments"]["hero_id"] = JsonNode(hero->id.getNum());
+		option["arguments"]["x"] = JsonNode(position.x);
+		option["arguments"]["y"] = JsonNode(position.y);
+		option["arguments"]["z"] = JsonNode(position.z);
+
+		const CGObjectInstance * topObject = cb->getTopObj(position);
+		if(topObject)
+		{
+			option["object"] = jsonMapObject(topObject, playerID, hero);
+			const bool isObjectAction =
+				pathNode->action == EPathNodeAction::BATTLE ||
+				pathNode->action == EPathNodeAction::VISIT ||
+				pathNode->action == EPathNodeAction::BLOCKING_VISIT ||
+				pathNode->action == EPathNodeAction::TELEPORT_BLOCKING_VISIT ||
+				pathNode->action == EPathNodeAction::TELEPORT_BATTLE;
+			if(isObjectAction && seenTargetObjects.insert(topObject->id.getNum()).second)
+			{
+				JsonNode target;
+				target["object"] = jsonMapObject(topObject, playerID, hero);
+				target["path"] = jsonPathNode(*pathNode);
+				target["suggestedTool"] = JsonNode("vcmi.move_hero_to_object");
+				target["arguments"]["hero_id"] = JsonNode(hero->id.getNum());
+				target["arguments"]["object_id"] = JsonNode(topObject->id.getNum());
+				result["objectTargets"].Vector().push_back(target);
+			}
+		}
+
+		candidates.push_back(MovementCandidate{option, pathNode->cost, static_cast<int32_t>(pathNode->turns), position.x, position.y, position.z});
+	}
+
+	std::sort(candidates.begin(), candidates.end(), [](const MovementCandidate & left, const MovementCandidate & right)
+	{
+		return std::tie(left.turns, left.cost, left.z, left.x, left.y) < std::tie(right.turns, right.cost, right.z, right.x, right.y);
+	});
+
+	result["truncated"] = JsonNode(static_cast<int32_t>(candidates.size()) > maxOptions);
+	for(size_t index = 0; index < candidates.size() && index < static_cast<size_t>(maxOptions); ++index)
+		result["movementOptions"].Vector().push_back(candidates[index].json);
+
+	result["movementOptionCount"] = JsonNode(static_cast<int32_t>(result["movementOptions"].Vector().size()));
+	result["objectTargetCount"] = JsonNode(static_cast<int32_t>(result["objectTargets"].Vector().size()));
+	return result;
+}
+
+JsonNode CMcpPlayerInterface::makeBattleStateJson() const
+{
+	JsonNode state;
+	state["active"] = JsonNode(false);
+	state["battles"].Vector();
+	if(!cb)
+		return state;
+
+	BattleID activeID = BattleID::NONE;
+	const CStack * activeStack = nullptr;
+	BattleID tacticsID = BattleID::NONE;
+	{
+		std::lock_guard lock(interfaceMutex);
+		activeID = activeBattleID;
+		activeStack = activeStackToMove;
+		tacticsID = activeTacticsBattleID;
+	}
+
+	std::shared_lock gameStateLock(CGameState::mutex);
+	const auto activeBattles = cb->getActiveBattles();
+	state["active"] = JsonNode(!activeBattles.empty());
+	state["activeBattleId"] = activeID == BattleID::NONE ? JsonNode() : JsonNode(activeID.getNum());
+	state["activeTacticsBattleId"] = tacticsID == BattleID::NONE ? JsonNode() : JsonNode(tacticsID.getNum());
+
+	for(const auto & [battleID, battle] : activeBattles)
+	{
+		if(!battle)
+			continue;
+
+		const IBattleInfo * info = battle->getBattle();
+		JsonNode battleNode;
+		battleNode["battle_id"] = JsonNode(battleID.getNum());
+		battleNode["round"] = JsonNode(info->getRound());
+		battleNode["location"] = jsonPosition(info->getLocation());
+		battleNode["mySide"] = JsonNode(battleSideName(battle->battleGetMySide()));
+		battleNode["activeStackId"] = JsonNode(info->getActiveStackID());
+		battleNode["tactics"]["distance"] = JsonNode(static_cast<int32_t>(battle->battleTacticDist()));
+		battleNode["tactics"]["side"] = JsonNode(battleSideName(battle->battleGetTacticsSide()));
+		battleNode["canFlee"] = JsonNode(battle->battleCanFlee());
+		battleNode["surrenderCost"] = JsonNode(battle->battleGetSurrenderCost());
+		battleNode["sides"]["attacker"]["player"] = JsonNode(info->getSidePlayer(BattleSide::ATTACKER).toString());
+		battleNode["sides"]["defender"]["player"] = JsonNode(info->getSidePlayer(BattleSide::DEFENDER).toString());
+
+		const CGHeroInstance * myHero = battle->battleGetMyHero();
+		if(myHero)
+			battleNode["myHero"] = jsonHero(myHero);
+
+		battleNode["stacks"].Vector();
+		for(const CStack * stack : battle->battleGetStacks(CBattleInfoEssentials::MINE_AND_ENEMY, false))
+		{
+			if(stack)
+				battleNode["stacks"].Vector().push_back(jsonBattleStack(*battle, stack));
+		}
+
+		const CStack * legalActionStack = nullptr;
+		if(activeID == battleID && activeStack)
+			legalActionStack = activeStack;
+		else if(info->getActiveStackID() >= 0)
+			legalActionStack = battle->battleGetStackByID(info->getActiveStackID(), false);
+
+		if(legalActionStack && battle->battleGetOwner(legalActionStack) == playerID)
+			battleNode["legalActions"] = jsonBattleLegalActions(*battle, legalActionStack);
+
+		state["battles"].Vector().push_back(battleNode);
+	}
+
+	return state;
+}
+
 std::string CMcpPlayerInterface::makeAgentGuideText() const
 {
 	return
 		"VCMI MCP agent guide\n"
 		"1. Call vcmi.get_action_space first. It lists the current tools, ids, and action candidates.\n"
 		"2. Call vcmi.get_state when you need full current player state.\n"
-		"3. Use only ids and coordinates from MCP state/action-space payloads.\n"
-		"4. Prefer concrete progress: build an allowed town building, move an owned hero, answer a pending query, or handle battle/tactics.\n"
-		"5. If no useful action is clear and turn.active is true, call vcmi.end_turn.\n"
-		"6. If a tool result has isError=true, read state/action-space again before retrying.\n";
+		"3. Call vcmi.get_visible_map for visible adventure-map tiles/objects and vcmi.get_movement_options before moving a hero.\n"
+		"4. In battle, call vcmi.get_battle_state and choose one listed legal battle action.\n"
+		"5. Use only ids, coordinates, and battle hexes returned by MCP payloads.\n"
+		"6. Prefer concrete progress: build an allowed town building, move an owned hero to a visible target, answer a pending query, or handle battle/tactics.\n"
+		"7. If no useful action is clear and turn.active is true, call vcmi.end_turn.\n"
+		"8. If a tool result has isError=true, read state/action-space again before retrying.\n";
 }
 
 std::string CMcpPlayerInterface::makeStateText() const
@@ -959,7 +1874,51 @@ void CMcpPlayerInterface::activeStack(const BattleID & battleID, const CStack * 
 	if(stack)
 	{
 		event["stack"]["id"] = JsonNode(static_cast<int32_t>(stack->unitId()));
-		event["stack"]["name"] = JsonNode(stack->getName());
+		event["stack"]["name"] = JsonNode(jsonText(stack->getName()));
+	}
+	appendTraceEvent(event);
+}
+
+void CMcpPlayerInterface::battleStart(const BattleID & battleID, const CCreatureSet * army1, const CCreatureSet * army2, int3 tile, const CGHeroInstance * hero1, const CGHeroInstance * hero2, BattleSide side, bool replayAllowed)
+{
+	JsonNode event;
+	event["event"] = JsonNode("battle_started");
+	event["player"] = JsonNode(playerID.toString());
+	event["battle_id"] = JsonNode(battleID.getNum());
+	event["tile"] = jsonPosition(tile);
+	event["side"] = JsonNode(battleSideName(side));
+	event["replayAllowed"] = JsonNode(replayAllowed);
+	event["attackerHeroId"] = jsonObjectId(hero1);
+	event["defenderHeroId"] = jsonObjectId(hero2);
+	event["attackerArmySlots"] = JsonNode(army1 ? static_cast<int32_t>(army1->Slots().size()) : 0);
+	event["defenderArmySlots"] = JsonNode(army2 ? static_cast<int32_t>(army2->Slots().size()) : 0);
+	appendTraceEvent(event);
+}
+
+void CMcpPlayerInterface::battleEnd(const BattleID & battleID, const BattleResult * br, QueryID queryID)
+{
+	{
+		std::lock_guard lock(interfaceMutex);
+		if(activeBattleID == battleID)
+		{
+			activeBattleID = BattleID::NONE;
+			activeStackToMove = nullptr;
+		}
+		if(activeTacticsBattleID == battleID)
+			activeTacticsBattleID = BattleID::NONE;
+	}
+
+	JsonNode event;
+	event["event"] = JsonNode("battle_ended");
+	event["player"] = JsonNode(playerID.toString());
+	event["battle_id"] = JsonNode(battleID.getNum());
+	if(queryID.hasValue())
+		event["query_id"] = JsonNode(queryID.getNum());
+	if(br)
+	{
+		event["result"] = JsonNode(static_cast<int32_t>(br->result));
+		event["winner"] = JsonNode(battleSideName(br->winner));
+		event["attacker"] = JsonNode(br->attacker.toString());
 	}
 	appendTraceEvent(event);
 }
@@ -989,7 +1948,7 @@ void CMcpPlayerInterface::commanderGotLevel(const CCommanderInstance * commander
 void CMcpPlayerInterface::showBlockingDialog(const std::string & text, const std::vector<Component> & components, QueryID askID, const int soundID, bool selection, bool cancel, bool safeToAutoaccept)
 {
 	JsonNode data;
-	data["text"] = JsonNode(text);
+	data["text"] = JsonNode(jsonText(text));
 	data["components"] = JsonNode(static_cast<int32_t>(components.size()));
 	data["selection"] = JsonNode(selection);
 	data["cancel"] = JsonNode(cancel);
@@ -1020,15 +1979,15 @@ void CMcpPlayerInterface::showGarrisonDialog(const CArmedInstance * up, const CG
 	data["upperArmyId"] = jsonObjectId(up);
 	data["lowerHeroId"] = jsonObjectId(down);
 	data["removableUnits"] = JsonNode(removableUnits);
-	data["title"] = JsonNode(customTitle.toString());
+	data["title"] = JsonNode(jsonText(customTitle.toString()));
 	setPendingQuery(queryID, "garrison_dialog", data);
 }
 
 void CMcpPlayerInterface::showMapObjectSelectDialog(QueryID askID, const Component & icon, const MetaString & title, const MetaString & description, const std::vector<ObjectInstanceID> & objects)
 {
 	JsonNode data;
-	data["title"] = JsonNode(title.toString());
-	data["description"] = JsonNode(description.toString());
+	data["title"] = JsonNode(jsonText(title.toString()));
+	data["description"] = JsonNode(jsonText(description.toString()));
 	data["objects"].Vector();
 	for(const ObjectInstanceID & object : objects)
 		data["objects"].Vector().push_back(JsonNode(object.getNum()));

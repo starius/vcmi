@@ -47,6 +47,9 @@ class CMcpPlayerInterface : public CGlobalAI
 
 	JsonNode makeStateJson() const;
 	JsonNode makeActionSpaceJson() const;
+	JsonNode makeVisibleMapJson(const JsonNode & arguments) const;
+	JsonNode makeMovementOptionsJson(const JsonNode & arguments) const;
+	JsonNode makeBattleStateJson() const;
 	std::string makeAgentGuideText() const;
 	std::string makeStateText() const;
 	JsonNode makePendingQueryJson() const;
@@ -70,6 +73,8 @@ public:
 	void yourTurn(QueryID queryID) override;
 	void yourTacticPhase(const BattleID & battleID, int distance) override;
 	void activeStack(const BattleID & battleID, const CStack * stack) override;
+	void battleStart(const BattleID & battleID, const CCreatureSet * army1, const CCreatureSet * army2, int3 tile, const CGHeroInstance * hero1, const CGHeroInstance * hero2, BattleSide side, bool replayAllowed) override;
+	void battleEnd(const BattleID & battleID, const BattleResult * br, QueryID queryID) override;
 	void heroGotLevel(const CGHeroInstance * hero, PrimarySkill pskill, std::vector<SecondarySkill> & skills, QueryID queryID) override;
 	void commanderGotLevel(const CCommanderInstance * commander, std::vector<ui32> skills, QueryID queryID) override;
 	void showBlockingDialog(const std::string & text, const std::vector<Component> & components, QueryID askID, const int soundID, bool selection, bool cancel, bool safeToAutoaccept) override;
