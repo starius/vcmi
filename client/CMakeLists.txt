@@ -67,6 +67,7 @@ set(vcmiclientcommon_SRCS
 	lobby/SelectionTab.cpp
 
 	mcp/CMcpPlayerInterface.cpp
+	mcp/McpGameHelpers.cpp
 	mcp/McpHttpServer.cpp
 	mcp/McpProtocol.cpp
 
@@ -472,6 +473,7 @@ set(vcmiclientcommon_HEADERS
 	GameChatHandler.h
 	LobbyClientNetPackVisitors.h
 	mcp/CMcpPlayerInterface.h
+	mcp/McpGameHelpers.h
 	mcp/McpHttpServer.h
 	mcp/McpProtocol.h
 	ServerRunner.h
