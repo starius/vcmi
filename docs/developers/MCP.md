@@ -75,6 +75,46 @@ curl -s http://127.0.0.1:3033/mcp \
 
 The same state is also available as the MCP resource `vcmi://state`.
 
+## Local LLM smoke agent
+
+`client/mcp/examples/vcmi_mcp_llm_agent.py` is a minimal one-step agent that connects an OpenAI-compatible local model server to the VCMI MCP HTTP endpoint. It reads `vcmi.get_state`, asks the model for one JSON action, and calls the selected MCP tool.
+
+Example with `llama.cpp` serving a local GGUF model:
+
+```bash
+mkdir -p /tmp/vcmi-mcp-models
+curl -L --fail \
+  -o /tmp/vcmi-mcp-models/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf \
+  https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf
+
+LLAMA_SERVER="$(nix --extra-experimental-features 'nix-command flakes' eval --raw nixpkgs#llama-cpp.outPath)/bin/llama-server"
+"$LLAMA_SERVER" \
+  -m /tmp/vcmi-mcp-models/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf \
+  --host 127.0.0.1 \
+  --port 8080 \
+  -c 2048
+```
+
+In another shell, start VCMI with an MCP-controlled player:
+
+```bash
+VCMI_MCP_TOKEN=secret VCMI_MCP_PORT=3033 ./vcmiclient \
+  --headless \
+  --testmap "Maps/Dwarven Gold.h3m" \
+  --ai McpAI --ai EmptyAI --ai EmptyAI
+```
+
+Then run one LLM-selected action from the VCMI source root:
+
+```bash
+VCMI_MCP_TOKEN=secret \
+OPENAI_BASE_URL=http://127.0.0.1:8080/v1 \
+OPENAI_MODEL=local-model \
+python3 client/mcp/examples/vcmi_mcp_llm_agent.py
+```
+
+The smoke agent intentionally allows only a small action set (`vcmi.end_turn`, `vcmi.move_hero`, `vcmi.build_town_building`). If the model returns invalid JSON or an unsupported tool, the script falls back to `vcmi.end_turn` unless `--no-fallback-end-turn` is passed.
+
 ## Tools
 
 Current tools:
