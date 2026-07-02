@@ -298,6 +298,15 @@ std::optional<PlayerColor> CClient::findPlayerColorForSpectatorInterface() const
 
 std::string CClient::aiNameForPlayer(const PlayerSettings & ps, bool battleAI, bool alliedToHuman) const
 {
+	if(!battleAI && settings["session"]["ai"].isVector())
+	{
+		const auto & requestedAis = settings["session"]["ai"].Vector();
+		const int playerIndex = ps.color.getNum();
+		const auto playerIndexAsSize = static_cast<size_t>(playerIndex);
+		if(playerIndex >= 0 && playerIndexAsSize < requestedAis.size() && requestedAis[playerIndexAsSize].isString())
+			return requestedAis[playerIndexAsSize].String();
+	}
+
 	if(!battleAI && isMcpAIName(ps.name))
 		return ps.name;
 

@@ -355,6 +355,13 @@ int main(int argc, char * argv[])
 	session["autoSkip"].Bool()  = vm.count("autoSkip");
 	session["oneGoodAI"].Bool() = vm.count("oneGoodAI");
 	session["aiSolo"].Bool() = false;
+	if(vm.count("ai"))
+	{
+		Settings sessionAi = settings.write["session"]["ai"];
+		sessionAi->Vector().clear();
+		for(const std::string & aiName : vm["ai"].as<std::vector<std::string>>())
+			sessionAi->Vector().push_back(JsonNode(aiName));
+	}
 	
 	if(vm.count("testmap"))
 	{

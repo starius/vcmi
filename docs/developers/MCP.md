@@ -12,7 +12,15 @@ The integration is intentionally client-only:
 
 Assign an AI-controlled player the adventure AI name `McpAI`. During client interface creation, `McpAI` is handled in `client/mcp/` instead of being resolved through the lib-level `AIFactory`.
 
-When the player interface is created, VCMI starts a localhost HTTP MCP endpoint:
+For debug/headless runs, pass it through the client `--ai` option. The option can be repeated for consecutive player colors; `--ai McpAI` assigns red to MCP. `--testmap` expects a VCMI map resource path, not an absolute filesystem path:
+
+```bash
+VCMI_MCP_TOKEN=secret VCMI_MCP_PORT=3033 ./vcmiclient --headless --testmap "Maps/Dwarven Gold.h3m" --ai McpAI
+```
+
+For maps with more AI players, pass additional AI names for the following colors, for example `--ai McpAI --ai EmptyAI --ai EmptyAI`.
+
+When the `McpAI` player interface is created, VCMI starts a localhost HTTP MCP endpoint:
 
 ```text
 http://127.0.0.1:3033/mcp
@@ -43,6 +51,7 @@ Example initialization:
 ```bash
 curl -s http://127.0.0.1:3033/mcp \
   -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer secret' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"dev"}}}'
 ```
 
@@ -51,6 +60,7 @@ List tools:
 ```bash
 curl -s http://127.0.0.1:3033/mcp \
   -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer secret' \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 ```
 
@@ -59,6 +69,7 @@ Read the current state:
 ```bash
 curl -s http://127.0.0.1:3033/mcp \
   -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer secret' \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vcmi.get_state","arguments":{}}}'
 ```
 
