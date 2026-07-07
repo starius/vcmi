@@ -123,6 +123,125 @@ JsonNode makeObjectSchema(std::initializer_list<std::pair<const char *, const ch
 	return schema;
 }
 
+void setSchemaProperty(JsonNode & schema, const std::string & name, const std::string & type, const std::string & description = "")
+{
+	schema["properties"][name]["type"] = JsonNode(type);
+	if(!description.empty())
+		schema["properties"][name]["description"] = JsonNode(description);
+}
+
+void setRequired(JsonNode & schema, std::initializer_list<const char *> fields)
+{
+	for(const char * field : fields)
+		schema["required"].Vector().push_back(JsonNode(field));
+}
+
+JsonNode makeStringArraySchema(const std::string & description)
+{
+	JsonNode schema;
+	schema["type"] = JsonNode("array");
+	schema["description"] = JsonNode(description);
+	schema["items"]["type"] = JsonNode("string");
+	return schema;
+}
+
+JsonNode makePlanActionSchema(const std::string & type, std::initializer_list<std::pair<const char *, const char *>> properties, std::initializer_list<const char *> required)
+{
+	JsonNode schema;
+	schema["type"] = JsonNode("object");
+	schema["additionalProperties"] = JsonNode(false);
+	schema["properties"]["id"]["type"] = JsonNode("string");
+	schema["properties"]["type"]["type"] = JsonNode("string");
+	schema["properties"]["type"]["enum"].Vector().push_back(JsonNode(type));
+	for(const auto & property : properties)
+		schema["properties"][property.first]["type"] = JsonNode(property.second);
+	setRequired(schema, required);
+	return schema;
+}
+
+JsonNode makeFlexibleTypedPlanActionSchema()
+{
+	JsonNode schema;
+	schema["type"] = JsonNode("object");
+	schema["additionalProperties"] = JsonNode(true);
+	schema["properties"]["id"]["type"] = JsonNode("string");
+	schema["properties"]["type"]["type"] = JsonNode("string");
+	schema["properties"]["type"]["description"] = JsonNode("Canonical or aliased plan action type. Canonical values: build, recruit, move_hero, visit_object, answer_query, end_turn.");
+	setRequired(schema, {"type"});
+	return schema;
+}
+
+JsonNode makeToolShapedPlanActionSchema()
+{
+	JsonNode schema;
+	schema["type"] = JsonNode("object");
+	schema["additionalProperties"] = JsonNode(false);
+	schema["properties"]["id"]["type"] = JsonNode("string");
+	schema["properties"]["tool"]["type"] = JsonNode("string");
+	schema["properties"]["tool"]["description"] = JsonNode("MCP tool name to normalize into a plan action, for example vcmi.move_hero_to_object.");
+	schema["properties"]["arguments"]["type"] = JsonNode("object");
+	schema["properties"]["arguments"]["additionalProperties"] = JsonNode(true);
+	setRequired(schema, {"tool"});
+	return schema;
+}
+
+JsonNode makeExecutePlanSchema()
+{
+	JsonNode schema;
+	schema["type"] = JsonNode("object");
+	schema["additionalProperties"] = JsonNode(false);
+	setSchemaProperty(schema, "plan_id", "string");
+	setSchemaProperty(schema, "dry_run", "boolean");
+	setSchemaProperty(schema, "max_updates", "integer");
+	schema["properties"]["return_select"] = makeStringArraySchema("Optional state sections to return after executing the plan.");
+	schema["properties"]["actions"]["type"] = JsonNode("array");
+	schema["properties"]["actions"]["description"] = JsonNode("Sequential day-plan actions. Use canonical type values when possible; aliased and tool-shaped actions are accepted and normalized by VCMI.");
+	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("build", {{"town_id", "integer"}, {"building_id", "integer"}}, {"type", "town_id", "building_id"}));
+	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("recruit", {{"source_id", "integer"}, {"town_id", "integer"}, {"destination_id", "integer"}, {"level", "integer"}, {"creature_id", "integer"}, {"amount", "integer"}}, {"type", "level"}));
+	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("move_hero", {{"hero_id", "integer"}, {"x", "integer"}, {"y", "integer"}, {"z", "integer"}, {"route_id", "string"}}, {"type", "hero_id", "x", "y"}));
+	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("visit_object", {{"hero_id", "integer"}, {"object_id", "integer"}, {"route_id", "string"}}, {"type", "hero_id", "object_id"}));
+	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("answer_query", {{"query_id", "integer"}, {"answer", "integer"}}, {"type", "query_id"}));
+	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("end_turn", {}, {"type"}));
+	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makeFlexibleTypedPlanActionSchema());
+	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makeToolShapedPlanActionSchema());
+	setRequired(schema, {"actions"});
+	return schema;
+}
+
+JsonNode makeReachableSchema()
+{
+	JsonNode schema = makeObjectSchema({
+		{"hero_id", "integer"},
+		{"radius", "integer"},
+		{"max_options", "integer"},
+		{"max_objects", "integer"},
+		{"max_tiles", "integer"},
+		{"max_recommended", "integer"},
+		{"include_future_turns", "boolean"},
+		{"include_tiles", "boolean"},
+		{"include_paths", "boolean"},
+		{"compact", "boolean"}
+	}, {"hero_id"});
+	schema["properties"]["compact"]["description"] = JsonNode("Defaults to true for vcmi.get_reachable. Compact output is intended for LLM planning.");
+	schema["properties"]["include_tiles"]["description"] = JsonNode("Set true only when raw reachable tile options are needed.");
+	schema["properties"]["include_paths"]["description"] = JsonNode("Set true only when full path previews are needed.");
+	return schema;
+}
+
+JsonNode makeDayContextSchema()
+{
+	JsonNode schema = makeObjectSchema({
+		{"radius", "integer"},
+		{"max_options", "integer"},
+		{"max_objects", "integer"},
+		{"max_recommended", "integer"},
+		{"include_paths", "boolean"},
+		{"since_revision", "integer"},
+		{"max_updates", "integer"}
+	}, {});
+	return schema;
+}
+
 JsonNode jsonPosition(const int3 & position)
 {
 	JsonNode node;
@@ -366,6 +485,22 @@ JsonNode jsonMapObject(const CGObjectInstance * object, PlayerColor player, cons
 	return node;
 }
 
+JsonNode jsonCompactMapObject(const CGObjectInstance * object, PlayerColor player, const CGHeroInstance * contextHero)
+{
+	JsonNode node;
+	node["id"] = JsonNode(object->id.getNum());
+	node["typeId"] = JsonNode(object->ID.getNum());
+	node["subtypeId"] = JsonNode(object->subID.getNum());
+	node["type"] = JsonNode(jsonText(object->getTypeName()));
+	node["subtype"] = JsonNode(jsonText(object->getSubtypeName()));
+	node["name"] = JsonNode(jsonText(object->getObjectName()));
+	node["hoverText"] = JsonNode(jsonText(contextHero ? object->getHoverText(contextHero) : object->getHoverText(player)));
+	node["owner"] = JsonNode(object->tempOwner.toString());
+	node["position"] = jsonPosition(object->visitablePos());
+	node["passableForPlayer"] = JsonNode(object->passableFor(player));
+	return node;
+}
+
 void addVisibleObjectFromId(JsonNode & objects, std::set<int32_t> & seenObjects, const CCallback & callback, ObjectInstanceID id, PlayerColor player, const CGHeroInstance * contextHero)
 {
 	const CGObjectInstance * object = callback.getObj(id, false);
@@ -455,6 +590,20 @@ JsonNode jsonPathNode(const CGPathNode & pathNode)
 	node["cost"].Float() = pathNode.cost;
 	node["accessibility"] = JsonNode(pathAccessibilityName(pathNode.accessible));
 	node["pathAction"] = JsonNode(pathActionName(pathNode.action));
+	node["isTeleportAction"] = JsonNode(pathNode.isTeleportAction());
+	return node;
+}
+
+JsonNode jsonCompactPathNode(const CGPathNode & pathNode)
+{
+	JsonNode node;
+	node["destination"] = jsonPosition(pathNode.coord);
+	node["layerId"] = JsonNode(pathNode.layer.getNum());
+	node["turns"] = JsonNode(static_cast<int32_t>(pathNode.turns));
+	node["movementRemaining"] = JsonNode(pathNode.moveRemains);
+	node["cost"].Float() = pathNode.cost;
+	node["pathAction"] = JsonNode(pathActionName(pathNode.action));
+	node["accessibility"] = JsonNode(pathAccessibilityName(pathNode.accessible));
 	node["isTeleportAction"] = JsonNode(pathNode.isTeleportAction());
 	return node;
 }
@@ -855,6 +1004,16 @@ void CMcpPlayerInterface::configureProtocol()
 	});
 
 	protocol.registerTool({
+		"vcmi.get_day_context",
+		"Returns compact whole-day planning context: selected state, build options, plan schema, and recommended reachable targets.",
+		makeDayContextSchema(),
+		[this](const JsonNode & arguments)
+		{
+			return traceToolResult("vcmi.get_day_context", arguments, makeJsonResult(makeDayContextJson(arguments)));
+		}
+	});
+
+	protocol.registerTool({
 		"vcmi.get_visible_map",
 		"Returns visible adventure-map tiles and visible objects around a center or owned hero.",
 		makeObjectSchema({{"hero_id", "integer"}, {"x", "integer"}, {"y", "integer"}, {"z", "integer"}, {"radius", "integer"}, {"full_visible", "boolean"}, {"include_tiles", "boolean"}, {"include_objects", "boolean"}, {"max_tiles", "integer"}}, {}),
@@ -867,7 +1026,7 @@ void CMcpPlayerInterface::configureProtocol()
 	protocol.registerTool({
 		"vcmi.get_movement_options",
 		"Returns pathfinder-derived visible movement destinations and object targets for an owned hero.",
-		makeObjectSchema({{"hero_id", "integer"}, {"radius", "integer"}, {"max_options", "integer"}, {"include_future_turns", "boolean"}}, {"hero_id"}),
+		makeReachableSchema(),
 		[this](const JsonNode & arguments)
 		{
 			return traceToolResult("vcmi.get_movement_options", arguments, makeJsonResult(makeMovementOptionsJson(arguments)));
@@ -876,8 +1035,8 @@ void CMcpPlayerInterface::configureProtocol()
 
 	protocol.registerTool({
 		"vcmi.get_reachable",
-		"Returns this-day reachable tiles, reachable objects, path previews, and route ids for an owned hero.",
-		makeObjectSchema({{"hero_id", "integer"}, {"radius", "integer"}, {"max_options", "integer"}, {"include_future_turns", "boolean"}}, {"hero_id"}),
+		"Returns compact this-day reachable objects, recommended targets, optional tiles, and route ids for an owned hero.",
+		makeReachableSchema(),
 		[this](const JsonNode & arguments)
 		{
 			return traceToolResult("vcmi.get_reachable", arguments, makeJsonResult(makeReachableJson(arguments)));
@@ -1049,8 +1208,8 @@ void CMcpPlayerInterface::configureProtocol()
 
 	protocol.registerTool({
 		"vcmi.execute_plan",
-		"Executes a sequential batch of day-plan actions until completion or a stop condition.",
-		makeObjectSchema({{"plan_id", "string"}, {"actions", "array"}, {"dry_run", "boolean"}, {"return_select", "array"}, {"max_updates", "integer"}}, {"actions"}),
+		"Executes a sequential batch of day-plan actions until completion or a stop condition. Canonical action types: build, recruit, move_hero, visit_object, answer_query, end_turn.",
+		makeExecutePlanSchema(),
 		[this](const JsonNode & arguments)
 		{
 			return traceToolResult("vcmi.execute_plan", arguments, executePlan(arguments));
@@ -1564,8 +1723,9 @@ JsonNode CMcpPlayerInterface::makeActionSpaceJson() const
 {
 	JsonNode actionSpace;
 	actionSpace["purpose"] = JsonNode("Use this payload to choose one legal VCMI MCP tool call for the current player.");
-	actionSpace["rules"].Vector().push_back(JsonNode("Call vcmi.get_state or vcmi.get_action_space before choosing an action."));
-	actionSpace["rules"].Vector().push_back(JsonNode("Use vcmi.get_reachable before moving heroes; prefer route_id-based movement or vcmi.execute_plan."));
+	actionSpace["rules"].Vector().push_back(JsonNode("For whole-day play, prefer vcmi.get_day_context followed by one vcmi.execute_plan."));
+	actionSpace["rules"].Vector().push_back(JsonNode("Use canonical execute_plan action types: build, recruit, move_hero, visit_object, answer_query, end_turn."));
+	actionSpace["rules"].Vector().push_back(JsonNode("Use vcmi.get_reachable before moving heroes; prefer recommendedTargets[*].planAction or route_id-based movement."));
 	actionSpace["rules"].Vector().push_back(JsonNode("Use only object ids, route ids, and coordinates returned by MCP payloads."));
 	actionSpace["rules"].Vector().push_back(JsonNode("Battle is auto-handled by the MCP interface; focus planning on adventure-map and town actions."));
 	actionSpace["rules"].Vector().push_back(JsonNode("If a tool returns isError=true, inspect vcmi.get_state again before retrying."));
@@ -1574,6 +1734,7 @@ JsonNode CMcpPlayerInterface::makeActionSpaceJson() const
 	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.get_state", "Read current visible player state."));
 	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.get_updates", "Read revisioned visible state changes since a previous state revision."));
 	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.get_action_space", "Read current guidance, object ids, and action candidates."));
+	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.get_day_context", "Read compact state, build options, recommended route targets, and a suggested execute_plan skeleton."));
 	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.get_visible_map", "Read visible adventure-map tiles and objects around a center or owned hero."));
 	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.get_movement_options", "Read pathfinder-derived movement and visible object targets for an owned hero."));
 	actionSpace["allTools"].Vector().push_back(jsonAction("vcmi.get_reachable", "Read route-id movement targets and reachable objects for an owned hero."));
@@ -1597,6 +1758,38 @@ JsonNode CMcpPlayerInterface::makeActionSpaceJson() const
 	actionSpace["stateSummary"]["pendingQuery"] = state["pendingQuery"];
 	actionSpace["stateSummary"]["battle"] = state["battle"];
 	actionSpace["stateSummary"]["activeBattles"] = JsonNode(static_cast<int32_t>(battleState["battles"].Vector().size()));
+	actionSpace["executePlan"]["acceptedActionTypes"].Vector();
+	for(const std::string & type : Mcp::acceptedPlanActionTypes())
+		actionSpace["executePlan"]["acceptedActionTypes"].Vector().push_back(JsonNode(type));
+	actionSpace["executePlan"]["toolShapeAccepted"] = JsonNode(true);
+	actionSpace["executePlan"]["examples"].Vector();
+	{
+		JsonNode build;
+		build["type"] = JsonNode("build");
+		build["town_id"] = JsonNode(0);
+		build["building_id"] = JsonNode(30);
+		actionSpace["executePlan"]["examples"].Vector().push_back(build);
+
+		JsonNode visit;
+		visit["type"] = JsonNode("visit_object");
+		visit["hero_id"] = JsonNode(990);
+		visit["object_id"] = JsonNode(181);
+		visit["route_id"] = JsonNode("route_id from vcmi.get_reachable");
+		actionSpace["executePlan"]["examples"].Vector().push_back(visit);
+
+		JsonNode move;
+		move["type"] = JsonNode("move_hero");
+		move["hero_id"] = JsonNode(990);
+		move["x"] = JsonNode(20);
+		move["y"] = JsonNode(2);
+		move["z"] = JsonNode(0);
+		move["route_id"] = JsonNode("route_id from vcmi.get_reachable");
+		actionSpace["executePlan"]["examples"].Vector().push_back(move);
+
+		JsonNode endTurn;
+		endTurn["type"] = JsonNode("end_turn");
+		actionSpace["executePlan"]["examples"].Vector().push_back(endTurn);
+	}
 
 	actionSpace["objectIds"]["heroes"].Vector();
 	for(const JsonNode & hero : state["heroes"].Vector())
@@ -1620,6 +1813,13 @@ JsonNode CMcpPlayerInterface::makeActionSpaceJson() const
 	}
 
 	actionSpace["currentActions"].Vector();
+	{
+		JsonNode dayContext = jsonAction("vcmi.get_day_context", "Read compact whole-day context and suggested execute_plan skeleton.");
+		dayContext["arguments"]["radius"] = JsonNode(20);
+		dayContext["arguments"]["max_objects"] = JsonNode(16);
+		dayContext["arguments"]["max_recommended"] = JsonNode(10);
+		actionSpace["currentActions"].Vector().push_back(dayContext);
+	}
 	if(state["turn"]["active"].Bool())
 	{
 		JsonNode action = jsonAction("vcmi.end_turn", "End the current turn.");
@@ -1704,8 +1904,11 @@ JsonNode CMcpPlayerInterface::makeActionSpaceJson() const
 
 		JsonNode reachable = jsonAction("vcmi.get_reachable", "Inspect this-day reachable route-id targets for this owned hero.");
 		reachable["arguments"]["hero_id"] = hero["id"];
-		reachable["arguments"]["radius"] = JsonNode(12);
-		reachable["arguments"]["max_options"] = JsonNode(120);
+		reachable["arguments"]["radius"] = JsonNode(20);
+		reachable["arguments"]["max_options"] = JsonNode(80);
+		reachable["arguments"]["max_objects"] = JsonNode(16);
+		reachable["arguments"]["max_recommended"] = JsonNode(10);
+		reachable["arguments"]["compact"] = JsonNode(true);
 		actionSpace["currentActions"].Vector().push_back(reachable);
 	}
 
@@ -1742,6 +1945,99 @@ JsonNode CMcpPlayerInterface::makeActionSpaceJson() const
 	}
 
 	return actionSpace;
+}
+
+JsonNode CMcpPlayerInterface::makeDayContextJson(const JsonNode & arguments) const
+{
+	JsonNode result;
+	result["purpose"] = JsonNode("Compact whole-day planning context. Prefer one vcmi.execute_plan using suggestedPlan.actions, edited as needed.");
+	result["rules"].Vector().push_back(JsonNode("Use canonical execute_plan action types: build, recruit, move_hero, visit_object, answer_query, end_turn."));
+	result["rules"].Vector().push_back(JsonNode("Use recommendedTargets[*].planAction entries directly inside execute_plan actions."));
+	result["rules"].Vector().push_back(JsonNode("Do not call get_reachable repeatedly unless new terrain/object discovery changes the plan."));
+
+	JsonNode stateArgs;
+	stateArgs["select"].Vector().push_back(JsonNode("summary"));
+	stateArgs["select"].Vector().push_back(JsonNode("resources"));
+	stateArgs["select"].Vector().push_back(JsonNode("heroes"));
+	stateArgs["select"].Vector().push_back(JsonNode("towns"));
+	stateArgs["select"].Vector().push_back(JsonNode("tavern"));
+	if(hasField(arguments, "since_revision"))
+	{
+		stateArgs["select"].Vector().push_back(JsonNode("updates"));
+		stateArgs["since_revision"] = arguments["since_revision"];
+	}
+	stateArgs["max_updates"] = JsonNode(readClampedInteger(arguments, "max_updates", 100, 1, 1000));
+
+	JsonNode state = makeStateJson(stateArgs);
+	JsonNode actionSpace = makeActionSpaceJson();
+	result["state"] = state;
+	result["buildOptions"] = actionSpace["buildOptions"];
+	result["executePlan"]["schema"] = makeExecutePlanSchema();
+	result["executePlan"]["acceptedActionTypes"].Vector();
+	for(const std::string & type : Mcp::acceptedPlanActionTypes())
+		result["executePlan"]["acceptedActionTypes"].Vector().push_back(JsonNode(type));
+
+	const int32_t radius = readClampedInteger(arguments, "radius", 20, 1, 30);
+	const int32_t maxOptions = readClampedInteger(arguments, "max_options", 80, 1, 300);
+	const int32_t maxObjects = readClampedInteger(arguments, "max_objects", 16, 0, 300);
+	const int32_t maxRecommended = readClampedInteger(arguments, "max_recommended", 10, 0, 100);
+	const bool includePaths = readBool(arguments, "include_paths", false);
+
+	result["heroReachability"].Vector();
+	if(hasField(state, "heroes") && state["heroes"].isVector())
+	{
+		for(const JsonNode & hero : state["heroes"].Vector())
+		{
+			if(!hasField(hero, "id") || !hero["id"].isNumber())
+				continue;
+			if(hasField(hero, "movement") && hero["movement"].isNumber() && hero["movement"].Integer() <= 0)
+				continue;
+
+			JsonNode reachableArgs;
+			reachableArgs["hero_id"] = hero["id"];
+			reachableArgs["radius"] = JsonNode(radius);
+			reachableArgs["max_options"] = JsonNode(maxOptions);
+			reachableArgs["max_objects"] = JsonNode(maxObjects);
+			reachableArgs["max_recommended"] = JsonNode(maxRecommended);
+			reachableArgs["compact"] = JsonNode(true);
+			reachableArgs["include_tiles"] = JsonNode(false);
+			reachableArgs["include_paths"] = JsonNode(includePaths);
+			result["heroReachability"].Vector().push_back(makeReachableJson(reachableArgs));
+		}
+	}
+
+	result["suggestedPlan"]["dry_run"] = JsonNode(false);
+	result["suggestedPlan"]["max_updates"] = JsonNode(100);
+	result["suggestedPlan"]["return_select"].Vector().push_back(JsonNode("summary"));
+	result["suggestedPlan"]["return_select"].Vector().push_back(JsonNode("resources"));
+	result["suggestedPlan"]["return_select"].Vector().push_back(JsonNode("heroes"));
+	result["suggestedPlan"]["return_select"].Vector().push_back(JsonNode("towns"));
+	result["suggestedPlan"]["return_select"].Vector().push_back(JsonNode("updates"));
+	result["suggestedPlan"]["actions"].Vector();
+
+	if(hasField(actionSpace, "buildOptions") && actionSpace["buildOptions"].isVector() && !actionSpace["buildOptions"].Vector().empty())
+	{
+		const JsonNode & build = actionSpace["buildOptions"].Vector().front();
+		JsonNode buildAction;
+		buildAction["type"] = JsonNode("build");
+		buildAction["town_id"] = build["town_id"];
+		buildAction["building_id"] = build["building_id"];
+		result["suggestedPlan"]["actions"].Vector().push_back(buildAction);
+	}
+
+	for(const JsonNode & reachable : result["heroReachability"].Vector())
+	{
+		if(!hasField(reachable, "recommendedTargets") || !reachable["recommendedTargets"].isVector() || reachable["recommendedTargets"].Vector().empty())
+			continue;
+		const JsonNode & target = reachable["recommendedTargets"].Vector().front();
+		if(hasField(target, "planAction"))
+			result["suggestedPlan"]["actions"].Vector().push_back(target["planAction"]);
+	}
+
+	JsonNode endTurn;
+	endTurn["type"] = JsonNode("end_turn");
+	result["suggestedPlan"]["actions"].Vector().push_back(endTurn);
+	return result;
 }
 
 JsonNode CMcpPlayerInterface::makeVisibleMapJson(const JsonNode & arguments) const
@@ -1897,7 +2193,12 @@ JsonNode CMcpPlayerInterface::makeMovementOptionsJson(const JsonNode & arguments
 
 	const int32_t radius = readClampedInteger(arguments, "radius", 12, 1, 30);
 	const int32_t maxOptions = readClampedInteger(arguments, "max_options", 80, 1, 300);
+	const int32_t maxObjects = readClampedInteger(arguments, "max_objects", maxOptions, 0, 300);
+	const int32_t maxRecommended = readClampedInteger(arguments, "max_recommended", 10, 0, 100);
 	const bool includeFutureTurns = readBool(arguments, "include_future_turns", false);
+	const bool compact = readBool(arguments, "compact", false);
+	const bool includeTiles = readBool(arguments, "include_tiles", !compact);
+	const bool includePaths = readBool(arguments, "include_paths", !compact);
 
 	struct MovementCandidate
 	{
@@ -1910,6 +2211,7 @@ JsonNode CMcpPlayerInterface::makeMovementOptionsJson(const JsonNode & arguments
 	};
 
 	std::vector<MovementCandidate> candidates;
+	std::vector<MovementCandidate> objectCandidates;
 	std::set<int32_t> seenTargetObjects;
 
 	std::shared_lock gameStateLock(CGameState::mutex);
@@ -1925,8 +2227,12 @@ JsonNode CMcpPlayerInterface::makeMovementOptionsJson(const JsonNode & arguments
 	result["hero"] = jsonHero(hero);
 	result["radius"] = JsonNode(radius);
 	result["currentTurnOnly"] = JsonNode(!includeFutureTurns);
+	result["compact"] = JsonNode(compact);
+	result["includeTiles"] = JsonNode(includeTiles);
+	result["includePaths"] = JsonNode(includePaths);
 	result["movementOptions"].Vector();
 	result["objectTargets"].Vector();
+	result["recommendedTargets"].Vector();
 
 	for(const int3 & position : tiles)
 	{
@@ -1943,8 +2249,9 @@ JsonNode CMcpPlayerInterface::makeMovementOptionsJson(const JsonNode & arguments
 		if(pathNode->accessible == EPathAccessibility::NOT_SET || pathNode->accessible == EPathAccessibility::BLOCKED)
 			continue;
 
-		JsonNode option = jsonPathNode(*pathNode);
-		option["path"] = jsonPathPreview(paths, position, pathNode->layer, 20);
+		JsonNode option = compact ? jsonCompactPathNode(*pathNode) : jsonPathNode(*pathNode);
+		if(includePaths)
+			option["path"] = jsonPathPreview(paths, position, pathNode->layer, 20);
 		option["route_id"] = JsonNode(Mcp::makeRouteId(
 			hero->id.getNum(),
 			hero->visitablePos().x,
@@ -1961,11 +2268,17 @@ JsonNode CMcpPlayerInterface::makeMovementOptionsJson(const JsonNode & arguments
 		option["arguments"]["y"] = JsonNode(position.y);
 		option["arguments"]["z"] = JsonNode(position.z);
 		option["arguments"]["route_id"] = option["route_id"];
+		option["planAction"]["type"] = JsonNode("move_hero");
+		option["planAction"]["hero_id"] = JsonNode(hero->id.getNum());
+		option["planAction"]["x"] = JsonNode(position.x);
+		option["planAction"]["y"] = JsonNode(position.y);
+		option["planAction"]["z"] = JsonNode(position.z);
+		option["planAction"]["route_id"] = option["route_id"];
 
 		const CGObjectInstance * topObject = cb->getTopObj(position);
 		if(topObject)
 		{
-			option["object"] = jsonMapObject(topObject, playerID, hero);
+			option["object"] = compact ? jsonCompactMapObject(topObject, playerID, hero) : jsonMapObject(topObject, playerID, hero);
 			const bool isObjectAction =
 				pathNode->action == EPathNodeAction::BATTLE ||
 				pathNode->action == EPathNodeAction::VISIT ||
@@ -1975,15 +2288,21 @@ JsonNode CMcpPlayerInterface::makeMovementOptionsJson(const JsonNode & arguments
 			if(isObjectAction && seenTargetObjects.insert(topObject->id.getNum()).second)
 			{
 				JsonNode target;
-				target["object"] = jsonMapObject(topObject, playerID, hero);
-				target["path"] = jsonPathNode(*pathNode);
+				target["object"] = compact ? jsonCompactMapObject(topObject, playerID, hero) : jsonMapObject(topObject, playerID, hero);
+				target["path"] = compact ? jsonCompactPathNode(*pathNode) : jsonPathNode(*pathNode);
 				target["route_id"] = option["route_id"];
-				target["pathPreview"] = option["path"];
-				target["suggestedTool"] = JsonNode("vcmi.move_hero_to_object");
+				if(includePaths)
+					target["pathPreview"] = jsonPathPreview(paths, position, pathNode->layer, 20);
+				target["suggestedTool"] = JsonNode("vcmi.execute_plan");
+				target["directTool"] = JsonNode("vcmi.move_hero_to_object");
 				target["arguments"]["hero_id"] = JsonNode(hero->id.getNum());
 				target["arguments"]["object_id"] = JsonNode(topObject->id.getNum());
 				target["arguments"]["route_id"] = option["route_id"];
-				result["objectTargets"].Vector().push_back(target);
+				target["planAction"]["type"] = JsonNode("visit_object");
+				target["planAction"]["hero_id"] = JsonNode(hero->id.getNum());
+				target["planAction"]["object_id"] = JsonNode(topObject->id.getNum());
+				target["planAction"]["route_id"] = option["route_id"];
+				objectCandidates.push_back(MovementCandidate{target, pathNode->cost, static_cast<int32_t>(pathNode->turns), position.x, position.y, position.z});
 			}
 		}
 
@@ -1994,10 +2313,21 @@ JsonNode CMcpPlayerInterface::makeMovementOptionsJson(const JsonNode & arguments
 	{
 		return std::tie(left.turns, left.cost, left.z, left.x, left.y) < std::tie(right.turns, right.cost, right.z, right.x, right.y);
 	});
+	std::sort(objectCandidates.begin(), objectCandidates.end(), [](const MovementCandidate & left, const MovementCandidate & right)
+	{
+		return std::tie(left.turns, left.cost, left.z, left.x, left.y) < std::tie(right.turns, right.cost, right.z, right.x, right.y);
+	});
 
-	result["truncated"] = JsonNode(static_cast<int32_t>(candidates.size()) > maxOptions);
-	for(size_t index = 0; index < candidates.size() && index < static_cast<size_t>(maxOptions); ++index)
-		result["movementOptions"].Vector().push_back(candidates[index].json);
+	result["truncated"] = JsonNode(static_cast<int32_t>(candidates.size()) > maxOptions || static_cast<int32_t>(objectCandidates.size()) > maxObjects);
+	result["reachableTileCount"] = JsonNode(static_cast<int32_t>(candidates.size()));
+	result["reachableObjectCount"] = JsonNode(static_cast<int32_t>(objectCandidates.size()));
+	if(includeTiles)
+		for(size_t index = 0; index < candidates.size() && index < static_cast<size_t>(maxOptions); ++index)
+			result["movementOptions"].Vector().push_back(candidates[index].json);
+	for(size_t index = 0; index < objectCandidates.size() && index < static_cast<size_t>(maxObjects); ++index)
+		result["objectTargets"].Vector().push_back(objectCandidates[index].json);
+	for(size_t index = 0; index < objectCandidates.size() && index < static_cast<size_t>(maxRecommended); ++index)
+		result["recommendedTargets"].Vector().push_back(objectCandidates[index].json);
 
 	result["movementOptionCount"] = JsonNode(static_cast<int32_t>(result["movementOptions"].Vector().size()));
 	result["objectTargetCount"] = JsonNode(static_cast<int32_t>(result["objectTargets"].Vector().size()));
@@ -2006,8 +2336,20 @@ JsonNode CMcpPlayerInterface::makeMovementOptionsJson(const JsonNode & arguments
 
 JsonNode CMcpPlayerInterface::makeReachableJson(const JsonNode & arguments) const
 {
-	JsonNode result = makeMovementOptionsJson(arguments);
-	result["purpose"] = JsonNode("Reachable this-day movement targets. Use route_id with vcmi.move_hero, vcmi.move_hero_to_object, or vcmi.execute_plan.");
+	JsonNode reachableArguments = arguments;
+	if(!hasField(reachableArguments, "compact"))
+		reachableArguments["compact"] = JsonNode(true);
+	if(!hasField(reachableArguments, "include_tiles"))
+		reachableArguments["include_tiles"] = JsonNode(false);
+	if(!hasField(reachableArguments, "include_paths"))
+		reachableArguments["include_paths"] = JsonNode(false);
+	if(!hasField(reachableArguments, "max_objects"))
+		reachableArguments["max_objects"] = JsonNode(readClampedInteger(reachableArguments, "max_options", 20, 1, 300));
+	if(!hasField(reachableArguments, "max_recommended"))
+		reachableArguments["max_recommended"] = JsonNode(12);
+
+	JsonNode result = makeMovementOptionsJson(reachableArguments);
+	result["purpose"] = JsonNode("Compact reachable this-day targets. Prefer recommendedTargets planAction entries inside vcmi.execute_plan.");
 	result["reachableTiles"] = result["movementOptions"];
 	result["reachableObjects"] = result["objectTargets"];
 	return result;
@@ -2036,19 +2378,50 @@ Mcp::Protocol::ToolResult CMcpPlayerInterface::executePlan(const JsonNode & argu
 	result["executed"].Vector();
 	result["failed"].Vector();
 	result["remaining"].Vector();
+	result["acceptedActionTypes"].Vector();
+	for(const std::string & type : Mcp::acceptedPlanActionTypes())
+		result["acceptedActionTypes"].Vector().push_back(JsonNode(type));
+	result["acceptedToolShape"] = JsonNode(true);
+	result["acceptedToolShapeDescription"] = JsonNode("Plan actions may be canonical objects, aliased typed objects, or tool-shaped objects with tool and arguments fields.");
+
+	std::vector<JsonNode> actions;
+	actions.reserve(arguments["actions"].Vector().size());
+	for(size_t index = 0; index < arguments["actions"].Vector().size(); ++index)
+	{
+		try
+		{
+			actions.push_back(Mcp::normalizePlanAction(arguments["actions"].Vector()[index]));
+		}
+		catch(const std::exception & exception)
+		{
+			JsonNode actionResult;
+			actionResult["index"] = JsonNode(static_cast<int32_t>(index));
+			actionResult["ok"] = JsonNode(false);
+			actionResult["error"] = JsonNode(exception.what());
+			actionResult["acceptedActionTypes"] = result["acceptedActionTypes"];
+			result["ok"] = JsonNode(false);
+			result["status"] = JsonNode("partial");
+			result["failed"].Vector().push_back(actionResult);
+			for(size_t remainingIndex = index + 1; remainingIndex < arguments["actions"].Vector().size(); ++remainingIndex)
+				result["remaining"].Vector().push_back(arguments["actions"].Vector()[remainingIndex]);
+			result["toRevision"] = JsonNode(static_cast<int64_t>(fromRevision));
+			result["updates"] = makeUpdatesJson(fromRevision, maxUpdates);
+			return makeJsonResult(result);
+		}
+	}
 
 	auto stopWithFailure = [&](JsonNode actionResult, size_t failedIndex)
 	{
 		result["ok"] = JsonNode(false);
 		result["status"] = JsonNode("partial");
 		result["failed"].Vector().push_back(actionResult);
-		for(size_t index = failedIndex + 1; index < arguments["actions"].Vector().size(); ++index)
-			result["remaining"].Vector().push_back(arguments["actions"].Vector()[index]);
+		for(size_t index = failedIndex + 1; index < actions.size(); ++index)
+			result["remaining"].Vector().push_back(actions[index]);
 	};
 
-	for(size_t index = 0; index < arguments["actions"].Vector().size(); ++index)
+	for(size_t index = 0; index < actions.size(); ++index)
 	{
-		const JsonNode & action = arguments["actions"].Vector()[index];
+		const JsonNode & action = actions[index];
 		JsonNode actionResult;
 		actionResult["index"] = JsonNode(static_cast<int32_t>(index));
 		if(hasField(action, "id"))
@@ -2056,7 +2429,8 @@ Mcp::Protocol::ToolResult CMcpPlayerInterface::executePlan(const JsonNode & argu
 		if(!hasField(action, "type"))
 		{
 			actionResult["ok"] = JsonNode(false);
-			actionResult["error"] = JsonNode("Plan action is missing type");
+			actionResult["error"] = JsonNode("Plan action is missing type. Use canonical type values or a tool-shaped action with tool and arguments.");
+			actionResult["acceptedActionTypes"] = result["acceptedActionTypes"];
 			stopWithFailure(actionResult, index);
 			break;
 		}
@@ -2333,6 +2707,7 @@ Mcp::Protocol::ToolResult CMcpPlayerInterface::executePlan(const JsonNode & argu
 
 		actionResult["ok"] = JsonNode(false);
 		actionResult["error"] = JsonNode("Unsupported plan action type: " + type);
+		actionResult["acceptedActionTypes"] = result["acceptedActionTypes"];
 		stopWithFailure(actionResult, index);
 		break;
 	}

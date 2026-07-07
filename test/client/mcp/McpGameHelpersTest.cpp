@@ -82,3 +82,34 @@ TEST(McpGameHelpersTest, CollectsRevisionedUpdates)
 	EXPECT_EQ(updates["updates"].Vector()[0]["revision"].Integer(), 2);
 	EXPECT_EQ(updates["updates"].Vector()[0]["type"].String(), "hero.moved");
 }
+
+TEST(McpGameHelpersTest, NormalizesToolShapedPlanActions)
+{
+	const JsonNode action = parseJson(R"({
+		"id":"visit-wood",
+		"tool":"vcmi.move_hero_to_object",
+		"arguments":{"hero_id":990,"object_id":181,"route_id":"r1"}
+	})");
+
+	const JsonNode normalized = Mcp::normalizePlanAction(action);
+
+	EXPECT_EQ(normalized["id"].String(), "visit-wood");
+	EXPECT_EQ(normalized["type"].String(), "visit_object");
+	EXPECT_EQ(normalized["hero_id"].Integer(), 990);
+	EXPECT_EQ(normalized["object_id"].Integer(), 181);
+	EXPECT_EQ(normalized["route_id"].String(), "r1");
+}
+
+TEST(McpGameHelpersTest, NormalizesPlanActionAliases)
+{
+	EXPECT_EQ(Mcp::canonicalPlanActionType("move"), "move_hero");
+	EXPECT_EQ(Mcp::canonicalPlanActionType("hero_move"), "move_hero");
+	EXPECT_EQ(Mcp::canonicalPlanActionType("vcmi.move_hero"), "move_hero");
+	EXPECT_EQ(Mcp::canonicalPlanActionType("move_hero_to_object"), "visit_object");
+	EXPECT_EQ(Mcp::canonicalPlanActionType("vcmi.build_town_building"), "build");
+	EXPECT_EQ(Mcp::canonicalPlanActionType("end"), "end_turn");
+
+	const JsonNode action = parseJson(R"({"type":"move","hero_id":990,"x":20,"y":2})");
+	const JsonNode normalized = Mcp::normalizePlanAction(action);
+	EXPECT_EQ(normalized["type"].String(), "move_hero");
+}

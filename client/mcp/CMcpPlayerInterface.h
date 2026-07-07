@@ -92,6 +92,7 @@ class CMcpPlayerInterface : public CGlobalAI
 	JsonNode makeStateJson() const;
 	JsonNode makeStateJson(const JsonNode & arguments) const;
 	JsonNode makeActionSpaceJson() const;
+	JsonNode makeDayContextJson(const JsonNode & arguments) const;
 	JsonNode makeVisibleMapJson(const JsonNode & arguments) const;
 	JsonNode makeMovementOptionsJson(const JsonNode & arguments) const;
 	JsonNode makeReachableJson(const JsonNode & arguments) const;
