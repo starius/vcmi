@@ -163,16 +163,26 @@ Start by calling vcmi.get_state with {"select":["summary","resources","heroes","
 After each execute_plan, read the returned updates and state. On later turns use vcmi.get_updates with the last revision and only refresh selected state sections you need. If a battle starts, do not micromanage it; the MCP interface auto-handles battle stacks. If a pending query blocks execution, answer it if the choice is clear, otherwise choose the first/default option. Keep playing until several days have passed or red has explored, collected objects, and fought at least one battle.
 ```
 
+Faster prompt variant:
+
+```text
+Use the VCMI connector and play red quickly for many turns.
+
+For each red turn, start with vcmi.get_day_context. It returns state, build options, compact recommended movement targets, and a suggested execute_plan skeleton. Edit that suggestedPlan if needed, then call vcmi.execute_plan once for the whole day. Use only canonical plan action types: build, recruit, move_hero, visit_object, answer_query, end_turn. For movement, prefer recommendedTargets[*].planAction exactly as returned. Do not call vcmi.get_reachable repeatedly unless a move reveals new terrain that changes the plan.
+
+If execute_plan returns partial, fix only the failed/remaining actions. Battles are auto-handled. End the turn when no strong build/recruit/move remains.
+```
+
 ChatGPT receives the complete callable API through MCP `tools/list`. The `vcmi.get_action_space` tool is an additional game-aware helper that returns the currently relevant object ids, build options, pending query id, battle flags, and action candidates.
 
 ## Batched Planning
 
 For normal adventure-map play, prefer this loop:
 
-1. Read selected state with `vcmi.get_state`, for example `{"select":["summary","resources","heroes","towns"]}`.
-2. For every active hero that may move, read `vcmi.get_reachable` and use only returned `route_id` values, coordinates, and object ids.
-3. Submit one `vcmi.execute_plan` call for the current day.
-4. Use the returned `updates` and optional selected `state` to decide whether another plan is needed before ending the turn.
+1. Read `vcmi.get_day_context`.
+2. Use its `suggestedPlan.actions` and `heroReachability[*].recommendedTargets[*].planAction` entries as the basis for the day.
+3. Submit one `vcmi.execute_plan` call for build, recruit, movement, query answer, and end-turn actions.
+4. Use the returned `updates` and optional selected `state` to decide whether one more plan is needed before ending the turn.
 
 `vcmi.execute_plan` accepts:
 
@@ -198,6 +208,14 @@ Supported plan action types:
 - `visit_object`: `hero_id`, `object_id`, optional `route_id`
 - `answer_query`: `query_id`, optional `answer`
 - `end_turn`: no extra fields
+
+`vcmi.execute_plan` also accepts common aliases and tool-shaped plan actions, for example:
+
+```json
+{"tool":"vcmi.move_hero_to_object","arguments":{"hero_id":990,"object_id":181,"route_id":"..."}}
+```
+
+Tool-shaped actions are normalized to canonical action types before validation.
 
 Plan execution is sequential. It stops at the first rejected action, pending query, active battle, or ended turn. The result includes `executed`, `failed`, `remaining`, `fromRevision`, `toRevision`, and `updates`. Use `dry_run=true` to validate object ownership, build availability, recruitment availability, and route availability without submitting server requests.
 
@@ -278,9 +296,10 @@ Current tools:
 - `vcmi.get_state`: returns visible player state as JSON text, optionally filtered by selectors
 - `vcmi.get_updates`: returns revisioned visible state updates since a previous revision
 - `vcmi.get_action_space`: returns action guidance, current object ids, build options, and relevant action candidates
+- `vcmi.get_day_context`: returns compact whole-day context, recommended reachable targets, and a suggested `execute_plan`
 - `vcmi.get_visible_map`: returns player-visible adventure-map tiles and visible/owned objects around an owned hero or coordinate window
 - `vcmi.get_movement_options`: returns pathfinder-derived destinations and visible object targets for an owned hero
-- `vcmi.get_reachable`: returns this-day reachable tiles, reachable objects, path previews, and route ids for an owned hero
+- `vcmi.get_reachable`: returns compact this-day reachable objects, recommended targets, and route ids for an owned hero; full tiles and path previews are opt-in
 - `vcmi.execute_plan`: executes a sequential batch of build, recruit, movement, query, and end-turn actions
 - `vcmi.get_battle_state`: returns visible battle stacks, active stack metadata, legal move hexes, and legal attack targets; battles are auto-handled by default
 - `vcmi.move_hero`: requests movement of an owned hero to `x`, `y`, optional `z`, preferably with a `route_id`

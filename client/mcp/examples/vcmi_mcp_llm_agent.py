@@ -23,6 +23,7 @@ The JSON object must have exactly these keys:
 {"tool":"vcmi.execute_plan","arguments":{"actions":[]},"reason":"short reason"}
 
 Allowed tools for this smoke agent:
+- vcmi.get_day_context with {"radius": number, "max_objects": number}
 - vcmi.get_state with {"select": ["summary", "resources", "heroes", "towns"], "since_revision": number}
 - vcmi.get_updates with {"since_revision": number, "max_updates": number}
 - vcmi.get_visible_map with {"hero_id": number, "radius": number}
@@ -42,7 +43,9 @@ Allowed tools for this smoke agent:
 - vcmi.battle_end_tactics with {}
 
 Rules:
+- Prefer vcmi.get_day_context before planning a turn.
 - Prefer vcmi.execute_plan for build, recruit, movement, query-answer, and end-turn batches.
+- Use canonical execute_plan action types: build, recruit, move_hero, visit_object, answer_query, end_turn.
 - For movement, use only route_id values, object ids, and coordinates present in the input JSON.
 - If unsure, choose vcmi.end_turn.
 - Use only ids, coordinates, and battle hexes that appear in the action-space JSON.
@@ -92,13 +95,15 @@ def post_json(url, payload, headers, timeout):
 	return json.loads(body)
 
 
-def call_model(args, state_json, action_space_json, tools):
+def call_model(args, day_context_json, state_json, action_space_json, tools):
 	base_url = args.openai_base_url.rstrip("/")
 	url = base_url + "/chat/completions"
 	tool_names = [tool.get("name", "") for tool in tools]
 	user_prompt = (
 		"Available MCP tools:\n"
 		+ json.dumps(tool_names, indent=2)
+		+ "\n\nVCMI day-context JSON:\n"
+		+ day_context_json
 		+ "\n\nSelected VCMI state JSON:\n"
 		+ state_json
 		+ "\n\nCurrent VCMI action-space JSON:\n"
@@ -167,6 +172,7 @@ def normalize_action(raw_response):
 	allowed_tools = {
 		"vcmi.get_state",
 		"vcmi.get_updates",
+		"vcmi.get_day_context",
 		"vcmi.get_visible_map",
 		"vcmi.get_reachable",
 		"vcmi.execute_plan",
@@ -212,6 +218,15 @@ def run_once(args):
 	print("MCP server:", json.dumps(initialize.get("serverInfo", {}), sort_keys=True))
 
 	tools = mcp.request("tools/list").get("tools", [])
+	day_context_result = mcp.request("tools/call", {
+		"name": "vcmi.get_day_context",
+		"arguments": {
+			"radius": 20,
+			"max_objects": 16,
+			"max_recommended": 10,
+		},
+	})
+	day_context_json = tool_result_text(day_context_result)
 	state_result = mcp.request("tools/call", {
 		"name": "vcmi.get_state",
 		"arguments": {
@@ -225,10 +240,11 @@ def run_once(args):
 		"arguments": {},
 	})
 	action_space_json = tool_result_text(action_space_result)
+	print("Day-context bytes:", len(day_context_json))
 	print("State bytes:", len(state_json))
 	print("Action-space bytes:", len(action_space_json))
 
-	raw_response = call_model(args, state_json, action_space_json, tools)
+	raw_response = call_model(args, day_context_json, state_json, action_space_json, tools)
 	print("Model response:", raw_response.strip())
 	try:
 		action = normalize_action(raw_response)
