@@ -38,6 +38,8 @@ private:
 	{
 		bool reloadScriptEachTurn = true;
 		bool trace = false;
+		size_t maxConsecutiveFailures = 3;
+		int disableTurnsAfterFailures = 3;
 	};
 
 	struct RoutePlan
@@ -57,6 +59,9 @@ private:
 	ScriptConfig scriptConfig;
 	std::optional<std::string> cachedScriptSource;
 	size_t traceSequence = 0;
+	size_t consecutiveScriptFailures = 0;
+	int disabledUntilDay = 0;
+	bool failureRecordedThisTurn = false;
 
 	void makeScriptedTurn();
 	bool tryMakeScriptedTurn();

@@ -4,5 +4,7 @@
 	"maxScriptCallsPerTurn": 8,
 	"maxActionsPerPlan": 64,
 	"maxMemoryBytes": 262144,
+	"maxConsecutiveFailures": 3,
+	"disableTurnsAfterFailures": 3,
 	"trace": false
 }

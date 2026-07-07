@@ -387,8 +387,14 @@ void CScriptedAdventureAI::makeScriptedTurn()
 {
 	try
 	{
-		if(!tryMakeScriptedTurn())
+		if(tryMakeScriptedTurn())
+		{
+			consecutiveScriptFailures = 0;
+		}
+		else
+		{
 			AIGateway::makeTurn();
+		}
 	}
 	catch(const InterruptionRequestedException &)
 	{
@@ -407,6 +413,14 @@ void CScriptedAdventureAI::makeScriptedTurn()
 
 bool CScriptedAdventureAI::tryMakeScriptedTurn()
 {
+	failureRecordedThisTurn = false;
+	const int currentDay = cc->getCalendar().getCurrentDay();
+	if(disabledUntilDay > currentDay)
+	{
+		logAi->warn("ScriptedAdventureAI disabled until day %d after repeated script failures.", disabledUntilDay);
+		return false;
+	}
+
 	const auto source = getScriptSource();
 	if(!source)
 	{
@@ -944,15 +958,19 @@ void CScriptedAdventureAI::loadConfig()
 		maxScriptCallsPerTurn = readSize(config, "maxScriptCallsPerTurn", maxScriptCallsPerTurn, 1, 64);
 		limits.maxActions = readSize(config, "maxActionsPerPlan", limits.maxActions, 1, 256);
 		limits.maxMemoryBytes = readSize(config, "maxMemoryBytes", limits.maxMemoryBytes, 1024, 4 * 1024 * 1024);
+		scriptConfig.maxConsecutiveFailures = readSize(config, "maxConsecutiveFailures", scriptConfig.maxConsecutiveFailures, 1, 100);
+		scriptConfig.disableTurnsAfterFailures = static_cast<int>(readSize(config, "disableTurnsAfterFailures", scriptConfig.disableTurnsAfterFailures, 1, 100));
 
 		logAi->info(
-			"ScriptedAdventureAI config loaded: script '%s', reload per turn %d, trace %d, max calls %d, max actions %d, max memory bytes %d",
+			"ScriptedAdventureAI config loaded: script '%s', reload per turn %d, trace %d, max calls %d, max actions %d, max memory bytes %d, max failures %d, disable turns %d",
 			scriptPath.c_str(),
 			scriptConfig.reloadScriptEachTurn,
 			scriptConfig.trace,
 			static_cast<int>(maxScriptCallsPerTurn),
 			static_cast<int>(limits.maxActions),
-			static_cast<int>(limits.maxMemoryBytes));
+			static_cast<int>(limits.maxMemoryBytes),
+			static_cast<int>(scriptConfig.maxConsecutiveFailures),
+			scriptConfig.disableTurnsAfterFailures);
 	}
 	catch(const std::exception & e)
 	{
@@ -1015,7 +1033,21 @@ void CScriptedAdventureAI::writeTraceEvent(const std::string & label, const Json
 
 void CScriptedAdventureAI::fallbackToNullkiller(const std::string & reason)
 {
-	logAi->warn("ScriptedAdventureAI falling back to Nullkiller: %s", reason);
+	logAi->warn("ScriptedAdventureAI falling back to Nullkiller: %s", reason.c_str());
+	if(failureRecordedThisTurn)
+		return;
+
+	failureRecordedThisTurn = true;
+	++consecutiveScriptFailures;
+	if(consecutiveScriptFailures >= scriptConfig.maxConsecutiveFailures)
+	{
+		disabledUntilDay = cc->getCalendar().getCurrentDay() + scriptConfig.disableTurnsAfterFailures;
+		logAi->warn(
+			"ScriptedAdventureAI disabled until day %d after %d consecutive failures.",
+			disabledUntilDay,
+			static_cast<int>(consecutiveScriptFailures));
+		consecutiveScriptFailures = 0;
+	}
 }
 
 }
