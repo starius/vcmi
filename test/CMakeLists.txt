@@ -19,6 +19,7 @@ set(test_SRCS
 		../client/mcp/McpProtocol.cpp
 
 		ai/AdventureScriptTest.cpp
+		ai/LuaAdventureScriptRunnerTest.cpp
 
  		battle/BattleHexTest.cpp
  		battle/CBattleInfoCallbackTest.cpp

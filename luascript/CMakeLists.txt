@@ -4,6 +4,7 @@ set(lualib_SRCS
 		StdInc.cpp
 		LuaReference.cpp
 		LuaModule.cpp
+		LuaAdventureScriptRunner.cpp
 		LuaScriptInstance.cpp
 		LuaContext.cpp
 		LuaScriptPool.cpp
@@ -49,6 +50,7 @@ set(lualib_HDRS
 		LuaCallWrapper.h
 		LuaReference.h
 		LuaModule.h
+		LuaAdventureScriptRunner.h
 		LuaScriptInstance.h
 		LuaContext.h
 		LuaSpellEffect.h

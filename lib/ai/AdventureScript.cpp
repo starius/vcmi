@@ -36,8 +36,15 @@ double readNumber(const JsonNode & node, const std::string & field)
 	return node[field].Float();
 }
 
+bool isEmptyLuaTable(const JsonNode & node)
+{
+	return node.isNull() || (node.isStruct() && node.Struct().empty());
+}
+
 std::vector<std::string> readStringVector(const JsonNode & node, const std::string & field)
 {
+	if(isEmptyLuaTable(node[field]))
+		return {};
 	if(!node[field].isVector())
 		throw std::invalid_argument("Non-array script output field: " + field);
 
@@ -115,14 +122,23 @@ AdventureScriptOutput parseAdventureScriptOutput(const JsonNode & output, const 
 
 	if(hasField(output, "actions"))
 	{
-		if(!output["actions"].isVector())
+		if(isEmptyLuaTable(output["actions"]))
+		{
+			// Lua represents an empty array literal as an empty table; treat it as no actions.
+		}
+		else if(!output["actions"].isVector())
+		{
 			throw std::invalid_argument("Script output field 'actions' must be an array");
-		if(output["actions"].Vector().size() > limits.maxActions)
-			throw std::invalid_argument("Script output has too many actions");
+		}
+		else
+		{
+			if(output["actions"].Vector().size() > limits.maxActions)
+				throw std::invalid_argument("Script output has too many actions");
 
-		result.actions.reserve(output["actions"].Vector().size());
-		for(const JsonNode & action : output["actions"].Vector())
-			result.actions.push_back(normalizePlanAction(action));
+			result.actions.reserve(output["actions"].Vector().size());
+			for(const JsonNode & action : output["actions"].Vector())
+				result.actions.push_back(normalizePlanAction(action));
+		}
 	}
 
 	if(hasField(output, "returnSelect"))

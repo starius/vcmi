@@ -49,6 +49,16 @@ TEST(AdventureScriptTest, RejectsUnsupportedStatus)
 	EXPECT_THROW(AI::parseAdventureScriptOutput(output), std::invalid_argument);
 }
 
+TEST(AdventureScriptTest, AcceptsEmptyLuaTableActions)
+{
+	const JsonNode output = parseJson(R"({"actions":{},"returnSelect":{}})");
+
+	const AI::AdventureScriptOutput parsed = AI::parseAdventureScriptOutput(output);
+
+	EXPECT_TRUE(parsed.actions.empty());
+	EXPECT_TRUE(parsed.returnSelect.empty());
+}
+
 TEST(AdventureScriptTest, RejectsTooManyActions)
 {
 	const JsonNode output = parseJson(R"({"actions":[{"type":"end_turn"},{"type":"end_turn"}]})");
