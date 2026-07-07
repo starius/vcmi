@@ -10,10 +10,10 @@
 #include "StdInc.h"
 #include "CMcpPlayerInterface.h"
 
-#include "McpAdventurePlan.h"
 #include "McpGameHelpers.h"
 #include "McpHttpServer.h"
 
+#include "../../lib/ai/AdventurePlan.h"
 #include "../../lib/CPlayerState.h"
 #include "../../lib/CStack.h"
 #include "../../lib/RiverHandler.h"
@@ -1131,7 +1131,7 @@ void CMcpPlayerInterface::configureProtocol()
 	protocol.registerTool({
 		"vcmi.execute_plan",
 		"Executes a sequential batch of day-plan actions until completion or a stop condition. Canonical action types: build, recruit, move_hero, visit_object, answer_query, end_turn.",
-		Mcp::makeExecutePlanSchema(),
+		AI::makeExecutePlanSchema(),
 		[this](const JsonNode & arguments)
 		{
 			return traceToolResult("vcmi.execute_plan", arguments, executePlan(arguments));
@@ -1681,7 +1681,7 @@ JsonNode CMcpPlayerInterface::makeActionSpaceJson() const
 	actionSpace["stateSummary"]["battle"] = state["battle"];
 	actionSpace["stateSummary"]["activeBattles"] = JsonNode(static_cast<int32_t>(battleState["battles"].Vector().size()));
 	actionSpace["executePlan"]["acceptedActionTypes"].Vector();
-	for(const std::string & type : Mcp::acceptedPlanActionTypes())
+	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["executePlan"]["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 	actionSpace["executePlan"]["toolShapeAccepted"] = JsonNode(true);
 	actionSpace["executePlan"]["examples"].Vector();
@@ -1894,9 +1894,9 @@ JsonNode CMcpPlayerInterface::makeDayContextJson(const JsonNode & arguments) con
 	JsonNode actionSpace = makeActionSpaceJson();
 	result["state"] = state;
 	result["buildOptions"] = actionSpace["buildOptions"];
-	result["executePlan"]["schema"] = Mcp::makeExecutePlanSchema();
+	result["executePlan"]["schema"] = AI::makeExecutePlanSchema();
 	result["executePlan"]["acceptedActionTypes"].Vector();
-	for(const std::string & type : Mcp::acceptedPlanActionTypes())
+	for(const std::string & type : AI::acceptedPlanActionTypes())
 		result["executePlan"]["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	const int32_t radius = readClampedInteger(arguments, "radius", 20, 1, 30);
@@ -2301,7 +2301,7 @@ Mcp::Protocol::ToolResult CMcpPlayerInterface::executePlan(const JsonNode & argu
 	result["failed"].Vector();
 	result["remaining"].Vector();
 	result["acceptedActionTypes"].Vector();
-	for(const std::string & type : Mcp::acceptedPlanActionTypes())
+	for(const std::string & type : AI::acceptedPlanActionTypes())
 		result["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 	result["acceptedToolShape"] = JsonNode(true);
 	result["acceptedToolShapeDescription"] = JsonNode("Plan actions may be canonical objects, aliased typed objects, or tool-shaped objects with tool and arguments fields.");
@@ -2312,7 +2312,7 @@ Mcp::Protocol::ToolResult CMcpPlayerInterface::executePlan(const JsonNode & argu
 	{
 		try
 		{
-			actions.push_back(Mcp::normalizePlanAction(arguments["actions"].Vector()[index]));
+			actions.push_back(AI::normalizePlanAction(arguments["actions"].Vector()[index]));
 		}
 		catch(const std::exception & exception)
 		{

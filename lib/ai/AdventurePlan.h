@@ -1,5 +1,5 @@
 /*
- * McpAdventurePlan.h, part of VCMI engine
+ * AdventurePlan.h, part of VCMI engine
  *
  * Authors: listed in file AUTHORS in main folder
  *
@@ -9,12 +9,12 @@
  */
 #pragma once
 
-#include "../../lib/json/JsonNode.h"
+#include "../json/JsonNode.h"
 
 #include <string>
 #include <vector>
 
-namespace Mcp
+namespace AI
 {
 
 /// Shared adventure-day plan contract used by MCP and future script-driven adventure AI.

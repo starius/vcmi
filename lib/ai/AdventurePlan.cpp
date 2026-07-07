@@ -1,5 +1,5 @@
 /*
- * McpAdventurePlan.cpp, part of VCMI engine
+ * AdventurePlan.cpp, part of VCMI engine
  *
  * Authors: listed in file AUTHORS in main folder
  *
@@ -8,12 +8,12 @@
  *
  */
 #include "StdInc.h"
-#include "McpAdventurePlan.h"
+#include "AdventurePlan.h"
 
 #include <stdexcept>
 #include <utility>
 
-namespace Mcp
+namespace AI
 {
 namespace
 {

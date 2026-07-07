@@ -30,15 +30,13 @@ mechanisms used today.
   the resulting script normally.
 - Do not make MCP the script engine. MCP remains a useful external-agent harness.
 
-## First Architectural Rename
+## First Architectural Step
 
-The current `McpAdventurePlan` module should become a transport-neutral module:
+The MCP-owned plan contract has been moved to a transport-neutral module:
 
 ```text
-client/mcp/McpAdventurePlan.*  ->  AI/ScriptedAdventure/AdventurePlan.* or lib/ai/AdventurePlan.*
+client/mcp/McpAdventurePlan.*  ->  lib/ai/AdventurePlan.*
 ```
-
-Recommended target name: `AdventurePlan`.
 
 The module should contain only concepts shared by MCP and script AI:
 
@@ -48,13 +46,12 @@ The module should contain only concepts shared by MCP and script AI:
 - plan result/status types
 - helpers for partial execution and remaining actions
 
-MCP should depend on `AdventurePlan`, not own it. The scripted AI runner should depend on the same module.
+MCP depends on `AdventurePlan`, but does not own it. The scripted AI runner should depend on the same module.
 
 Placement decision:
 
-- Short term: put `AdventurePlan` under `client/mcp` only long enough to avoid a large move.
-- Medium term: move it under an AI-neutral location such as `lib/ai/` if both MCP and AI targets can link it
-  cleanly, or under `AI/ScriptedAdventure/` if it is only used by adventure AI implementations.
+- `AdventurePlan` now lives under `lib/ai/` because both MCP and adventure AI targets can link `vcmiMain`.
+- Script-specific runner code should live under `AI/ScriptedAdventure/` unless it becomes generally useful.
 
 ## Script Backend
 
@@ -480,10 +477,10 @@ Regression harness:
 
 ### Milestone 1: Neutral AdventurePlan Module
 
-- Rename `McpAdventurePlan` to `AdventurePlan`.
-- Move accepted actions, aliases, normalization, and schema out of MCP ownership.
-- Keep MCP behavior unchanged.
-- Keep existing MCP tests passing.
+- Done: `AdventurePlan` lives in `lib/ai`.
+- Done: accepted actions, aliases, normalization, and schema are out of MCP ownership.
+- Done: MCP behavior is unchanged.
+- Done: MCP/AdventurePlan tests cover the existing action contract.
 
 ### Milestone 2: Script Contract Types
 
@@ -548,7 +545,6 @@ Regression harness:
 
 ## Recommended Next Step
 
-Implement Milestone 1 completely: rename `McpAdventurePlan` to `AdventurePlan` and make MCP depend on the
-neutral module. Then add contract structs for script input/output before writing the Lua runner. This keeps the
-architecture honest: MCP is a transport, `AdventurePlan` is the planning language, and `ScriptedAdventureAI`
-is the in-game scripted player.
+Add contract structs for script input/output before writing the Lua runner. This keeps the architecture honest:
+MCP is a transport, `AdventurePlan` is the planning language, and `ScriptedAdventureAI` is the in-game scripted
+player.

@@ -15,7 +15,6 @@ set(test_SRCS
  		CMemoryBufferTest.cpp
  		CVcmiTestConfig.cpp
  		JsonComparer.cpp
-		../client/mcp/McpAdventurePlan.cpp
 		../client/mcp/McpGameHelpers.cpp
 		../client/mcp/McpProtocol.cpp
 
@@ -41,7 +40,7 @@ set(test_SRCS
 		game/CGameStateTest.cpp
 		game/HeroRecruitmentTest.cpp
 
-		client/mcp/McpAdventurePlanTest.cpp
+		client/mcp/AdventurePlanTest.cpp
 		client/mcp/McpProtocolTest.cpp
 		client/mcp/McpGameHelpersTest.cpp
 
