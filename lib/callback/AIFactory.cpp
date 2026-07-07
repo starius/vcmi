@@ -15,6 +15,9 @@
 #ifdef ENABLE_NULLKILLER2_AI
 #  include "../../AI/Nullkiller2/AIGateway.h"
 #endif
+#ifdef ENABLE_SCRIPTED_ADVENTURE_AI
+#  include "../../AI/ScriptedAdventure/CScriptedAdventureAI.h"
+#endif
 #ifdef ENABLE_BATTLE_AI
 #  include "../../AI/BattleAI/BattleAI.h"
 #endif
@@ -40,6 +43,17 @@ std::shared_ptr<CGlobalAI> AIFactory::createAdventureAI(const std::string & name
 		return ret;
 #else
 		throw std::runtime_error("Nullkiller2 is not available in this build!");
+#endif
+	}
+
+	if(name == "ScriptedAdventureAI")
+	{
+#ifdef ENABLE_SCRIPTED_ADVENTURE_AI
+		auto ret = std::make_shared<ScriptedAdventureAI::CScriptedAdventureAI>();
+		ret->dllName = name;
+		return ret;
+#else
+		throw std::runtime_error("ScriptedAdventureAI is not available in this build!");
 #endif
 	}
 
@@ -82,6 +96,10 @@ bool AIFactory::isAvailableAdventureAI(const std::string & name)
 		return true;
 #ifdef ENABLE_NULLKILLER2_AI
 	if(name == "Nullkiller2")
+		return true;
+#endif
+#ifdef ENABLE_SCRIPTED_ADVENTURE_AI
+	if(name == "ScriptedAdventureAI")
 		return true;
 #endif
 	return false;

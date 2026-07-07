@@ -53,6 +53,7 @@ option(ENABLE_GOLDMASTER "Build in public release mode in which some debug routi
 # AI libraries. Empty AI is always on
 
 option(ENABLE_NULLKILLER2_AI "Enable compilation of Nullkiller2AI library" ON)
+option(ENABLE_SCRIPTED_ADVENTURE_AI "Enable compilation of ScriptedAdventureAI library" ON)
 option(ENABLE_STUPID_AI "Enable compilation of StupidAI library" ON)
 option(ENABLE_BATTLE_AI "Enable compilation of BattleAI library" ON)
 option(ENABLE_MMAI "Enable compilation of MMAI AI library" ON)
@@ -335,6 +336,9 @@ endif()
 
 if(ENABLE_NULLKILLER2_AI)
 	add_definitions(-DENABLE_NULLKILLER2_AI)
+endif()
+if(ENABLE_SCRIPTED_ADVENTURE_AI AND ENABLE_NULLKILLER2_AI AND NOT ENABLE_MINIMAL_LIB)
+	add_definitions(-DENABLE_SCRIPTED_ADVENTURE_AI)
 endif()
 if(ENABLE_STUPID_AI)
 	add_definitions(-DENABLE_STUPID_AI)
@@ -696,12 +700,12 @@ endif()
 
 add_subdirectory(lib)
 
-if (ENABLE_CLIENT OR ENABLE_TEST)
-	add_subdirectory_with_folder("AI" AI)
-endif()
-
 if(NOT ENABLE_MINIMAL_LIB)
 	add_subdirectory(luascript)
+endif()
+
+if (ENABLE_CLIENT OR ENABLE_TEST)
+	add_subdirectory_with_folder("AI" AI)
 endif()
 
 add_subdirectory(libFacade)

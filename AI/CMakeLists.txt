@@ -20,4 +20,7 @@ add_subdirectory(EmptyAI)
 
 if(ENABLE_NULLKILLER2_AI)
 	add_subdirectory(Nullkiller2)
+	if(ENABLE_SCRIPTED_ADVENTURE_AI AND NOT ENABLE_MINIMAL_LIB)
+		add_subdirectory(ScriptedAdventure)
+	endif()
 endif()
