@@ -18,6 +18,8 @@ set(test_SRCS
 		../client/mcp/McpGameHelpers.cpp
 		../client/mcp/McpProtocol.cpp
 
+		ai/AdventureScriptTest.cpp
+
  		battle/BattleHexTest.cpp
  		battle/CBattleInfoCallbackTest.cpp
  		battle/CHealthTest.cpp

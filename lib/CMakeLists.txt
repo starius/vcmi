@@ -47,6 +47,7 @@ set(lib_SRCS
 set(lib_MAIN_SRCS
 
 	ai/AdventurePlan.cpp
+	ai/AdventureScript.cpp
 
 	battle/AccessibilityInfo.cpp
 	battle/BattleAction.cpp
