@@ -14,6 +14,7 @@
 #include "../../lib/CCreatureHandler.h"
 #include "../../lib/CPlayerState.h"
 #include "../../lib/ResourceSet.h"
+#include "../../lib/VCMIDirs.h"
 #include "../../lib/filesystem/Filesystem.h"
 #include "../../lib/entities/building/CBuilding.h"
 #include "../../lib/entities/faction/CTown.h"
@@ -31,6 +32,7 @@
 #include "../../luascript/LuaAdventureScriptRunner.h"
 
 #include <algorithm>
+#include <fstream>
 #include <set>
 #include <shared_mutex>
 #include <sstream>
@@ -60,6 +62,24 @@ int32_t readInteger(const JsonNode & node, const std::string & field, int32_t de
 	return readInteger(node, field);
 }
 
+bool readBool(const JsonNode & node, const std::string & field, bool defaultValue)
+{
+	if(!hasField(node, field))
+		return defaultValue;
+	if(!node[field].isBool())
+		throw std::invalid_argument("Non-boolean script AI config field: " + field);
+	return node[field].Bool();
+}
+
+size_t readSize(const JsonNode & node, const std::string & field, size_t defaultValue, size_t minValue, size_t maxValue)
+{
+	if(!hasField(node, field))
+		return defaultValue;
+	if(!node[field].isNumber() || node[field].getType() != JsonNode::JsonType::DATA_INTEGER || node[field].Integer() < 0)
+		throw std::invalid_argument("Non-negative integer script AI config field expected: " + field);
+	return static_cast<size_t>(std::clamp<int64_t>(node[field].Integer(), static_cast<int64_t>(minValue), static_cast<int64_t>(maxValue)));
+}
+
 std::string readString(const JsonNode & node, const std::string & field)
 {
 	if(!node[field].isString())
@@ -72,6 +92,15 @@ std::optional<std::string> readOptionalString(const JsonNode & node, const std::
 	if(!hasField(node, field))
 		return std::nullopt;
 	return readString(node, field);
+}
+
+std::string normalizeScriptPath(std::string path)
+{
+	if(path.starts_with("scripts/"))
+		path.erase(0, 8);
+	if(path.starts_with("SCRIPTS/"))
+		path.erase(0, 8);
+	return path;
 }
 
 std::string jsonText(std::string value)
@@ -330,6 +359,12 @@ CScriptedAdventureAI::CScriptedAdventureAI()
 
 CScriptedAdventureAI::~CScriptedAdventureAI() = default;
 
+void CScriptedAdventureAI::initGameInterface(std::shared_ptr<Environment> env, std::shared_ptr<CCallback> callback)
+{
+	AIGateway::initGameInterface(std::move(env), std::move(callback));
+	loadConfig();
+}
+
 void CScriptedAdventureAI::yourTurn(QueryID queryID)
 {
 	LOG_TRACE_PARAMS(logAi, "queryID '%i'", queryID);
@@ -372,7 +407,7 @@ void CScriptedAdventureAI::makeScriptedTurn()
 
 bool CScriptedAdventureAI::tryMakeScriptedTurn()
 {
-	const auto source = loadScriptSource();
+	const auto source = getScriptSource();
 	if(!source)
 	{
 		fallbackToNullkiller("script source is not available");
@@ -392,8 +427,23 @@ bool CScriptedAdventureAI::tryMakeScriptedTurn()
 		input.analysis = makeScriptAnalysis();
 		input.limits = makeScriptInputLimits();
 
+		if(scriptConfig.trace)
+		{
+			JsonNode trace;
+			trace["callIndex"] = JsonNode(static_cast<int32_t>(callIndex));
+			trace["input"] = input.toJson();
+			writeTraceEvent("input", trace);
+		}
+
 		const AI::AdventureScriptOutput output = runner->planDay(input);
 		scriptMemory = output.memory;
+		if(scriptConfig.trace)
+		{
+			JsonNode trace;
+			trace["callIndex"] = JsonNode(static_cast<int32_t>(callIndex));
+			trace["output"] = AI::makeAdventureScriptOutputJson(output);
+			writeTraceEvent("output", trace);
+		}
 
 		if(output.status == AI::AdventureScriptStatus::FALLBACK)
 		{
@@ -450,6 +500,14 @@ bool CScriptedAdventureAI::tryMakeScriptedTurn()
 		}
 
 		progress = makeProgressJson(executed, failed, remaining);
+		if(scriptConfig.trace)
+		{
+			JsonNode trace;
+			trace["callIndex"] = JsonNode(static_cast<int32_t>(callIndex));
+			trace["stopped"] = JsonNode(stopped);
+			trace["progress"] = progress;
+			writeTraceEvent("progress", trace);
+		}
 
 		if(!status.haveTurn())
 			return true;
@@ -862,6 +920,53 @@ CScriptedAdventureAI::RoutePlan CScriptedAdventureAI::makeRoutePlan(
 	return result;
 }
 
+void CScriptedAdventureAI::loadConfig()
+{
+	try
+	{
+		const JsonPath path = JsonPath::builtin("config/ai/scriptedAdventure.json");
+		auto * loader = CResourceHandler::get("core");
+		if(!loader || !loader->existsResource(path))
+		{
+			logAi->info("ScriptedAdventureAI config not found, using defaults.");
+			return;
+		}
+
+		const JsonNode config(path);
+		if(hasField(config, "script"))
+		{
+			scriptPath = normalizeScriptPath(readString(config, "script"));
+			cachedScriptSource.reset();
+		}
+
+		scriptConfig.reloadScriptEachTurn = readBool(config, "reloadScriptEachTurn", scriptConfig.reloadScriptEachTurn);
+		scriptConfig.trace = readBool(config, "trace", scriptConfig.trace);
+		maxScriptCallsPerTurn = readSize(config, "maxScriptCallsPerTurn", maxScriptCallsPerTurn, 1, 64);
+		limits.maxActions = readSize(config, "maxActionsPerPlan", limits.maxActions, 1, 256);
+		limits.maxMemoryBytes = readSize(config, "maxMemoryBytes", limits.maxMemoryBytes, 1024, 4 * 1024 * 1024);
+
+		logAi->info(
+			"ScriptedAdventureAI config loaded: script '%s', reload per turn %d, trace %d, max calls %d, max actions %d, max memory bytes %d",
+			scriptPath.c_str(),
+			scriptConfig.reloadScriptEachTurn,
+			scriptConfig.trace,
+			static_cast<int>(maxScriptCallsPerTurn),
+			static_cast<int>(limits.maxActions),
+			static_cast<int>(limits.maxMemoryBytes));
+	}
+	catch(const std::exception & e)
+	{
+		logAi->warn("ScriptedAdventureAI config failed to load, using defaults: %s", e.what());
+	}
+}
+
+std::optional<std::string> CScriptedAdventureAI::getScriptSource()
+{
+	if(scriptConfig.reloadScriptEachTurn || !cachedScriptSource)
+		cachedScriptSource = loadScriptSource();
+	return cachedScriptSource;
+}
+
 std::optional<std::string> CScriptedAdventureAI::loadScriptSource() const
 {
 	const ScriptPath path = ScriptPath::builtinTODO(scriptPath).addPrefix("SCRIPTS/");
@@ -876,6 +981,36 @@ std::optional<std::string> CScriptedAdventureAI::loadScriptSource() const
 std::unique_ptr<scripting::LuaAdventureScriptRunner> CScriptedAdventureAI::makeRunner(const std::string & source) const
 {
 	return std::make_unique<scripting::LuaAdventureScriptRunner>("core:" + scriptPath, source, limits);
+}
+
+void CScriptedAdventureAI::writeTraceEvent(const std::string & label, const JsonNode & payload)
+{
+	try
+	{
+		const auto directory = VCMIDirs::get().userLogsPath() / "scriptedAdventureAI";
+		boost::filesystem::create_directories(directory);
+		const std::string filename = "player-" + playerID.toString()
+			+ "-day-" + std::to_string(cc ? cc->getCalendar().getCurrentDay() : 0)
+			+ "-event-" + std::to_string(traceSequence++)
+			+ "-" + label + ".json";
+		std::ofstream stream((directory / filename).string(), std::ios::out | std::ios::trunc);
+		if(!stream)
+		{
+			logAi->warn("ScriptedAdventureAI could not open trace file %s", (directory / filename).string().c_str());
+			return;
+		}
+
+		JsonNode trace;
+		trace["label"] = JsonNode(label);
+		trace["player"] = JsonNode(playerID.toString());
+		trace["script"] = JsonNode(scriptPath);
+		trace["payload"] = payload;
+		stream << trace.toCompactString();
+	}
+	catch(const std::exception & e)
+	{
+		logAi->warn("ScriptedAdventureAI trace write failed: %s", e.what());
+	}
 }
 
 void CScriptedAdventureAI::fallbackToNullkiller(const std::string & reason)

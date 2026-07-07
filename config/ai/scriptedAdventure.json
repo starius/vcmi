@@ -1,0 +1,8 @@
+{
+	"script": "ai/defaultAdventure.lua",
+	"reloadScriptEachTurn": true,
+	"maxScriptCallsPerTurn": 8,
+	"maxActionsPerPlan": 64,
+	"maxMemoryBytes": 262144,
+	"trace": false
+}

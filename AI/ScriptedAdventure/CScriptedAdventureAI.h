@@ -30,9 +30,16 @@ public:
 	CScriptedAdventureAI();
 	~CScriptedAdventureAI() override;
 
+	void initGameInterface(std::shared_ptr<Environment> env, std::shared_ptr<CCallback> callback) override;
 	void yourTurn(QueryID queryID) override;
 
 private:
+	struct ScriptConfig
+	{
+		bool reloadScriptEachTurn = true;
+		bool trace = false;
+	};
+
 	struct RoutePlan
 	{
 		bool ok = false;
@@ -47,6 +54,9 @@ private:
 	std::string scriptPath;
 	AI::AdventureScriptLimits limits;
 	size_t maxScriptCallsPerTurn = 8;
+	ScriptConfig scriptConfig;
+	std::optional<std::string> cachedScriptSource;
+	size_t traceSequence = 0;
 
 	void makeScriptedTurn();
 	bool tryMakeScriptedTurn();
@@ -57,8 +67,11 @@ private:
 	JsonNode makeScriptInputLimits() const;
 	JsonNode makeProgressJson(const JsonNode & executed, const JsonNode & failed, const JsonNode & remaining) const;
 	RoutePlan makeRoutePlan(const CGHeroInstance * hero, const int3 & destination, const std::optional<std::string> & expectedRouteID) const;
+	void loadConfig();
+	std::optional<std::string> getScriptSource();
 	std::optional<std::string> loadScriptSource() const;
 	std::unique_ptr<scripting::LuaAdventureScriptRunner> makeRunner(const std::string & source) const;
+	void writeTraceEvent(const std::string & label, const JsonNode & payload);
 	void fallbackToNullkiller(const std::string & reason);
 };
 
