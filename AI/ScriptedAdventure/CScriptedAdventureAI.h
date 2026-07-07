@@ -12,6 +12,8 @@
 #include "../Nullkiller2/AIGateway.h"
 #include "../../lib/ai/AdventureScript.h"
 
+#include <optional>
+
 VCMI_LIB_NAMESPACE_BEGIN
 namespace scripting
 {
@@ -31,6 +33,16 @@ public:
 	void yourTurn(QueryID queryID) override;
 
 private:
+	struct RoutePlan
+	{
+		bool ok = false;
+		bool stopAfterMove = false;
+		std::string error;
+		std::string routeID;
+		int3 destination;
+		EPathfindingLayer layer = EPathfindingLayer::WRONG;
+	};
+
 	JsonNode scriptMemory;
 	std::string scriptPath;
 	AI::AdventureScriptLimits limits;
@@ -39,9 +51,12 @@ private:
 	void makeScriptedTurn();
 	bool tryMakeScriptedTurn();
 	bool executeScriptAction(const JsonNode & action, JsonNode & actionResult);
-	JsonNode makeScriptInputState() const;
+	JsonNode makeScriptInputState();
+	JsonNode makeScriptActionSpace() const;
+	JsonNode makeScriptAnalysis() const;
 	JsonNode makeScriptInputLimits() const;
 	JsonNode makeProgressJson(const JsonNode & executed, const JsonNode & failed, const JsonNode & remaining) const;
+	RoutePlan makeRoutePlan(const CGHeroInstance * hero, const int3 & destination, const std::optional<std::string> & expectedRouteID) const;
 	std::optional<std::string> loadScriptSource() const;
 	std::unique_ptr<scripting::LuaAdventureScriptRunner> makeRunner(const std::string & source) const;
 	void fallbackToNullkiller(const std::string & reason);

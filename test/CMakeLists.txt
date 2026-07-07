@@ -227,6 +227,7 @@ else()
 	set(vcmitest_LIBS gtest gmock vcmi vcmiservercommon ${SYSTEM_LIBS})
 endif()
 target_link_libraries(vcmitest PRIVATE ${vcmitest_LIBS})
+target_compile_definitions(vcmitest PRIVATE VCMI_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 target_include_directories(vcmitest
 		PUBLIC	${CMAKE_CURRENT_SOURCE_DIR}

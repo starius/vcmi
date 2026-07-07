@@ -2,6 +2,9 @@
 
 #include "../../luascript/LuaAdventureScriptRunner.h"
 
+#include <fstream>
+#include <sstream>
+
 namespace
 {
 
@@ -11,6 +14,17 @@ AI::AdventureScriptInput makeInput()
 	input.state["resources"]["gold"] = JsonNode(1200);
 	input.memory["version"] = JsonNode(1);
 	return input;
+}
+
+std::string readDefaultAdventureScript()
+{
+	std::ifstream stream(std::string(VCMI_SOURCE_DIR) + "/scripts/ai/defaultAdventure.lua");
+	if(!stream)
+		throw std::runtime_error("Unable to read default adventure script");
+
+	std::ostringstream buffer;
+	buffer << stream.rdbuf();
+	return buffer.str();
 }
 
 }
@@ -101,4 +115,48 @@ TEST(LuaAdventureScriptRunnerTest, RemovesUnsafeGlobals)
 
 	EXPECT_FALSE(output.memory["hasLoad"].Bool());
 	EXPECT_FALSE(output.memory["hasRandom"].Bool());
+}
+
+TEST(LuaAdventureScriptRunnerTest, DefaultAdventureScriptScoresCandidates)
+{
+	AI::AdventureScriptInput input = makeInput();
+	input.state["day"] = JsonNode(1);
+	input.state["resources"]["gold"] = JsonNode(5000);
+
+	JsonNode buildOption;
+	buildOption["building"] = JsonNode("City Hall");
+	buildOption["building_id"] = JsonNode(11);
+	buildOption["town_id"] = JsonNode(42);
+	buildOption["cost"]["gold"] = JsonNode(2500);
+	buildOption["income"]["gold"] = JsonNode(1000);
+	buildOption["planAction"]["type"] = JsonNode("build");
+	buildOption["planAction"]["town_id"] = JsonNode(42);
+	buildOption["planAction"]["building_id"] = JsonNode(11);
+	input.actionSpace["buildOptions"].Vector().push_back(buildOption);
+
+	JsonNode target;
+	target["object"]["id"] = JsonNode(77);
+	target["object"]["name"] = JsonNode("Gold pile");
+	target["object"]["type"] = JsonNode("Resource");
+	target["path"]["cost"].Float() = 0.25;
+	target["path"]["pathAction"] = JsonNode("visit");
+	target["path"]["isTeleportAction"] = JsonNode(false);
+	target["planAction"]["type"] = JsonNode("visit_object");
+	target["planAction"]["hero_id"] = JsonNode(5);
+	target["planAction"]["object_id"] = JsonNode(77);
+	target["planAction"]["route_id"] = JsonNode("route");
+	input.actionSpace["reachableObjects"].Vector().push_back(target);
+
+	scripting::LuaAdventureScriptRunner runner("scripts/ai/defaultAdventure.lua", readDefaultAdventureScript());
+	const AI::AdventureScriptOutput output = runner.planDay(input);
+
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::NEED_REPLAN);
+	ASSERT_EQ(output.actions.size(), 2);
+	EXPECT_EQ(output.actions[0]["type"].String(), "build");
+	EXPECT_EQ(output.actions[0]["town_id"].Integer(), 42);
+	EXPECT_EQ(output.actions[1]["type"].String(), "visit_object");
+	EXPECT_EQ(output.actions[1]["object_id"].Integer(), 77);
+	EXPECT_EQ(output.memory["version"].Integer(), 1);
+	ASSERT_TRUE(output.intent);
+	EXPECT_NE(output.intent->find("City Hall"), std::string::npos);
 }

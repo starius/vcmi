@@ -1,14 +1,204 @@
 local Script = {}
 
-function Script.planDay(input)
+local function asArray(value)
+    if type(value) == "table" then
+        return value
+    end
+    return {}
+end
+
+local function copyAction(action)
+    local result = {}
+    for key, value in pairs(action or {}) do
+        result[key] = value
+    end
+    return result
+end
+
+local function text(value)
+    return string.lower(tostring(value or ""))
+end
+
+local function resourceValue(resources, name)
+    if type(resources) ~= "table" then
+        return 0
+    end
+    return tonumber(resources[name] or 0) or 0
+end
+
+local function hasFailures(progress)
+    for _ in pairs(asArray(progress and progress.failed)) do
+        return true
+    end
+    return false
+end
+
+local function initializeMemory(input)
     local memory = input.memory or {}
-    memory.version = memory.version or 1
+    if memory.version ~= 1 then
+        memory = { version = 1 }
+    end
+    memory.calls = (memory.calls or 0) + 1
+    memory.lastDay = input.state and input.state.day or memory.lastDay
+    return memory
+end
+
+local function scoreBuild(option, input)
+    local score = 100
+    local name = text(option.building)
+    local gold = resourceValue(input.state and input.state.resources, "gold")
+    local costGold = resourceValue(option.cost, "gold")
+    local incomeGold = resourceValue(option.income, "gold")
+
+    score = score + incomeGold * 3
+    if name:find("city hall", 1, true) or name:find("capitol", 1, true) then
+        score = score + 900
+    end
+    if name:find("town hall", 1, true) then
+        score = score + 450
+    end
+    if name:find("castle", 1, true) or name:find("citadel", 1, true) then
+        score = score + 250
+    end
+    if name:find("dwelling", 1, true) or name:find("portal", 1, true) then
+        score = score + 180
+    end
+    if gold < 2500 and incomeGold <= 0 then
+        score = score - 250
+    end
+    score = score - costGold * 0.015
+    return score
+end
+
+local function chooseBuild(input)
+    local best
+    local bestScore = -1e9
+    for _, option in ipairs(asArray(input.actionSpace and input.actionSpace.buildOptions)) do
+        local score = scoreBuild(option, input)
+        if option.planAction and score > bestScore then
+            best = option
+            bestScore = score
+        end
+    end
+    return best, bestScore
+end
+
+local function scoreRecruit(option, input)
+    local gold = resourceValue(input.state and input.state.resources, "gold")
+    local score = (tonumber(option.level or 0) or 0) * 100
+    score = score + (tonumber(option.amount or 0) or 0) * 8
+    if gold < 1500 then
+        score = score - 300
+    end
+    return score
+end
+
+local function chooseRecruit(input)
+    local best
+    local bestScore = -1e9
+    for _, option in ipairs(asArray(input.actionSpace and input.actionSpace.recruitOptions)) do
+        if (tonumber(option.amount or 0) or 0) > 0 and option.planAction then
+            local score = scoreRecruit(option, input)
+            if score > bestScore then
+                best = option
+                bestScore = score
+            end
+        end
+    end
+    return best, bestScore
+end
+
+local function scoreObject(target)
+    local object = target.object or {}
+    local path = target.path or {}
+    local name = text((object.name or "") .. " " .. (object.type or "") .. " " .. (object.hoverText or ""))
+    local score = 400
+    score = score - (tonumber(path.cost or 0) or 0) * 160
+
+    if name:find("gold", 1, true) or name:find("treasure", 1, true) or name:find("chest", 1, true) then
+        score = score + 350
+    end
+    if name:find("mine", 1, true) or name:find("sawmill", 1, true) or name:find("ore pit", 1, true) then
+        score = score + 450
+    end
+    if name:find("resource", 1, true) or name:find("wood", 1, true) or name:find("ore", 1, true) then
+        score = score + 220
+    end
+    if path.pathAction == "battle" or path.pathAction == "teleport_battle" then
+        score = score - 500
+    end
+    if path.isTeleportAction then
+        score = score - 120
+    end
+    return score
+end
+
+local function chooseObject(input)
+    local best
+    local bestScore = -1e9
+    for _, target in ipairs(asArray(input.actionSpace and input.actionSpace.reachableObjects)) do
+        if target.planAction then
+            local score = scoreObject(target)
+            if score > bestScore then
+                best = target
+                bestScore = score
+            end
+        end
+    end
+    return best, bestScore
+end
+
+function Script.planDay(input)
+    local memory = initializeMemory(input)
+    if hasFailures(input.progress) then
+        return {
+            status = "fallback",
+            memory = memory,
+            actions = {},
+            intent = "Scripted action failed; delegate the rest of the turn."
+        }
+    end
+
+    local actions = {}
+    local intents = {}
+
+    local build = chooseBuild(input)
+    if build then
+        actions[#actions + 1] = copyAction(build.planAction)
+        intents[#intents + 1] = "build " .. tostring(build.building or build.building_id)
+    else
+        local recruit = chooseRecruit(input)
+        if recruit then
+            actions[#actions + 1] = copyAction(recruit.planAction)
+            intents[#intents + 1] = "recruit " .. tostring(recruit.creature or recruit.creature_id)
+        end
+    end
+
+    local target = chooseObject(input)
+    if target then
+        actions[#actions + 1] = copyAction(target.planAction)
+        intents[#intents + 1] = "visit " .. tostring((target.object or {}).name or (target.object or {}).id)
+    end
+
+    if #actions > 0 then
+        memory.lastIntent = table.concat(intents, "; ")
+        return {
+            status = "need_replan",
+            memory = memory,
+            actions = actions,
+            intent = memory.lastIntent,
+            confidence = 0.55
+        }
+    end
 
     return {
-        status = "fallback",
+        status = "end_turn",
         memory = memory,
-        actions = {},
-        intent = "Default script delegates to Nullkiller until scripted strategy is enabled."
+        actions = {
+            { type = "end_turn" }
+        },
+        intent = "No useful scripted candidate remains.",
+        confidence = 0.5
     }
 end
 
