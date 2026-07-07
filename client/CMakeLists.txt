@@ -67,6 +67,7 @@ set(vcmiclientcommon_SRCS
 	lobby/SelectionTab.cpp
 
 	mcp/CMcpPlayerInterface.cpp
+	mcp/McpAdventurePlan.cpp
 	mcp/McpGameHelpers.cpp
 	mcp/McpHttpServer.cpp
 	mcp/McpProtocol.cpp

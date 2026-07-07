@@ -49,8 +49,4 @@ std::string makeRouteId(
 JsonNode makeRevisionedUpdate(uint64_t revision, const std::string & type, JsonNode data);
 JsonNode collectUpdatesSince(const std::deque<JsonNode> & journal, uint64_t sinceRevision, size_t maxUpdates);
 
-std::vector<std::string> acceptedPlanActionTypes();
-std::string canonicalPlanActionType(std::string type);
-JsonNode normalizePlanAction(const JsonNode & action);
-
 }

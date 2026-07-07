@@ -10,6 +10,7 @@
 #include "StdInc.h"
 #include "CMcpPlayerInterface.h"
 
+#include "McpAdventurePlan.h"
 #include "McpGameHelpers.h"
 #include "McpHttpServer.h"
 
@@ -123,89 +124,10 @@ JsonNode makeObjectSchema(std::initializer_list<std::pair<const char *, const ch
 	return schema;
 }
 
-void setSchemaProperty(JsonNode & schema, const std::string & name, const std::string & type, const std::string & description = "")
-{
-	schema["properties"][name]["type"] = JsonNode(type);
-	if(!description.empty())
-		schema["properties"][name]["description"] = JsonNode(description);
-}
-
 void setRequired(JsonNode & schema, std::initializer_list<const char *> fields)
 {
 	for(const char * field : fields)
 		schema["required"].Vector().push_back(JsonNode(field));
-}
-
-JsonNode makeStringArraySchema(const std::string & description)
-{
-	JsonNode schema;
-	schema["type"] = JsonNode("array");
-	schema["description"] = JsonNode(description);
-	schema["items"]["type"] = JsonNode("string");
-	return schema;
-}
-
-JsonNode makePlanActionSchema(const std::string & type, std::initializer_list<std::pair<const char *, const char *>> properties, std::initializer_list<const char *> required)
-{
-	JsonNode schema;
-	schema["type"] = JsonNode("object");
-	schema["additionalProperties"] = JsonNode(false);
-	schema["properties"]["id"]["type"] = JsonNode("string");
-	schema["properties"]["type"]["type"] = JsonNode("string");
-	schema["properties"]["type"]["enum"].Vector().push_back(JsonNode(type));
-	for(const auto & property : properties)
-		schema["properties"][property.first]["type"] = JsonNode(property.second);
-	setRequired(schema, required);
-	return schema;
-}
-
-JsonNode makeFlexibleTypedPlanActionSchema()
-{
-	JsonNode schema;
-	schema["type"] = JsonNode("object");
-	schema["additionalProperties"] = JsonNode(true);
-	schema["properties"]["id"]["type"] = JsonNode("string");
-	schema["properties"]["type"]["type"] = JsonNode("string");
-	schema["properties"]["type"]["description"] = JsonNode("Canonical or aliased plan action type. Canonical values: build, recruit, move_hero, visit_object, answer_query, end_turn.");
-	setRequired(schema, {"type"});
-	return schema;
-}
-
-JsonNode makeToolShapedPlanActionSchema()
-{
-	JsonNode schema;
-	schema["type"] = JsonNode("object");
-	schema["additionalProperties"] = JsonNode(false);
-	schema["properties"]["id"]["type"] = JsonNode("string");
-	schema["properties"]["tool"]["type"] = JsonNode("string");
-	schema["properties"]["tool"]["description"] = JsonNode("MCP tool name to normalize into a plan action, for example vcmi.move_hero_to_object.");
-	schema["properties"]["arguments"]["type"] = JsonNode("object");
-	schema["properties"]["arguments"]["additionalProperties"] = JsonNode(true);
-	setRequired(schema, {"tool"});
-	return schema;
-}
-
-JsonNode makeExecutePlanSchema()
-{
-	JsonNode schema;
-	schema["type"] = JsonNode("object");
-	schema["additionalProperties"] = JsonNode(false);
-	setSchemaProperty(schema, "plan_id", "string");
-	setSchemaProperty(schema, "dry_run", "boolean");
-	setSchemaProperty(schema, "max_updates", "integer");
-	schema["properties"]["return_select"] = makeStringArraySchema("Optional state sections to return after executing the plan.");
-	schema["properties"]["actions"]["type"] = JsonNode("array");
-	schema["properties"]["actions"]["description"] = JsonNode("Sequential day-plan actions. Use canonical type values when possible; aliased and tool-shaped actions are accepted and normalized by VCMI.");
-	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("build", {{"town_id", "integer"}, {"building_id", "integer"}}, {"type", "town_id", "building_id"}));
-	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("recruit", {{"source_id", "integer"}, {"town_id", "integer"}, {"destination_id", "integer"}, {"level", "integer"}, {"creature_id", "integer"}, {"amount", "integer"}}, {"type", "level"}));
-	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("move_hero", {{"hero_id", "integer"}, {"x", "integer"}, {"y", "integer"}, {"z", "integer"}, {"route_id", "string"}}, {"type", "hero_id", "x", "y"}));
-	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("visit_object", {{"hero_id", "integer"}, {"object_id", "integer"}, {"route_id", "string"}}, {"type", "hero_id", "object_id"}));
-	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("answer_query", {{"query_id", "integer"}, {"answer", "integer"}}, {"type", "query_id"}));
-	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("end_turn", {}, {"type"}));
-	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makeFlexibleTypedPlanActionSchema());
-	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makeToolShapedPlanActionSchema());
-	setRequired(schema, {"actions"});
-	return schema;
 }
 
 JsonNode makeReachableSchema()
@@ -1209,7 +1131,7 @@ void CMcpPlayerInterface::configureProtocol()
 	protocol.registerTool({
 		"vcmi.execute_plan",
 		"Executes a sequential batch of day-plan actions until completion or a stop condition. Canonical action types: build, recruit, move_hero, visit_object, answer_query, end_turn.",
-		makeExecutePlanSchema(),
+		Mcp::makeExecutePlanSchema(),
 		[this](const JsonNode & arguments)
 		{
 			return traceToolResult("vcmi.execute_plan", arguments, executePlan(arguments));
@@ -1972,7 +1894,7 @@ JsonNode CMcpPlayerInterface::makeDayContextJson(const JsonNode & arguments) con
 	JsonNode actionSpace = makeActionSpaceJson();
 	result["state"] = state;
 	result["buildOptions"] = actionSpace["buildOptions"];
-	result["executePlan"]["schema"] = makeExecutePlanSchema();
+	result["executePlan"]["schema"] = Mcp::makeExecutePlanSchema();
 	result["executePlan"]["acceptedActionTypes"].Vector();
 	for(const std::string & type : Mcp::acceptedPlanActionTypes())
 		result["executePlan"]["acceptedActionTypes"].Vector().push_back(JsonNode(type));

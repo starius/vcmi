@@ -47,13 +47,6 @@ std::string canonicalSectionName(std::string section)
 	return section;
 }
 
-std::string removeToolPrefix(std::string tool)
-{
-	if(tool.starts_with("vcmi."))
-		tool.erase(0, 5);
-	return tool;
-}
-
 void copyIfPresent(JsonNode & destination, const JsonNode & source, const std::string & key)
 {
 	if(hasField(source, key))
@@ -193,79 +186,6 @@ JsonNode collectUpdatesSince(const std::deque<JsonNode> & journal, uint64_t sinc
 		result["latestRevision"] = JsonNode(static_cast<int64_t>(sinceRevision));
 
 	return result;
-}
-
-std::vector<std::string> acceptedPlanActionTypes()
-{
-	return {
-		"build",
-		"recruit",
-		"move_hero",
-		"visit_object",
-		"answer_query",
-		"end_turn"
-	};
-}
-
-std::string canonicalPlanActionType(std::string type)
-{
-	type = removeToolPrefix(std::move(type));
-
-	if(type == "build_town_building" || type == "build_building" || type == "building")
-		return "build";
-	if(type == "recruit_creatures" || type == "buy_creatures" || type == "recruitment")
-		return "recruit";
-	if(type == "move" || type == "hero_move" || type == "move_tile")
-		return "move_hero";
-	if(type == "move_hero_to_object" || type == "visit" || type == "object" || type == "capture_object" || type == "collect_object")
-		return "visit_object";
-	if(type == "answer" || type == "query" || type == "query_answer")
-		return "answer_query";
-	if(type == "end" || type == "end_day")
-		return "end_turn";
-	return type;
-}
-
-JsonNode normalizePlanAction(const JsonNode & action)
-{
-	if(!action.isStruct())
-		throw std::invalid_argument("Plan action must be an object");
-
-	JsonNode normalized;
-	if(hasField(action, "tool"))
-	{
-		if(!action["tool"].isString())
-			throw std::invalid_argument("Plan action field 'tool' must be a string");
-
-		if(hasField(action, "arguments"))
-		{
-			if(!action["arguments"].isStruct())
-				throw std::invalid_argument("Plan action field 'arguments' must be an object");
-			normalized = action["arguments"];
-		}
-		else
-		{
-			normalized.Struct();
-		}
-
-		if(hasField(action, "id"))
-			normalized["id"] = action["id"];
-		if(!hasField(normalized, "type"))
-			normalized["type"] = JsonNode(canonicalPlanActionType(action["tool"].String()));
-	}
-	else
-	{
-		normalized = action;
-	}
-
-	if(hasField(normalized, "type"))
-	{
-		if(!normalized["type"].isString())
-			throw std::invalid_argument("Plan action field 'type' must be a string");
-		normalized["type"] = JsonNode(canonicalPlanActionType(normalized["type"].String()));
-	}
-
-	return normalized;
 }
 
 }
