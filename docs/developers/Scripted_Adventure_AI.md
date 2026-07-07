@@ -490,49 +490,61 @@ Regression harness:
 
 ### Milestone 3: Lua Runner Prototype
 
-- Load a Lua script from VFS/config.
-- Call `planDay(input)`.
-- Convert returned Lua table to JSON/contract structs.
-- Do not execute actions yet.
-- Add trace output for script input/output.
+- Done: load a restricted Lua planner and call `planDay(input)`.
+- Done: convert returned Lua tables to JSON/contract structs.
+- Done: validate output status, memory size, action count, and normalized `AdventurePlan` actions.
+- Done: cover the Lua runner and default script with unit tests.
 
 ### Milestone 4: Scripted AI Wrapper
 
-- Add `ScriptedAdventureAI` as an adventure AI option.
-- On turn start, call script runner.
-- Execute returned `AdventurePlan` actions through existing validated callback flow.
-- Fall back to Nullkiller on failure.
+- Done: `ScriptedAdventureAI` is an adventure AI option built on top of Nullkiller's gateway.
+- Done: on turn start, it calls the script runner and executes returned `AdventurePlan` actions.
+- Done: build, recruit, move, visit-object, answer-query, and end-turn actions are validated through existing
+  callback paths.
+- Done: script failures, invalid actions, missing scripts, and repeated failures fall back to Nullkiller.
 
 ### Milestone 5: Replanning Loop
 
-- Add bounded repeated script calls within one day.
-- Feed previous progress and updates back into the next input.
-- Stop cleanly on unknown outcomes, pending queries, battles, and invalid actions.
+- Done: bounded repeated script calls within one day are implemented.
+- Done: previous execution progress is passed into the next script call.
+- Done: object visits and teleport-like moves stop the current action batch and force a fresh script decision.
+- Done: invalid or rejected actions stop script control and fall back to Nullkiller.
+- Remaining: feed a real revisioned update/opponent-move journal into `updates` and `opponentUpdates`.
 
 ### Milestone 6: Host Analysis Surface
 
-- Reuse MCP day-context and Nullkiller analyzers to provide rich script input.
-- Add reachable targets, build options, recruitment options, danger estimates, and suggested plan fragments.
-- Keep all analysis read-only.
+- Done: script input includes structured player, resource, hero, town, army, build, recruit, and reachable-object
+  data.
+- Done: action candidates include allowed build actions, affordable recruitment actions, route-id guarded
+  movement actions, reachable object targets, and end turn.
+- Done: route ids are generated with the same shape as MCP route ids and are validated before execution.
+- Partial: danger estimates, defense alerts, and Nullkiller task fragments are not exposed yet.
+- Partial: MCP and scripted AI still duplicate some JSON assembly code; extraction can happen once the surface
+  stabilizes.
 
 ### Milestone 7: Default Script
 
-- Implement a readable default Lua script with explicit scoring functions.
-- Cover build, recruit, exploration, safe pickups, main/scout roles, and basic defense.
-- Keep it easy for an LLM or developer to modify.
+- Done: `scripts/ai/defaultAdventure.lua` is a readable Lua policy with explicit scoring functions.
+- Done: it scores allowed builds, recruitment, and reachable object pickups, then returns declarative actions.
+- Done: it requests replanning after useful work and ends turn when no useful scripted candidate remains.
+- Partial: main/scout role assignment, defense policy, and opponent-aware choices still need richer host analysis.
 
 ### Milestone 8: Save/Load and Development Reload
 
-- Serialize script memory.
-- Add memory versioning.
-- Add opt-in script reload for development runs.
-- Keep normal runs deterministic.
+- Done: script memory is versioned at the Lua policy level and bounded by `maxMemoryBytes`.
+- Done: `config/ai/scriptedAdventure.json` controls script path, reload behavior, action/memory/call limits,
+  tracing, and repeated-failure throttling.
+- Done: development reload is available through `reloadScriptEachTurn`.
+- Not done: script memory is not serialized into savegames yet. Current VCMI save/load serializes `CGameState`,
+  while adventure AI interface instances are client-side runtime objects with no save/load hook. Persisting
+  script memory cleanly needs an explicit AI lifecycle serialization hook rather than storing AI-private data
+  in game rules state.
 
 ### Milestone 9: Evaluation Loop
 
-- Add trace summaries and map-run scripts.
-- Compare scripted AI against Nullkiller on fixed maps.
-- Use failures to improve the default script and host analysis.
+- Partial: opt-in trace files record script input, output, and execution progress under the user log directory.
+- Remaining: add trace summaries, map-run scripts, and fixed-map comparison against Nullkiller.
+- Remaining: use collected failures to expand host analysis and improve the default Lua policy.
 
 ## Open Design Questions
 
@@ -545,6 +557,6 @@ Regression harness:
 
 ## Recommended Next Step
 
-Add contract structs for script input/output before writing the Lua runner. This keeps the architecture honest:
-MCP is a transport, `AdventurePlan` is the planning language, and `ScriptedAdventureAI` is the in-game scripted
-player.
+Add a small AI lifecycle serialization hook so `ScriptedAdventureAI` can persist script-owned memory across
+save/load without putting AI-private planning state into `CGameState`. After that, expand host analysis with
+danger/defense estimates and Nullkiller-generated task fragments.
