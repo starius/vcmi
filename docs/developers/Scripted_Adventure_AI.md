@@ -343,6 +343,24 @@ When sending this proposal upstream, reference #5586 as the external-agent/LLM c
 advisor cousin, the Lua PRs as scripting infrastructure, and the forum threads as evidence that the hard boundary
 is not "can Lua run" but "can AI strategy be scriptable without giving scripts mutable rule authority".
 
+Ideas to adopt from this related work:
+
+- Keep the `AdventurePlan` schema transport-neutral. The same state/action vocabulary should serve Lua scripts,
+  MCP/external agents, trace replay, and evaluation tools where possible.
+- Add lab-play evaluation scenarios alongside open-play map runs. Fixed tasks such as resource collection,
+  town defense, guarded mine capture, exploration, and army gathering make script regressions easier to measure
+  than full games alone.
+- Keep MCP and LLM control as an experimental/external-agent path, not as the required runtime path for normal
+  computer players. The in-game scripted AI should remain local, fast, reloadable, and safe to fall back from.
+- Expose existing Nullkiller and engine recommendations as read-only candidate data before duplicating analysis
+  in Lua. Useful candidates should include build advice, reachable-object scores, danger estimates, task
+  fragments, blockers, defense alerts, and army-gathering options.
+- Carry explanation fields with candidates and selected actions: `reason`, `risk`, `value`, `estimatedLoss`,
+  `blockedBy`, and similar structured facts. These are useful for script scoring, trace review, future coach UI,
+  and LLM-assisted script editing.
+- Preserve the strict boundary learned from old scripting discussions: scripts receive facts and return plans;
+  they do not receive mutable callbacks, direct server authority, or game-rule hooks.
+
 ## Files and Modules
 
 Suggested new module:
