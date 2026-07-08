@@ -559,12 +559,48 @@ scripts/ai/runAdventureAIBatch.py \
   --map "Maps/Dwarven Gold.h3m" \
   --ai ScriptedAdventureAI --ai Nullkiller \
   --testdays 14 \
+  --trace \
+  --script scripts/ai/defaultAdventure.lua \
   --timeout 300 \
   --output scripted-ai-runs
 ```
 
 The batch runner passes `--testdays N` to stop after N completed adventure days. The wall-clock timeout remains
-as a safety guard for hangs or unexpectedly slow maps.
+as a safety guard for hangs or unexpectedly slow maps. `--trace` enables `ScriptedAdventureAI` tracing without
+editing `config/ai/scriptedAdventure.json`. `--script` can be either a bundled script resource such as
+`ai/defaultAdventure.lua` or a local Lua file; local files are passed to the AI as `file:/...` script overrides.
+
+The same override can be supplied manually with environment variables:
+
+```bash
+VCMI_SCRIPTED_ADVENTURE_TRACE=1 \
+VCMI_SCRIPTED_ADVENTURE_SCRIPT=file:/tmp/candidate.lua \
+./vcmiclient --headless --testmap "Maps/Dwarven Gold.h3m" --ai ScriptedAdventureAI
+```
+
+Per-player script override variables are also supported, for example
+`VCMI_SCRIPTED_ADVENTURE_RED_SCRIPT` or `VCMI_SCRIPTED_ADVENTURE_PLAYER_0_SCRIPT`.
+
+Baseline-vs-candidate script evaluations can be launched with:
+
+```bash
+scripts/ai/evaluateAdventureAIScripts.py \
+  --client <build-dir>/bin/vcmiclient \
+  --map "Maps/Dwarven Gold.h3m" \
+  --baseline-script scripts/ai/defaultAdventure.lua \
+  --candidate-script /tmp/candidateAdventure.lua \
+  --testdays 14 \
+  --runs 5 \
+  --timeout 300 \
+  --output scripted-ai-eval \
+  --clean
+```
+
+The evaluator runs both sides with tracing enabled, snapshots script files into the output directory when possible,
+writes `evaluation.json`, and prints a heuristic score delta. The score is not a gameplay rating; it is an iteration
+signal that rewards completed runs and useful actions while penalizing timeouts, nonzero exits, parse errors,
+fallbacks, and failed actions. Higher-level win/loss and map-control metrics should replace or augment it as the
+host exposes richer state.
 
 This enables the intended loop:
 
@@ -617,12 +653,20 @@ Regression harness:
 - Trace tooling now supports both single-run summaries and baseline-vs-candidate comparisons for script iteration.
 - A headless batch runner can launch fixed-day AI-vs-AI runs and summarize traces. The client-side `--testdays`
   option makes `--testmap`/`--testsave` runs exit after N completed adventure days.
+- `ScriptedAdventureAI` supports environment overrides for trace enablement and script path, including external
+  `file:/...` Lua scripts. This makes script edits and candidate snapshots testable without rebuilding or editing
+  packaged config.
+- `scripts/ai/evaluateAdventureAIScripts.py` runs baseline and candidate scripts through the same fixed maps,
+  collects traces, snapshots script files, and emits an evaluation JSON with heuristic score deltas.
 - Debugging `Emerald Isles` smoke runs showed the scripted host must not use Nullkiller helper methods that perform
   hidden side effects such as army exchange after movement. Scripted movement is now a direct, tracked `MoveHero`
   request over a route-id-validated path, and garrison/hero-exchange/recruitment dialogs are conservatively answered
   without implicit stack management.
-- Scripted build, recruit, move, end-turn, and memory-save requests wait for `PackageApplied` and tolerate
+- Scripted build, recruit, move, end-turn, memory-save, and blocking-dialog query replies tolerate
   `requestSent`/`requestRealized` callback ordering differences. This prevents trace I/O from masking timing bugs.
+- Generic `visit_object` candidates currently exclude treasure chests and sea chests because they open blocking
+  choice dialogs during movement. Add explicit query-aware chest handling before re-enabling them as scripted
+  targets.
 - Invalid or rejected actions are passed back to the script as `progress.failed` for bounded replanning. Nullkiller
   fallback remains for script failures, script-requested fallback, repeated failures, or exhausted script-call budget.
 - Remaining C++ expansion should focus on additional read-only candidates, especially Nullkiller task fragments,
@@ -710,8 +754,11 @@ Regression harness:
 - Done: `scripts/ai/compareAdventureTrace.py` compares baseline and candidate trace sets for script iteration.
 - Done: `scripts/ai/runAdventureAIBatch.py` launches fixed-day headless map runs and summarizes traces, with a
   timeout guard for hangs.
+- Done: `scripts/ai/evaluateAdventureAIScripts.py` runs baseline-vs-candidate script batches and writes a scored
+  evaluation manifest for the run-trace-improve loop.
 - Done: `vcmiclient --testdays N` stops `--testmap`/`--testsave` benchmark runs after N completed adventure days.
-- Remaining: use collected failures to expand host analysis and improve the default Lua policy.
+- Remaining: add real gameplay outcome metrics such as win/loss, towns held, hero strength, explored area, and map
+  control, then use collected failures to expand host analysis and improve the default Lua policy.
 
 ## Open Design Questions
 

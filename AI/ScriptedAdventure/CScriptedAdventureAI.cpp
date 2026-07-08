@@ -38,6 +38,7 @@
 #include <cctype>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
 #include <limits>
 #include <set>
@@ -118,6 +119,8 @@ std::optional<std::string> readOptionalString(const JsonNode & node, const std::
 
 std::string normalizeScriptPath(std::string path)
 {
+	if(path.starts_with("file:"))
+		return path;
 	if(path.starts_with("scripts/"))
 		path.erase(0, 8);
 	if(path.starts_with("SCRIPTS/"))
@@ -130,6 +133,47 @@ std::string toLowerAscii(std::string value)
 	for(char & character : value)
 		character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
 	return value;
+}
+
+std::string toUpperAscii(std::string value)
+{
+	for(char & character : value)
+		character = static_cast<char>(std::toupper(static_cast<unsigned char>(character)));
+	return value;
+}
+
+std::optional<std::string> readEnvironmentString(const char * name)
+{
+	const char * value = std::getenv(name);
+	if(!value || !*value)
+		return std::nullopt;
+	return std::string(value);
+}
+
+std::optional<bool> readEnvironmentBool(const char * name)
+{
+	const auto value = readEnvironmentString(name);
+	if(!value)
+		return std::nullopt;
+
+	const std::string lower = toLowerAscii(*value);
+	if(lower == "1" || lower == "true" || lower == "yes" || lower == "on")
+		return true;
+	if(lower == "0" || lower == "false" || lower == "no" || lower == "off")
+		return false;
+	return std::nullopt;
+}
+
+std::optional<std::string> externalScriptFilePath(const std::string & scriptPath)
+{
+	const std::string prefix = "file:";
+	if(!scriptPath.starts_with(prefix))
+		return std::nullopt;
+
+	const std::string filePath = scriptPath.substr(prefix.size());
+	if(filePath.empty())
+		return std::nullopt;
+	return filePath;
 }
 
 std::string jsonText(std::string value)
@@ -493,6 +537,8 @@ bool isScriptObjectTarget(const CGObjectInstance * object, PlayerColor player)
 	const auto * hero = dynamic_cast<const CGHeroInstance *>(object);
 	if(hero && hero->tempOwner == player)
 		return false;
+	if(object->ID == Obj::TREASURE_CHEST || object->ID == Obj::SEA_CHEST)
+		return false;
 
 	return true;
 }
@@ -518,7 +564,7 @@ void CScriptedAdventureAI::yourTurn(QueryID queryID)
 	LOG_TRACE_PARAMS(logAi, "queryID '%i'", queryID);
 	nullkiller->invalidatePathfinderData();
 	status.addQuery(queryID, "YourTurn");
-	executeActionAsync("yourTurn", [this, queryID](){ answerQuery(queryID, 0); });
+	answerQueryWithoutGameStateLock("scriptedYourTurn", queryID, 0);
 	status.startedTurn();
 
 	nullkiller->makingTurnInterruption.reset();
@@ -529,6 +575,76 @@ void CScriptedAdventureAI::yourTurn(QueryID queryID)
 		status.waitTillFree();
 		makeScriptedTurn();
 	});
+}
+
+void CScriptedAdventureAI::answerQueryWithoutGameStateLock(const std::string & description, QueryID queryID, int selection)
+{
+	if(!asyncTasks)
+		throw std::runtime_error("Attempt to answer query on shut down AI state.");
+
+	asyncTasks->run([this, description, queryID, selection]() noexcept
+	{
+		ScopedThreadName guard("ScriptedAdventureAI::" + description);
+		try
+		{
+			answerQuery(queryID, selection);
+		}
+		catch(const TerminationRequestedException &)
+		{
+			logAi->debug("%s thread has been terminated. We'll end it immediately", description);
+		}
+	});
+}
+
+void CScriptedAdventureAI::heroGotLevel(const CGHeroInstance * hero, PrimarySkill pskill, std::vector<SecondarySkill> & skills, QueryID queryID)
+{
+	(void)hero;
+	(void)pskill;
+	(void)skills;
+	status.addQuery(queryID, "ScriptedAdventureAI hero level dialog");
+	answerQueryWithoutGameStateLock("scriptedHeroGotLevel", queryID, 0);
+}
+
+void CScriptedAdventureAI::commanderGotLevel(const CCommanderInstance * commander, std::vector<ui32> skills, QueryID queryID)
+{
+	(void)commander;
+	(void)skills;
+	status.addQuery(queryID, "ScriptedAdventureAI commander level dialog");
+	answerQueryWithoutGameStateLock("scriptedCommanderGotLevel", queryID, 0);
+}
+
+void CScriptedAdventureAI::showBlockingDialog(const std::string & text, const std::vector<Component> & components, QueryID askID, const int soundID, bool selection, bool cancel, bool safeToAutoaccept)
+{
+	(void)text;
+	(void)soundID;
+	(void)safeToAutoaccept;
+	int answer = 0;
+	if(selection && !components.empty())
+		answer = static_cast<int>(components.size());
+	else if(!selection && cancel)
+		answer = 1;
+
+	status.addQuery(askID, "ScriptedAdventureAI blocking dialog");
+	answerQueryWithoutGameStateLock("scriptedShowBlockingDialog", askID, answer);
+}
+
+void CScriptedAdventureAI::showTeleportDialog(const CGHeroInstance * hero, TeleportChannelID channel, TTeleportExitsList exits, bool impassable, QueryID askID)
+{
+	(void)hero;
+	(void)channel;
+	const int answer = (!impassable && !exits.empty()) ? 0 : -1;
+	status.addQuery(askID, "ScriptedAdventureAI teleport dialog");
+	answerQueryWithoutGameStateLock("scriptedShowTeleportDialog", askID, answer);
+}
+
+void CScriptedAdventureAI::showMapObjectSelectDialog(QueryID askID, const Component & icon, const MetaString & title, const MetaString & description, const std::vector<ObjectInstanceID> & objects)
+{
+	(void)icon;
+	(void)title;
+	(void)description;
+	const int answer = objects.empty() ? 0 : objects.front().getNum();
+	status.addQuery(askID, "ScriptedAdventureAI map object select dialog");
+	answerQueryWithoutGameStateLock("scriptedShowMapObjectSelectDialog", askID, answer);
 }
 
 void CScriptedAdventureAI::buildChanged(const CGTownInstance * town, BuildingID buildingID, int what)
@@ -596,15 +712,20 @@ void CScriptedAdventureAI::heroVisitsTown(const CGHeroInstance * hero, const CGT
 	AIGateway::heroVisitsTown(hero, town);
 }
 
+void CScriptedAdventureAI::showTavernWindow(const CGObjectInstance * object, const CGHeroInstance * visitor, QueryID queryID)
+{
+	(void)object;
+	(void)visitor;
+	status.addQuery(queryID, "ScriptedAdventureAI tavern dialog");
+	answerQueryWithoutGameStateLock("scriptedShowTavernWindow", queryID, 0);
+}
+
 void CScriptedAdventureAI::heroExchangeStarted(ObjectInstanceID hero1, ObjectInstanceID hero2, QueryID query)
 {
 	(void)hero1;
 	(void)hero2;
 	status.addQuery(query, "ScriptedAdventureAI hero exchange dialog");
-	executeActionAsync("scriptedHeroExchangeStarted", [this, query]()
-	{
-		answerQuery(query, 0);
-	});
+	answerQueryWithoutGameStateLock("scriptedHeroExchangeStarted", query, 0);
 }
 
 void CScriptedAdventureAI::showGarrisonDialog(const CArmedInstance * up, const CGHeroInstance * down, bool removableUnits, QueryID queryID, const MetaString & customTitle)
@@ -614,10 +735,7 @@ void CScriptedAdventureAI::showGarrisonDialog(const CArmedInstance * up, const C
 	(void)removableUnits;
 	(void)customTitle;
 	status.addQuery(queryID, "ScriptedAdventureAI garrison dialog");
-	executeActionAsync("scriptedShowGarrisonDialog", [this, queryID]()
-	{
-		answerQuery(queryID, 0);
-	});
+	answerQueryWithoutGameStateLock("scriptedShowGarrisonDialog", queryID, 0);
 }
 
 void CScriptedAdventureAI::showRecruitmentDialog(const CGDwelling * dwelling, const CArmedInstance * dst, int level, QueryID queryID)
@@ -626,10 +744,23 @@ void CScriptedAdventureAI::showRecruitmentDialog(const CGDwelling * dwelling, co
 	(void)dst;
 	(void)level;
 	status.addQuery(queryID, "ScriptedAdventureAI recruitment dialog");
-	executeActionAsync("scriptedShowRecruitmentDialog", [this, queryID]()
-	{
-		answerQuery(queryID, 0);
-	});
+	answerQueryWithoutGameStateLock("scriptedShowRecruitmentDialog", queryID, 0);
+}
+
+void CScriptedAdventureAI::showUniversityWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID)
+{
+	(void)market;
+	(void)visitor;
+	status.addQuery(queryID, "ScriptedAdventureAI university dialog");
+	answerQueryWithoutGameStateLock("scriptedShowUniversityWindow", queryID, 0);
+}
+
+void CScriptedAdventureAI::showMarketWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID)
+{
+	(void)market;
+	(void)visitor;
+	status.addQuery(queryID, "ScriptedAdventureAI market dialog");
+	answerQueryWithoutGameStateLock("scriptedShowMarketWindow", queryID, 0);
 }
 
 void CScriptedAdventureAI::tileRevealed(const FowTilesType & pos)
@@ -669,7 +800,31 @@ void CScriptedAdventureAI::objectRemoved(const CGObjectInstance * obj, const Pla
 
 void CScriptedAdventureAI::requestSent(const CPackForServer * pack, int requestID)
 {
-	AIGateway::requestSent(pack, requestID);
+	if(const auto * reply = dynamic_cast<const QueryReply *>(pack))
+	{
+		std::optional<bool> earlyResult;
+		{
+			std::lock_guard lock(queryReplyMutex);
+			queryReplyRequests[requestID] = reply->qid;
+			if(const auto early = earlyQueryReplyResults.find(requestID); early != earlyQueryReplyResults.end())
+			{
+				earlyResult = early->second;
+				earlyQueryReplyResults.erase(early);
+			}
+		}
+
+		status.attemptedAnsweringQuery(reply->qid, requestID);
+		if(earlyResult)
+		{
+			status.receivedAnswerConfirmation(requestID, *earlyResult);
+			std::lock_guard lock(queryReplyMutex);
+			queryReplyRequests.erase(requestID);
+		}
+	}
+	else
+	{
+		AIGateway::requestSent(pack, requestID);
+	}
 
 	std::lock_guard lock(requestMutex);
 	if(pendingRequest && pack && pendingRequest->requestID < 0 && pendingRequest->typeName == typeid(*pack).name())
@@ -681,7 +836,30 @@ void CScriptedAdventureAI::requestSent(const CPackForServer * pack, int requestI
 
 void CScriptedAdventureAI::requestRealized(PackageApplied * pa)
 {
-	AIGateway::requestRealized(pa);
+	const uint16_t queryReplyType = CTypeList::getInstance().getTypeID<QueryReply>(nullptr);
+	if(pa && pa->packType == queryReplyType)
+	{
+		std::optional<QueryID> queryID;
+		{
+			std::lock_guard lock(queryReplyMutex);
+			if(const auto query = queryReplyRequests.find(static_cast<int>(pa->requestID)); query != queryReplyRequests.end())
+			{
+				queryID = query->second;
+				queryReplyRequests.erase(query);
+			}
+			else
+			{
+				earlyQueryReplyResults[static_cast<int>(pa->requestID)] = pa->result;
+			}
+		}
+
+		if(queryID)
+			status.receivedAnswerConfirmation(static_cast<int>(pa->requestID), pa->result);
+	}
+	else
+	{
+		AIGateway::requestRealized(pa);
+	}
 
 	std::lock_guard lock(requestMutex);
 	if(pendingRequest && pa
@@ -1551,29 +1729,56 @@ void CScriptedAdventureAI::loadConfig()
 		if(!loader || !loader->existsResource(path))
 		{
 			logAi->info("ScriptedAdventureAI config not found, using defaults.");
-			return;
 		}
-
-		const JsonNode config(path);
-		applyConfig(config, "global");
-
-		const JsonNode & players = config["players"];
-		if(players.isStruct())
+		else
 		{
-			const std::vector<std::string> keys = {
-				playerID.toString(),
-				toLowerAscii(playerID.toString()),
-				std::to_string(playerID.getNum())
-			};
+			const JsonNode config(path);
+			applyConfig(config, "global");
 
-			for(const std::string & key : keys)
+			const JsonNode & players = config["players"];
+			if(players.isStruct())
 			{
-				if(hasField(players, key) && players[key].isStruct())
+				const std::vector<std::string> keys = {
+					playerID.toString(),
+					toLowerAscii(playerID.toString()),
+					std::to_string(playerID.getNum())
+				};
+
+				for(const std::string & key : keys)
 				{
-					applyConfig(players[key], "player " + key);
-					break;
+					if(hasField(players, key) && players[key].isStruct())
+					{
+						applyConfig(players[key], "player " + key);
+						break;
+					}
 				}
 			}
+		}
+
+		const std::vector<std::string> scriptOverrideNames = {
+			"VCMI_SCRIPTED_ADVENTURE_" + toUpperAscii(playerID.toString()) + "_SCRIPT",
+			"VCMI_SCRIPTED_ADVENTURE_PLAYER_" + std::to_string(playerID.getNum()) + "_SCRIPT",
+			"VCMI_SCRIPTED_ADVENTURE_SCRIPT"
+		};
+		for(const std::string & envName : scriptOverrideNames)
+		{
+			if(const auto script = readEnvironmentString(envName.c_str()))
+			{
+				scriptPath = normalizeScriptPath(*script);
+				cachedScriptSource.reset();
+				logAi->info("ScriptedAdventureAI applied script override from %s.", envName.c_str());
+				break;
+			}
+		}
+
+		if(const auto trace = readEnvironmentBool("VCMI_SCRIPTED_ADVENTURE_TRACE"))
+		{
+			scriptConfig.trace = *trace;
+			logAi->info("ScriptedAdventureAI applied trace override from VCMI_SCRIPTED_ADVENTURE_TRACE.");
+		}
+		else if(readEnvironmentString("VCMI_SCRIPTED_ADVENTURE_TRACE"))
+		{
+			logAi->warn("ScriptedAdventureAI ignored invalid VCMI_SCRIPTED_ADVENTURE_TRACE value.");
 		}
 
 		logAi->info(
@@ -1721,6 +1926,17 @@ std::optional<std::string> CScriptedAdventureAI::getScriptSource()
 
 std::optional<std::string> CScriptedAdventureAI::loadScriptSource() const
 {
+	if(const auto filePath = externalScriptFilePath(scriptPath))
+	{
+		std::ifstream stream(*filePath, std::ios::binary);
+		if(!stream)
+			return std::nullopt;
+
+		std::ostringstream buffer;
+		buffer << stream.rdbuf();
+		return buffer.str();
+	}
+
 	const ScriptPath path = ScriptPath::builtinTODO(scriptPath).addPrefix("SCRIPTS/");
 	auto * loader = CResourceHandler::get("core");
 	if(!loader || !loader->existsResource(path))
@@ -1732,7 +1948,8 @@ std::optional<std::string> CScriptedAdventureAI::loadScriptSource() const
 
 std::unique_ptr<scripting::LuaAdventureScriptRunner> CScriptedAdventureAI::makeRunner(const std::string & source) const
 {
-	return std::make_unique<scripting::LuaAdventureScriptRunner>("core:" + scriptPath, source, limits);
+	const std::string sourceName = externalScriptFilePath(scriptPath) ? scriptPath : "core:" + scriptPath;
+	return std::make_unique<scripting::LuaAdventureScriptRunner>(sourceName, source, limits);
 }
 
 bool CScriptedAdventureAI::isOpponent(const PlayerColor & owner) const

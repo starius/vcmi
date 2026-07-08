@@ -19,6 +19,17 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from summarizeAdventureTrace import iter_trace_files, summarize  # noqa: E402
 
 
+def script_override_value(script: str | None) -> str | None:
+    if not script:
+        return None
+    if script.startswith("file:"):
+        return script
+    path = Path(script).expanduser()
+    if path.is_file():
+        return f"file:{path.resolve()}"
+    return script
+
+
 def command_for_run(args: argparse.Namespace, game_map: str, run_dir: Path) -> list[str]:
     command = [
         args.client,
@@ -50,6 +61,10 @@ def run_one(args: argparse.Namespace, game_map: str, run_index: int) -> dict[str
     command = command_for_run(args, game_map, run_dir)
     env = os.environ.copy()
     env["XDG_CACHE_HOME"] = str(run_dir / "cache")
+    if script := script_override_value(args.script):
+        env["VCMI_SCRIPTED_ADVENTURE_SCRIPT"] = script
+    if args.trace:
+        env["VCMI_SCRIPTED_ADVENTURE_TRACE"] = "1"
     started = time.monotonic()
     timed_out = False
     return_code: int | None
@@ -84,6 +99,8 @@ def run_one(args: argparse.Namespace, game_map: str, run_index: int) -> dict[str
         "timedOut": timed_out,
         "returnCode": return_code,
         "elapsedSeconds": round(time.monotonic() - started, 3),
+        "script": script_override_value(args.script),
+        "trace": bool(args.trace),
         "traceDir": str(trace_dir),
         "traceSummary": trace_summary,
     }
@@ -103,6 +120,8 @@ def main() -> int:
     parser.add_argument("--cwd", default=None, help="Working directory for vcmiclient.")
     parser.add_argument("--clean", action="store_true", help="Delete existing run directories before reuse.")
     parser.add_argument("--extra-arg", action="append", default=[], help="Extra argument passed to vcmiclient.")
+    parser.add_argument("--script", default=None, help="Script resource path or local Lua file used by ScriptedAdventureAI.")
+    parser.add_argument("--trace", action="store_true", help="Enable ScriptedAdventureAI trace files for each run.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable batch manifest.")
     args = parser.parse_args()
     if args.ai is None:

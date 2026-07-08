@@ -15,6 +15,7 @@
 #include <condition_variable>
 #include <deque>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <vector>
@@ -37,13 +38,21 @@ public:
 
 	void initGameInterface(std::shared_ptr<Environment> env, std::shared_ptr<CCallback> callback) override;
 	void yourTurn(QueryID queryID) override;
+	void heroGotLevel(const CGHeroInstance * hero, PrimarySkill pskill, std::vector<SecondarySkill> & skills, QueryID queryID) override;
+	void commanderGotLevel(const CCommanderInstance * commander, std::vector<ui32> skills, QueryID queryID) override;
+	void showBlockingDialog(const std::string & text, const std::vector<Component> & components, QueryID askID, const int soundID, bool selection, bool cancel, bool safeToAutoaccept) override;
+	void showTeleportDialog(const CGHeroInstance * hero, TeleportChannelID channel, TTeleportExitsList exits, bool impassable, QueryID askID) override;
+	void showMapObjectSelectDialog(QueryID askID, const Component & icon, const MetaString & title, const MetaString & description, const std::vector<ObjectInstanceID> & objects) override;
 	void buildChanged(const CGTownInstance * town, BuildingID buildingID, int what) override;
 	void heroMoved(const TryMoveHero & details, bool verbose = true) override;
 	void heroCreated(const CGHeroInstance * hero) override;
 	void heroVisitsTown(const CGHeroInstance * hero, const CGTownInstance * town) override;
+	void showTavernWindow(const CGObjectInstance * object, const CGHeroInstance * visitor, QueryID queryID) override;
 	void heroExchangeStarted(ObjectInstanceID hero1, ObjectInstanceID hero2, QueryID query) override;
 	void showGarrisonDialog(const CArmedInstance * up, const CGHeroInstance * down, bool removableUnits, QueryID queryID, const MetaString & customTitle) override;
 	void showRecruitmentDialog(const CGDwelling * dwelling, const CArmedInstance * dst, int level, QueryID queryID) override;
+	void showUniversityWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID) override;
+	void showMarketWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID) override;
 	void tileRevealed(const FowTilesType & pos) override;
 	void newObject(const CGObjectInstance * obj) override;
 	void objectRemoved(const CGObjectInstance * obj, const PlayerColor & initiator) override;
@@ -110,12 +119,16 @@ private:
 	std::condition_variable requestCv;
 	std::optional<PendingRequest> pendingRequest;
 	uint64_t nextRequestToken = 0;
+	std::mutex queryReplyMutex;
+	std::map<int, QueryID> queryReplyRequests;
+	std::map<int, bool> earlyQueryReplyResults;
 
 	void makeScriptedTurn();
 	bool tryMakeScriptedTurn();
 	bool executeScriptAction(const JsonNode & action, JsonNode & actionResult);
 	RequestWaitResult submitAndWaitForRequest(const std::type_info & requestType, uint16_t expectedPackType, const std::function<void()> & submit);
 	JsonNode jsonRequestWaitResult(const RequestWaitResult & request) const;
+	void answerQueryWithoutGameStateLock(const std::string & description, QueryID queryID, int selection);
 	JsonNode makeScriptInputState();
 	JsonNode makeScriptActionSpace() const;
 	JsonNode makeScriptAnalysis() const;
