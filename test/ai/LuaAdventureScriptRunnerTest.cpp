@@ -16,11 +16,11 @@ AI::AdventureScriptInput makeInput()
 	return input;
 }
 
-std::string readDefaultAdventureScript()
+std::string readAdventureScript(const std::string & path)
 {
-	std::ifstream stream(std::string(VCMI_SOURCE_DIR) + "/scripts/ai/defaultAdventure.lua");
+	std::ifstream stream(std::string(VCMI_SOURCE_DIR) + "/" + path);
 	if(!stream)
-		throw std::runtime_error("Unable to read default adventure script");
+		throw std::runtime_error("Unable to read adventure script: " + path);
 
 	std::ostringstream buffer;
 	buffer << stream.rdbuf();
@@ -147,7 +147,7 @@ TEST(LuaAdventureScriptRunnerTest, DefaultAdventureScriptScoresCandidates)
 	target["planAction"]["route_id"] = JsonNode("route");
 	input.actionSpace["reachableObjects"].Vector().push_back(target);
 
-	scripting::LuaAdventureScriptRunner runner("scripts/ai/defaultAdventure.lua", readDefaultAdventureScript());
+	scripting::LuaAdventureScriptRunner runner("scripts/ai/defaultAdventure.lua", readAdventureScript("scripts/ai/defaultAdventure.lua"));
 	const AI::AdventureScriptOutput output = runner.planDay(input);
 
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::NEED_REPLAN);
@@ -159,4 +159,24 @@ TEST(LuaAdventureScriptRunnerTest, DefaultAdventureScriptScoresCandidates)
 	EXPECT_EQ(output.memory["version"].Integer(), 1);
 	ASSERT_TRUE(output.intent);
 	EXPECT_NE(output.intent->find("City Hall"), std::string::npos);
+}
+
+TEST(LuaAdventureScriptRunnerTest, BundledAdventureScriptVariantsRun)
+{
+	const std::vector<std::string> scripts = {
+		"scripts/ai/defaultAdventure.lua",
+		"scripts/ai/aggressiveAdventure.lua",
+		"scripts/ai/economyAdventure.lua",
+		"scripts/ai/explorerAdventure.lua"
+	};
+
+	for(const std::string & script : scripts)
+	{
+		scripting::LuaAdventureScriptRunner runner(script, readAdventureScript(script));
+		const AI::AdventureScriptOutput output = runner.planDay(makeInput());
+
+		EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN) << script;
+		ASSERT_EQ(output.actions.size(), 1) << script;
+		EXPECT_EQ(output.actions[0]["type"].String(), "end_turn") << script;
+	}
 }

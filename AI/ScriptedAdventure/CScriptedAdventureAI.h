@@ -73,6 +73,7 @@ private:
 	JsonNode makeProgressJson(const JsonNode & executed, const JsonNode & failed, const JsonNode & remaining) const;
 	RoutePlan makeRoutePlan(const CGHeroInstance * hero, const int3 & destination, const std::optional<std::string> & expectedRouteID) const;
 	void loadConfig();
+	void applyConfig(const JsonNode & config, const std::string & sourceLabel);
 	std::optional<std::string> getScriptSource();
 	std::optional<std::string> loadScriptSource() const;
 	std::unique_ptr<scripting::LuaAdventureScriptRunner> makeRunner(const std::string & source) const;

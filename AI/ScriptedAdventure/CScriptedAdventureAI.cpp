@@ -32,6 +32,7 @@
 #include "../../luascript/LuaAdventureScriptRunner.h"
 
 #include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <set>
 #include <shared_mutex>
@@ -101,6 +102,13 @@ std::string normalizeScriptPath(std::string path)
 	if(path.starts_with("SCRIPTS/"))
 		path.erase(0, 8);
 	return path;
+}
+
+std::string toLowerAscii(std::string value)
+{
+	for(char & character : value)
+		character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+	return value;
 }
 
 std::string jsonText(std::string value)
@@ -947,19 +955,26 @@ void CScriptedAdventureAI::loadConfig()
 		}
 
 		const JsonNode config(path);
-		if(hasField(config, "script"))
-		{
-			scriptPath = normalizeScriptPath(readString(config, "script"));
-			cachedScriptSource.reset();
-		}
+		applyConfig(config, "global");
 
-		scriptConfig.reloadScriptEachTurn = readBool(config, "reloadScriptEachTurn", scriptConfig.reloadScriptEachTurn);
-		scriptConfig.trace = readBool(config, "trace", scriptConfig.trace);
-		maxScriptCallsPerTurn = readSize(config, "maxScriptCallsPerTurn", maxScriptCallsPerTurn, 1, 64);
-		limits.maxActions = readSize(config, "maxActionsPerPlan", limits.maxActions, 1, 256);
-		limits.maxMemoryBytes = readSize(config, "maxMemoryBytes", limits.maxMemoryBytes, 1024, 4 * 1024 * 1024);
-		scriptConfig.maxConsecutiveFailures = readSize(config, "maxConsecutiveFailures", scriptConfig.maxConsecutiveFailures, 1, 100);
-		scriptConfig.disableTurnsAfterFailures = static_cast<int>(readSize(config, "disableTurnsAfterFailures", scriptConfig.disableTurnsAfterFailures, 1, 100));
+		const JsonNode & players = config["players"];
+		if(players.isStruct())
+		{
+			const std::vector<std::string> keys = {
+				playerID.toString(),
+				toLowerAscii(playerID.toString()),
+				std::to_string(playerID.getNum())
+			};
+
+			for(const std::string & key : keys)
+			{
+				if(hasField(players, key) && players[key].isStruct())
+				{
+					applyConfig(players[key], "player " + key);
+					break;
+				}
+			}
+		}
 
 		logAi->info(
 			"ScriptedAdventureAI config loaded: script '%s', reload per turn %d, trace %d, max calls %d, max actions %d, max memory bytes %d, max failures %d, disable turns %d",
@@ -976,6 +991,28 @@ void CScriptedAdventureAI::loadConfig()
 	{
 		logAi->warn("ScriptedAdventureAI config failed to load, using defaults: %s", e.what());
 	}
+}
+
+void CScriptedAdventureAI::applyConfig(const JsonNode & config, const std::string & sourceLabel)
+{
+	if(!config.isStruct())
+		throw std::invalid_argument("ScriptedAdventureAI config section must be an object: " + sourceLabel);
+
+	if(hasField(config, "script"))
+	{
+		scriptPath = normalizeScriptPath(readString(config, "script"));
+		cachedScriptSource.reset();
+	}
+
+	scriptConfig.reloadScriptEachTurn = readBool(config, "reloadScriptEachTurn", scriptConfig.reloadScriptEachTurn);
+	scriptConfig.trace = readBool(config, "trace", scriptConfig.trace);
+	maxScriptCallsPerTurn = readSize(config, "maxScriptCallsPerTurn", maxScriptCallsPerTurn, 1, 64);
+	limits.maxActions = readSize(config, "maxActionsPerPlan", limits.maxActions, 1, 256);
+	limits.maxMemoryBytes = readSize(config, "maxMemoryBytes", limits.maxMemoryBytes, 1024, 4 * 1024 * 1024);
+	scriptConfig.maxConsecutiveFailures = readSize(config, "maxConsecutiveFailures", scriptConfig.maxConsecutiveFailures, 1, 100);
+	scriptConfig.disableTurnsAfterFailures = static_cast<int>(readSize(config, "disableTurnsAfterFailures", scriptConfig.disableTurnsAfterFailures, 1, 100));
+
+	logAi->debug("ScriptedAdventureAI applied %s config section.", sourceLabel.c_str());
 }
 
 std::optional<std::string> CScriptedAdventureAI::getScriptSource()
