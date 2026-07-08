@@ -67,6 +67,72 @@ local function heroExists(input, id)
     return false
 end
 
+local function distanceSquared(left, right)
+    if type(left) ~= "table" or type(right) ~= "table" then
+        return nil
+    end
+    if left.z ~= nil and right.z ~= nil and tonumber(left.z) ~= tonumber(right.z) then
+        return nil
+    end
+    local dx = (tonumber(left.x or 0) or 0) - (tonumber(right.x or 0) or 0)
+    local dy = (tonumber(left.y or 0) or 0) - (tonumber(right.y or 0) or 0)
+    return dx * dx + dy * dy
+end
+
+local function defensePressure(input)
+    local pressure = 0
+    for _, alert in ipairs(asArray(input.analysis and input.analysis.defenseAlerts)) do
+        local level = text(alert.level)
+        if level == "critical" then
+            pressure = math.max(pressure, 3)
+        elseif level == "high" then
+            pressure = math.max(pressure, 2)
+        else
+            pressure = math.max(pressure, 1)
+        end
+    end
+    return pressure
+end
+
+local function opponentNearTarget(input, target)
+    local object = target.object or {}
+    local position = object.position or (target.path and target.path.destination)
+    if type(position) ~= "table" then
+        return false
+    end
+
+    for _, enemyHero in ipairs(asArray(input.analysis and input.analysis.visibleEnemyHeroes)) do
+        local distance = distanceSquared(position, enemyHero.position)
+        if distance and distance <= 36 then
+            return true
+        end
+    end
+    return false
+end
+
+local function rememberOpponentUpdates(input, memory)
+    local previousRevision = tonumber(memory.lastOpponentRevision or 0) or 0
+    local latestRevision = tonumber(input.opponentUpdates and input.opponentUpdates.latestRevision or previousRevision) or previousRevision
+    local counts = {}
+    local any = false
+
+    for _, event in ipairs(asArray(input.opponentUpdates and input.opponentUpdates.events)) do
+        local revision = tonumber(event.revision or 0) or 0
+        if revision > previousRevision then
+            local eventType = tostring(event.type or "unknown")
+            counts[eventType] = (counts[eventType] or 0) + 1
+            any = true
+        end
+    end
+
+    if latestRevision > previousRevision then
+        memory.lastOpponentRevision = latestRevision
+    end
+    if any then
+        memory.recentOpponentEvents = counts
+    end
+end
+
 local function assignRoles(input, memory)
     if memory.roles.mainHero and heroExists(input, memory.roles.mainHero) then
         return
@@ -113,6 +179,7 @@ local function scoreBuild(option, input)
     local gold = resourceValue(input.state and input.state.resources, "gold")
     local costGold = resourceValue(option.cost, "gold")
     local incomeGold = resourceValue(option.income, "gold")
+    local pressure = defensePressure(input)
 
     score = score + incomeGold * 3
     if name:find("city hall", 1, true) or name:find("capitol", 1, true) then
@@ -126,6 +193,15 @@ local function scoreBuild(option, input)
     end
     if name:find("dwelling", 1, true) or name:find("portal", 1, true) then
         score = score + 180
+    end
+    if pressure >= 2 then
+        if name:find("castle", 1, true) or name:find("citadel", 1, true) then
+            score = score + 450
+        elseif name:find("dwelling", 1, true) then
+            score = score + 120
+        elseif incomeGold > 0 then
+            score = score - 150
+        end
     end
     if gold < 2500 and incomeGold <= 0 then
         score = score - 250
@@ -151,6 +227,7 @@ local function scoreRecruit(option, input)
     local gold = resourceValue(input.state and input.state.resources, "gold")
     local score = (tonumber(option.level or 0) or 0) * 100
     score = score + (tonumber(option.amount or 0) or 0) * 8
+    score = score + defensePressure(input) * 180
     if gold < 1500 then
         score = score - 300
     end
@@ -172,7 +249,7 @@ local function chooseRecruit(input)
     return best, bestScore
 end
 
-local function scoreObject(target, memory)
+local function scoreObject(target, memory, input)
     local object = target.object or {}
     local path = target.path or {}
     local name = text((object.name or "") .. " " .. (object.type or "") .. " " .. (object.hoverText or ""))
@@ -211,6 +288,16 @@ local function scoreObject(target, memory)
     if path.isTeleportAction then
         score = score - 120
     end
+    if opponentNearTarget(input, target) then
+        if role == "main" then
+            score = score - 150
+        else
+            score = score - 550
+        end
+    end
+    if defensePressure(input) >= 3 and role == "main" then
+        score = score - 350
+    end
     if role == "scout" and not path.isTeleportAction then
         score = score + 80
     end
@@ -222,7 +309,7 @@ local function chooseObject(input, memory)
     local bestScore = -1e9
     for _, target in ipairs(asArray(input.actionSpace and input.actionSpace.reachableObjects)) do
         if target.planAction then
-            local score = scoreObject(target, memory)
+            local score = scoreObject(target, memory, input)
             if score > bestScore then
                 best = target
                 bestScore = score
@@ -235,6 +322,7 @@ end
 function Script.planDay(input)
     local memory = initializeMemory(input)
     markProgress(memory, input.progress)
+    rememberOpponentUpdates(input, memory)
     assignRoles(input, memory)
 
     if hasFailures(input.progress) then
@@ -249,12 +337,30 @@ function Script.planDay(input)
     local actions = {}
     local intents = {}
 
-    local build = chooseBuild(input)
-    if build then
-        actions[#actions + 1] = copyAction(build.planAction)
-        intents[#intents + 1] = "build " .. tostring(build.building or build.building_id)
+    local pressure = defensePressure(input)
+    local build, recruit
+    if pressure >= 2 then
+        recruit = chooseRecruit(input)
+        if recruit then
+            actions[#actions + 1] = copyAction(recruit.planAction)
+            intents[#intents + 1] = "recruit under pressure " .. tostring(recruit.creature or recruit.creature_id)
+        else
+            build = chooseBuild(input)
+            if build then
+                actions[#actions + 1] = copyAction(build.planAction)
+                intents[#intents + 1] = "build under pressure " .. tostring(build.building or build.building_id)
+            end
+        end
     else
-        local recruit = chooseRecruit(input)
+        build = chooseBuild(input)
+        if build then
+            actions[#actions + 1] = copyAction(build.planAction)
+            intents[#intents + 1] = "build " .. tostring(build.building or build.building_id)
+        end
+    end
+
+    if not build and not recruit and pressure < 2 then
+        recruit = chooseRecruit(input)
         if recruit then
             actions[#actions + 1] = copyAction(recruit.planAction)
             intents[#intents + 1] = "recruit " .. tostring(recruit.creature or recruit.creature_id)

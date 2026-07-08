@@ -91,8 +91,9 @@ end
 Input:
 
 - `state`: complete visible player state or selected state sections.
-- `updates`: revisioned changes since the previous script call.
-- `opponentUpdates`: visible opponent movement and state changes since the previous owned turn.
+- `updates`: capped revisioned journal of recent visible changes. Scripts can store the last consumed revision
+  in memory when they want delta processing.
+- `opponentUpdates`: the same journal filtered to visible opponent-related changes.
 - `progress`: result of the previous plan execution, including executed, failed, and remaining actions.
 - `memory`: script-owned long-term context from previous calls/days.
 - `day`: current day/week/month and active player color.
@@ -335,12 +336,20 @@ Example configuration fields:
   "maxScriptCallsPerTurn": 8,
   "maxActionsPerPlan": 64,
   "maxMemoryBytes": 262144,
-  "trace": true
+  "maxUpdateEvents": 256,
+  "trace": true,
+  "players": {
+    "red": { "script": "ai/aggressiveAdventure.lua" },
+    "blue": { "script": "ai/economyAdventure.lua" }
+  }
 }
 ```
 
 For development, add an opt-in reload mode so behavior can be edited and rerun without rebuilding. For normal
 games, load once per map/session for deterministic behavior.
+
+Per-player entries override the global script and limits for a specific computer player. Keys can be color
+names such as `red`/`blue` or numeric player ids.
 
 ## Default Script Strategy
 
@@ -435,6 +444,17 @@ The system should produce trace files suitable for AI improvement:
 - final turn summary
 - optional script `intent` field
 
+When tracing is enabled, `ScriptedAdventureAI` writes JSON files under the user log directory in
+`scriptedAdventureAI/`. The helper below summarizes those files:
+
+```bash
+scripts/ai/summarizeAdventureTrace.py <user-log-dir>/scriptedAdventureAI
+```
+
+It reports player/script/day counts, script output statuses, requested/executed/failed action types, failure
+messages, visible update/opponent-update event types, defense-alert totals, and script intents. Add `--json`
+for machine-readable output.
+
 This enables the intended loop:
 
 1. Run scripted AI versus baseline.
@@ -509,7 +529,8 @@ Regression harness:
 - Done: previous execution progress is passed into the next script call.
 - Done: object visits and teleport-like moves stop the current action batch and force a fresh script decision.
 - Done: invalid or rejected actions stop script control and fall back to Nullkiller.
-- Remaining: feed a real revisioned update/opponent-move journal into `updates` and `opponentUpdates`.
+- Done: `updates` and `opponentUpdates` are populated from a capped revisioned journal of visible AI events,
+  including hero movement, new/removed objects, revealed tiles, town visits, building changes, and created heroes.
 
 ### Milestone 6: Host Analysis Surface
 
@@ -518,7 +539,8 @@ Regression harness:
 - Done: action candidates include allowed build actions, affordable recruitment actions, route-id guarded
   movement actions, reachable object targets, and end turn.
 - Done: route ids are generated with the same shape as MCP route ids and are validated before execution.
-- Partial: danger estimates, defense alerts, and Nullkiller task fragments are not exposed yet.
+- Done: visible enemy heroes/towns and nearby town defense alerts are exposed in `analysis`.
+- Partial: full danger-map estimates and Nullkiller task fragments are not exposed yet.
 - Partial: MCP and scripted AI still duplicate some JSON assembly code; extraction can happen once the surface
   stabilizes.
 
@@ -527,7 +549,9 @@ Regression harness:
 - Done: `scripts/ai/defaultAdventure.lua` is a readable Lua policy with explicit scoring functions.
 - Done: it scores allowed builds, recruitment, and reachable object pickups, then returns declarative actions.
 - Done: it requests replanning after useful work and ends turn when no useful scripted candidate remains.
-- Partial: main/scout role assignment, defense policy, and opponent-aware choices still need richer host analysis.
+- Done: it assigns a main hero, tracks consumed opponent-update revisions, prioritizes recruitment under strong
+  defense pressure, and penalizes scout targets near visible enemy heroes.
+- Partial: deeper defense policy still needs richer host analysis and higher-level defend/gather candidates.
 
 ### Milestone 8: Save/Load and Development Reload
 
@@ -542,8 +566,9 @@ Regression harness:
 
 ### Milestone 9: Evaluation Loop
 
-- Partial: opt-in trace files record script input, output, and execution progress under the user log directory.
-- Remaining: add trace summaries, map-run scripts, and fixed-map comparison against Nullkiller.
+- Done: opt-in trace files record script input, output, and execution progress under the user log directory.
+- Done: `scripts/ai/summarizeAdventureTrace.py` summarizes trace files for the script-improvement loop.
+- Remaining: add map-run scripts and fixed-map comparison against Nullkiller.
 - Remaining: use collected failures to expand host analysis and improve the default Lua policy.
 
 ## Open Design Questions
@@ -557,6 +582,11 @@ Regression harness:
 
 ## Recommended Next Step
 
-Add a small AI lifecycle serialization hook so `ScriptedAdventureAI` can persist script-owned memory across
-save/load without putting AI-private planning state into `CGameState`. After that, expand host analysis with
-danger/defense estimates and Nullkiller-generated task fragments.
+The next high-value implementation steps are:
+
+- Add a small AI lifecycle serialization hook so `ScriptedAdventureAI` can persist script-owned memory across
+  save/load without putting AI-private planning state into `CGameState`.
+- Expand the default Lua policy from basic defense/opponent awareness into real defend/gather/avoid-zone
+  strategy once higher-level candidates are available.
+- Expose richer Nullkiller-generated task fragments and danger estimates as read-only candidates for scripts to
+  rank instead of rebuilding those analyses in Lua.
