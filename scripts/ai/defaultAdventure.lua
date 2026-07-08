@@ -40,7 +40,71 @@ local function initializeMemory(input)
     end
     memory.calls = (memory.calls or 0) + 1
     memory.lastDay = input.state and input.state.day or memory.lastDay
+    memory.roles = memory.roles or {}
+    memory.visitedTargets = memory.visitedTargets or {}
+    memory.blockedTargets = memory.blockedTargets or {}
     return memory
+end
+
+local function heroId(hero)
+    return tostring(hero and hero.id or "")
+end
+
+local function armyScore(hero)
+    local score = (tonumber(hero and hero.level or 0) or 0) * 25
+    for _, stack in ipairs(asArray(hero and hero.army)) do
+        score = score + (tonumber(stack.count or 0) or 0)
+    end
+    return score
+end
+
+local function heroExists(input, id)
+    for _, hero in ipairs(asArray(input.state and input.state.heroes)) do
+        if tostring(hero.id or "") == tostring(id or "") then
+            return true
+        end
+    end
+    return false
+end
+
+local function assignRoles(input, memory)
+    if memory.roles.mainHero and heroExists(input, memory.roles.mainHero) then
+        return
+    end
+
+    local bestHero
+    local bestScore = -1
+    for _, hero in ipairs(asArray(input.state and input.state.heroes)) do
+        local score = armyScore(hero)
+        if score > bestScore then
+            bestHero = hero
+            bestScore = score
+        end
+    end
+
+    if bestHero then
+        memory.roles.mainHero = bestHero.id
+    end
+end
+
+local function roleForHero(memory, id)
+    if tostring(memory.roles and memory.roles.mainHero or "") == tostring(id or "") then
+        return "main"
+    end
+    return "scout"
+end
+
+local function markProgress(memory, progress)
+    for _, item in ipairs(asArray(progress and progress.executed)) do
+        if item.object_id then
+            memory.visitedTargets[tostring(item.object_id)] = true
+        end
+    end
+    for _, item in ipairs(asArray(progress and progress.failed)) do
+        if item.object_id then
+            memory.blockedTargets[tostring(item.object_id)] = (memory.blockedTargets[tostring(item.object_id)] or 0) + 1
+        end
+    end
 end
 
 local function scoreBuild(option, input)
@@ -108,11 +172,21 @@ local function chooseRecruit(input)
     return best, bestScore
 end
 
-local function scoreObject(target)
+local function scoreObject(target, memory)
     local object = target.object or {}
     local path = target.path or {}
     local name = text((object.name or "") .. " " .. (object.type or "") .. " " .. (object.hoverText or ""))
     local score = 400
+    local role = roleForHero(memory, target.hero_id)
+    local objectKey = tostring(object.id or "")
+
+    if memory.visitedTargets[objectKey] then
+        score = score - 600
+    end
+    if memory.blockedTargets[objectKey] then
+        score = score - memory.blockedTargets[objectKey] * 250
+    end
+
     score = score - (tonumber(path.cost or 0) or 0) * 160
 
     if name:find("gold", 1, true) or name:find("treasure", 1, true) or name:find("chest", 1, true) then
@@ -124,21 +198,31 @@ local function scoreObject(target)
     if name:find("resource", 1, true) or name:find("wood", 1, true) or name:find("ore", 1, true) then
         score = score + 220
     end
+    if name:find("mine", 1, true) then
+        score = score + 180
+    end
     if path.pathAction == "battle" or path.pathAction == "teleport_battle" then
-        score = score - 500
+        if role == "main" then
+            score = score - 120
+        else
+            score = score - 700
+        end
     end
     if path.isTeleportAction then
         score = score - 120
     end
+    if role == "scout" and not path.isTeleportAction then
+        score = score + 80
+    end
     return score
 end
 
-local function chooseObject(input)
+local function chooseObject(input, memory)
     local best
     local bestScore = -1e9
     for _, target in ipairs(asArray(input.actionSpace and input.actionSpace.reachableObjects)) do
         if target.planAction then
-            local score = scoreObject(target)
+            local score = scoreObject(target, memory)
             if score > bestScore then
                 best = target
                 bestScore = score
@@ -150,6 +234,9 @@ end
 
 function Script.planDay(input)
     local memory = initializeMemory(input)
+    markProgress(memory, input.progress)
+    assignRoles(input, memory)
+
     if hasFailures(input.progress) then
         return {
             status = "fallback",
@@ -174,7 +261,7 @@ function Script.planDay(input)
         end
     end
 
-    local target = chooseObject(input)
+    local target = chooseObject(input, memory)
     if target then
         actions[#actions + 1] = copyAction(target.planAction)
         intents[#intents + 1] = "visit " .. tostring((target.object or {}).name or (target.object or {}).id)
