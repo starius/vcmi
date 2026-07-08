@@ -26,6 +26,7 @@
 #include "../../lib/mapObjects/CGTownInstance.h"
 #include "../../lib/mapObjects/army/CArmedInstance.h"
 #include "../../lib/mapObjects/army/CStackInstance.h"
+#include "../../lib/networkPacks/PacksForClient.h"
 #include "../../lib/networkPacks/PacksForServer.h"
 #include "../../lib/pathfinder/CGPathNode.h"
 #include "../../lib/pathfinder/PathfinderOptions.h"
@@ -209,6 +210,40 @@ std::string pathActionName(EPathNodeAction action)
 	return "unknown";
 }
 
+std::string movementResultName(TryMoveHero::EResult result)
+{
+	switch(result)
+	{
+		case TryMoveHero::FAILED:
+			return "failed";
+		case TryMoveHero::SUCCESS:
+			return "success";
+		case TryMoveHero::TELEPORTATION:
+			return "teleportation";
+		case TryMoveHero::BLOCKING_VISIT:
+			return "blocking_visit";
+		case TryMoveHero::EMBARK:
+			return "embark";
+		case TryMoveHero::DISEMBARK:
+			return "disembark";
+	}
+	return "unknown";
+}
+
+JsonNode jsonPositions(const FowTilesType & positions, size_t maxPositions)
+{
+	JsonNode node;
+	node.Vector();
+	size_t count = 0;
+	for(const int3 & position : positions)
+	{
+		if(count++ >= maxPositions)
+			break;
+		node.Vector().push_back(jsonPosition(position));
+	}
+	return node;
+}
+
 std::string makeRouteId(
 	int32_t heroId,
 	const int3 & start,
@@ -271,6 +306,7 @@ JsonNode jsonHero(const CGHeroInstance * hero)
 	node["primarySkills"]["defense"] = JsonNode(hero->getPrimSkillLevel(PrimarySkill::DEFENSE));
 	node["primarySkills"]["spellPower"] = JsonNode(hero->getPrimSkillLevel(PrimarySkill::SPELL_POWER));
 	node["primarySkills"]["knowledge"] = JsonNode(hero->getPrimSkillLevel(PrimarySkill::KNOWLEDGE));
+	node["armyStrength"] = JsonNode(static_cast<int64_t>(hero->getArmyStrength()));
 	node["army"] = jsonArmy(*hero);
 	return node;
 }
@@ -319,6 +355,7 @@ JsonNode jsonTown(const CGTownInstance * town, const ResourceSet & resources)
 	node["fortLevel"] = JsonNode(static_cast<int32_t>(town->fortLevel()));
 	node["visitingHeroId"] = jsonObjectId(town->getVisitingHero());
 	node["garrisonHeroId"] = jsonObjectId(town->getGarrisonHero());
+	node["armyStrength"] = JsonNode(static_cast<int64_t>(town->getUpperArmy()->getArmyStrength(town->fortLevel())));
 	node["army"] = jsonArmy(*town);
 	node["buildings"].Vector();
 	for(const BuildingID & building : town->getBuildings())
@@ -391,6 +428,106 @@ void CScriptedAdventureAI::yourTurn(QueryID queryID)
 	});
 }
 
+void CScriptedAdventureAI::buildChanged(const CGTownInstance * town, BuildingID buildingID, int what)
+{
+	if(town && cc && cc->isVisibleFor(town, playerID))
+	{
+		JsonNode data;
+		data["town"] = jsonTown(town, cc->getResourceAmount());
+		data["building_id"] = JsonNode(buildingID.getNum());
+		data["change"] = JsonNode(what);
+		appendScriptUpdate("build_changed", data, isOpponent(town->tempOwner));
+	}
+
+	AIGateway::buildChanged(town, buildingID, what);
+}
+
+void CScriptedAdventureAI::heroMoved(const TryMoveHero & details, bool verbose)
+{
+	const CGHeroInstance * hero = cc ? cc->getHero(details.id) : nullptr;
+	const bool visibleMovement = cc
+		&& ((hero && cc->isVisibleFor(hero, playerID))
+			|| cc->isVisibleFor(details.start, playerID)
+			|| cc->isVisibleFor(details.end, playerID));
+	if(visibleMovement)
+	{
+		JsonNode data;
+		data["hero_id"] = JsonNode(details.id.getNum());
+		data["result"] = JsonNode(movementResultName(details.result));
+		data["movementRemaining"] = JsonNode(static_cast<int32_t>(details.movePoints));
+		data["startAnchor"] = jsonPosition(details.start);
+		data["endAnchor"] = jsonPosition(details.end);
+		data["attackedFrom"] = jsonPosition(details.attackedFrom);
+		data["revealedTilesCount"] = JsonNode(static_cast<int32_t>(details.fowRevealed.size()));
+		data["revealedTiles"] = jsonPositions(details.fowRevealed, 16);
+		if(hero && cc->isVisibleFor(hero, playerID))
+			data["hero"] = jsonHero(hero);
+
+		appendScriptUpdate("hero_moved", data, hero ? isOpponent(hero->tempOwner) : true);
+	}
+	AIGateway::heroMoved(details, verbose);
+}
+
+void CScriptedAdventureAI::heroCreated(const CGHeroInstance * hero)
+{
+	if(hero && cc && cc->isVisibleFor(hero, playerID))
+	{
+		JsonNode data;
+		data["hero"] = jsonHero(hero);
+		appendScriptUpdate("hero_created", data, isOpponent(hero->tempOwner));
+	}
+
+	AIGateway::heroCreated(hero);
+}
+
+void CScriptedAdventureAI::heroVisitsTown(const CGHeroInstance * hero, const CGTownInstance * town)
+{
+	if(hero && town && cc && (cc->isVisibleFor(hero, playerID) || cc->isVisibleFor(town, playerID)))
+	{
+		JsonNode data;
+		data["hero"] = jsonHero(hero);
+		data["town"] = jsonMapObject(town, playerID, hero);
+		appendScriptUpdate("hero_visits_town", data, isOpponent(hero->tempOwner) || isOpponent(town->tempOwner));
+	}
+
+	AIGateway::heroVisitsTown(hero, town);
+}
+
+void CScriptedAdventureAI::tileRevealed(const FowTilesType & pos)
+{
+	JsonNode data;
+	data["count"] = JsonNode(static_cast<int32_t>(pos.size()));
+	data["tiles"] = jsonPositions(pos, 32);
+	appendScriptUpdate("tile_revealed", data, false);
+
+	AIGateway::tileRevealed(pos);
+}
+
+void CScriptedAdventureAI::newObject(const CGObjectInstance * obj)
+{
+	if(obj && cc && cc->isVisibleFor(obj, playerID))
+	{
+		JsonNode data;
+		data["object"] = jsonMapObject(obj, playerID, nullptr);
+		appendScriptUpdate("new_object", data, isOpponent(obj->tempOwner));
+	}
+
+	AIGateway::newObject(obj);
+}
+
+void CScriptedAdventureAI::objectRemoved(const CGObjectInstance * obj, const PlayerColor & initiator)
+{
+	if(obj && cc && cc->isVisibleFor(obj, playerID))
+	{
+		JsonNode data;
+		data["object"] = jsonMapObject(obj, playerID, nullptr);
+		data["initiator"] = JsonNode(initiator.toString());
+		appendScriptUpdate("object_removed", data, isOpponent(obj->tempOwner) || isOpponent(initiator));
+	}
+
+	AIGateway::objectRemoved(obj, initiator);
+}
+
 void CScriptedAdventureAI::makeScriptedTurn()
 {
 	try
@@ -443,6 +580,8 @@ bool CScriptedAdventureAI::tryMakeScriptedTurn()
 	{
 		AI::AdventureScriptInput input;
 		input.state = makeScriptInputState();
+		input.updates = makeScriptUpdates(false);
+		input.opponentUpdates = makeScriptUpdates(true);
 		input.progress = progress;
 		input.memory = scriptMemory;
 		input.actionSpace = makeScriptActionSpace();
@@ -863,12 +1002,98 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 	analysis["candidateLimits"]["reachableRadius"] = JsonNode(16);
 	analysis["candidateLimits"]["maxMovementOptions"] = JsonNode(48);
 	analysis["candidateLimits"]["maxObjectTargets"] = JsonNode(24);
+	analysis["candidateLimits"]["maxUpdateEvents"] = JsonNode(static_cast<int32_t>(maxScriptUpdateJournal));
 	analysis["execution"]["validatesOwnership"] = JsonNode(true);
 	analysis["execution"]["validatesVisibility"] = JsonNode(true);
 	analysis["execution"]["validatesRouteIds"] = JsonNode(true);
 	analysis["execution"]["replansAfterObjectVisit"] = JsonNode(true);
 	analysis["execution"]["fallbackAI"] = JsonNode("Nullkiller2");
+	analysis["visibleEnemyHeroes"].Vector();
+	analysis["visibleEnemyTowns"].Vector();
+	analysis["defenseAlerts"].Vector();
+
+	std::shared_lock gameStateLock(CGameState::mutex);
+	const ResourceSet resources = cc->getResourceAmount();
+	std::vector<const CGHeroInstance *> enemyHeroes;
+
+	for(const CGObjectInstance * object : cc->getAllVisitableObjs())
+	{
+		if(!object || !object->tempOwner.isValidPlayer() || !isOpponent(object->tempOwner))
+			continue;
+
+		if(const auto * enemyHero = dynamic_cast<const CGHeroInstance *>(object))
+		{
+			enemyHeroes.push_back(enemyHero);
+			JsonNode enemyHeroJson = jsonHero(enemyHero);
+			enemyHeroJson["visibleObject"] = jsonMapObject(enemyHero, playerID, nullptr);
+			analysis["visibleEnemyHeroes"].Vector().push_back(enemyHeroJson);
+		}
+		else if(const auto * enemyTown = dynamic_cast<const CGTownInstance *>(object))
+		{
+			analysis["visibleEnemyTowns"].Vector().push_back(jsonTown(enemyTown, resources));
+		}
+	}
+
+	constexpr int defenseAlertRadius = 12;
+	for(const CGTownInstance * town : cc->getTownsInfo(true))
+	{
+		if(!town || town->tempOwner != playerID)
+			continue;
+
+		const CArmedInstance * upperArmy = town->getUpperArmy();
+		const int64_t townStrength = static_cast<int64_t>(upperArmy ? upperArmy->getArmyStrength(town->fortLevel()) : town->getArmyStrength(town->fortLevel()));
+		for(const CGHeroInstance * enemyHero : enemyHeroes)
+		{
+			if(enemyHero->visitablePos().z != town->visitablePos().z)
+				continue;
+
+			const ui32 distanceSquared = town->visitablePos().dist2dSQ(enemyHero->visitablePos());
+			if(distanceSquared > defenseAlertRadius * defenseAlertRadius)
+				continue;
+
+			const int64_t enemyStrength = static_cast<int64_t>(enemyHero->getArmyStrength());
+			const double strengthRatio = static_cast<double>(enemyStrength) / std::max(1.0, static_cast<double>(townStrength));
+			std::string level = "watch";
+			if(strengthRatio >= 1.5)
+				level = "critical";
+			else if(strengthRatio >= 1.0)
+				level = "high";
+
+			JsonNode alert;
+			alert["level"] = JsonNode(level);
+			alert["town_id"] = JsonNode(town->id.getNum());
+			alert["town"] = JsonNode(jsonText(town->getNameTranslated()));
+			alert["townPosition"] = jsonPosition(town->visitablePos());
+			alert["townStrength"] = JsonNode(townStrength);
+			alert["enemyHeroId"] = JsonNode(enemyHero->id.getNum());
+			alert["enemyHero"] = JsonNode(jsonText(enemyHero->getNameTranslated()));
+			alert["enemyPosition"] = jsonPosition(enemyHero->visitablePos());
+			alert["enemyStrength"] = JsonNode(enemyStrength);
+			alert["distance"] = JsonNode(town->visitablePos().dist2d(enemyHero->visitablePos()));
+			alert["distanceSquared"] = JsonNode(static_cast<int32_t>(distanceSquared));
+			alert["strengthRatio"] = JsonNode(strengthRatio);
+			analysis["defenseAlerts"].Vector().push_back(alert);
+		}
+	}
+
 	return analysis;
+}
+
+JsonNode CScriptedAdventureAI::makeScriptUpdates(bool opponentOnly) const
+{
+	JsonNode updates;
+	updates["opponentOnly"] = JsonNode(opponentOnly);
+	updates["events"].Vector();
+
+	std::lock_guard guard(scriptUpdateMutex);
+	updates["latestRevision"] = JsonNode(static_cast<int64_t>(scriptUpdateRevision));
+	for(const JsonNode & event : scriptUpdateJournal)
+	{
+		if(opponentOnly && (!event["opponent"].isBool() || !event["opponent"].Bool()))
+			continue;
+		updates["events"].Vector().push_back(event);
+	}
+	return updates;
 }
 
 JsonNode CScriptedAdventureAI::makeScriptInputLimits() const
@@ -1009,6 +1234,7 @@ void CScriptedAdventureAI::applyConfig(const JsonNode & config, const std::strin
 	maxScriptCallsPerTurn = readSize(config, "maxScriptCallsPerTurn", maxScriptCallsPerTurn, 1, 64);
 	limits.maxActions = readSize(config, "maxActionsPerPlan", limits.maxActions, 1, 256);
 	limits.maxMemoryBytes = readSize(config, "maxMemoryBytes", limits.maxMemoryBytes, 1024, 4 * 1024 * 1024);
+	maxScriptUpdateJournal = readSize(config, "maxUpdateEvents", maxScriptUpdateJournal, 16, 4096);
 	scriptConfig.maxConsecutiveFailures = readSize(config, "maxConsecutiveFailures", scriptConfig.maxConsecutiveFailures, 1, 100);
 	scriptConfig.disableTurnsAfterFailures = static_cast<int>(readSize(config, "disableTurnsAfterFailures", scriptConfig.disableTurnsAfterFailures, 1, 100));
 
@@ -1036,6 +1262,27 @@ std::optional<std::string> CScriptedAdventureAI::loadScriptSource() const
 std::unique_ptr<scripting::LuaAdventureScriptRunner> CScriptedAdventureAI::makeRunner(const std::string & source) const
 {
 	return std::make_unique<scripting::LuaAdventureScriptRunner>("core:" + scriptPath, source, limits);
+}
+
+bool CScriptedAdventureAI::isOpponent(const PlayerColor & owner) const
+{
+	return cc && owner.isValidPlayer() && cc->getPlayerRelations(owner, playerID) == PlayerRelations::ENEMIES;
+}
+
+void CScriptedAdventureAI::appendScriptUpdate(const std::string & type, JsonNode data, bool opponent)
+{
+	std::lock_guard guard(scriptUpdateMutex);
+
+	JsonNode event;
+	event["revision"] = JsonNode(static_cast<int64_t>(++scriptUpdateRevision));
+	event["day"] = JsonNode(cc ? cc->getCalendar().getCurrentDay() : 0);
+	event["type"] = JsonNode(type);
+	event["opponent"] = JsonNode(opponent);
+	event["data"] = data;
+
+	scriptUpdateJournal.push_back(event);
+	while(scriptUpdateJournal.size() > maxScriptUpdateJournal)
+		scriptUpdateJournal.pop_front();
 }
 
 void CScriptedAdventureAI::writeTraceEvent(const std::string & label, const JsonNode & payload)

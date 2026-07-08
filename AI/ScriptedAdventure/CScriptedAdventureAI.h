@@ -12,6 +12,8 @@
 #include "../Nullkiller2/AIGateway.h"
 #include "../../lib/ai/AdventureScript.h"
 
+#include <deque>
+#include <mutex>
 #include <optional>
 
 VCMI_LIB_NAMESPACE_BEGIN
@@ -32,6 +34,13 @@ public:
 
 	void initGameInterface(std::shared_ptr<Environment> env, std::shared_ptr<CCallback> callback) override;
 	void yourTurn(QueryID queryID) override;
+	void buildChanged(const CGTownInstance * town, BuildingID buildingID, int what) override;
+	void heroMoved(const TryMoveHero & details, bool verbose = true) override;
+	void heroCreated(const CGHeroInstance * hero) override;
+	void heroVisitsTown(const CGHeroInstance * hero, const CGTownInstance * town) override;
+	void tileRevealed(const FowTilesType & pos) override;
+	void newObject(const CGObjectInstance * obj) override;
+	void objectRemoved(const CGObjectInstance * obj, const PlayerColor & initiator) override;
 
 private:
 	struct ScriptConfig
@@ -62,6 +71,10 @@ private:
 	size_t consecutiveScriptFailures = 0;
 	int disabledUntilDay = 0;
 	bool failureRecordedThisTurn = false;
+	mutable std::mutex scriptUpdateMutex;
+	std::deque<JsonNode> scriptUpdateJournal;
+	uint64_t scriptUpdateRevision = 0;
+	size_t maxScriptUpdateJournal = 256;
 
 	void makeScriptedTurn();
 	bool tryMakeScriptedTurn();
@@ -69,6 +82,7 @@ private:
 	JsonNode makeScriptInputState();
 	JsonNode makeScriptActionSpace() const;
 	JsonNode makeScriptAnalysis() const;
+	JsonNode makeScriptUpdates(bool opponentOnly) const;
 	JsonNode makeScriptInputLimits() const;
 	JsonNode makeProgressJson(const JsonNode & executed, const JsonNode & failed, const JsonNode & remaining) const;
 	RoutePlan makeRoutePlan(const CGHeroInstance * hero, const int3 & destination, const std::optional<std::string> & expectedRouteID) const;
@@ -77,6 +91,8 @@ private:
 	std::optional<std::string> getScriptSource();
 	std::optional<std::string> loadScriptSource() const;
 	std::unique_ptr<scripting::LuaAdventureScriptRunner> makeRunner(const std::string & source) const;
+	bool isOpponent(const PlayerColor & owner) const;
+	void appendScriptUpdate(const std::string & type, JsonNode data, bool opponent);
 	void writeTraceEvent(const std::string & label, const JsonNode & payload);
 	void fallbackToNullkiller(const std::string & reason);
 };
