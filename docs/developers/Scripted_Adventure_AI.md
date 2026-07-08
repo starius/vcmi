@@ -296,6 +296,53 @@ The script engine should reuse these Nullkiller systems where possible:
 - deep decomposer for quest/guard/unlock chains
 - task execution wrappers for complex multi-step behaviors
 
+## Public Related Work
+
+Reviewed in July 2026. The useful conclusion is that VCMI has had adjacent scripting, AI, LLM, and
+training-environment discussions for years, but no discovered public implementation appears to provide an
+in-process, editable adventure AI strategy script with engine-validated declarative actions and Nullkiller
+fallback.
+
+Relevant references:
+
+- [Python API forum thread](https://forum.vcmi.eu/t/python-api/838): discussed a Python callback API,
+  scriptable map objects, script execution placement, safety/synchronization issues, and scriptable AI as a
+  request. It is closest to general scripting/API design, but it focused on mutable callback exposure and map
+  object scripting rather than a functional adventure AI planner.
+- [On Visual Studio 11 support forum thread](https://forum.vcmi.eu/t/on-visual-studio-11-support/485):
+  contains an early scripted-AI discussion. The key concern was not language choice but making VCMI's reasoning
+  and callback model scriptable at all.
+- [Scripting forum thread](https://forum.vcmi.eu/t/scripting/235?page=2) and
+  [modding-system discussion](https://forum.vcmi.eu/t/modding-system-discussion/451): cover older server/client
+  scripting and ERM-style gameplay scripting ideas. Those are intentionally different from this design: game
+  rules stay in C++/server code, while AI scripts only return plans for normal AI callback execution.
+- [GitHub issue #5586: LLM Learning Game Integration with VCMI](https://github.com/vcmi/vcmi/issues/5586):
+  proposes structured game-state export and external commands for LLM learning. This aligns with the MCP/external
+  agent path. `AdventurePlan` should remain reusable by that path, but the scripted adventure AI is an in-process
+  Lua planner that can run without an LLM or command server.
+- [GitHub issue #7108: VCMI Coach MVP](https://github.com/vcmi/vcmi/issues/7108): proposes a read-only coach
+  that exposes and explains existing AI/engine recommendations. It is complementary: the same recommendation
+  surfaces and trace explanations can help script authors, but it is explicitly not autonomous computer-player
+  control.
+- [Lua API reference](https://vcmi.eu/modders/Lua/API_Reference/),
+  [Lua scripting support part 2 PR #7323](https://github.com/vcmi/vcmi/pull/7323), and
+  [Lua scripting support part 3 PR #7392](https://github.com/vcmi/vcmi/pull/7392): provide the current Lua
+  scripting direction. These are useful infrastructure references, but they target mod/game scripting rather
+  than computer-player strategy.
+- [PR #7453: remove dynamic loading of AI and scripting modules](https://github.com/vcmi/vcmi/pull/7453):
+  confirms that AI modules should be normal in-tree/static-linked modules. This matches the current
+  `ScriptedAdventureAI` wrapper plus data-loaded script files, rather than a dynamically loaded AI plugin.
+- [vcmi-gym project notes](https://smanolloff.github.io/projects/vcmi-gym/): focus on reinforcement learning,
+  currently battle-only AI, and explicitly leave adventure-only AI as a separate future project. This is related
+  to evaluation and training, not a replacement for the scripted adventure planner.
+- Existing AI mods such as [Boost AI](https://vcmi.eu/Mod%20Repository/AI/Boost%20AI/) are useful precedent for
+  player-facing AI configuration, but they change bonuses/resources or difficulty pressure, not the computer
+  player's adventure decision policy.
+
+When sending this proposal upstream, reference #5586 as the external-agent/LLM cousin, #7108 as the read-only
+advisor cousin, the Lua PRs as scripting infrastructure, and the forum threads as evidence that the hard boundary
+is not "can Lua run" but "can AI strategy be scriptable without giving scripts mutable rule authority".
+
 ## Files and Modules
 
 Suggested new module:
