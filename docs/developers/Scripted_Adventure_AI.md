@@ -617,6 +617,14 @@ Regression harness:
 - Trace tooling now supports both single-run summaries and baseline-vs-candidate comparisons for script iteration.
 - A headless batch runner can launch fixed-day AI-vs-AI runs and summarize traces. The client-side `--testdays`
   option makes `--testmap`/`--testsave` runs exit after N completed adventure days.
+- Debugging `Emerald Isles` smoke runs showed the scripted host must not use Nullkiller helper methods that perform
+  hidden side effects such as army exchange after movement. Scripted movement is now a direct, tracked `MoveHero`
+  request over a route-id-validated path, and garrison/hero-exchange/recruitment dialogs are conservatively answered
+  without implicit stack management.
+- Scripted build, recruit, move, end-turn, and memory-save requests wait for `PackageApplied` and tolerate
+  `requestSent`/`requestRealized` callback ordering differences. This prevents trace I/O from masking timing bugs.
+- Invalid or rejected actions are passed back to the script as `progress.failed` for bounded replanning. Nullkiller
+  fallback remains for script failures, script-requested fallback, repeated failures, or exhausted script-call budget.
 - Remaining C++ expansion should focus on additional read-only candidates, especially Nullkiller task fragments,
   blocker/unlock chains, and army-gathering options.
 
@@ -655,7 +663,8 @@ Regression harness:
 - Done: bounded repeated script calls within one day are implemented.
 - Done: previous execution progress is passed into the next script call.
 - Done: object visits and teleport-like moves stop the current action batch and force a fresh script decision.
-- Done: invalid or rejected actions stop script control and fall back to Nullkiller.
+- Done: invalid or rejected actions stop the current batch, populate `progress.failed`, and allow bounded script
+  replanning before fallback.
 - Done: `updates` and `opponentUpdates` are populated from a capped revisioned journal of visible AI events,
   including hero movement, new/removed objects, revealed tiles, town visits, building changes, and created heroes.
 

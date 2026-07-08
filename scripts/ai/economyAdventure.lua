@@ -33,6 +33,8 @@ local function initMemory(input)
     end
     memory.calls = (memory.calls or 0) + 1
     memory.lastDay = input.state and input.state.day or memory.lastDay
+    memory.visitedTargets = memory.visitedTargets or {}
+    memory.blockedTargets = memory.blockedTargets or {}
     return memory
 end
 
@@ -41,6 +43,20 @@ local function failed(progress)
         return true
     end
     return false
+end
+
+local function markProgress(memory, progress)
+    for _, item in ipairs(array(progress and progress.executed)) do
+        if item.object_id then
+            memory.visitedTargets[tostring(item.object_id)] = true
+        end
+    end
+    for _, item in ipairs(array(progress and progress.failed)) do
+        if item.object_id then
+            local key = tostring(item.object_id)
+            memory.blockedTargets[key] = (memory.blockedTargets[key] or 0) + 1
+        end
+    end
 end
 
 local function scoreBuild(option, input)
@@ -103,11 +119,16 @@ local function bestRecruit(input)
     return best
 end
 
-local function scoreTarget(target)
+local function scoreTarget(target, memory)
     local object = target.object or {}
     local path = target.path or {}
     local words = lower((object.name or "") .. " " .. (object.type or "") .. " " .. (object.hoverText or ""))
+    local objectKey = tostring(object.id or "")
     local score = 300 - (tonumber(path.cost or 0) or 0) * 180
+
+    if objectKey ~= "" and (memory.visitedTargets[objectKey] or memory.blockedTargets[objectKey]) then
+        return -1e9
+    end
 
     if words:find("mine", 1, true) or words:find("sawmill", 1, true) or words:find("ore pit", 1, true) then
         score = score + 700
@@ -124,11 +145,11 @@ local function scoreTarget(target)
     return score
 end
 
-local function bestTarget(input)
+local function bestTarget(input, memory)
     local best, bestScore
     for _, target in ipairs(array(input.actionSpace and input.actionSpace.reachableObjects)) do
         if target.planAction then
-            local score = scoreTarget(target)
+            local score = scoreTarget(target, memory)
             if not bestScore or score > bestScore then
                 best, bestScore = target, score
             end
@@ -139,14 +160,15 @@ end
 
 function Script.planDay(input)
     local memory = initMemory(input)
+    markProgress(memory, input.progress)
     if failed(input.progress) then
-        return { status = "fallback", memory = memory, actions = {}, intent = "economy fallback after failed action" }
+        memory.lastFailure = "replanning after failed action"
     end
 
     local actions = {}
     local intents = {}
     local build = bestBuild(input)
-    local target = bestTarget(input)
+    local target = bestTarget(input, memory)
     local recruit = bestRecruit(input)
 
     if build then

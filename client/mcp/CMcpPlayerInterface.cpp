@@ -206,6 +206,16 @@ std::string jsonText(std::string value)
 	return value;
 }
 
+std::string jsonPlayerColor(PlayerColor color)
+{
+	if(color == PlayerColor::UNFLAGGABLE)
+		return "unflaggable";
+	if(color == PlayerColor::CANNOT_DETERMINE)
+		return "cannot_determine";
+
+	return color.toString();
+}
+
 JsonNode jsonArmy(const CCreatureSet & army)
 {
 	JsonNode node;
@@ -253,7 +263,7 @@ JsonNode jsonHero(const CGHeroInstance * hero)
 	node["id"] = JsonNode(hero->id.getNum());
 	node["name"] = JsonNode(jsonText(hero->getNameTranslated()));
 	node["position"] = jsonPosition(hero->visitablePos());
-	node["owner"] = JsonNode(hero->tempOwner.toString());
+	node["owner"] = JsonNode(jsonPlayerColor(hero->tempOwner));
 	node["level"] = JsonNode(static_cast<int32_t>(hero->level));
 	node["mana"] = JsonNode(hero->mana);
 	node["manaLimit"] = JsonNode(hero->manaLimit());
@@ -281,7 +291,7 @@ JsonNode jsonTown(const CGTownInstance * town)
 	node["id"] = JsonNode(town->id.getNum());
 	node["name"] = JsonNode(jsonText(town->getNameTranslated()));
 	node["position"] = jsonPosition(town->visitablePos());
-	node["owner"] = JsonNode(town->tempOwner.toString());
+	node["owner"] = JsonNode(jsonPlayerColor(town->tempOwner));
 	node["fortLevel"] = JsonNode(static_cast<int32_t>(town->fortLevel()));
 	node["visitingHeroId"] = jsonObjectId(town->getVisitingHero());
 	node["garrisonHeroId"] = jsonObjectId(town->getGarrisonHero());
@@ -292,12 +302,15 @@ JsonNode jsonTown(const CGTownInstance * town)
 		node["buildings"].Vector().push_back(JsonNode(building.getNum()));
 
 	node["recruitOptions"].Vector();
-	const CArmedInstance * destination = town->getUpperArmy();
-	for(int32_t level = 0; level < static_cast<int32_t>(town->creatures.size()); ++level)
+	if(!town->getVisitingHero())
 	{
-		JsonNode option = jsonRecruitOption(town, destination, level);
-		if(option.isStruct() && option["available"].Integer() > 0)
-			node["recruitOptions"].Vector().push_back(option);
+		const CArmedInstance * destination = town->getUpperArmy();
+		for(int32_t level = 0; level < static_cast<int32_t>(town->creatures.size()); ++level)
+		{
+			JsonNode option = jsonRecruitOption(town, destination, level);
+			if(option.isStruct() && option["available"].Integer() > 0)
+				node["recruitOptions"].Vector().push_back(option);
+		}
 	}
 
 	return node;
@@ -390,7 +403,7 @@ JsonNode jsonMapObject(const CGObjectInstance * object, PlayerColor player, cons
 	node["subtype"] = JsonNode(jsonText(object->getSubtypeName()));
 	node["name"] = JsonNode(jsonText(object->getObjectName()));
 	node["hoverText"] = JsonNode(jsonText(contextHero ? object->getHoverText(contextHero) : object->getHoverText(player)));
-	node["owner"] = JsonNode(object->tempOwner.toString());
+	node["owner"] = JsonNode(jsonPlayerColor(object->tempOwner));
 	node["position"] = jsonPosition(object->visitablePos());
 	node["anchorPosition"] = jsonPosition(object->anchorPos());
 	node["topVisiblePosition"] = jsonPosition(object->getTopVisiblePos());
@@ -411,10 +424,19 @@ JsonNode jsonCompactMapObject(const CGObjectInstance * object, PlayerColor playe
 	node["subtype"] = JsonNode(jsonText(object->getSubtypeName()));
 	node["name"] = JsonNode(jsonText(object->getObjectName()));
 	node["hoverText"] = JsonNode(jsonText(contextHero ? object->getHoverText(contextHero) : object->getHoverText(player)));
-	node["owner"] = JsonNode(object->tempOwner.toString());
+	node["owner"] = JsonNode(jsonPlayerColor(object->tempOwner));
 	node["position"] = jsonPosition(object->visitablePos());
 	node["passableForPlayer"] = JsonNode(object->passableFor(player));
 	return node;
+}
+
+bool isPlanObjectTarget(const CGObjectInstance * object, PlayerColor player)
+{
+	const auto * hero = dynamic_cast<const CGHeroInstance *>(object);
+	if(hero && hero->tempOwner == player)
+		return false;
+
+	return true;
 }
 
 void addVisibleObjectFromId(JsonNode & objects, std::set<int32_t> & seenObjects, const CCallback & callback, ObjectInstanceID id, PlayerColor player, const CGHeroInstance * contextHero)
@@ -2201,7 +2223,9 @@ JsonNode CMcpPlayerInterface::makeMovementOptionsJson(const JsonNode & arguments
 				pathNode->action == EPathNodeAction::BLOCKING_VISIT ||
 				pathNode->action == EPathNodeAction::TELEPORT_BLOCKING_VISIT ||
 				pathNode->action == EPathNodeAction::TELEPORT_BATTLE;
-			if(isObjectAction && seenTargetObjects.insert(topObject->id.getNum()).second)
+			if(isObjectAction
+				&& isPlanObjectTarget(topObject, playerID)
+				&& seenTargetObjects.insert(topObject->id.getNum()).second)
 			{
 				JsonNode target;
 				target["object"] = compact ? jsonCompactMapObject(topObject, playerID, hero) : jsonMapObject(topObject, playerID, hero);

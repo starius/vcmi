@@ -407,12 +407,7 @@ function Script.planDay(input)
     assignRoles(input, memory)
 
     if hasFailures(input.progress) then
-        return {
-            status = "fallback",
-            memory = memory,
-            actions = {},
-            intent = "Scripted action failed; delegate the rest of the turn."
-        }
+        memory.lastFailure = "replanning after failed action"
     end
 
     local actions = {}

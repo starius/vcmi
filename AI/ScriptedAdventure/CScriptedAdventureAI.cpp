@@ -28,13 +28,18 @@
 #include "../../lib/mapObjects/army/CStackInstance.h"
 #include "../../lib/networkPacks/PacksForClient.h"
 #include "../../lib/networkPacks/PacksForServer.h"
+#include "../../lib/networkPacks/SaveLocalState.h"
 #include "../../lib/pathfinder/CGPathNode.h"
 #include "../../lib/pathfinder/PathfinderOptions.h"
+#include "../../lib/serializer/CTypeList.h"
 #include "../../luascript/LuaAdventureScriptRunner.h"
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <cmath>
 #include <fstream>
+#include <limits>
 #include <set>
 #include <shared_mutex>
 #include <sstream>
@@ -54,9 +59,22 @@ bool hasField(const JsonNode & node, const std::string & field)
 
 int32_t readInteger(const JsonNode & node, const std::string & field)
 {
-	if(!node[field].isNumber() || node[field].getType() != JsonNode::JsonType::DATA_INTEGER)
+	if(!node[field].isNumber())
 		throw std::invalid_argument("Missing or non-integer script action field: " + field);
-	return static_cast<int32_t>(node[field].Integer());
+
+	if(node[field].getType() == JsonNode::JsonType::DATA_INTEGER)
+		return static_cast<int32_t>(node[field].Integer());
+
+	const double value = node[field].Float();
+	const double integralValue = std::trunc(value);
+	if(!std::isfinite(value)
+		|| value != integralValue
+		|| value < static_cast<double>(std::numeric_limits<int32_t>::min())
+		|| value > static_cast<double>(std::numeric_limits<int32_t>::max()))
+	{
+		throw std::invalid_argument("Missing or non-integer script action field: " + field);
+	}
+	return static_cast<int32_t>(integralValue);
 }
 
 int32_t readInteger(const JsonNode & node, const std::string & field, int32_t defaultValue)
@@ -123,6 +141,37 @@ std::string jsonText(std::string value)
 	}
 	return value;
 }
+
+std::string jsonPlayerColor(PlayerColor color)
+{
+	if(color == PlayerColor::UNFLAGGABLE)
+		return "unflaggable";
+	if(color == PlayerColor::CANNOT_DETERMINE)
+		return "cannot_determine";
+
+	return color.toString();
+}
+
+class ScopedCallbackWaitMode
+{
+	std::shared_ptr<CCallback> callback;
+	bool previousWaitTillRealize;
+
+public:
+	ScopedCallbackWaitMode(std::shared_ptr<CCallback> callback, bool waitTillRealize)
+		: callback(std::move(callback))
+		, previousWaitTillRealize(this->callback ? this->callback->waitTillRealize : false)
+	{
+		if(this->callback)
+			this->callback->waitTillRealize = waitTillRealize;
+	}
+
+	~ScopedCallbackWaitMode()
+	{
+		if(callback)
+			callback->waitTillRealize = previousWaitTillRealize;
+	}
+};
 
 JsonNode jsonPosition(const int3 & position)
 {
@@ -246,6 +295,15 @@ JsonNode jsonPositions(const FowTilesType & positions, size_t maxPositions)
 	return node;
 }
 
+JsonNode jsonPositions(const std::vector<int3> & positions)
+{
+	JsonNode node;
+	node.Vector();
+	for(const int3 & position : positions)
+		node.Vector().push_back(jsonPosition(position));
+	return node;
+}
+
 std::string makeRouteId(
 	int32_t heroId,
 	const int3 & start,
@@ -314,7 +372,7 @@ JsonNode jsonMapObject(const CGObjectInstance * object, PlayerColor player, cons
 	node["subtype"] = JsonNode(jsonText(object->getSubtypeName()));
 	node["name"] = JsonNode(jsonText(object->getObjectName()));
 	node["hoverText"] = JsonNode(jsonText(contextHero ? object->getHoverText(contextHero) : object->getHoverText(player)));
-	node["owner"] = JsonNode(object->tempOwner.toString());
+	node["owner"] = JsonNode(jsonPlayerColor(object->tempOwner));
 	node["position"] = jsonPosition(object->visitablePos());
 	node["passableForPlayer"] = JsonNode(object->passableFor(player));
 	return node;
@@ -326,7 +384,7 @@ JsonNode jsonHero(const CGHeroInstance * hero)
 	node["id"] = JsonNode(hero->id.getNum());
 	node["name"] = JsonNode(jsonText(hero->getNameTranslated()));
 	node["position"] = jsonPosition(hero->visitablePos());
-	node["owner"] = JsonNode(hero->tempOwner.toString());
+	node["owner"] = JsonNode(jsonPlayerColor(hero->tempOwner));
 	node["level"] = JsonNode(static_cast<int32_t>(hero->level));
 	node["mana"] = JsonNode(hero->mana);
 	node["manaLimit"] = JsonNode(hero->manaLimit());
@@ -355,6 +413,8 @@ JsonNode jsonRecruitOption(const CGDwelling * dwelling, const CArmedInstance * d
 	ResourceSet spendableResources = resources;
 	const int32_t affordable = creature ? spendableResources / creature->getFullRecruitCost() : available;
 	const int32_t amount = std::min(available, affordable);
+	if(destination && destination->stacksCount() >= GameConstants::ARMY_SIZE && !destination->getSlotFor(creatureID).validSlot())
+		return node;
 
 	node["source_id"] = JsonNode(dwelling->id.getNum());
 	node["destination_id"] = JsonNode(destination ? destination->id.getNum() : dwelling->id.getNum());
@@ -381,7 +441,7 @@ JsonNode jsonTown(const CGTownInstance * town, const ResourceSet & resources)
 	node["id"] = JsonNode(town->id.getNum());
 	node["name"] = JsonNode(jsonText(town->getNameTranslated()));
 	node["position"] = jsonPosition(town->visitablePos());
-	node["owner"] = JsonNode(town->tempOwner.toString());
+	node["owner"] = JsonNode(jsonPlayerColor(town->tempOwner));
 	node["fortLevel"] = JsonNode(static_cast<int32_t>(town->fortLevel()));
 	node["visitingHeroId"] = jsonObjectId(town->getVisitingHero());
 	node["garrisonHeroId"] = jsonObjectId(town->getGarrisonHero());
@@ -391,12 +451,15 @@ JsonNode jsonTown(const CGTownInstance * town, const ResourceSet & resources)
 	for(const BuildingID & building : town->getBuildings())
 		node["buildings"].Vector().push_back(JsonNode(building.getNum()));
 	node["recruitOptions"].Vector();
-	const CArmedInstance * destination = town->getUpperArmy();
-	for(int32_t level = 0; level < static_cast<int32_t>(town->creatures.size()); ++level)
+	if(!town->getVisitingHero())
 	{
-		JsonNode option = jsonRecruitOption(town, destination, level, resources);
-		if(option.isStruct() && option["available"].Integer() > 0)
-			node["recruitOptions"].Vector().push_back(option);
+		const CArmedInstance * destination = town->getUpperArmy();
+		for(int32_t level = 0; level < static_cast<int32_t>(town->creatures.size()); ++level)
+		{
+			JsonNode option = jsonRecruitOption(town, destination, level, resources);
+			if(option.isStruct() && option["available"].Integer() > 0)
+				node["recruitOptions"].Vector().push_back(option);
+		}
 	}
 	return node;
 }
@@ -423,6 +486,15 @@ bool isObjectPathAction(EPathNodeAction action)
 		|| action == EPathNodeAction::BLOCKING_VISIT
 		|| action == EPathNodeAction::TELEPORT_BLOCKING_VISIT
 		|| action == EPathNodeAction::TELEPORT_BATTLE;
+}
+
+bool isScriptObjectTarget(const CGObjectInstance * object, PlayerColor player)
+{
+	const auto * hero = dynamic_cast<const CGHeroInstance *>(object);
+	if(hero && hero->tempOwner == player)
+		return false;
+
+	return true;
 }
 
 }
@@ -524,6 +596,42 @@ void CScriptedAdventureAI::heroVisitsTown(const CGHeroInstance * hero, const CGT
 	AIGateway::heroVisitsTown(hero, town);
 }
 
+void CScriptedAdventureAI::heroExchangeStarted(ObjectInstanceID hero1, ObjectInstanceID hero2, QueryID query)
+{
+	(void)hero1;
+	(void)hero2;
+	status.addQuery(query, "ScriptedAdventureAI hero exchange dialog");
+	executeActionAsync("scriptedHeroExchangeStarted", [this, query]()
+	{
+		answerQuery(query, 0);
+	});
+}
+
+void CScriptedAdventureAI::showGarrisonDialog(const CArmedInstance * up, const CGHeroInstance * down, bool removableUnits, QueryID queryID, const MetaString & customTitle)
+{
+	(void)up;
+	(void)down;
+	(void)removableUnits;
+	(void)customTitle;
+	status.addQuery(queryID, "ScriptedAdventureAI garrison dialog");
+	executeActionAsync("scriptedShowGarrisonDialog", [this, queryID]()
+	{
+		answerQuery(queryID, 0);
+	});
+}
+
+void CScriptedAdventureAI::showRecruitmentDialog(const CGDwelling * dwelling, const CArmedInstance * dst, int level, QueryID queryID)
+{
+	(void)dwelling;
+	(void)dst;
+	(void)level;
+	status.addQuery(queryID, "ScriptedAdventureAI recruitment dialog");
+	executeActionAsync("scriptedShowRecruitmentDialog", [this, queryID]()
+	{
+		answerQuery(queryID, 0);
+	});
+}
+
 void CScriptedAdventureAI::tileRevealed(const FowTilesType & pos)
 {
 	JsonNode data;
@@ -557,6 +665,99 @@ void CScriptedAdventureAI::objectRemoved(const CGObjectInstance * obj, const Pla
 	}
 
 	AIGateway::objectRemoved(obj, initiator);
+}
+
+void CScriptedAdventureAI::requestSent(const CPackForServer * pack, int requestID)
+{
+	AIGateway::requestSent(pack, requestID);
+
+	std::lock_guard lock(requestMutex);
+	if(pendingRequest && pack && pendingRequest->requestID < 0 && pendingRequest->typeName == typeid(*pack).name())
+	{
+		pendingRequest->requestID = requestID;
+		requestCv.notify_all();
+	}
+}
+
+void CScriptedAdventureAI::requestRealized(PackageApplied * pa)
+{
+	AIGateway::requestRealized(pa);
+
+	std::lock_guard lock(requestMutex);
+	if(pendingRequest && pa
+		&& ((pendingRequest->requestID >= 0 && pendingRequest->requestID == static_cast<int>(pa->requestID))
+			|| (pendingRequest->requestID < 0 && pendingRequest->expectedPackType != 0 && pendingRequest->expectedPackType == pa->packType)))
+	{
+		pendingRequest->requestID = static_cast<int>(pa->requestID);
+		pendingRequest->packType = pa->packType;
+		pendingRequest->realized = true;
+		pendingRequest->applied = pa->result;
+		requestCv.notify_all();
+	}
+}
+
+CScriptedAdventureAI::RequestWaitResult CScriptedAdventureAI::submitAndWaitForRequest(const std::type_info & requestType, uint16_t expectedPackType, const std::function<void()> & submit)
+{
+	PendingRequest request;
+	request.token = ++nextRequestToken;
+	request.typeName = requestType.name();
+	request.expectedPackType = expectedPackType;
+
+	{
+		std::lock_guard lock(requestMutex);
+		pendingRequest = request;
+	}
+
+	submit();
+
+	std::unique_lock lock(requestMutex);
+	requestCv.wait_for(lock, std::chrono::seconds(10), [&]
+	{
+		return pendingRequest
+			&& pendingRequest->token == request.token
+			&& (pendingRequest->requestID >= 0 || pendingRequest->realized);
+	});
+
+	if(!pendingRequest || pendingRequest->token != request.token || (pendingRequest->requestID < 0 && !pendingRequest->realized))
+	{
+		pendingRequest.reset();
+		return {};
+	}
+
+	requestCv.wait_for(lock, std::chrono::seconds(10), [&]
+	{
+		return pendingRequest && pendingRequest->token == request.token && pendingRequest->realized;
+	});
+
+	RequestWaitResult result;
+	if(pendingRequest && pendingRequest->token == request.token)
+	{
+		result.sent = pendingRequest->requestID >= 0;
+		result.realized = pendingRequest->realized;
+		result.applied = pendingRequest->applied;
+		result.requestID = pendingRequest->requestID;
+		result.packType = pendingRequest->packType;
+		pendingRequest.reset();
+	}
+	return result;
+}
+
+JsonNode CScriptedAdventureAI::jsonRequestWaitResult(const RequestWaitResult & request) const
+{
+	JsonNode result;
+	result["ok"] = JsonNode(request.sent && request.realized && request.applied);
+	result["sent"] = JsonNode(request.sent);
+	result["realized"] = JsonNode(request.realized);
+	result["applied"] = JsonNode(request.applied);
+	result["requestId"] = JsonNode(request.requestID);
+	result["packType"] = JsonNode(static_cast<int32_t>(request.packType));
+	if(request.sent && !request.realized)
+		result["error"] = JsonNode("Timed out waiting for server request result");
+	else if(!request.sent)
+		result["error"] = JsonNode("No matching request was sent");
+	else if(!request.applied)
+		result["error"] = JsonNode("Server rejected the request");
+	return result;
 }
 
 void CScriptedAdventureAI::makeScriptedTurn()
@@ -672,9 +873,8 @@ bool CScriptedAdventureAI::tryMakeScriptedTurn()
 				failed.Vector().push_back(actionResult);
 				for(size_t remainingIndex = actionIndex + 1; remainingIndex < output.actions.size(); ++remainingIndex)
 					remaining.Vector().push_back(output.actions[remainingIndex]);
-				progress = makeProgressJson(executed, failed, remaining);
-				fallbackToNullkiller(e.what());
-				return false;
+				stopped = true;
+				break;
 			}
 
 			if(actionResult["ok"].isBool() && !actionResult["ok"].Bool())
@@ -682,9 +882,8 @@ bool CScriptedAdventureAI::tryMakeScriptedTurn()
 				failed.Vector().push_back(actionResult);
 				for(size_t remainingIndex = actionIndex + 1; remainingIndex < output.actions.size(); ++remainingIndex)
 					remaining.Vector().push_back(output.actions[remainingIndex]);
-				progress = makeProgressJson(executed, failed, remaining);
-				fallbackToNullkiller(actionResult["error"].isString() ? actionResult["error"].String() : "script action failed");
-				return false;
+				stopped = true;
+				break;
 			}
 
 			executed.Vector().push_back(actionResult);
@@ -726,6 +925,7 @@ bool CScriptedAdventureAI::tryMakeScriptedTurn()
 
 bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode & actionResult)
 {
+	ScopedCallbackWaitMode nonBlockingCallback(cc, false);
 	const std::string type = readString(action, "type");
 	actionResult["type"] = JsonNode(type);
 
@@ -739,11 +939,17 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		if(cc->canBuildStructure(town, buildingID) != EBuildingState::ALLOWED)
 			throw std::invalid_argument("Building is not currently allowed");
 
-		buildStructure(town, buildingID);
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(BuildStructure), CTypeList::getInstance().getTypeID<BuildStructure>(nullptr), [&]
+		{
+			buildStructure(town, buildingID);
+		});
 		waitTillFree();
 		actionResult["town_id"] = JsonNode(town->id.getNum());
 		actionResult["building_id"] = JsonNode(buildingID.getNum());
-		actionResult["ok"] = JsonNode(true);
+		actionResult["request"] = jsonRequestWaitResult(request);
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Build request was rejected by server" : "Build request was not realized by server");
 		return true;
 	}
 
@@ -767,6 +973,8 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		const CreatureID creatureID = hasField(action, "creature_id") ? CreatureID(readInteger(action, "creature_id")) : dwelling->creatures[level].second.back();
 		if(!vstd::contains(dwelling->creatures[level].second, creatureID))
 			throw std::invalid_argument("creature_id is not available at this recruitment level");
+		if(destination->stacksCount() >= GameConstants::ARMY_SIZE && !destination->getSlotFor(creatureID).validSlot())
+			throw std::invalid_argument("No free army slot for recruited creature");
 
 		int32_t amount = readInteger(action, "amount", static_cast<int32_t>(dwelling->creatures[level].first));
 		amount = std::clamp<int32_t>(amount, 0, static_cast<int32_t>(dwelling->creatures[level].first));
@@ -775,14 +983,20 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		if(amount <= 0)
 			throw std::invalid_argument("No recruitable or affordable creatures for this action");
 
-		cc->recruitCreatures(dwelling, destination, creatureID, amount, level);
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(RecruitCreatures), CTypeList::getInstance().getTypeID<RecruitCreatures>(nullptr), [&]
+		{
+			cc->recruitCreatures(dwelling, destination, creatureID, amount, level);
+		});
 		waitTillFree();
 		actionResult["source_id"] = JsonNode(dwelling->id.getNum());
 		actionResult["destination_id"] = JsonNode(destination->id.getNum());
 		actionResult["level"] = JsonNode(level);
 		actionResult["creature_id"] = JsonNode(creatureID.getNum());
 		actionResult["amount"] = JsonNode(amount);
-		actionResult["ok"] = JsonNode(true);
+		actionResult["request"] = jsonRequestWaitResult(request);
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Recruit request was rejected by server" : "Recruit request was not realized by server");
 		return true;
 	}
 
@@ -798,6 +1012,8 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 			const CGObjectInstance * object = cc->getObj(ObjectInstanceID(readInteger(action, "object_id")), false);
 			if(!object)
 				throw std::invalid_argument("Unknown or not visible object_id");
+			if(!isScriptObjectTarget(object, playerID))
+				throw std::invalid_argument("visit_object cannot target an owned hero exchange");
 			destination = object->visitablePos();
 			actionResult["object_id"] = JsonNode(object->id.getNum());
 		}
@@ -811,15 +1027,20 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		if(!route.ok)
 			throw std::invalid_argument(route.error);
 
-		const bool moved = moveHeroToTile(route.destination, NK2AI::HeroPtr(hero, cc.get()));
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(MoveHero), CTypeList::getInstance().getTypeID<MoveHero>(nullptr), [&]
+		{
+			cc->moveHero(hero, route.requestPath, route.transit, route.layer);
+		});
 		waitTillFree();
 		actionResult["hero_id"] = JsonNode(hero->id.getNum());
 		actionResult["route_id"] = JsonNode(route.routeID);
 		actionResult["destination"] = jsonPosition(route.destination);
-		actionResult["ok"] = JsonNode(moved);
-		if(!moved)
-			actionResult["error"] = JsonNode("Hero movement did not reach requested destination");
-		return moved && type != "visit_object" && !route.stopAfterMove;
+		actionResult["submittedPath"] = jsonPositions(route.requestPath);
+		actionResult["request"] = jsonRequestWaitResult(request);
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Move request was rejected by server" : "Move request was not realized by server");
+		return request.applied && type != "visit_object" && !route.stopAfterMove;
 	}
 
 	if(type == "answer_query")
@@ -836,8 +1057,14 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 
 	if(type == "end_turn")
 	{
-		actionResult["ok"] = JsonNode(true);
-		endTurn();
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(EndTurn), CTypeList::getInstance().getTypeID<EndTurn>(nullptr), [&]
+		{
+			cc->endTurn();
+		});
+		actionResult["request"] = jsonRequestWaitResult(request);
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "End turn request was rejected by server" : "End turn request was not realized by server");
 		return false;
 	}
 
@@ -919,14 +1146,17 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 			}
 		}
 
-		const CArmedInstance * destination = town->getUpperArmy();
-		for(int32_t level = 0; level < static_cast<int32_t>(town->creatures.size()); ++level)
+		if(!town->getVisitingHero())
 		{
-			JsonNode option = jsonRecruitOption(town, destination, level, resources);
-			if(option.isStruct() && option["amount"].Integer() > 0)
+			const CArmedInstance * destination = town->getUpperArmy();
+			for(int32_t level = 0; level < static_cast<int32_t>(town->creatures.size()); ++level)
 			{
-				actionSpace["recruitOptions"].Vector().push_back(option);
-				actionSpace["recommendedActions"].Vector().push_back(option["planAction"]);
+				JsonNode option = jsonRecruitOption(town, destination, level, resources);
+				if(option.isStruct() && option["amount"].Integer() > 0)
+				{
+					actionSpace["recruitOptions"].Vector().push_back(option);
+					actionSpace["recommendedActions"].Vector().push_back(option["planAction"]);
+				}
 			}
 		}
 	}
@@ -1007,7 +1237,10 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 			movementCandidates.push_back(MovementCandidate{option, pathNode->cost, static_cast<int32_t>(pathNode->turns), position.x, position.y, position.z});
 
 			const CGObjectInstance * topObject = cc->getTopObj(position);
-			if(topObject && isObjectPathAction(pathNode->action) && seenTargetObjects.insert(topObject->id.getNum()).second)
+			if(topObject
+				&& isObjectPathAction(pathNode->action)
+				&& isScriptObjectTarget(topObject, playerID)
+				&& seenTargetObjects.insert(topObject->id.getNum()).second)
 			{
 				JsonNode target;
 				target["object"] = jsonMapObject(topObject, playerID, hero);
@@ -1259,13 +1492,49 @@ CScriptedAdventureAI::RoutePlan CScriptedAdventureAI::makeRoutePlan(
 		return result;
 	}
 
+	CGPath path;
+	if(!paths.getPath(path, destination, pathNode->layer))
+	{
+		result.error = "Could not reconstruct path to destination";
+		return result;
+	}
+
 	result.destination = destination;
 	result.layer = pathNode->layer;
+	result.transit = pathNode->layer == EPathfindingLayer::AIR || pathNode->layer == EPathfindingLayer::WATER;
 	result.stopAfterMove = pathNode->isTeleportAction();
 	result.routeID = makeRouteId(hero->id.getNum(), hero->visitablePos(), destination, pathNode->layer, pathNode->moveRemains);
 	if(expectedRouteID && *expectedRouteID != result.routeID)
 	{
 		result.error = "route_id is stale for the hero current position or destination";
+		return result;
+	}
+
+	EPathfindingLayer currentLayer = pathNode->layer;
+	for(auto it = path.nodes.rbegin(); it != path.nodes.rend(); ++it)
+	{
+		const CGPathNode & node = *it;
+		if(node.coord == hero->visitablePos())
+			continue;
+		if(node.isTeleportAction())
+			break;
+		if(node.turns != 0)
+			break;
+		if(node.layer != currentLayer)
+			break;
+
+		result.requestPath.push_back(hero->convertFromVisitablePos(node.coord));
+
+		const int3 guardingPosition = cc->guardingCreaturePosition(node.coord);
+		if(guardingPosition.isValid())
+			break;
+		if(!cc->getVisitableObjs(node.coord).empty())
+			break;
+	}
+
+	if(result.requestPath.empty())
+	{
+		result.error = "Path has no executable movement steps";
 		return result;
 	}
 
@@ -1424,9 +1693,18 @@ void CScriptedAdventureAI::saveScriptMemoryToLocalState()
 			localState.Struct();
 
 		localState[SCRIPT_MEMORY_LOCAL_STATE_KEY] = persistedState;
-		cc->saveLocalState(localState);
-		lastPersistedScriptState = compactState;
-		logAi->debug("ScriptedAdventureAI persisted script memory to player local state.");
+		ScopedCallbackWaitMode nonBlockingCallback(cc, false);
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(SaveLocalState), CTypeList::getInstance().getTypeID<SaveLocalState>(nullptr), [&]
+		{
+			cc->saveLocalState(localState);
+		});
+		if(request.applied)
+		{
+			lastPersistedScriptState = compactState;
+			logAi->debug("ScriptedAdventureAI persisted script memory to player local state.");
+		}
+		else
+			logAi->warn("ScriptedAdventureAI local memory persistence was not applied by server.");
 	}
 	catch(const std::exception & e)
 	{
@@ -1500,6 +1778,7 @@ void CScriptedAdventureAI::writeTraceEvent(const std::string & label, const Json
 		trace["player"] = JsonNode(playerID.toString());
 		trace["script"] = JsonNode(scriptPath);
 		trace["payload"] = payload;
+		trace.setModScope("", true);
 		stream << trace.toCompactString();
 	}
 	catch(const std::exception & e)

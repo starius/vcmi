@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -36,7 +37,7 @@ def command_for_run(args: argparse.Namespace, game_map: str, run_dir: Path) -> l
 
 
 def trace_dir_for_run(run_dir: Path) -> Path:
-    return run_dir / "logs" / "scriptedAdventureAI"
+    return run_dir / "cache" / "vcmi" / "scriptedAdventureAI"
 
 
 def run_one(args: argparse.Namespace, game_map: str, run_index: int) -> dict[str, Any]:
@@ -47,6 +48,8 @@ def run_one(args: argparse.Namespace, game_map: str, run_index: int) -> dict[str
     run_dir.mkdir(parents=True, exist_ok=True)
 
     command = command_for_run(args, game_map, run_dir)
+    env = os.environ.copy()
+    env["XDG_CACHE_HOME"] = str(run_dir / "cache")
     started = time.monotonic()
     timed_out = False
     return_code: int | None
@@ -59,6 +62,7 @@ def run_one(args: argparse.Namespace, game_map: str, run_index: int) -> dict[str
             completed = subprocess.run(
                 command,
                 cwd=args.cwd,
+                env=env,
                 stdout=stdout,
                 stderr=subprocess.STDOUT,
                 timeout=args.timeout,
@@ -91,7 +95,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run headless ScriptedAdventureAI matches and summarize traces.")
     parser.add_argument("--client", required=True, help="Path to vcmiclient.")
     parser.add_argument("--map", action="append", required=True, help="VCMI map resource path. Can be repeated.")
-    parser.add_argument("--ai", action="append", default=["ScriptedAdventureAI"], help="AI names for consecutive players.")
+    parser.add_argument("--ai", action="append", default=None, help="AI names for consecutive players.")
     parser.add_argument("--runs", type=int, default=1, help="Runs per map.")
     parser.add_argument("--testdays", type=int, default=0, help="Completed adventure days before the client exits.")
     parser.add_argument("--timeout", type=int, default=300, help="Seconds before stopping one run.")
@@ -101,6 +105,8 @@ def main() -> int:
     parser.add_argument("--extra-arg", action="append", default=[], help="Extra argument passed to vcmiclient.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable batch manifest.")
     args = parser.parse_args()
+    if args.ai is None:
+        args.ai = ["ScriptedAdventureAI"]
 
     args.output.mkdir(parents=True, exist_ok=True)
     results: list[dict[str, Any]] = []

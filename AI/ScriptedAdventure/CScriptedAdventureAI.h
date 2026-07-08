@@ -12,9 +12,12 @@
 #include "../Nullkiller2/AIGateway.h"
 #include "../../lib/ai/AdventureScript.h"
 
+#include <condition_variable>
 #include <deque>
+#include <functional>
 #include <mutex>
 #include <optional>
+#include <vector>
 
 VCMI_LIB_NAMESPACE_BEGIN
 namespace scripting
@@ -38,9 +41,14 @@ public:
 	void heroMoved(const TryMoveHero & details, bool verbose = true) override;
 	void heroCreated(const CGHeroInstance * hero) override;
 	void heroVisitsTown(const CGHeroInstance * hero, const CGTownInstance * town) override;
+	void heroExchangeStarted(ObjectInstanceID hero1, ObjectInstanceID hero2, QueryID query) override;
+	void showGarrisonDialog(const CArmedInstance * up, const CGHeroInstance * down, bool removableUnits, QueryID queryID, const MetaString & customTitle) override;
+	void showRecruitmentDialog(const CGDwelling * dwelling, const CArmedInstance * dst, int level, QueryID queryID) override;
 	void tileRevealed(const FowTilesType & pos) override;
 	void newObject(const CGObjectInstance * obj) override;
 	void objectRemoved(const CGObjectInstance * obj, const PlayerColor & initiator) override;
+	void requestSent(const CPackForServer * pack, int requestID) override;
+	void requestRealized(PackageApplied * pa) override;
 
 private:
 	struct ScriptConfig
@@ -59,6 +67,28 @@ private:
 		std::string routeID;
 		int3 destination;
 		EPathfindingLayer layer = EPathfindingLayer::WRONG;
+		bool transit = false;
+		std::vector<int3> requestPath;
+	};
+
+	struct PendingRequest
+	{
+		uint64_t token = 0;
+		std::string typeName;
+		uint16_t expectedPackType = 0;
+		int requestID = -1;
+		bool realized = false;
+		bool applied = false;
+		uint16_t packType = 0;
+	};
+
+	struct RequestWaitResult
+	{
+		bool sent = false;
+		bool realized = false;
+		bool applied = false;
+		int requestID = -1;
+		uint16_t packType = 0;
 	};
 
 	JsonNode scriptMemory;
@@ -76,10 +106,16 @@ private:
 	std::deque<JsonNode> scriptUpdateJournal;
 	uint64_t scriptUpdateRevision = 0;
 	size_t maxScriptUpdateJournal = 256;
+	std::mutex requestMutex;
+	std::condition_variable requestCv;
+	std::optional<PendingRequest> pendingRequest;
+	uint64_t nextRequestToken = 0;
 
 	void makeScriptedTurn();
 	bool tryMakeScriptedTurn();
 	bool executeScriptAction(const JsonNode & action, JsonNode & actionResult);
+	RequestWaitResult submitAndWaitForRequest(const std::type_info & requestType, uint16_t expectedPackType, const std::function<void()> & submit);
+	JsonNode jsonRequestWaitResult(const RequestWaitResult & request) const;
 	JsonNode makeScriptInputState();
 	JsonNode makeScriptActionSpace() const;
 	JsonNode makeScriptAnalysis() const;

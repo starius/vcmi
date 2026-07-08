@@ -22,11 +22,12 @@ end
 local function initMemory(input)
     local memory = input.memory or {}
     if memory.version ~= 1 or memory.profile ~= "explorer" then
-        memory = { version = 1, profile = "explorer", visitedTargets = {} }
+        memory = { version = 1, profile = "explorer", visitedTargets = {}, blockedTargets = {} }
     end
     memory.calls = (memory.calls or 0) + 1
     memory.lastDay = input.state and input.state.day or memory.lastDay
     memory.visitedTargets = memory.visitedTargets or {}
+    memory.blockedTargets = memory.blockedTargets or {}
     return memory
 end
 
@@ -43,6 +44,12 @@ local function markProgress(memory, progress)
             memory.visitedTargets[tostring(item.object_id)] = true
         end
     end
+    for _, item in ipairs(array(progress and progress.failed)) do
+        if item.object_id then
+            local key = tostring(item.object_id)
+            memory.blockedTargets[key] = (memory.blockedTargets[key] or 0) + 1
+        end
+    end
 end
 
 local function scoreTarget(target, memory)
@@ -54,6 +61,9 @@ local function scoreTarget(target, memory)
 
     if memory.visitedTargets[objectId] then
         score = score - 500
+    end
+    if memory.blockedTargets[objectId] then
+        score = score - memory.blockedTargets[objectId] * 500
     end
     if path.pathAction == "battle" or path.pathAction == "teleport_battle" then
         score = score - 500
@@ -118,7 +128,7 @@ function Script.planDay(input)
     local memory = initMemory(input)
     markProgress(memory, input.progress)
     if failed(input.progress) then
-        return { status = "fallback", memory = memory, actions = {}, intent = "explorer fallback after failed action" }
+        memory.lastFailure = "replanning after failed action"
     end
 
     local actions = {}
