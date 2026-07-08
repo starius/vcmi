@@ -56,10 +56,10 @@ struct AdventureScriptOutput
 	std::optional<double> confidence;
 };
 
-std::string adventureScriptStatusToString(AdventureScriptStatus status);
-AdventureScriptStatus adventureScriptStatusFromString(const std::string & status);
+std::string DLL_LINKAGE adventureScriptStatusToString(AdventureScriptStatus status);
+AdventureScriptStatus DLL_LINKAGE adventureScriptStatusFromString(const std::string & status);
 
-AdventureScriptOutput parseAdventureScriptOutput(const JsonNode & output, const AdventureScriptLimits & limits = {});
-JsonNode makeAdventureScriptOutputJson(const AdventureScriptOutput & output);
+AdventureScriptOutput DLL_LINKAGE parseAdventureScriptOutput(const JsonNode & output, const AdventureScriptLimits & limits = {});
+JsonNode DLL_LINKAGE makeAdventureScriptOutputJson(const AdventureScriptOutput & output);
 
 }

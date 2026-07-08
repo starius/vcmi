@@ -124,12 +124,6 @@ JsonNode makeObjectSchema(std::initializer_list<std::pair<const char *, const ch
 	return schema;
 }
 
-void setRequired(JsonNode & schema, std::initializer_list<const char *> fields)
-{
-	for(const char * field : fields)
-		schema["required"].Vector().push_back(JsonNode(field));
-}
-
 JsonNode makeReachableSchema()
 {
 	JsonNode schema = makeObjectSchema({

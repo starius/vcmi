@@ -23,10 +23,10 @@ namespace AI
 /// round-trip script-owned long-term context without interpreting it as game rules state, execute the returned
 /// daily actions until completion or partial progress, allow re-entry when an action is invalid or produces an
 /// unknown outcome, and fall back to the native adventure AI if the script fails.
-JsonNode makeExecutePlanSchema();
+JsonNode DLL_LINKAGE makeExecutePlanSchema();
 
-std::vector<std::string> acceptedPlanActionTypes();
-std::string canonicalPlanActionType(std::string type);
-JsonNode normalizePlanAction(const JsonNode & action);
+std::vector<std::string> DLL_LINKAGE acceptedPlanActionTypes();
+std::string DLL_LINKAGE canonicalPlanActionType(std::string type);
+JsonNode DLL_LINKAGE normalizePlanAction(const JsonNode & action);
 
 }

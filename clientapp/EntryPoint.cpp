@@ -145,6 +145,7 @@ int main(int argc, char * argv[])
 		("version,v", "display version information and exit")
 		("testmap", po::value<std::string>(), "")
 		("testsave", po::value<std::string>(), "")
+		("testdays", po::value<si64>(), "with --testmap/--testsave, stop after N completed adventure days")
 		("logLocation", po::value<std::string>(), "new location for log files")
 		("spectate,s", "enable spectator interface for AI-only games")
 		("spectate-ignore-hero", "wont follow heroes on adventure map")
@@ -276,6 +277,7 @@ int main(int argc, char * argv[])
 
 	// Init special testing settings
 	setSettingInteger("session/serverport", "serverport", 0);
+	setSettingInteger("session/testdays", "testdays", 0);
 	setSettingInteger("general/saveFrequency", "savefrequency", 1);
 
 	// Initialize logging based on settings

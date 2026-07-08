@@ -161,6 +161,94 @@ TEST(LuaAdventureScriptRunnerTest, DefaultAdventureScriptScoresCandidates)
 	EXPECT_NE(output.intent->find("City Hall"), std::string::npos);
 }
 
+TEST(LuaAdventureScriptRunnerTest, DefaultAdventureScriptMovesThreatenedHeroAway)
+{
+	AI::AdventureScriptInput input = makeInput();
+	input.state["day"] = JsonNode(2);
+
+	JsonNode alert;
+	alert["level"] = JsonNode("critical");
+	alert["hero_id"] = JsonNode(5);
+	alert["distanceSquared"] = JsonNode(4);
+	alert["enemyPosition"]["x"] = JsonNode(0);
+	alert["enemyPosition"]["y"] = JsonNode(0);
+	alert["enemyPosition"]["z"] = JsonNode(0);
+	input.analysis["heroThreatAlerts"].Vector().push_back(alert);
+
+	JsonNode movement;
+	movement["hero_id"] = JsonNode(5);
+	movement["hero"] = JsonNode("Scout");
+	movement["safe"] = JsonNode(true);
+	movement["value"] = JsonNode(100.0);
+	movement["path"]["destination"]["x"] = JsonNode(8);
+	movement["path"]["destination"]["y"] = JsonNode(8);
+	movement["path"]["destination"]["z"] = JsonNode(0);
+	movement["path"]["isTeleportAction"] = JsonNode(false);
+	movement["planAction"]["type"] = JsonNode("move_hero");
+	movement["planAction"]["hero_id"] = JsonNode(5);
+	movement["planAction"]["x"] = JsonNode(8);
+	movement["planAction"]["y"] = JsonNode(8);
+	movement["planAction"]["z"] = JsonNode(0);
+	movement["planAction"]["route_id"] = JsonNode("escape");
+	input.actionSpace["movementOptions"].Vector().push_back(movement);
+
+	scripting::LuaAdventureScriptRunner runner("scripts/ai/defaultAdventure.lua", readAdventureScript("scripts/ai/defaultAdventure.lua"));
+	const AI::AdventureScriptOutput output = runner.planDay(input);
+
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::NEED_REPLAN);
+	ASSERT_EQ(output.actions.size(), 1);
+	EXPECT_EQ(output.actions[0]["type"].String(), "move_hero");
+	EXPECT_EQ(output.actions[0]["route_id"].String(), "escape");
+	ASSERT_TRUE(output.intent);
+	EXPECT_NE(output.intent->find("move threatened hero"), std::string::npos);
+}
+
+TEST(LuaAdventureScriptRunnerTest, DefaultAdventureScriptPrefersSafeObjectTarget)
+{
+	AI::AdventureScriptInput input = makeInput();
+	input.state["day"] = JsonNode(2);
+
+	JsonNode unsafeTarget;
+	unsafeTarget["object"]["id"] = JsonNode(77);
+	unsafeTarget["object"]["name"] = JsonNode("Gold pile");
+	unsafeTarget["object"]["type"] = JsonNode("Resource");
+	unsafeTarget["path"]["cost"].Float() = 0.1;
+	unsafeTarget["path"]["pathAction"] = JsonNode("battle");
+	unsafeTarget["path"]["isTeleportAction"] = JsonNode(false);
+	unsafeTarget["safe"] = JsonNode(false);
+	unsafeTarget["dangerRatio"] = JsonNode(3.0);
+	unsafeTarget["value"] = JsonNode(1000.0);
+	unsafeTarget["planAction"]["type"] = JsonNode("visit_object");
+	unsafeTarget["planAction"]["hero_id"] = JsonNode(5);
+	unsafeTarget["planAction"]["object_id"] = JsonNode(77);
+	unsafeTarget["planAction"]["route_id"] = JsonNode("unsafe");
+	input.actionSpace["reachableObjects"].Vector().push_back(unsafeTarget);
+
+	JsonNode safeTarget;
+	safeTarget["object"]["id"] = JsonNode(88);
+	safeTarget["object"]["name"] = JsonNode("Wood pile");
+	safeTarget["object"]["type"] = JsonNode("Resource");
+	safeTarget["path"]["cost"].Float() = 0.4;
+	safeTarget["path"]["pathAction"] = JsonNode("visit");
+	safeTarget["path"]["isTeleportAction"] = JsonNode(false);
+	safeTarget["safe"] = JsonNode(true);
+	safeTarget["dangerRatio"] = JsonNode(0.0);
+	safeTarget["value"] = JsonNode(500.0);
+	safeTarget["planAction"]["type"] = JsonNode("visit_object");
+	safeTarget["planAction"]["hero_id"] = JsonNode(5);
+	safeTarget["planAction"]["object_id"] = JsonNode(88);
+	safeTarget["planAction"]["route_id"] = JsonNode("safe");
+	input.actionSpace["reachableObjects"].Vector().push_back(safeTarget);
+
+	scripting::LuaAdventureScriptRunner runner("scripts/ai/defaultAdventure.lua", readAdventureScript("scripts/ai/defaultAdventure.lua"));
+	const AI::AdventureScriptOutput output = runner.planDay(input);
+
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::NEED_REPLAN);
+	ASSERT_EQ(output.actions.size(), 1);
+	EXPECT_EQ(output.actions[0]["type"].String(), "visit_object");
+	EXPECT_EQ(output.actions[0]["object_id"].Integer(), 88);
+}
+
 TEST(LuaAdventureScriptRunnerTest, BundledAdventureScriptVariantsRun)
 {
 	const std::vector<std::string> scripts = {

@@ -71,6 +71,7 @@ private:
 	size_t consecutiveScriptFailures = 0;
 	int disabledUntilDay = 0;
 	bool failureRecordedThisTurn = false;
+	std::string lastPersistedScriptState;
 	mutable std::mutex scriptUpdateMutex;
 	std::deque<JsonNode> scriptUpdateJournal;
 	uint64_t scriptUpdateRevision = 0;
@@ -88,6 +89,9 @@ private:
 	RoutePlan makeRoutePlan(const CGHeroInstance * hero, const int3 & destination, const std::optional<std::string> & expectedRouteID) const;
 	void loadConfig();
 	void applyConfig(const JsonNode & config, const std::string & sourceLabel);
+	void loadScriptMemoryFromLocalState();
+	void saveScriptMemoryToLocalState();
+	JsonNode makeScriptMemoryLocalState() const;
 	std::optional<std::string> getScriptSource();
 	std::optional<std::string> loadScriptSource() const;
 	std::unique_ptr<scripting::LuaAdventureScriptRunner> makeRunner(const std::string & source) const;

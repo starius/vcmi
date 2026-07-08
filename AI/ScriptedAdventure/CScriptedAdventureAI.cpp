@@ -45,6 +45,8 @@ namespace ScriptedAdventureAI
 namespace
 {
 
+const std::string SCRIPT_MEMORY_LOCAL_STATE_KEY = "scriptedAdventureAI";
+
 bool hasField(const JsonNode & node, const std::string & field)
 {
 	return node.isStruct() && node.Struct().find(field) != node.Struct().end();
@@ -274,6 +276,34 @@ JsonNode jsonPathNode(const CGPathNode & pathNode)
 	return node;
 }
 
+std::string riskLabel(uint64_t danger, double dangerRatio, bool safe)
+{
+	if(danger == 0)
+		return "none";
+	if(safe)
+		return "acceptable";
+	if(dangerRatio >= 1.5)
+		return "critical";
+	if(dangerRatio >= 1.0)
+		return "high";
+	return "risky";
+}
+
+JsonNode jsonRisk(const CGHeroInstance * hero, uint64_t danger, bool safe)
+{
+	const int64_t heroStrength = hero ? static_cast<int64_t>(hero->getArmyStrength()) : 0;
+	const double dangerRatio = static_cast<double>(danger) / std::max(1.0, static_cast<double>(heroStrength));
+
+	JsonNode node;
+	node["danger"] = JsonNode(static_cast<int64_t>(danger));
+	node["heroStrength"] = JsonNode(heroStrength);
+	node["dangerRatio"] = JsonNode(dangerRatio);
+	node["safe"] = JsonNode(safe);
+	node["risk"] = JsonNode(riskLabel(danger, dangerRatio, safe));
+	node["estimatedLoss"] = JsonNode(safe ? 0 : static_cast<int64_t>(danger));
+	return node;
+}
+
 JsonNode jsonMapObject(const CGObjectInstance * object, PlayerColor player, const CGHeroInstance * contextHero)
 {
 	JsonNode node;
@@ -408,6 +438,7 @@ void CScriptedAdventureAI::initGameInterface(std::shared_ptr<Environment> env, s
 {
 	AIGateway::initGameInterface(std::move(env), std::move(callback));
 	loadConfig();
+	loadScriptMemoryFromLocalState();
 }
 
 void CScriptedAdventureAI::yourTurn(QueryID queryID)
@@ -598,6 +629,7 @@ bool CScriptedAdventureAI::tryMakeScriptedTurn()
 
 		const AI::AdventureScriptOutput output = runner->planDay(input);
 		scriptMemory = output.memory;
+		saveScriptMemoryToLocalState();
 		if(scriptConfig.trace)
 		{
 			JsonNode trace;
@@ -942,12 +974,29 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 				continue;
 
 			const std::string routeID = makeRouteId(hero->id.getNum(), hero->visitablePos(), position, pathNode->layer, pathNode->moveRemains);
+			const uint64_t danger = nullkiller && nullkiller->dangerEvaluator ? nullkiller->dangerEvaluator->evaluateDanger(position, hero, true) : 0;
+			const bool safe = !danger || (nullkiller && nullkiller->settings && NK2AI::isSafeToVisit(hero, danger, nullkiller->settings->getSafeAttackRatio()));
+			const JsonNode risk = jsonRisk(hero, danger, safe);
+			const double dangerRatio = risk["dangerRatio"].Float();
+			const double estimatedValue = std::max(0.0, 1000.0 - pathNode->cost * 160.0 - dangerRatio * 350.0);
+			std::string reason = danger ? "reachable but guarded or dangerous" : "reachable this turn";
+			if(pathNode->isTeleportAction())
+				reason += "; teleport requires replan";
 
 			JsonNode option;
 			option["hero_id"] = JsonNode(hero->id.getNum());
 			option["hero"] = JsonNode(jsonText(hero->getNameTranslated()));
 			option["path"] = jsonPathNode(*pathNode);
 			option["route_id"] = JsonNode(routeID);
+			option["danger"] = risk["danger"];
+			option["dangerRatio"] = risk["dangerRatio"];
+			option["estimatedLoss"] = risk["estimatedLoss"];
+			option["risk"] = risk["risk"];
+			option["safe"] = risk["safe"];
+			option["riskInfo"] = risk;
+			option["value"] = JsonNode(estimatedValue);
+			option["reason"] = JsonNode(reason);
+			option["blockedBy"].Vector();
 			option["planAction"]["type"] = JsonNode("move_hero");
 			option["planAction"]["hero_id"] = JsonNode(hero->id.getNum());
 			option["planAction"]["x"] = JsonNode(position.x);
@@ -966,6 +1015,15 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 				target["hero"] = JsonNode(jsonText(hero->getNameTranslated()));
 				target["path"] = jsonPathNode(*pathNode);
 				target["route_id"] = JsonNode(routeID);
+				target["danger"] = risk["danger"];
+				target["dangerRatio"] = risk["dangerRatio"];
+				target["estimatedLoss"] = risk["estimatedLoss"];
+				target["risk"] = risk["risk"];
+				target["safe"] = risk["safe"];
+				target["riskInfo"] = risk;
+				target["value"] = JsonNode(estimatedValue);
+				target["reason"] = JsonNode(reason + "; object target");
+				target["blockedBy"].Vector();
 				target["planAction"]["type"] = JsonNode("visit_object");
 				target["planAction"]["hero_id"] = JsonNode(hero->id.getNum());
 				target["planAction"]["object_id"] = JsonNode(topObject->id.getNum());
@@ -1008,9 +1066,17 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 	analysis["execution"]["validatesRouteIds"] = JsonNode(true);
 	analysis["execution"]["replansAfterObjectVisit"] = JsonNode(true);
 	analysis["execution"]["fallbackAI"] = JsonNode("Nullkiller2");
+	analysis["scriptMemory"]["persistedInPlayerLocalSettings"] = JsonNode(true);
+	analysis["scriptMemory"]["localStateKey"] = JsonNode(SCRIPT_MEMORY_LOCAL_STATE_KEY);
+	analysis["candidateFields"].Vector();
+	for(const char * field : { "reason", "value", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy" })
+		analysis["candidateFields"].Vector().push_back(JsonNode(field));
+	analysis["danger"]["candidateDangerSource"] = JsonNode("Nullkiller direct object/guard danger evaluator");
+	analysis["danger"]["enemyReachSource"] = JsonNode("visible enemy distance and strength alerts");
 	analysis["visibleEnemyHeroes"].Vector();
 	analysis["visibleEnemyTowns"].Vector();
 	analysis["defenseAlerts"].Vector();
+	analysis["heroThreatAlerts"].Vector();
 
 	std::shared_lock gameStateLock(CGameState::mutex);
 	const ResourceSet resources = cc->getResourceAmount();
@@ -1073,6 +1139,46 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 			alert["distanceSquared"] = JsonNode(static_cast<int32_t>(distanceSquared));
 			alert["strengthRatio"] = JsonNode(strengthRatio);
 			analysis["defenseAlerts"].Vector().push_back(alert);
+		}
+	}
+
+	for(const CGHeroInstance * hero : cc->getHeroesInfo())
+	{
+		if(!hero || hero->tempOwner != playerID)
+			continue;
+
+		const int64_t heroStrength = static_cast<int64_t>(hero->getArmyStrength());
+		for(const CGHeroInstance * enemyHero : enemyHeroes)
+		{
+			if(enemyHero->visitablePos().z != hero->visitablePos().z)
+				continue;
+
+			const ui32 distanceSquared = hero->visitablePos().dist2dSQ(enemyHero->visitablePos());
+			if(distanceSquared > defenseAlertRadius * defenseAlertRadius)
+				continue;
+
+			const int64_t enemyStrength = static_cast<int64_t>(enemyHero->getArmyStrength());
+			const double strengthRatio = static_cast<double>(enemyStrength) / std::max(1.0, static_cast<double>(heroStrength));
+			std::string level = "watch";
+			if(strengthRatio >= 1.5)
+				level = "critical";
+			else if(strengthRatio >= 1.0)
+				level = "high";
+
+			JsonNode alert;
+			alert["level"] = JsonNode(level);
+			alert["hero_id"] = JsonNode(hero->id.getNum());
+			alert["hero"] = JsonNode(jsonText(hero->getNameTranslated()));
+			alert["heroPosition"] = jsonPosition(hero->visitablePos());
+			alert["heroStrength"] = JsonNode(heroStrength);
+			alert["enemyHeroId"] = JsonNode(enemyHero->id.getNum());
+			alert["enemyHero"] = JsonNode(jsonText(enemyHero->getNameTranslated()));
+			alert["enemyPosition"] = jsonPosition(enemyHero->visitablePos());
+			alert["enemyStrength"] = JsonNode(enemyStrength);
+			alert["distance"] = JsonNode(hero->visitablePos().dist2d(enemyHero->visitablePos()));
+			alert["distanceSquared"] = JsonNode(static_cast<int32_t>(distanceSquared));
+			alert["strengthRatio"] = JsonNode(strengthRatio);
+			analysis["heroThreatAlerts"].Vector().push_back(alert);
 		}
 	}
 
@@ -1239,6 +1345,93 @@ void CScriptedAdventureAI::applyConfig(const JsonNode & config, const std::strin
 	scriptConfig.disableTurnsAfterFailures = static_cast<int>(readSize(config, "disableTurnsAfterFailures", scriptConfig.disableTurnsAfterFailures, 1, 100));
 
 	logAi->debug("ScriptedAdventureAI applied %s config section.", sourceLabel.c_str());
+}
+
+JsonNode CScriptedAdventureAI::makeScriptMemoryLocalState() const
+{
+	JsonNode state;
+	state["version"] = JsonNode(1);
+	state["script"] = JsonNode(scriptPath);
+	state["memory"] = scriptMemory;
+	return state;
+}
+
+void CScriptedAdventureAI::loadScriptMemoryFromLocalState()
+{
+	try
+	{
+		std::shared_lock gameStateLock(CGameState::mutex);
+		const PlayerState * playerState = cc ? cc->getPlayerState(playerID, false) : nullptr;
+		if(!playerState || !playerState->playerLocalSettings)
+			return;
+
+		const JsonNode & storedState = (*playerState->playerLocalSettings)[SCRIPT_MEMORY_LOCAL_STATE_KEY];
+		if(!storedState.isStruct())
+			return;
+
+		if(!storedState["version"].isNumber()
+			|| storedState["version"].getType() != JsonNode::JsonType::DATA_INTEGER
+			|| storedState["version"].Integer() != 1)
+		{
+			logAi->warn("ScriptedAdventureAI ignored local memory with unsupported storage version.");
+			return;
+		}
+		if(!storedState["script"].isString() || storedState["script"].String() != scriptPath)
+		{
+			logAi->info("ScriptedAdventureAI ignored local memory for a different script.");
+			return;
+		}
+
+		JsonNode storedMemory = storedState["memory"];
+		if(storedMemory.toCompactString().size() > limits.maxMemoryBytes)
+		{
+			logAi->warn("ScriptedAdventureAI ignored local memory exceeding configured size limit.");
+			return;
+		}
+
+		scriptMemory = storedMemory;
+		lastPersistedScriptState = makeScriptMemoryLocalState().toCompactString();
+		logAi->info("ScriptedAdventureAI restored script memory from player local state.");
+	}
+	catch(const std::exception & e)
+	{
+		logAi->warn("ScriptedAdventureAI failed to restore local script memory: %s", e.what());
+	}
+}
+
+void CScriptedAdventureAI::saveScriptMemoryToLocalState()
+{
+	try
+	{
+		const JsonNode persistedState = makeScriptMemoryLocalState();
+		const std::string compactState = persistedState.toCompactString();
+		if(compactState == lastPersistedScriptState)
+			return;
+		if(scriptMemory.toCompactString().size() > limits.maxMemoryBytes)
+		{
+			logAi->warn("ScriptedAdventureAI skipped local memory persistence because memory exceeds configured size limit.");
+			return;
+		}
+
+		JsonNode localState;
+		{
+			std::shared_lock gameStateLock(CGameState::mutex);
+			const PlayerState * playerState = cc ? cc->getPlayerState(playerID, false) : nullptr;
+			if(playerState && playerState->playerLocalSettings && playerState->playerLocalSettings->isStruct())
+				localState = *playerState->playerLocalSettings;
+		}
+		if(!localState.isStruct())
+			localState.Struct();
+
+		localState[SCRIPT_MEMORY_LOCAL_STATE_KEY] = persistedState;
+		cc->saveLocalState(localState);
+		lastPersistedScriptState = compactState;
+		logAi->debug("ScriptedAdventureAI persisted script memory to player local state.");
+	}
+	catch(const std::exception & e)
+	{
+		logAi->warn("ScriptedAdventureAI failed to persist local script memory: %s", e.what());
+	}
 }
 
 std::optional<std::string> CScriptedAdventureAI::getScriptSource()

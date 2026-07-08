@@ -21,6 +21,26 @@ mechanisms used today.
 - Support partial-day replanning when an action fails, a query appears, a battle starts, terrain is revealed,
   a teleport has unknown destination, or the returned plan intentionally stops early.
 
+## Long-Term Iteration Vision
+
+The target development loop is a stable VCMI binary with a fully capable scripted adventure AI host. Once the
+host exposes enough visible state, host analysis, candidate tasks, and validated declarative actions, most AI
+improvement should happen by editing scripts rather than rebuilding C++.
+
+The desired loop:
+
+1. Run scripted AI versus Nullkiller, older script versions, and other script profiles on fixed maps/seeds.
+2. Summarize traces and automatically flag interesting mistakes: idle heroes with valuable reachable targets,
+   town losses after defense warnings, bad target ordering, repeated fallbacks, unsafe hero movement, weak
+   army gathering, and regressions against older scripts.
+3. Improve Lua scoring, memory, role assignment, defense, gathering, and target-selection logic.
+4. Rerun the same scenarios without rebuilding the engine.
+5. Promote new C++ host data only when the script cannot express a strategy from existing read-only inputs.
+
+This makes the binary the stable rules, validation, pathfinding, and analysis provider, while Lua becomes the
+fast-changing strategic brain. The intended endpoint is not an LLM running inside the game, but a strong
+scripted computer player whose policy can be iterated quickly, including with LLM assistance outside the game.
+
 ## Non-Goals
 
 - Do not move game mechanics or rule calculations into AI scripts.
@@ -126,7 +146,9 @@ Rules:
 
 - Memory is strategy state, not game rules state.
 - The engine should not interpret arbitrary memory keys except for generic metadata such as version and size.
-- Memory should be saved in the AI save state with a script id and schema/version field.
+- Memory is saved under the player-local JSON state with a script id and schema/version field. This uses the
+  existing `SaveLocalState`/`PlayerState::playerLocalSettings` path, which is serialized with saves but is
+  documented as client-defined local data rather than game mechanics.
 - If memory is missing, too large, invalid, or from an incompatible script version, the runner should pass an
   empty/default memory value and log the reset.
 - Scripts should keep memory compact: chosen main hero, assigned scout roles, target object ids, known threats,
@@ -517,8 +539,32 @@ scripts/ai/summarizeAdventureTrace.py <user-log-dir>/scriptedAdventureAI
 ```
 
 It reports player/script/day counts, script output statuses, requested/executed/failed action types, failure
-messages, visible update/opponent-update event types, defense-alert totals, and script intents. Add `--json`
-for machine-readable output.
+messages, visible update/opponent-update event types, defense-alert totals, hero-threat totals, candidate risks,
+and script intents. Add `--json` for machine-readable output.
+
+Trace sets from two script versions can be compared with:
+
+```bash
+scripts/ai/compareAdventureTrace.py <baseline-trace-dir> --candidate <candidate-trace-dir>
+```
+
+The comparison reports deltas for fallback outputs, failed actions, unsafe candidates, hero/town threat alerts,
+and executed actions. This is intentionally trace-based so it can compare script versions without rebuilding.
+
+Headless batches can be launched with:
+
+```bash
+scripts/ai/runAdventureAIBatch.py \
+  --client <build-dir>/bin/vcmiclient \
+  --map "Maps/Dwarven Gold.h3m" \
+  --ai ScriptedAdventureAI --ai Nullkiller \
+  --testdays 14 \
+  --timeout 300 \
+  --output scripted-ai-runs
+```
+
+The batch runner passes `--testdays N` to stop after N completed adventure days. The wall-clock timeout remains
+as a safety guard for hangs or unexpectedly slow maps.
 
 This enables the intended loop:
 
@@ -557,6 +603,22 @@ Regression harness:
   - towns defended/lost
   - turn completion rate
   - fallback count
+
+## Implementation Notes for PR
+
+- The stable-binary/script-iteration direction is implemented by keeping C++ responsible for state extraction,
+  validation, pathfinding, and fallback while Lua only returns plans.
+- Script memory persistence uses the existing `PlayerState::playerLocalSettings` serialized JSON, namespaced
+  under `scriptedAdventureAI`. This avoids adding AI-private strategy memory to authoritative game-rule objects.
+- Candidate actions now carry read-only explanation fields: `reason`, `value`, `risk`, `safe`, `danger`,
+  `dangerRatio`, `estimatedLoss`, and `blockedBy`. Scripts can score these fields and traces can summarize them.
+- `analysis.heroThreatAlerts` complements `analysis.defenseAlerts`, so scripts can respond to threatened roaming
+  heroes as well as threatened towns.
+- Trace tooling now supports both single-run summaries and baseline-vs-candidate comparisons for script iteration.
+- A headless batch runner can launch fixed-day AI-vs-AI runs and summarize traces. The client-side `--testdays`
+  option makes `--testmap`/`--testsave` runs exit after N completed adventure days.
+- Remaining C++ expansion should focus on additional read-only candidates, especially Nullkiller task fragments,
+  blocker/unlock chains, and army-gathering options.
 
 ## Milestones
 
@@ -605,6 +667,9 @@ Regression harness:
   movement actions, reachable object targets, and end turn.
 - Done: route ids are generated with the same shape as MCP route ids and are validated before execution.
 - Done: visible enemy heroes/towns and nearby town defense alerts are exposed in `analysis`.
+- Done: movement/object candidates include read-only `reason`, `value`, `risk`, `safe`, `danger`, `dangerRatio`,
+  `estimatedLoss`, and `blockedBy` fields.
+- Done: nearby visible enemy pressure against owned heroes is exposed as `analysis.heroThreatAlerts`.
 - Partial: full danger-map estimates and Nullkiller task fragments are not exposed yet.
 - Partial: MCP and scripted AI still duplicate some JSON assembly code; extraction can happen once the surface
   stabilizes.
@@ -616,24 +681,27 @@ Regression harness:
 - Done: it requests replanning after useful work and ends turn when no useful scripted candidate remains.
 - Done: it assigns a main hero, tracks consumed opponent-update revisions, prioritizes recruitment under strong
   defense pressure, and penalizes scout targets near visible enemy heroes.
+- Done: it consumes candidate risk/value fields, avoids unsafe object targets more aggressively, and can move a
+  threatened hero away from a visible stronger enemy.
 - Partial: deeper defense policy still needs richer host analysis and higher-level defend/gather candidates.
 
 ### Milestone 8: Save/Load and Development Reload
 
 - Done: script memory is versioned at the Lua policy level and bounded by `maxMemoryBytes`.
+- Done: script memory is persisted through save/load in `PlayerState::playerLocalSettings` under the
+  `scriptedAdventureAI` key, with script-path and storage-version checks.
 - Done: `config/ai/scriptedAdventure.json` controls script path, reload behavior, action/memory/call limits,
   tracing, and repeated-failure throttling.
 - Done: development reload is available through `reloadScriptEachTurn`.
-- Not done: script memory is not serialized into savegames yet. Current VCMI save/load serializes `CGameState`,
-  while adventure AI interface instances are client-side runtime objects with no save/load hook. Persisting
-  script memory cleanly needs an explicit AI lifecycle serialization hook rather than storing AI-private data
-  in game rules state.
 
 ### Milestone 9: Evaluation Loop
 
 - Done: opt-in trace files record script input, output, and execution progress under the user log directory.
 - Done: `scripts/ai/summarizeAdventureTrace.py` summarizes trace files for the script-improvement loop.
-- Remaining: add map-run scripts and fixed-map comparison against Nullkiller.
+- Done: `scripts/ai/compareAdventureTrace.py` compares baseline and candidate trace sets for script iteration.
+- Done: `scripts/ai/runAdventureAIBatch.py` launches fixed-day headless map runs and summarizes traces, with a
+  timeout guard for hangs.
+- Done: `vcmiclient --testdays N` stops `--testmap`/`--testsave` benchmark runs after N completed adventure days.
 - Remaining: use collected failures to expand host analysis and improve the default Lua policy.
 
 ## Open Design Questions
@@ -649,8 +717,8 @@ Regression harness:
 
 The next high-value implementation steps are:
 
-- Add a small AI lifecycle serialization hook so `ScriptedAdventureAI` can persist script-owned memory across
-  save/load without putting AI-private planning state into `CGameState`.
+- Run fixed-map `--testdays N` batches comparing default, aggressive, economy, explorer, Nullkiller, and older
+  script versions, then feed trace deltas back into the Lua policy.
 - Expand the default Lua policy from basic defense/opponent awareness into real defend/gather/avoid-zone
   strategy once higher-level candidates are available.
 - Expose richer Nullkiller-generated task fragments and danger estimates as read-only candidates for scripts to

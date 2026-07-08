@@ -358,6 +358,15 @@ void ApplyClientNetPackVisitor::visitNewTurn(NewTurn & pack)
 {
 	callAllInterfaces(cl, &CGameInterface::invalidatePaths);
 
+	const si64 testDays = settings["session"]["testdays"].Integer();
+	const bool testRun = !settings["session"]["testmap"].isNull() || !settings["session"]["testsave"].isNull();
+	if(testRun && testDays > 0 && static_cast<si64>(pack.day) > testDays)
+	{
+		logAi->info("Reached test day limit %d after completing day %d. Ending test run.", static_cast<int>(testDays), static_cast<int>(pack.day - 1));
+		GAME->onShutdownRequested(settings["session"]["spectate"].Bool());
+		return;
+	}
+
 	if(pack.newWeekNotification)
 	{
 		const auto & newWeek = *pack.newWeekNotification;

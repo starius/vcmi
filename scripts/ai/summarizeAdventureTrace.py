@@ -76,6 +76,7 @@ def summarize(files: list[Path]) -> dict[str, Any]:
     failure_errors: Counter[str] = Counter()
     update_types: Counter[str] = Counter()
     opponent_update_types: Counter[str] = Counter()
+    candidate_risks: Counter[str] = Counter()
     parse_errors: list[str] = []
     progress_counts: Counter[str] = Counter()
     analysis_counts: Counter[str] = Counter()
@@ -122,11 +123,23 @@ def summarize(files: list[Path]) -> dict[str, Any]:
             updates = as_list(nested(script_input, "updates", "events"))
             opponent_updates = as_list(nested(script_input, "opponentUpdates", "events"))
             analysis = as_dict(script_input.get("analysis"))
+            action_space = as_dict(script_input.get("actionSpace"))
             progress_counts["input_update_events"] += len(updates)
             progress_counts["input_opponent_events"] += len(opponent_updates)
             analysis_counts["defense_alerts"] += len(as_list(analysis.get("defenseAlerts")))
+            analysis_counts["hero_threat_alerts"] += len(as_list(analysis.get("heroThreatAlerts")))
             analysis_counts["visible_enemy_heroes"] += len(as_list(analysis.get("visibleEnemyHeroes")))
             analysis_counts["visible_enemy_towns"] += len(as_list(analysis.get("visibleEnemyTowns")))
+            reachable_objects = as_list(action_space.get("reachableObjects"))
+            movement_options = as_list(action_space.get("movementOptions"))
+            analysis_counts["reachable_object_candidates"] += len(reachable_objects)
+            analysis_counts["movement_candidates"] += len(movement_options)
+            for candidate in reachable_objects + movement_options:
+                candidate_dict = as_dict(candidate)
+                risk = str(candidate_dict.get("risk", "<missing>"))
+                candidate_risks[risk] += 1
+                if candidate_dict.get("safe") is False:
+                    analysis_counts["unsafe_candidates"] += 1
             for event in updates:
                 update_types[str(as_dict(event).get("type", "<missing>"))] += 1
             for event in opponent_updates:
@@ -148,6 +161,7 @@ def summarize(files: list[Path]) -> dict[str, Any]:
         "failure_errors": counter_to_dict(failure_errors),
         "progress": counter_to_dict(progress_counts),
         "analysis": counter_to_dict(analysis_counts),
+        "candidate_risks": counter_to_dict(candidate_risks),
         "update_types": counter_to_dict(update_types),
         "opponent_update_types": counter_to_dict(opponent_update_types),
     }
@@ -175,6 +189,7 @@ def print_text(summary: dict[str, Any], limit: int) -> None:
     print_counter("failure errors", summary["failure_errors"], limit)
     print_counter("progress totals", summary["progress"], limit)
     print_counter("analysis totals", summary["analysis"], limit)
+    print_counter("candidate risks", summary["candidate_risks"], limit)
     print_counter("update types", summary["update_types"], limit)
     print_counter("opponent update types", summary["opponent_update_types"], limit)
     print_counter("intents", summary["output_intents"], limit)

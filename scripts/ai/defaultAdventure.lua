@@ -94,6 +94,33 @@ local function defensePressure(input)
     return pressure
 end
 
+local function heroThreatPressure(input)
+    local pressure = 0
+    for _, alert in ipairs(asArray(input.analysis and input.analysis.heroThreatAlerts)) do
+        local level = text(alert.level)
+        if level == "critical" then
+            pressure = math.max(pressure, 3)
+        elseif level == "high" then
+            pressure = math.max(pressure, 2)
+        else
+            pressure = math.max(pressure, 1)
+        end
+    end
+    return pressure
+end
+
+local function heroThreatsByHero(input)
+    local result = {}
+    for _, alert in ipairs(asArray(input.analysis and input.analysis.heroThreatAlerts)) do
+        local id = tostring(alert.hero_id or "")
+        if id ~= "" then
+            result[id] = result[id] or {}
+            result[id][#result[id] + 1] = alert
+        end
+    end
+    return result
+end
+
 local function opponentNearTarget(input, target)
     local object = target.object or {}
     local position = object.position or (target.path and target.path.destination)
@@ -228,6 +255,7 @@ local function scoreRecruit(option, input)
     local score = (tonumber(option.level or 0) or 0) * 100
     score = score + (tonumber(option.amount or 0) or 0) * 8
     score = score + defensePressure(input) * 180
+    score = score + heroThreatPressure(input) * 90
     if gold < 1500 then
         score = score - 300
     end
@@ -265,6 +293,18 @@ local function scoreObject(target, memory, input)
     end
 
     score = score - (tonumber(path.cost or 0) or 0) * 160
+    score = score + (tonumber(target.value or 0) or 0) * 0.35
+
+    local dangerRatio = tonumber(target.dangerRatio or 0) or 0
+    if target.safe == false then
+        if role == "main" then
+            score = score - 450 - dangerRatio * 350
+        else
+            score = score - 1200 - dangerRatio * 500
+        end
+    elseif dangerRatio > 0 then
+        score = score - dangerRatio * (role == "main" and 150 or 350)
+    end
 
     if name:find("gold", 1, true) or name:find("treasure", 1, true) or name:find("chest", 1, true) then
         score = score + 350
@@ -302,6 +342,47 @@ local function scoreObject(target, memory, input)
         score = score + 80
     end
     return score
+end
+
+local function chooseEscapeMove(input)
+    local threats = heroThreatsByHero(input)
+    local best
+    local bestScore = -1e9
+
+    for _, option in ipairs(asArray(input.actionSpace and input.actionSpace.movementOptions)) do
+        local heroKey = tostring(option.hero_id or "")
+        local heroThreats = threats[heroKey]
+        local action = option.planAction
+        if heroThreats and action and action.type == "move_hero" and option.safe ~= false then
+            local destination = option.path and option.path.destination
+            local score = tonumber(option.value or 0) or 0
+            local improvesDistance = false
+
+            for _, threat in ipairs(heroThreats) do
+                local currentDistance = tonumber(threat.distanceSquared or 0) or 0
+                local nextDistance = distanceSquared(destination, threat.enemyPosition)
+                if nextDistance then
+                    score = score + nextDistance * 0.5
+                    if nextDistance > currentDistance then
+                        improvesDistance = true
+                    end
+                end
+                if text(threat.level) == "critical" then
+                    score = score + 300
+                end
+            end
+
+            if option.path and option.path.isTeleportAction then
+                score = score - 250
+            end
+            if improvesDistance and score > bestScore then
+                best = option
+                bestScore = score
+            end
+        end
+    end
+
+    return best, bestScore
 end
 
 local function chooseObject(input, memory)
@@ -367,8 +448,14 @@ function Script.planDay(input)
         end
     end
 
+    local escapeMove = chooseEscapeMove(input)
+    if escapeMove then
+        actions[#actions + 1] = copyAction(escapeMove.planAction)
+        intents[#intents + 1] = "move threatened hero " .. tostring(escapeMove.hero or escapeMove.hero_id)
+    end
+
     local target = chooseObject(input, memory)
-    if target then
+    if target and not escapeMove then
         actions[#actions + 1] = copyAction(target.planAction)
         intents[#intents + 1] = "visit " .. tostring((target.object or {}).name or (target.object or {}).id)
     end
