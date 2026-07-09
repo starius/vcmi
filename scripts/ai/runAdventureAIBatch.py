@@ -19,6 +19,14 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from summarizeAdventureTrace import iter_trace_files, summarize  # noqa: E402
 
 
+def as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def safe_name(value: str) -> str:
+    return "".join(ch if ch.isalnum() else "_" for ch in value).strip("_") or "scenario"
+
+
 def script_override_value(script: str | None) -> str | None:
     if not script:
         return None
@@ -49,6 +57,70 @@ def command_for_run(args: argparse.Namespace, game_map: str, run_dir: Path) -> l
 
 def trace_dir_for_run(run_dir: Path) -> Path:
     return run_dir / "cache" / "vcmi" / "scriptedAdventureAI"
+
+
+def load_scenarios(args: argparse.Namespace) -> list[dict[str, Any]]:
+    scenarios: list[dict[str, Any]] = []
+
+    if args.scenario_file:
+        with args.scenario_file.open("r", encoding="utf-8") as handle:
+            raw = json.load(handle)
+        if isinstance(raw, dict) and "map" in raw:
+            raw_scenarios = [raw]
+        elif isinstance(raw, dict):
+            raw_scenarios = raw.get("scenarios", [])
+        else:
+            raw_scenarios = raw
+        for index, scenario in enumerate(as_list(raw_scenarios), start=1):
+            if not isinstance(scenario, dict):
+                raise ValueError(f"Scenario entry {index} must be an object")
+            if not scenario.get("map"):
+                raise ValueError(f"Scenario entry {index} is missing 'map'")
+            scenarios.append({
+                "name": str(scenario.get("name") or safe_name(str(scenario["map"]))),
+                "map": str(scenario["map"]),
+                "runs": int(scenario.get("runs", args.runs)),
+                "testdays": int(scenario.get("testdays", args.testdays)),
+                "timeout": int(scenario.get("timeout", args.timeout)),
+                "extra_arg": list(args.extra_arg) + [str(item) for item in as_list(scenario.get("extraArg"))],
+            })
+
+    for game_map in args.map or []:
+        scenarios.append({
+            "name": safe_name(game_map),
+            "map": game_map,
+            "runs": args.runs,
+            "testdays": args.testdays,
+            "timeout": args.timeout,
+            "extra_arg": list(args.extra_arg),
+        })
+
+    if not scenarios:
+        raise ValueError("At least one --map or --scenario-file entry is required")
+
+    for scenario in scenarios:
+        scenario["runs"] = max(1, int(scenario["runs"]))
+        scenario["testdays"] = max(0, int(scenario["testdays"]))
+        scenario["timeout"] = max(1, int(scenario["timeout"]))
+    return scenarios
+
+
+def args_for_scenario(args: argparse.Namespace, scenario: dict[str, Any]) -> argparse.Namespace:
+    return argparse.Namespace(
+        client=args.client,
+        map=[scenario["map"]],
+        ai=args.ai,
+        runs=scenario["runs"],
+        testdays=scenario["testdays"],
+        timeout=scenario["timeout"],
+        output=args.output / safe_name(str(scenario["name"])),
+        cwd=args.cwd,
+        clean=args.clean,
+        extra_arg=scenario["extra_arg"],
+        script=args.script,
+        trace=args.trace,
+        json=args.json,
+    )
 
 
 def run_one(args: argparse.Namespace, game_map: str, run_index: int) -> dict[str, Any]:
@@ -111,7 +183,8 @@ def run_one(args: argparse.Namespace, game_map: str, run_index: int) -> dict[str
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run headless ScriptedAdventureAI matches and summarize traces.")
     parser.add_argument("--client", required=True, help="Path to vcmiclient.")
-    parser.add_argument("--map", action="append", required=True, help="VCMI map resource path. Can be repeated.")
+    parser.add_argument("--map", action="append", default=[], help="VCMI map resource path. Can be repeated.")
+    parser.add_argument("--scenario-file", type=Path, help="JSON file with batch scenarios.")
     parser.add_argument("--ai", action="append", default=None, help="AI names for consecutive players.")
     parser.add_argument("--runs", type=int, default=1, help="Runs per map.")
     parser.add_argument("--testdays", type=int, default=0, help="Completed adventure days before the client exits.")
@@ -129,16 +202,19 @@ def main() -> int:
 
     args.output.mkdir(parents=True, exist_ok=True)
     results: list[dict[str, Any]] = []
-    for game_map in args.map:
-        for run_index in range(1, max(1, args.runs) + 1):
-            result = run_one(args, game_map, run_index)
+    scenarios = load_scenarios(args)
+    for scenario in scenarios:
+        scenario_args = args_for_scenario(args, scenario)
+        for run_index in range(1, scenario["runs"] + 1):
+            result = run_one(scenario_args, scenario["map"], run_index)
+            result["scenario"] = scenario["name"]
             results.append(result)
             if not args.json:
                 status = "timeout" if result["timedOut"] else f"exit {result['returnCode']}"
                 parsed = result["traceSummary"]["parsed"]
-                print(f"{game_map} run {run_index}: {status}, traces parsed={parsed}, dir={result['runDir']}")
+                print(f"{scenario['name']} {scenario['map']} run {run_index}: {status}, traces parsed={parsed}, dir={result['runDir']}")
 
-    manifest = {"runs": results}
+    manifest = {"scenarios": scenarios, "runs": results}
     (args.output / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     if args.json:
         print(json.dumps(manifest, indent=2, sort_keys=True))

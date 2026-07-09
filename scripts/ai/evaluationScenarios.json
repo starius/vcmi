@@ -1,0 +1,18 @@
+{
+  "scenarios": [
+    {
+      "name": "dwarven-gold-short",
+      "map": "Maps/Dwarven Gold.h3m",
+      "runs": 1,
+      "testdays": 7,
+      "timeout": 300
+    },
+    {
+      "name": "emerald-isles-short",
+      "map": "Maps/Emerald Isles.h3m",
+      "runs": 1,
+      "testdays": 7,
+      "timeout": 300
+    }
+  ]
+}
