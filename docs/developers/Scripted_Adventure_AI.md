@@ -540,7 +540,13 @@ scripts/ai/summarizeAdventureTrace.py <user-log-dir>/scriptedAdventureAI
 
 It reports player/script/day counts, script output statuses, requested/executed/failed action types, failure
 messages, visible update/opponent-update event types, defense-alert totals, hero-threat totals, candidate risks,
-and script intents. Add `--json` for machine-readable output.
+script intents, final visible-state quality, and mined policy-mistake counts. Add `--json` for machine-readable
+output.
+
+The current quality score is intentionally trace-local and explainable. It uses the final visible input for each
+scripted player and combines resources, towns, heroes, army strength, movement, useful candidates, and visible
+threat pressure. It is not a replacement for win/loss, but it gives the improvement loop a stable control signal
+before full map-control metrics exist.
 
 Trace sets from two script versions can be compared with:
 
@@ -549,7 +555,8 @@ scripts/ai/compareAdventureTrace.py <baseline-trace-dir> --candidate <candidate-
 ```
 
 The comparison reports deltas for fallback outputs, failed actions, unsafe candidates, hero/town threat alerts,
-and executed actions. This is intentionally trace-based so it can compare script versions without rebuilding.
+executed actions, mined mistakes, important mistakes, and trace-local quality. This is intentionally trace-based
+so it can compare script versions without rebuilding.
 
 Headless batches can be launched with:
 
@@ -569,6 +576,8 @@ The batch runner passes `--testdays N` to stop after N completed adventure days.
 as a safety guard for hangs or unexpectedly slow maps. `--trace` enables `ScriptedAdventureAI` tracing without
 editing `config/ai/scriptedAdventure.json`. `--script` can be either a bundled script resource such as
 `ai/defaultAdventure.lua` or a local Lua file; local files are passed to the AI as `file:/...` script overrides.
+Use `--scenario-file scripts/ai/evaluationScenarios.json` to run a named map/testday matrix instead of repeating
+`--map` options. Scenario entries can override `runs`, `testdays`, `timeout`, and extra client arguments.
 
 The same override can be supplied manually with environment variables:
 
@@ -586,29 +595,54 @@ Baseline-vs-candidate script evaluations can be launched with:
 ```bash
 scripts/ai/evaluateAdventureAIScripts.py \
   --client <build-dir>/bin/vcmiclient \
-  --map "Maps/Dwarven Gold.h3m" \
+  --scenario-file scripts/ai/evaluationScenarios.json \
   --baseline-script scripts/ai/defaultAdventure.lua \
   --candidate-script /tmp/candidateAdventure.lua \
-  --testdays 14 \
-  --runs 5 \
-  --timeout 300 \
   --output scripted-ai-eval \
   --clean
 ```
 
 The evaluator runs both sides with tracing enabled, snapshots script files into the output directory when possible,
-writes `evaluation.json`, and prints a heuristic score delta. The score is not a gameplay rating; it is an iteration
-signal that rewards completed runs and useful actions while penalizing timeouts, nonzero exits, parse errors,
-fallbacks, and failed actions. Higher-level win/loss and map-control metrics should replace or augment it as the
-host exposes richer state.
+writes `evaluation.json`, and prints a heuristic score delta, quality delta, and promotion verdict. The score is
+not a gameplay rating; it is an iteration signal that rewards completed runs, useful actions, and final visible
+state quality while penalizing timeouts, nonzero exits, parse errors, fallbacks, failed actions, stopped batches,
+and mined mistakes. Higher-level win/loss and map-control metrics should replace or augment it as the host exposes
+richer state.
+
+Trace mistakes can be mined into review notes and draft JSON policy fixtures:
+
+```bash
+scripts/ai/mineAdventureTraceMistakes.py \
+  scripted-ai-eval/baseline \
+  --write-fixtures test/testdata/ai/adventure-script/generated
+```
+
+The generated fixtures are review material, not automatic truth. Each one should be trimmed into a small
+input-output example before being committed as a Lua policy test.
+
+After an evaluation verdict says `promote`, the candidate can replace the current champion script while archiving
+the previous champion:
+
+```bash
+scripts/ai/promoteAdventureAIScript.py \
+  --evaluation scripted-ai-eval/evaluation.json \
+  --champion scripts/ai/defaultAdventure.lua \
+  --archive-dir scripts/ai/archive \
+  --dry-run
+```
+
+Remove `--dry-run` after checking the planned file operations. The archive directory is reserved for old champion
+Lua files and promotion manifests; candidate experiments can live under `scripts/ai/candidates/`.
 
 This enables the intended loop:
 
-1. Run scripted AI versus baseline.
-2. Inspect traces and bad decisions.
-3. Edit script.
-4. Rerun without rebuilding.
-5. Promote useful host analysis or action types into C++ only when scripts cannot express them cleanly.
+1. Put a candidate Lua file under `scripts/ai/candidates/` or another local path.
+2. Run baseline-vs-candidate scenarios with tracing enabled.
+3. Inspect `evaluation.json`, summary deltas, and mined mistake notes.
+4. Convert representative mistakes into JSON policy fixtures.
+5. Edit the Lua script and rerun without rebuilding.
+6. Promote the candidate only when hard safety gates pass and score/quality deltas justify it.
+7. Promote useful host analysis or action types into C++ only when scripts cannot express them cleanly.
 
 ## Testing Strategy
 
@@ -650,14 +684,19 @@ Regression harness:
   `dangerRatio`, `estimatedLoss`, and `blockedBy`. Scripts can score these fields and traces can summarize them.
 - `analysis.heroThreatAlerts` complements `analysis.defenseAlerts`, so scripts can respond to threatened roaming
   heroes as well as threatened towns.
-- Trace tooling now supports both single-run summaries and baseline-vs-candidate comparisons for script iteration.
+- Trace tooling now supports single-run summaries, baseline-vs-candidate comparisons, final visible-state quality
+  estimates, mined mistake categories, and draft JSON fixture extraction for script iteration.
 - A headless batch runner can launch fixed-day AI-vs-AI runs and summarize traces. The client-side `--testdays`
-  option makes `--testmap`/`--testsave` runs exit after N completed adventure days.
+  option makes `--testmap`/`--testsave` runs exit after N completed adventure days. Batch and evaluation tools can
+  also consume named scenario files for repeated map/testday matrices.
 - `ScriptedAdventureAI` supports environment overrides for trace enablement and script path, including external
   `file:/...` Lua scripts. This makes script edits and candidate snapshots testable without rebuilding or editing
   packaged config.
 - `scripts/ai/evaluateAdventureAIScripts.py` runs baseline and candidate scripts through the same fixed maps,
-  collects traces, snapshots script files, and emits an evaluation JSON with heuristic score deltas.
+  collects traces, snapshots script files, and emits an evaluation JSON with heuristic score deltas, quality deltas,
+  mistake penalties, and a promotion verdict.
+- `scripts/ai/promoteAdventureAIScript.py` archives the current champion script and installs a candidate after an
+  evaluation verdict passes, keeping champion promotion as a script-only operation.
 - Debugging `Emerald Isles` smoke runs showed the scripted host must not use Nullkiller helper methods that perform
   hidden side effects such as army exchange after movement. Scripted movement is now a direct, tracked `MoveHero`
   request over a route-id-validated path, and garrison/hero-exchange/recruitment dialogs are conservatively answered
@@ -756,9 +795,18 @@ Regression harness:
   timeout guard for hangs.
 - Done: `scripts/ai/evaluateAdventureAIScripts.py` runs baseline-vs-candidate script batches and writes a scored
   evaluation manifest for the run-trace-improve loop.
+- Done: batch and evaluation tools accept scenario files, including `scripts/ai/evaluationScenarios.json`, so the
+  same script versions can be tested across a stable map/testday matrix.
+- Done: trace summaries and evaluations include explainable quality metrics from final visible state snapshots.
+- Done: trace summaries mine likely policy mistakes, including unsafe choices, ignored better safe objects, failed
+  actions, idle turns with candidates, and missing responses to visible threats.
+- Done: `scripts/ai/mineAdventureTraceMistakes.py` exports mined mistakes as draft JSON fixtures for Lua policy
+  tests.
+- Done: `scripts/ai/promoteAdventureAIScript.py` supports champion-script promotion with archive manifests after a
+  passing evaluation verdict.
 - Done: `vcmiclient --testdays N` stops `--testmap`/`--testsave` benchmark runs after N completed adventure days.
-- Remaining: add real gameplay outcome metrics such as win/loss, towns held, hero strength, explored area, and map
-  control, then use collected failures to expand host analysis and improve the default Lua policy.
+- Remaining: add engine-level gameplay outcome metrics such as win/loss, explored area, and map-control deltas, then
+  use collected failures to expand host analysis and improve the default Lua policy.
 
 ## Open Design Questions
 
@@ -774,7 +822,7 @@ Regression harness:
 The next high-value implementation steps are:
 
 - Run fixed-map `--testdays N` batches comparing default, aggressive, economy, explorer, Nullkiller, and older
-  script versions, then feed trace deltas back into the Lua policy.
+  script versions, then feed trace deltas and mined JSON fixtures back into the Lua policy.
 - Expand the default Lua policy from basic defense/opponent awareness into real defend/gather/avoid-zone
   strategy once higher-level candidates are available.
 - Expose richer Nullkiller-generated task fragments and danger estimates as read-only candidates for scripts to
