@@ -973,7 +973,6 @@ bool CScriptedAdventureAI::waitTillFreeForScriptAction(JsonNode & actionResult, 
 	static constexpr auto SCRIPT_ACTION_STATUS_TIMEOUT = std::chrono::seconds(30);
 	static constexpr auto SCRIPT_ACTION_BATTLE_STATUS_TIMEOUT = std::chrono::minutes(30);
 	static constexpr auto SCRIPT_ACTION_STATUS_POLL = std::chrono::milliseconds(100);
-	auto unlock = vstd::makeUnlockSharedGuard(CGameState::mutex);
 	const auto started = std::chrono::steady_clock::now();
 
 	while(true)
