@@ -1,5 +1,53 @@
 local Script = {}
 
+--[[
+Economy adventure policy
+------------------------
+
+This profile is a readable baseline for "grow the kingdom first" experiments.
+It favors income buildings, mines, and loose resources while avoiding battles
+unless the host has no better economic target. It is deliberately not a full AI:
+the host supplies legal build/recruit/target candidates and this script ranks
+them without mutating game state.
+]]
+
+local MemoryVersion = 1
+local Profile = "economy"
+
+local Threshold = {
+    surplusGoldForRecruitment = 5000,
+    goldForDwellingAfterEconomy = 3500
+}
+
+local Score = {
+    impossible = -1000000000,
+    build = {
+        base = 100,
+        incomeGold = 5,
+        goldCost = 0.012,
+        townHall = 800,
+        cityHall = 1100,
+        capitol = 1300,
+        marketOrResource = 260,
+        dwellingWithSurplus = 130,
+        castleOrCitadel = 80
+    },
+    recruit = {
+        belowSurplus = -1000,
+        level = 60,
+        amount = 5
+    },
+    target = {
+        base = 300,
+        pathCost = 180,
+        mineBonus = 700,
+        resourceBonus = 360,
+        battlePenalty = 450,
+        teleportPenalty = 150
+    }
+}
+
+-- Optional arrays are common in reduced fixtures; treat nil as empty.
 local function array(value)
     if type(value) == "table" then
         return value
@@ -7,6 +55,8 @@ local function array(value)
     return {}
 end
 
+-- Return an independent plan action table. Candidate tables may contain host
+-- analysis fields that should not be returned as executable action fields.
 local function copy(action)
     local result = {}
     for key, value in pairs(action or {}) do
@@ -15,10 +65,13 @@ local function copy(action)
     return result
 end
 
+-- Case-insensitive name matching keeps this profile easy to tune from traces.
 local function lower(value)
     return string.lower(tostring(value or ""))
 end
 
+-- Resource helpers default to zero so missing narrow-test fields do not change
+-- control flow through Lua errors.
 local function resource(resources, name)
     if type(resources) ~= "table" then
         return 0
@@ -26,10 +79,12 @@ local function resource(resources, name)
     return tonumber(resources[name] or 0) or 0
 end
 
+-- Economy memory is profile-tagged. Reusing memory from another policy could
+-- carry different assumptions about blocked/visited targets, so reset it.
 local function initMemory(input)
     local memory = input.memory or {}
-    if memory.version ~= 1 or memory.profile ~= "economy" then
-        memory = { version = 1, profile = "economy" }
+    if memory.version ~= MemoryVersion or memory.profile ~= Profile then
+        memory = { version = MemoryVersion, profile = Profile }
     end
     memory.calls = (memory.calls or 0) + 1
     memory.lastDay = input.state and input.state.day or memory.lastDay
@@ -38,6 +93,8 @@ local function initMemory(input)
     return memory
 end
 
+-- Failed actions are not exceptional; they tell the next script call to avoid
+-- overcommitting to the same target.
 local function failed(progress)
     for _ in pairs(array(progress and progress.failed)) do
         return true
@@ -45,6 +102,8 @@ local function failed(progress)
     return false
 end
 
+-- Track object progress across replans and days. Economy mode rejects completed
+-- and blocked targets in scoring so movement is spent on fresh value.
 local function markProgress(memory, progress)
     for _, item in ipairs(array(progress and progress.executed)) do
         if item.object_id then
@@ -62,29 +121,32 @@ end
 local function scoreBuild(option, input)
     local name = lower(option.building)
     local gold = resource(input.state and input.state.resources, "gold")
-    local score = 100 + resource(option.income, "gold") * 5 - resource(option.cost, "gold") * 0.012
+    local score = Score.build.base + resource(option.income, "gold") * Score.build.incomeGold - resource(option.cost, "gold") * Score.build.goldCost
 
+    -- Income chain milestones dominate this profile because their benefit
+    -- compounds over the rest of the map.
     if name:find("town hall", 1, true) then
-        score = score + 800
+        score = score + Score.build.townHall
     end
     if name:find("city hall", 1, true) then
-        score = score + 1100
+        score = score + Score.build.cityHall
     end
     if name:find("capitol", 1, true) then
-        score = score + 1300
+        score = score + Score.build.capitol
     end
     if name:find("market", 1, true) or name:find("resource", 1, true) then
-        score = score + 260
+        score = score + Score.build.marketOrResource
     end
-    if name:find("dwelling", 1, true) and gold >= 3500 then
-        score = score + 130
+    if name:find("dwelling", 1, true) and gold >= Threshold.goldForDwellingAfterEconomy then
+        score = score + Score.build.dwellingWithSurplus
     end
     if name:find("castle", 1, true) or name:find("citadel", 1, true) then
-        score = score + 80
+        score = score + Score.build.castleOrCitadel
     end
     return score
 end
 
+-- Choose one economic build if the host offers any legal construction.
 local function bestBuild(input)
     local best, bestScore
     for _, option in ipairs(array(input.actionSpace and input.actionSpace.buildOptions)) do
@@ -100,12 +162,16 @@ end
 
 local function scoreRecruit(option, input)
     local gold = resource(input.state and input.state.resources, "gold")
-    if gold < 5000 then
-        return -1000
+    -- Recruitment is intentionally suppressed until there is a gold surplus.
+    -- This keeps economy runs from spending early income on troops by default.
+    if gold < Threshold.surplusGoldForRecruitment then
+        return Score.recruit.belowSurplus
     end
-    return (tonumber(option.level or 0) or 0) * 60 + (tonumber(option.amount or 0) or 0) * 5
+    return (tonumber(option.level or 0) or 0) * Score.recruit.level + (tonumber(option.amount or 0) or 0) * Score.recruit.amount
 end
 
+-- Recruitment is a fallback after builds and only when scoreRecruit says there
+-- is enough surplus to justify it.
 local function bestRecruit(input)
     local best, bestScore
     for _, option in ipairs(array(input.actionSpace and input.actionSpace.recruitOptions)) do
@@ -124,27 +190,29 @@ local function scoreTarget(target, memory)
     local path = target.path or {}
     local words = lower((object.name or "") .. " " .. (object.type or "") .. " " .. (object.hoverText or ""))
     local objectKey = tostring(object.id or "")
-    local score = 300 - (tonumber(path.cost or 0) or 0) * 180
+    local score = Score.target.base - (tonumber(path.cost or 0) or 0) * Score.target.pathCost
 
     if objectKey ~= "" and (memory.visitedTargets[objectKey] or memory.blockedTargets[objectKey]) then
-        return -1e9
+        return Score.impossible
     end
 
+    -- Mines and resource pickups are the core movement targets for this policy.
     if words:find("mine", 1, true) or words:find("sawmill", 1, true) or words:find("ore pit", 1, true) then
-        score = score + 700
+        score = score + Score.target.mineBonus
     end
     if words:find("gold", 1, true) or words:find("resource", 1, true) or words:find("campfire", 1, true) then
-        score = score + 360
+        score = score + Score.target.resourceBonus
     end
     if path.pathAction == "battle" or path.pathAction == "teleport_battle" then
-        score = score - 450
+        score = score - Score.target.battlePenalty
     end
     if path.isTeleportAction then
-        score = score - 150
+        score = score - Score.target.teleportPenalty
     end
     return score
 end
 
+-- Pick one reachable economic target.
 local function bestTarget(input, memory)
     local best, bestScore
     for _, target in ipairs(array(input.actionSpace and input.actionSpace.reachableObjects)) do
@@ -159,6 +227,8 @@ local function bestTarget(input, memory)
 end
 
 function Script.planDay(input)
+    -- Host entry point. Economy mode opens with infrastructure, then movement,
+    -- then surplus recruitment only if no build was selected.
     local memory = initMemory(input)
     markProgress(memory, input.progress)
     if failed(input.progress) then
@@ -171,6 +241,8 @@ function Script.planDay(input)
     local target = bestTarget(input, memory)
     local recruit = bestRecruit(input)
 
+    -- Build and recruit share the first action slot. Builds win because this
+    -- profile is meant to test long-term economy bias.
     if build then
         actions[#actions + 1] = copy(build.planAction)
         intents[#intents + 1] = "economic build " .. tostring(build.building or build.building_id)
@@ -184,6 +256,7 @@ function Script.planDay(input)
     end
 
     if #actions == 0 then
+        -- Return explicit end_turn once no economic plan remains.
         return { status = "end_turn", memory = memory, actions = { { type = "end_turn" } }, intent = "economy idle" }
     end
     memory.lastIntent = table.concat(intents, "; ")
