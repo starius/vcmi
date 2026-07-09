@@ -20,6 +20,8 @@
 #include "Pathfinding/AIPathfinder.h"
 #include "Engine/Nullkiller.h"
 
+#include <chrono>
+
 VCMI_LIB_NAMESPACE_BEGIN
 class AsyncRunner;
 VCMI_LIB_NAMESPACE_END
@@ -56,6 +58,8 @@ public:
 	void startedTurn();
 	void madeTurn();
 	void waitTillFree();
+	bool waitTillFreeFor(std::chrono::milliseconds timeout);
+	std::string describeBlockers();
 	bool haveTurn();
 	void attemptedAnsweringQuery(QueryID queryID, int answerRequestID);
 	void receivedAnswerConfirmation(int answerRequestID, int result);

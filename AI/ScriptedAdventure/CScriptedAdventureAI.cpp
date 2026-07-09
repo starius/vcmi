@@ -14,6 +14,7 @@
 #include "../../lib/CCreatureHandler.h"
 #include "../../lib/CPlayerState.h"
 #include "../../lib/ResourceSet.h"
+#include "../../lib/UnlockGuard.h"
 #include "../../lib/VCMIDirs.h"
 #include "../../lib/filesystem/Filesystem.h"
 #include "../../lib/entities/building/CBuilding.h"
@@ -579,21 +580,50 @@ void CScriptedAdventureAI::yourTurn(QueryID queryID)
 
 void CScriptedAdventureAI::answerQueryWithoutGameStateLock(const std::string & description, QueryID queryID, int selection)
 {
-	if(!asyncTasks)
-		throw std::runtime_error("Attempt to answer query on shut down AI state.");
-
-	asyncTasks->run([this, description, queryID, selection]() noexcept
+	bool queueAsyncAnswer = false;
 	{
-		ScopedThreadName guard("ScriptedAdventureAI::" + description);
-		try
+		std::lock_guard guard(autoAnswerMutex);
+		pendingAutoAnswers[queryID] = selection;
+		queueAsyncAnswer = !scriptActionDrainsAutoAnswers;
+	}
+
+	if(!queueAsyncAnswer)
+		return;
+
+	executeActionAsync(description, [this, queryID]()
+	{
+		std::optional<int> selection;
 		{
-			answerQuery(queryID, selection);
+			std::lock_guard guard(autoAnswerMutex);
+			auto iter = pendingAutoAnswers.find(queryID);
+			if(iter == pendingAutoAnswers.end())
+				return;
+
+			selection = iter->second;
+			pendingAutoAnswers.erase(iter);
 		}
-		catch(const TerminationRequestedException &)
-		{
-			logAi->debug("%s thread has been terminated. We'll end it immediately", description);
-		}
+
+		answerQuery(queryID, *selection);
 	});
+}
+
+void CScriptedAdventureAI::answerPendingAutoQueries()
+{
+	std::vector<std::pair<QueryID, int>> answers;
+	{
+		std::lock_guard guard(autoAnswerMutex);
+		answers.assign(pendingAutoAnswers.begin(), pendingAutoAnswers.end());
+		pendingAutoAnswers.clear();
+	}
+
+	for(const auto & answer : answers)
+		answerQuery(answer.first, answer.second);
+}
+
+void CScriptedAdventureAI::setScriptActionAutoAnswerMode(bool active)
+{
+	std::lock_guard guard(autoAnswerMutex);
+	scriptActionDrainsAutoAnswers = active;
 }
 
 void CScriptedAdventureAI::heroGotLevel(const CGHeroInstance * hero, PrimarySkill pskill, std::vector<SecondarySkill> & skills, QueryID queryID)
@@ -938,6 +968,33 @@ JsonNode CScriptedAdventureAI::jsonRequestWaitResult(const RequestWaitResult & r
 	return result;
 }
 
+bool CScriptedAdventureAI::waitTillFreeForScriptAction(JsonNode & actionResult, const std::string & actionType)
+{
+	static constexpr auto SCRIPT_ACTION_STATUS_TIMEOUT = std::chrono::seconds(30);
+	static constexpr auto SCRIPT_ACTION_BATTLE_STATUS_TIMEOUT = std::chrono::minutes(30);
+	static constexpr auto SCRIPT_ACTION_STATUS_POLL = std::chrono::milliseconds(100);
+	auto unlock = vstd::makeUnlockSharedGuard(CGameState::mutex);
+	const auto started = std::chrono::steady_clock::now();
+
+	while(true)
+	{
+		const auto timeout = status.getBattle() == NK2AI::NO_BATTLE ? SCRIPT_ACTION_STATUS_TIMEOUT : SCRIPT_ACTION_BATTLE_STATUS_TIMEOUT;
+		if(std::chrono::steady_clock::now() - started >= timeout)
+			break;
+
+		if(status.waitTillFreeFor(SCRIPT_ACTION_STATUS_POLL))
+			return true;
+		if(status.getQueriesCount() > 0)
+			answerPendingAutoQueries();
+	}
+
+	const std::string blockers = status.describeBlockers();
+	logAi->warn("ScriptedAdventureAI timed out waiting after %s action. Blockers: %s", actionType.c_str(), blockers.c_str());
+	actionResult["ok"] = JsonNode(false);
+	actionResult["error"] = JsonNode("Timed out waiting for action side effects to finish: " + blockers);
+	return false;
+}
+
 void CScriptedAdventureAI::makeScriptedTurn()
 {
 	try
@@ -1106,6 +1163,19 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 	ScopedCallbackWaitMode nonBlockingCallback(cc, false);
 	const std::string type = readString(action, "type");
 	actionResult["type"] = JsonNode(type);
+	struct AutoAnswerModeGuard
+	{
+		CScriptedAdventureAI & owner;
+		explicit AutoAnswerModeGuard(CScriptedAdventureAI & owner_)
+			: owner(owner_)
+		{
+			owner.setScriptActionAutoAnswerMode(true);
+		}
+		~AutoAnswerModeGuard()
+		{
+			owner.setScriptActionAutoAnswerMode(false);
+		}
+	} autoAnswerModeGuard(*this);
 
 	if(type == "build")
 	{
@@ -1121,10 +1191,11 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		{
 			buildStructure(town, buildingID);
 		});
-		waitTillFree();
 		actionResult["town_id"] = JsonNode(town->id.getNum());
 		actionResult["building_id"] = JsonNode(buildingID.getNum());
 		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
 		actionResult["ok"] = JsonNode(request.applied);
 		if(!request.applied)
 			actionResult["error"] = JsonNode(request.realized ? "Build request was rejected by server" : "Build request was not realized by server");
@@ -1165,13 +1236,14 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		{
 			cc->recruitCreatures(dwelling, destination, creatureID, amount, level);
 		});
-		waitTillFree();
 		actionResult["source_id"] = JsonNode(dwelling->id.getNum());
 		actionResult["destination_id"] = JsonNode(destination->id.getNum());
 		actionResult["level"] = JsonNode(level);
 		actionResult["creature_id"] = JsonNode(creatureID.getNum());
 		actionResult["amount"] = JsonNode(amount);
 		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
 		actionResult["ok"] = JsonNode(request.applied);
 		if(!request.applied)
 			actionResult["error"] = JsonNode(request.realized ? "Recruit request was rejected by server" : "Recruit request was not realized by server");
@@ -1209,12 +1281,13 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		{
 			cc->moveHero(hero, route.requestPath, route.transit, route.layer);
 		});
-		waitTillFree();
 		actionResult["hero_id"] = JsonNode(hero->id.getNum());
 		actionResult["route_id"] = JsonNode(route.routeID);
 		actionResult["destination"] = jsonPosition(route.destination);
 		actionResult["submittedPath"] = jsonPositions(route.requestPath);
 		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
 		actionResult["ok"] = JsonNode(request.applied);
 		if(!request.applied)
 			actionResult["error"] = JsonNode(request.realized ? "Move request was rejected by server" : "Move request was not realized by server");
@@ -1226,9 +1299,10 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		const QueryID queryID(readInteger(action, "query_id"));
 		const int answer = hasField(action, "answer") ? readInteger(action, "answer") : 0;
 		answerQuery(queryID, answer);
-		waitTillFree();
 		actionResult["query_id"] = JsonNode(queryID.getNum());
 		actionResult["answer"] = JsonNode(answer);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
 		actionResult["ok"] = JsonNode(true);
 		return true;
 	}

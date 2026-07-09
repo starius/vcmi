@@ -38,6 +38,8 @@
 #include "../lib/modding/IdentifierStorage.h"
 #include "../lib/modding/CModHandler.h"
 #include "../lib/modding/ModDescription.h"
+#include "../lib/mapping/CMapHeader.h"
+#include "../lib/rmg/CMapGenOptions.h"
 #include "../lib/texts/CGeneralTextHandler.h"
 #include "../lib/texts/MetaString.h"
 #include "../lib/GameLibrary.h"
@@ -46,6 +48,9 @@
 
 #include <boost/program_options.hpp>
 #include <vstd/StringUtils.h>
+
+#include <algorithm>
+#include <cctype>
 
 #include <SDL_main.h>
 #include <SDL.h>
@@ -118,6 +123,102 @@ static void prog_help(const po::options_description &opts)
 	std::cout << opts;
 }
 
+static std::string lowerASCII(std::string value)
+{
+	std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character)
+	{
+		return static_cast<char>(std::tolower(character));
+	});
+	return value;
+}
+
+static int parseRandomMapSize(const std::string & rawValue)
+{
+	const auto value = lowerASCII(rawValue);
+	if(value == "s" || value == "small")
+		return CMapHeader::MAP_SIZE_SMALL;
+	if(value == "m" || value == "medium" || value == "middle")
+		return CMapHeader::MAP_SIZE_MIDDLE;
+	if(value == "l" || value == "large")
+		return CMapHeader::MAP_SIZE_LARGE;
+	if(value == "xl" || value == "xlarge" || value == "extra-large")
+		return CMapHeader::MAP_SIZE_XLARGE;
+	if(value == "h" || value == "huge")
+		return CMapHeader::MAP_SIZE_HUGE;
+	if(value == "xh" || value == "xhuge")
+		return CMapHeader::MAP_SIZE_XHUGE;
+	if(value == "g" || value == "giant")
+		return CMapHeader::MAP_SIZE_GIANT;
+	return std::stoi(rawValue);
+}
+
+static EWaterContent::EWaterContent parseRandomMapWaterContent(const std::string & rawValue)
+{
+	const auto value = lowerASCII(rawValue);
+	if(value == "random")
+		return EWaterContent::RANDOM;
+	if(value == "none" || value == "no" || value == "false" || value == "0")
+		return EWaterContent::NONE;
+	if(value == "normal" || value == "true" || value == "1")
+		return EWaterContent::NORMAL;
+	if(value == "islands" || value == "island")
+		return EWaterContent::ISLANDS;
+	throw std::runtime_error("Unsupported random map water setting: " + rawValue);
+}
+
+static EMonsterStrength::EMonsterStrength parseRandomMapMonsterStrength(const std::string & rawValue)
+{
+	const auto value = lowerASCII(rawValue);
+	if(value == "random")
+		return EMonsterStrength::RANDOM;
+	if(value == "weak")
+		return EMonsterStrength::GLOBAL_WEAK;
+	if(value == "normal")
+		return EMonsterStrength::GLOBAL_NORMAL;
+	if(value == "strong")
+		return EMonsterStrength::GLOBAL_STRONG;
+	return static_cast<EMonsterStrength::EMonsterStrength>(std::stoi(rawValue));
+}
+
+static std::shared_ptr<CMapGenOptions> makeRandomMapOptions(const po::variables_map & vm)
+{
+	auto options = std::make_shared<CMapGenOptions>();
+	const int mapSize = parseRandomMapSize(vm["randommap-size"].as<std::string>());
+	const int levels = static_cast<int>(vm["randommap-levels"].as<si64>());
+	const int playerCount = static_cast<int>(vm["randommap-players"].as<si64>());
+	const int teamCount = static_cast<int>(vm["randommap-teams"].as<si64>());
+	const int compOnlyPlayerCount = static_cast<int>(vm["randommap-comp-only-players"].as<si64>());
+	const int compOnlyTeamCount = static_cast<int>(vm["randommap-comp-only-teams"].as<si64>());
+
+	if(levels < 1)
+		throw std::runtime_error("Random map levels must be at least 1");
+	if(playerCount < 1 || playerCount > PlayerColor::PLAYER_LIMIT_I)
+		throw std::runtime_error("Random map player count is out of range");
+	if(compOnlyPlayerCount < 0)
+		throw std::runtime_error("Random map computer-only player count must be non-negative");
+
+	options->setWidth(mapSize);
+	options->setHeight(mapSize);
+	options->setLevels(levels);
+	options->setHumanOrCpuPlayerCount(static_cast<si8>(playerCount));
+	options->setTeamCount(static_cast<si8>(teamCount));
+	options->setCompOnlyPlayerCount(static_cast<si8>(compOnlyPlayerCount));
+	options->setCompOnlyTeamCount(static_cast<si8>(compOnlyTeamCount));
+	options->setWaterContent(parseRandomMapWaterContent(vm["randommap-water"].as<std::string>()));
+	options->setMonsterStrength(parseRandomMapMonsterStrength(vm["randommap-monsters"].as<std::string>()));
+
+	if(vm.count("randommap-template"))
+		options->setMapTemplate(vm["randommap-template"].as<std::string>());
+
+	for(int playerIndex = 0; playerIndex < playerCount; ++playerIndex)
+		options->setPlayerTypeForStandardPlayer(PlayerColor(playerIndex), EPlayerType::AI);
+
+	if(!options->checkOptions())
+		throw std::runtime_error("No random map template matches the requested headless random map options");
+
+	return options;
+}
+
 #if defined(VCMI_WINDOWS) && !defined(__GNUC__) && defined(VCMI_WITH_DEBUG_CONSOLE)
 int wmain(int argc, wchar_t* argv[])
 #elif defined(VCMI_MOBILE)
@@ -147,6 +248,17 @@ int main(int argc, char * argv[])
 		("testsave", po::value<std::string>(), "")
 		("testdays", po::value<si64>(), "with --testmap/--testsave, stop after N completed adventure days")
 		("seed", po::value<si64>(), "with --testmap/--testsave, use a fixed server random seed")
+		("testrandommap", "start a generated random map for a headless test run")
+		("randommap-seed", po::value<si64>(), "with --testrandommap, use a fixed random-map generation seed")
+		("randommap-size", po::value<std::string>()->default_value("S"), "with --testrandommap, map size: S, M, L, XL, H, XH, G, or numeric width")
+		("randommap-levels", po::value<si64>()->default_value(2), "with --testrandommap, generated map level count")
+		("randommap-players", po::value<si64>()->default_value(2), "with --testrandommap, human-or-AI player count")
+		("randommap-teams", po::value<si64>()->default_value(0), "with --testrandommap, team count for standard players; 0 means free-for-all")
+		("randommap-comp-only-players", po::value<si64>()->default_value(0), "with --testrandommap, computer-only player count")
+		("randommap-comp-only-teams", po::value<si64>()->default_value(0), "with --testrandommap, computer-only team count")
+		("randommap-water", po::value<std::string>()->default_value("none"), "with --testrandommap, water content: none, normal, islands, random")
+		("randommap-monsters", po::value<std::string>()->default_value("normal"), "with --testrandommap, monster strength: weak, normal, strong, random")
+		("randommap-template", po::value<std::string>(), "with --testrandommap, force a random map template id")
 		("logLocation", po::value<std::string>(), "new location for log files")
 		("spectate,s", "enable spectator interface for AI-only games")
 		("spectate-ignore-hero", "wont follow heroes on adventure map")
@@ -280,6 +392,7 @@ int main(int argc, char * argv[])
 	setSettingInteger("session/serverport", "serverport", 0);
 	setSettingInteger("session/testdays", "testdays", 0);
 	setSettingInteger("server/seed", "seed", 0);
+	setSettingInteger("server/mapGenSeed", "randommap-seed", 0);
 	setSettingInteger("general/saveFrequency", "savefrequency", 1);
 
 	// Initialize logging based on settings
@@ -378,6 +491,12 @@ int main(int argc, char * argv[])
 		session["testsave"].String() = vm["testsave"].as<std::string>();
 		session["onlyai"].Bool() = true;
 		GAME->server().debugStartTest(session["testsave"].String(), true);
+	}
+	else if(vm.count("testrandommap"))
+	{
+		session["testmap"].String() = "RandomMaps/DebugGeneratedRandomMap.vmap";
+		session["onlyai"].Bool() = true;
+		GAME->server().debugStartRandomTest(makeRandomMapOptions(vm));
 	}
 	else if (!settings["session"]["headless"].Bool())
 	{

@@ -1516,6 +1516,43 @@ void AIStatus::waitTillFree()
 	}
 }
 
+bool AIStatus::waitTillFreeFor(std::chrono::milliseconds timeout)
+{
+	const auto deadline = std::chrono::steady_clock::now() + timeout;
+	std::unique_lock<std::mutex> lock(mx);
+	while(battle != NO_BATTLE || !remainingQueries.empty() || !objectsBeingVisited.empty() || ongoingHeroMovement)
+	{
+		if(cv.wait_until(lock, deadline) == std::cv_status::timeout)
+			return battle == NO_BATTLE && remainingQueries.empty() && objectsBeingVisited.empty() && !ongoingHeroMovement;
+		aiGw->nullkiller->makingTurnInterruption.interruptionPoint();
+	}
+	return true;
+}
+
+std::string AIStatus::describeBlockers()
+{
+	std::unique_lock<std::mutex> lock(mx);
+	std::vector<std::string> blockers;
+	if(battle != NO_BATTLE)
+		blockers.push_back("battle");
+	if(ongoingHeroMovement)
+		blockers.push_back("hero movement");
+	if(!objectsBeingVisited.empty())
+		blockers.push_back(boost::str(boost::format("%d object visit(s)") % objectsBeingVisited.size()));
+	for(const auto & query : remainingQueries)
+		blockers.push_back(boost::str(boost::format("query %d: %s") % query.first.getNum() % query.second));
+	if(blockers.empty())
+		return "none";
+	std::ostringstream result;
+	for(size_t index = 0; index < blockers.size(); ++index)
+	{
+		if(index)
+			result << ", ";
+		result << blockers[index];
+	}
+	return result.str();
+}
+
 bool AIStatus::haveTurn()
 {
 	std::unique_lock<std::mutex> lock(mx);

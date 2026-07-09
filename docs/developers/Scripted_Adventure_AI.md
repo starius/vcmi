@@ -576,13 +576,33 @@ The batch runner passes `--testdays N` to stop after N completed adventure days.
 as a safety guard for hangs or unexpectedly slow maps. `--trace` enables `ScriptedAdventureAI` tracing without
 editing `config/ai/scriptedAdventure.json`. `--script` can be either a bundled script resource such as
 `ai/defaultAdventure.lua` or a local Lua file; local files are passed to the AI as `file:/...` script overrides.
+Use `--jobs N` to run independent headless games in parallel. Each run writes a `run.json`, raw stdout, logs, and
+trace files under its run directory; the batch root also gets `manifest.json` and a compact `results.json` with
+winner, outcome, completed-day, seed, script, AI order, and trace paths for downstream analysis.
 Use `--scenario-file scripts/ai/evaluationScenarios.json` to run the graduated evaluation ladder instead of
 repeating `--map` options. Scenario entries define:
 
 - `stage`: `smoke`, `early`, `mid`, or `outcome`
 - `group`: `training` or `heldout`
-- `kind`: `handcrafted` or `random-fixed-seed`
+- `kind`: `handcrafted`, generated random-map experiments, or fixed random-map artifacts
 - `gameSeed`, `runs`, `testdays`, `timeout`, tags, and optional fixed random-map seed/template metadata
+
+Scenario entries can set `randomMap` instead of `map`/`save` to generate a map at run time. The random-map fields
+are `size`, `levels`, `players`, `teams`, `compOnlyPlayers`, `compOnlyTeams`, `water`, `monsterStrength`,
+`template`, `seed` or `mapSeed`, and `gameSeed`. `seed`/`mapSeed` controls map generation; `gameSeed` controls
+gameplay randomness after the map exists. For example:
+
+```json
+{
+  "name": "rmg-small-underground-nowater-1",
+  "kind": "generated-random",
+  "randomMap": { "size": "S", "levels": 2, "players": 2, "water": "none" },
+  "seed": 51001,
+  "gameSeed": 61001,
+  "testdays": 0,
+  "timeout": 1800
+}
+```
 
 The cheap smoke stage is active by default and uses fixed server RNG seeds via `vcmiclient --seed`. Longer
 handcrafted scenarios and fixed-seed random-map corpus entries are present in the same file and can be enabled when
@@ -824,6 +844,8 @@ Regression harness:
   handcrafted stages, and documented fixed-seed random-map training/held-out corpus entries.
 - Done: headless test runs accept `vcmiclient --seed N`, and scenario `gameSeed` values are passed through so
   baseline/candidate comparisons use the same gameplay RNG.
+- Done: headless test runs accept generated random maps with explicit map seeds, and the batch runner can execute
+  those scenarios in parallel with compact win/day result summaries.
 - Done: evaluations report bucketed metrics by training/held-out group, ladder stage, and scenario kind.
 - Done: promotion gates require training improvement and held-out non-regression when those buckets are present.
 - Done: batch runs parse red-player win/loss and day-limit outcomes from client logs and include those signals in
@@ -838,8 +860,8 @@ Regression harness:
 - Done: `vcmiclient --testdays N` stops `--testmap`/`--testsave` benchmark runs after N completed adventure days.
 - Done: first seeded script-loop policy iteration ran end-to-end and rejected a safe but non-improving exploration
   candidate, leaving the champion script unchanged.
-- Remaining: generate and check in the fixed-seed random-map corpus files, then add engine-level explored-area and
-  map-control deltas.
+- Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus, then add
+  engine-level explored-area and map-control deltas.
 
 ## Open Design Questions
 

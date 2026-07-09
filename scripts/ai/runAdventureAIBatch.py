@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import os
 import re
@@ -37,6 +38,10 @@ def string_list(value: Any) -> list[str]:
     return [str(item) for item in as_list(value)]
 
 
+def as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def script_override_value(script: str | None) -> str | None:
     if not script:
         return None
@@ -49,6 +54,8 @@ def script_override_value(script: str | None) -> str | None:
 
 
 def scenario_source(scenario: dict[str, Any]) -> tuple[str, str]:
+    if "randomMap" in scenario:
+        return "random", str(scenario.get("name") or "random-map")
     if scenario.get("save"):
         return "save", str(scenario["save"])
     return "map", str(scenario["map"])
@@ -56,14 +63,27 @@ def scenario_source(scenario: dict[str, Any]) -> tuple[str, str]:
 
 def command_for_run(args: argparse.Namespace, scenario: dict[str, Any], run_dir: Path) -> list[str]:
     source_type, source = scenario_source(scenario)
-    command = [
-        args.client,
-        "--headless",
-        "--testsave" if source_type == "save" else "--testmap",
-        source,
-        "--logLocation",
-        str(run_dir / "logs"),
-    ]
+    command = [args.client, "--headless"]
+    if source_type == "random":
+        random_map = as_dict(scenario.get("randomMap"))
+        map_seed = scenario.get("seed", random_map.get("seed"))
+        template = scenario.get("template", random_map.get("template"))
+        command.append("--testrandommap")
+        command.extend(["--randommap-size", str(random_map.get("size", "S"))])
+        command.extend(["--randommap-levels", str(random_map.get("levels", 2))])
+        command.extend(["--randommap-players", str(random_map.get("players", 2))])
+        command.extend(["--randommap-teams", str(random_map.get("teams", 0))])
+        command.extend(["--randommap-comp-only-players", str(random_map.get("compOnlyPlayers", 0))])
+        command.extend(["--randommap-comp-only-teams", str(random_map.get("compOnlyTeams", 0))])
+        command.extend(["--randommap-water", str(random_map.get("water", "none"))])
+        command.extend(["--randommap-monsters", str(random_map.get("monsterStrength", "normal"))])
+        if template is not None:
+            command.extend(["--randommap-template", str(template)])
+        if map_seed is not None:
+            command.extend(["--randommap-seed", str(map_seed)])
+    else:
+        command.extend(["--testsave" if source_type == "save" else "--testmap", source])
+    command.extend(["--logLocation", str(run_dir / "logs")])
     if args.testdays:
         command.extend(["--testdays", str(args.testdays)])
     if scenario.get("gameSeed") is not None:
@@ -78,11 +98,46 @@ def trace_dir_for_run(run_dir: Path) -> Path:
     return run_dir / "cache" / "vcmi" / "scriptedAdventureAI"
 
 
-def normalize_scenario(raw: dict[str, Any], index: int, args: argparse.Namespace) -> dict[str, Any]:
-    if not raw.get("map") and not raw.get("save"):
-        raise ValueError(f"Scenario entry {index} is missing 'map' or 'save'")
+def normalize_random_map(raw: dict[str, Any]) -> dict[str, Any]:
+    random_map = dict(as_dict(raw.get("randomMap")))
+    for raw_field, normalized_field in (
+        ("size", "size"),
+        ("levels", "levels"),
+        ("players", "players"),
+        ("teams", "teams"),
+        ("compOnlyPlayers", "compOnlyPlayers"),
+        ("compOnlyTeams", "compOnlyTeams"),
+        ("water", "water"),
+        ("monsterStrength", "monsterStrength"),
+        ("template", "template"),
+        ("seed", "seed"),
+        ("mapSeed", "seed"),
+    ):
+        if raw_field in raw:
+            random_map[normalized_field] = raw[raw_field]
 
-    source = str(raw.get("map") or raw.get("save"))
+    normalized = {
+        "size": str(random_map.get("size", "S")),
+        "levels": int(random_map.get("levels", 2)),
+        "players": int(random_map.get("players", 2)),
+        "teams": int(random_map.get("teams", 0)),
+        "compOnlyPlayers": int(random_map.get("compOnlyPlayers", 0)),
+        "compOnlyTeams": int(random_map.get("compOnlyTeams", 0)),
+        "water": str(random_map.get("water", "none")),
+        "monsterStrength": str(random_map.get("monsterStrength", "normal")),
+    }
+    if "template" in random_map:
+        normalized["template"] = str(random_map["template"])
+    if "seed" in random_map:
+        normalized["seed"] = int(random_map["seed"])
+    return normalized
+
+
+def normalize_scenario(raw: dict[str, Any], index: int, args: argparse.Namespace) -> dict[str, Any]:
+    if not raw.get("map") and not raw.get("save") and "randomMap" not in raw:
+        raise ValueError(f"Scenario entry {index} is missing 'map', 'save', or 'randomMap'")
+
+    source = str(raw.get("map") or raw.get("save") or raw.get("name") or f"random-map-{index}")
     scenario = {
         "name": str(raw.get("name") or safe_name(source)),
         "group": str(raw.get("group", DEFAULT_SCENARIO_GROUP)),
@@ -99,9 +154,17 @@ def normalize_scenario(raw: dict[str, Any], index: int, args: argparse.Namespace
         scenario["map"] = str(raw["map"])
     if raw.get("save"):
         scenario["save"] = str(raw["save"])
+    if "randomMap" in raw:
+        scenario["randomMap"] = normalize_random_map(raw)
+        if "seed" in scenario["randomMap"] and "seed" not in raw and "mapSeed" not in raw:
+            scenario["seed"] = scenario["randomMap"]["seed"]
+        if "template" in scenario["randomMap"] and "template" not in raw:
+            scenario["template"] = scenario["randomMap"]["template"]
     for field in ("gameSeed", "seed", "template", "size", "levels", "water", "monsterStrength", "notes"):
         if field in raw:
             scenario[field] = raw[field]
+    if "mapSeed" in raw:
+        scenario["seed"] = raw["mapSeed"]
     return scenario
 
 
@@ -123,7 +186,7 @@ def load_scenarios(args: argparse.Namespace) -> list[dict[str, Any]]:
     if args.scenario_file:
         with args.scenario_file.open("r", encoding="utf-8") as handle:
             raw = json.load(handle)
-        if isinstance(raw, dict) and "map" in raw:
+        if isinstance(raw, dict) and any(field in raw for field in ("map", "save", "randomMap")):
             raw_scenarios = [raw]
         elif isinstance(raw, dict):
             raw_scenarios = raw.get("scenarios", [])
@@ -259,6 +322,10 @@ def run_one(args: argparse.Namespace, scenario_or_map: dict[str, Any] | str, run
 
     trace_dir = trace_dir_for_run(run_dir)
     trace_summary = summarize(iter_trace_files([str(trace_dir)])) if trace_dir.exists() else summarize([])
+    outcome = run_outcome(stdout_path, timed_out, return_code)
+    max_day = int(trace_summary.get("quality", {}).get("maxDay") or 0)
+    if outcome["completedDays"] is None and max_day > 0:
+        outcome["completedDays"] = max_day
     result = {
         "scenario": scenario.get("name"),
         "group": scenario.get("group"),
@@ -268,7 +335,9 @@ def run_one(args: argparse.Namespace, scenario_or_map: dict[str, Any] | str, run
         "source": source,
         "map": scenario.get("map"),
         "save": scenario.get("save"),
+        "randomMap": scenario.get("randomMap"),
         "seed": scenario.get("seed"),
+        "gameSeed": scenario.get("gameSeed"),
         "template": scenario.get("template"),
         "tags": scenario.get("tags", []),
         "run": run_index,
@@ -278,14 +347,92 @@ def run_one(args: argparse.Namespace, scenario_or_map: dict[str, Any] | str, run
         "timedOut": timed_out,
         "returnCode": return_code,
         "elapsedSeconds": round(time.monotonic() - started, 3),
+        "ai": list(args.ai),
         "script": script_override_value(args.script),
         "trace": bool(args.trace),
         "traceDir": str(trace_dir),
         "traceSummary": trace_summary,
-        "outcome": run_outcome(stdout_path, timed_out, return_code),
+        "outcome": outcome,
     }
     (run_dir / "run.json").write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
     return result
+
+
+def result_winner(result: dict[str, Any]) -> str | None:
+    ai_names = [str(item) for item in as_list(result.get("ai"))]
+    outcome = as_dict(result.get("outcome"))
+    outcome_result = outcome.get("result")
+    if outcome_result == "red_win":
+        return ai_names[0] if ai_names else "red"
+    if outcome_result == "red_loss":
+        return ai_names[1] if len(ai_names) > 1 else "red_opponent"
+    return None
+
+
+def compact_result(result: dict[str, Any]) -> dict[str, Any]:
+    outcome = as_dict(result.get("outcome"))
+    winner = result_winner(result)
+    return {
+        "scenario": result.get("scenario"),
+        "run": result.get("run"),
+        "winner": winner,
+        "outcome": outcome.get("result"),
+        "completedDays": outcome.get("completedDays"),
+        "timedOut": result.get("timedOut"),
+        "returnCode": result.get("returnCode"),
+        "elapsedSeconds": result.get("elapsedSeconds"),
+        "sourceType": result.get("sourceType"),
+        "source": result.get("source"),
+        "randomMap": result.get("randomMap"),
+        "mapSeed": result.get("seed"),
+        "gameSeed": result.get("gameSeed"),
+        "template": result.get("template"),
+        "ai": result.get("ai"),
+        "traceDir": result.get("traceDir"),
+        "runDir": result.get("runDir"),
+        "runJson": str(Path(str(result.get("runDir"))) / "run.json") if result.get("runDir") else None,
+        "traceFilesParsed": as_dict(result.get("traceSummary")).get("parsed", 0),
+        "importantMistakes": as_dict(as_dict(result.get("traceSummary")).get("mistakes")).get("important", 0),
+    }
+
+
+def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
+    winners: dict[str, int] = {}
+    outcomes: dict[str, int] = {}
+    for result in results:
+        winner = result_winner(result) or "none"
+        winners[winner] = winners.get(winner, 0) + 1
+        outcome = str(as_dict(result.get("outcome")).get("result", "unknown"))
+        outcomes[outcome] = outcomes.get(outcome, 0) + 1
+
+    completed_days = [
+        int(as_dict(result.get("outcome")).get("completedDays"))
+        for result in results
+        if isinstance(as_dict(result.get("outcome")).get("completedDays"), int)
+    ]
+    return {
+        "runs": len(results),
+        "winners": winners,
+        "outcomes": outcomes,
+        "timeouts": sum(1 for result in results if result.get("timedOut")),
+        "nonzeroExit": sum(1 for result in results if not result.get("timedOut") and result.get("returnCode") != 0),
+        "completedDayMin": min(completed_days) if completed_days else None,
+        "completedDayMax": max(completed_days) if completed_days else None,
+        "completedDayAverage": round(sum(completed_days) / len(completed_days), 2) if completed_days else None,
+        "results": [compact_result(result) for result in sorted(results, key=lambda item: (str(item.get("scenario")), int(item.get("run", 0))))],
+    }
+
+
+def print_run_status(scenario: dict[str, Any], result: dict[str, Any]) -> None:
+    status = "timeout" if result["timedOut"] else f"exit {result['returnCode']}"
+    parsed = result["traceSummary"]["parsed"]
+    winner = result_winner(result) or "<none>"
+    days = as_dict(result.get("outcome")).get("completedDays")
+    print(
+        f"{scenario['name']} {scenario_source(scenario)[1]} run {result['run']}: "
+        f"{status}, outcome={result['outcome']['result']}, winner={winner}, days={days}, "
+        f"traces parsed={parsed}, dir={result['runDir']}"
+    )
 
 
 def main() -> int:
@@ -307,6 +454,7 @@ def main() -> int:
     parser.add_argument("--extra-arg", action="append", default=[], help="Extra argument passed to vcmiclient.")
     parser.add_argument("--script", default=None, help="Script resource path or local Lua file used by ScriptedAdventureAI.")
     parser.add_argument("--trace", action="store_true", help="Enable ScriptedAdventureAI trace files for each run.")
+    parser.add_argument("--jobs", type=int, default=1, help="Number of runs to execute in parallel.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable batch manifest.")
     args = parser.parse_args()
     if args.ai is None:
@@ -315,23 +463,38 @@ def main() -> int:
     args.output.mkdir(parents=True, exist_ok=True)
     results: list[dict[str, Any]] = []
     scenarios = load_scenarios(args)
+    jobs = max(1, int(args.jobs))
+    tasks: list[tuple[argparse.Namespace, dict[str, Any], int]] = []
     for scenario in scenarios:
         scenario_args = args_for_scenario(args, scenario)
         for run_index in range(1, scenario["runs"] + 1):
+            tasks.append((scenario_args, scenario, run_index))
+
+    if jobs == 1:
+        for scenario_args, scenario, run_index in tasks:
             result = run_one(scenario_args, scenario, run_index)
             results.append(result)
             if not args.json:
-                status = "timeout" if result["timedOut"] else f"exit {result['returnCode']}"
-                parsed = result["traceSummary"]["parsed"]
-                print(
-                    f"{scenario['name']} {scenario_source(scenario)[1]} run {run_index}: "
-                    f"{status}, outcome={result['outcome']['result']}, traces parsed={parsed}, dir={result['runDir']}"
-                )
+                print_run_status(scenario, result)
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as executor:
+            future_to_scenario = {
+                executor.submit(run_one, scenario_args, scenario, run_index): scenario
+                for scenario_args, scenario, run_index in tasks
+            }
+            for future in concurrent.futures.as_completed(future_to_scenario):
+                scenario = future_to_scenario[future]
+                result = future.result()
+                results.append(result)
+                if not args.json:
+                    print_run_status(scenario, result)
 
     manifest = {"scenarios": scenarios, "runs": results}
+    summary = summarize_results(results)
     (args.output / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    (args.output / "results.json").write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
     if args.json:
-        print(json.dumps(manifest, indent=2, sort_keys=True))
+        print(json.dumps({"manifest": manifest, "summary": summary}, indent=2, sort_keys=True))
     return 0
 
 

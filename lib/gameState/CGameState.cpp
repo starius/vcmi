@@ -20,6 +20,7 @@
 
 #include "../GameSettings.h"
 #include "../texts/CGeneralTextHandler.h"
+#include "../CConfigHandler.h"
 #include "../CPlayerState.h"
 #include "../CStopWatch.h"
 #include "../IGameSettings.h"
@@ -309,7 +310,10 @@ void CGameState::initNewGame(const IMapService * mapService, vstd::RNG & randomG
 		CStopWatch sw;
 
 		// Gen map
-		CMapGenerator mapGenerator(*scenarioOps->mapGenOptions, this, randomGenerator.nextInt());
+		const int configuredMapSeed = settings["server"]["mapGenSeed"].Integer();
+		const int mapSeed = configuredMapSeed != 0 ? configuredMapSeed : randomGenerator.nextInt();
+		logGlobal->info("Using random map seed: %d", mapSeed);
+		CMapGenerator mapGenerator(*scenarioOps->mapGenOptions, this, mapSeed);
 		progressTracking.include(mapGenerator);
 
 		map = mapGenerator.generate();

@@ -122,13 +122,19 @@ private:
 	std::mutex queryReplyMutex;
 	std::map<int, QueryID> queryReplyRequests;
 	std::map<int, bool> earlyQueryReplyResults;
+	std::mutex autoAnswerMutex;
+	std::map<QueryID, int> pendingAutoAnswers;
+	bool scriptActionDrainsAutoAnswers = false;
 
 	void makeScriptedTurn();
 	bool tryMakeScriptedTurn();
 	bool executeScriptAction(const JsonNode & action, JsonNode & actionResult);
 	RequestWaitResult submitAndWaitForRequest(const std::type_info & requestType, uint16_t expectedPackType, const std::function<void()> & submit);
 	JsonNode jsonRequestWaitResult(const RequestWaitResult & request) const;
+	bool waitTillFreeForScriptAction(JsonNode & actionResult, const std::string & actionType);
 	void answerQueryWithoutGameStateLock(const std::string & description, QueryID queryID, int selection);
+	void answerPendingAutoQueries();
+	void setScriptActionAutoAnswerMode(bool active);
 	JsonNode makeScriptInputState();
 	JsonNode makeScriptActionSpace() const;
 	JsonNode makeScriptAnalysis() const;
