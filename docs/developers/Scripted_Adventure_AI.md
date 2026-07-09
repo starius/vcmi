@@ -576,8 +576,20 @@ The batch runner passes `--testdays N` to stop after N completed adventure days.
 as a safety guard for hangs or unexpectedly slow maps. `--trace` enables `ScriptedAdventureAI` tracing without
 editing `config/ai/scriptedAdventure.json`. `--script` can be either a bundled script resource such as
 `ai/defaultAdventure.lua` or a local Lua file; local files are passed to the AI as `file:/...` script overrides.
-Use `--scenario-file scripts/ai/evaluationScenarios.json` to run a named map/testday matrix instead of repeating
-`--map` options. Scenario entries can override `runs`, `testdays`, `timeout`, and extra client arguments.
+Use `--scenario-file scripts/ai/evaluationScenarios.json` to run the graduated evaluation ladder instead of
+repeating `--map` options. Scenario entries define:
+
+- `stage`: `smoke`, `early`, `mid`, or `outcome`
+- `group`: `training` or `heldout`
+- `kind`: `handcrafted` or `random-fixed-seed`
+- `gameSeed`, `runs`, `testdays`, `timeout`, tags, and optional fixed random-map seed/template metadata
+
+The cheap smoke stage is active by default and uses fixed server RNG seeds via `vcmiclient --seed`. Longer
+handcrafted scenarios and fixed-seed random-map corpus entries are present in the same file and can be enabled when
+the runtime budget and generated random map files are available. Disabled scenarios are skipped unless
+`--include-disabled` is passed. `--stage`, `--group`, and `--kind` can restrict a batch to a subset of the ladder.
+For random-map corpus entries, `seed` identifies the generated map artifact and `gameSeed` identifies the gameplay
+RNG used when evaluating that artifact.
 
 The same override can be supplied manually with environment variables:
 
@@ -606,8 +618,14 @@ The evaluator runs both sides with tracing enabled, snapshots script files into 
 writes `evaluation.json`, and prints a heuristic score delta, quality delta, and promotion verdict. The score is
 not a gameplay rating; it is an iteration signal that rewards completed runs, useful actions, and final visible
 state quality while penalizing timeouts, nonzero exits, parse errors, fallbacks, failed actions, stopped batches,
-and mined mistakes. Higher-level win/loss and map-control metrics should replace or augment it as the host exposes
-richer state.
+mined mistakes, and red-player losses. Red-player wins are rewarded when a run reaches a real victory outcome.
+The evaluator writes global metrics plus bucketed metrics by `group`, `stage`, and `kind`.
+
+Promotion gates now encode the training/held-out workflow: the candidate must improve on the `training` bucket and
+must not regress on the `heldout` bucket when those buckets are present. The fixed-seed random-map entries should be
+generated once and kept stable, then split between training and held-out groups. Script authors may iterate against
+training maps, but promotion should continue to require held-out non-regression. Higher-level map-control metrics
+should replace or augment the current trace-local quality score as the host exposes richer state.
 
 Trace mistakes can be mined into review notes and draft JSON policy fixtures:
 
@@ -638,11 +656,12 @@ This enables the intended loop:
 
 1. Put a candidate Lua file under `scripts/ai/candidates/` or another local path.
 2. Run baseline-vs-candidate scenarios with tracing enabled.
-3. Inspect `evaluation.json`, summary deltas, and mined mistake notes.
-4. Convert representative mistakes into JSON policy fixtures.
-5. Edit the Lua script and rerun without rebuilding.
-6. Promote the candidate only when hard safety gates pass and score/quality deltas justify it.
-7. Promote useful host analysis or action types into C++ only when scripts cannot express them cleanly.
+3. Iterate against training scenarios first; use held-out scenarios only as the promotion guard.
+4. Inspect `evaluation.json`, bucket deltas, summary deltas, and mined mistake notes.
+5. Convert representative mistakes into JSON policy fixtures.
+6. Edit the Lua script and rerun without rebuilding.
+7. Promote the candidate only when hard safety gates pass, training improves, and held-out scenarios do not regress.
+8. Promote useful host analysis or action types into C++ only when scripts cannot express them cleanly.
 
 ## Testing Strategy
 
@@ -688,15 +707,19 @@ Regression harness:
   estimates, mined mistake categories, and draft JSON fixture extraction for script iteration.
 - A headless batch runner can launch fixed-day AI-vs-AI runs and summarize traces. The client-side `--testdays`
   option makes `--testmap`/`--testsave` runs exit after N completed adventure days. Batch and evaluation tools can
-  also consume named scenario files for repeated map/testday matrices.
+  also consume named scenario files for repeated graduated ladders with training, held-out, handcrafted, and
+  fixed-seed random-map entries.
 - `ScriptedAdventureAI` supports environment overrides for trace enablement and script path, including external
   `file:/...` Lua scripts. This makes script edits and candidate snapshots testable without rebuilding or editing
   packaged config.
 - `scripts/ai/evaluateAdventureAIScripts.py` runs baseline and candidate scripts through the same fixed maps,
   collects traces, snapshots script files, and emits an evaluation JSON with heuristic score deltas, quality deltas,
-  mistake penalties, and a promotion verdict.
+  mistake penalties, stage/group/kind buckets, outcome counts, and a promotion verdict.
 - `scripts/ai/promoteAdventureAIScript.py` archives the current champion script and installs a candidate after an
   evaluation verdict passes, keeping champion promotion as a script-only operation.
+- First seeded smoke-loop iteration tested a scout-only exploration fallback candidate. The ladder completed
+  deterministically with fixed `gameSeed` values and rejected the candidate because it was safe but did not improve
+  the training bucket. The default champion script was left unchanged.
 - Debugging `Emerald Isles` smoke runs showed the scripted host must not use Nullkiller helper methods that perform
   hidden side effects such as army exchange after movement. Scripted movement is now a direct, tracked `MoveHero`
   request over a route-id-validated path, and garrison/hero-exchange/recruitment dialogs are conservatively answered
@@ -797,6 +820,14 @@ Regression harness:
   evaluation manifest for the run-trace-improve loop.
 - Done: batch and evaluation tools accept scenario files, including `scripts/ai/evaluationScenarios.json`, so the
   same script versions can be tested across a stable map/testday matrix.
+- Done: `scripts/ai/evaluationScenarios.json` is now a graduated ladder with active smoke scenarios, longer
+  handcrafted stages, and documented fixed-seed random-map training/held-out corpus entries.
+- Done: headless test runs accept `vcmiclient --seed N`, and scenario `gameSeed` values are passed through so
+  baseline/candidate comparisons use the same gameplay RNG.
+- Done: evaluations report bucketed metrics by training/held-out group, ladder stage, and scenario kind.
+- Done: promotion gates require training improvement and held-out non-regression when those buckets are present.
+- Done: batch runs parse red-player win/loss and day-limit outcomes from client logs and include those signals in
+  evaluation scoring.
 - Done: trace summaries and evaluations include explainable quality metrics from final visible state snapshots.
 - Done: trace summaries mine likely policy mistakes, including unsafe choices, ignored better safe objects, failed
   actions, idle turns with candidates, and missing responses to visible threats.
@@ -805,8 +836,10 @@ Regression harness:
 - Done: `scripts/ai/promoteAdventureAIScript.py` supports champion-script promotion with archive manifests after a
   passing evaluation verdict.
 - Done: `vcmiclient --testdays N` stops `--testmap`/`--testsave` benchmark runs after N completed adventure days.
-- Remaining: add engine-level gameplay outcome metrics such as win/loss, explored area, and map-control deltas, then
-  use collected failures to expand host analysis and improve the default Lua policy.
+- Done: first seeded script-loop policy iteration ran end-to-end and rejected a safe but non-improving exploration
+  candidate, leaving the champion script unchanged.
+- Remaining: generate and check in the fixed-seed random-map corpus files, then add engine-level explored-area and
+  map-control deltas.
 
 ## Open Design Questions
 

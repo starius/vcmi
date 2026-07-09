@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -19,12 +20,21 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from summarizeAdventureTrace import iter_trace_files, summarize  # noqa: E402
 
 
+DEFAULT_SCENARIO_GROUP = "training"
+DEFAULT_SCENARIO_KIND = "handcrafted"
+DEFAULT_SCENARIO_STAGE = "smoke"
+
+
 def as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 
 
 def safe_name(value: str) -> str:
     return "".join(ch if ch.isalnum() else "_" for ch in value).strip("_") or "scenario"
+
+
+def string_list(value: Any) -> list[str]:
+    return [str(item) for item in as_list(value)]
 
 
 def script_override_value(script: str | None) -> str | None:
@@ -38,17 +48,26 @@ def script_override_value(script: str | None) -> str | None:
     return script
 
 
-def command_for_run(args: argparse.Namespace, game_map: str, run_dir: Path) -> list[str]:
+def scenario_source(scenario: dict[str, Any]) -> tuple[str, str]:
+    if scenario.get("save"):
+        return "save", str(scenario["save"])
+    return "map", str(scenario["map"])
+
+
+def command_for_run(args: argparse.Namespace, scenario: dict[str, Any], run_dir: Path) -> list[str]:
+    source_type, source = scenario_source(scenario)
     command = [
         args.client,
         "--headless",
-        "--testmap",
-        game_map,
+        "--testsave" if source_type == "save" else "--testmap",
+        source,
         "--logLocation",
         str(run_dir / "logs"),
     ]
     if args.testdays:
         command.extend(["--testdays", str(args.testdays)])
+    if scenario.get("gameSeed") is not None:
+        command.extend(["--seed", str(scenario["gameSeed"])])
     for ai_name in args.ai:
         command.extend(["--ai", ai_name])
     command.extend(args.extra_arg)
@@ -57,6 +76,45 @@ def command_for_run(args: argparse.Namespace, game_map: str, run_dir: Path) -> l
 
 def trace_dir_for_run(run_dir: Path) -> Path:
     return run_dir / "cache" / "vcmi" / "scriptedAdventureAI"
+
+
+def normalize_scenario(raw: dict[str, Any], index: int, args: argparse.Namespace) -> dict[str, Any]:
+    if not raw.get("map") and not raw.get("save"):
+        raise ValueError(f"Scenario entry {index} is missing 'map' or 'save'")
+
+    source = str(raw.get("map") or raw.get("save"))
+    scenario = {
+        "name": str(raw.get("name") or safe_name(source)),
+        "group": str(raw.get("group", DEFAULT_SCENARIO_GROUP)),
+        "stage": str(raw.get("stage", DEFAULT_SCENARIO_STAGE)),
+        "kind": str(raw.get("kind", DEFAULT_SCENARIO_KIND)),
+        "runs": int(raw.get("runs", args.runs)),
+        "testdays": int(raw.get("testdays", args.testdays)),
+        "timeout": int(raw.get("timeout", args.timeout)),
+        "extra_arg": list(args.extra_arg) + string_list(raw.get("extraArg")),
+        "enabled": bool(raw.get("enabled", True)),
+        "tags": string_list(raw.get("tags")),
+    }
+    if raw.get("map"):
+        scenario["map"] = str(raw["map"])
+    if raw.get("save"):
+        scenario["save"] = str(raw["save"])
+    for field in ("gameSeed", "seed", "template", "size", "levels", "water", "monsterStrength", "notes"):
+        if field in raw:
+            scenario[field] = raw[field]
+    return scenario
+
+
+def scenario_selected(args: argparse.Namespace, scenario: dict[str, Any]) -> bool:
+    if not scenario.get("enabled", True) and not getattr(args, "include_disabled", False):
+        return False
+    if getattr(args, "group", []) and scenario.get("group") not in args.group:
+        return False
+    if getattr(args, "stage", []) and scenario.get("stage") not in args.stage:
+        return False
+    if getattr(args, "kind", []) and scenario.get("kind") not in args.kind:
+        return False
+    return True
 
 
 def load_scenarios(args: argparse.Namespace) -> list[dict[str, Any]]:
@@ -74,29 +132,29 @@ def load_scenarios(args: argparse.Namespace) -> list[dict[str, Any]]:
         for index, scenario in enumerate(as_list(raw_scenarios), start=1):
             if not isinstance(scenario, dict):
                 raise ValueError(f"Scenario entry {index} must be an object")
-            if not scenario.get("map"):
-                raise ValueError(f"Scenario entry {index} is missing 'map'")
-            scenarios.append({
-                "name": str(scenario.get("name") or safe_name(str(scenario["map"]))),
-                "map": str(scenario["map"]),
-                "runs": int(scenario.get("runs", args.runs)),
-                "testdays": int(scenario.get("testdays", args.testdays)),
-                "timeout": int(scenario.get("timeout", args.timeout)),
-                "extra_arg": list(args.extra_arg) + [str(item) for item in as_list(scenario.get("extraArg"))],
-            })
+            normalized = normalize_scenario(scenario, index, args)
+            if scenario_selected(args, normalized):
+                scenarios.append(normalized)
 
     for game_map in args.map or []:
-        scenarios.append({
+        scenario = {
             "name": safe_name(game_map),
+            "group": DEFAULT_SCENARIO_GROUP,
+            "stage": DEFAULT_SCENARIO_STAGE,
+            "kind": DEFAULT_SCENARIO_KIND,
             "map": game_map,
             "runs": args.runs,
             "testdays": args.testdays,
             "timeout": args.timeout,
             "extra_arg": list(args.extra_arg),
-        })
+            "enabled": True,
+            "tags": [],
+        }
+        if scenario_selected(args, scenario):
+            scenarios.append(scenario)
 
     if not scenarios:
-        raise ValueError("At least one --map or --scenario-file entry is required")
+        raise ValueError("At least one enabled scenario from --map or --scenario-file is required")
 
     for scenario in scenarios:
         scenario["runs"] = max(1, int(scenario["runs"]))
@@ -108,7 +166,7 @@ def load_scenarios(args: argparse.Namespace) -> list[dict[str, Any]]:
 def args_for_scenario(args: argparse.Namespace, scenario: dict[str, Any]) -> argparse.Namespace:
     return argparse.Namespace(
         client=args.client,
-        map=[scenario["map"]],
+        map=[scenario.get("map") or scenario.get("save")],
         ai=args.ai,
         runs=scenario["runs"],
         testdays=scenario["testdays"],
@@ -123,14 +181,53 @@ def args_for_scenario(args: argparse.Namespace, scenario: dict[str, Any]) -> arg
     )
 
 
-def run_one(args: argparse.Namespace, game_map: str, run_index: int) -> dict[str, Any]:
-    safe_map = "".join(ch if ch.isalnum() else "_" for ch in game_map).strip("_") or "map"
+def run_outcome(stdout_path: Path, timed_out: bool, return_code: int | None) -> dict[str, Any]:
+    text = stdout_path.read_text(encoding="utf-8", errors="replace") if stdout_path.exists() else ""
+    outcome = {
+        "result": "unknown",
+        "completedDays": None,
+    }
+    if timed_out:
+        outcome["result"] = "timeout"
+    elif return_code not in (0, None):
+        outcome["result"] = "nonzero_exit"
+    if "Red player won. Ending game." in text:
+        outcome["result"] = "red_win"
+    elif "Red player lost. Ending game." in text:
+        outcome["result"] = "red_loss"
+
+    if match := re.search(r"Reached test day limit \d+ after completing day (\d+)", text):
+        outcome["completedDays"] = int(match.group(1))
+        if outcome["result"] == "unknown":
+            outcome["result"] = "day_limit"
+    return outcome
+
+
+def run_one(args: argparse.Namespace, scenario_or_map: dict[str, Any] | str, run_index: int) -> dict[str, Any]:
+    if isinstance(scenario_or_map, dict):
+        scenario = scenario_or_map
+    else:
+        scenario = {
+            "name": safe_name(scenario_or_map),
+            "group": DEFAULT_SCENARIO_GROUP,
+            "stage": DEFAULT_SCENARIO_STAGE,
+            "kind": DEFAULT_SCENARIO_KIND,
+            "map": scenario_or_map,
+            "runs": args.runs,
+            "testdays": args.testdays,
+            "timeout": args.timeout,
+            "extra_arg": list(args.extra_arg),
+            "enabled": True,
+            "tags": [],
+        }
+    source_type, source = scenario_source(scenario)
+    safe_map = safe_name(source)
     run_dir = args.output / f"{safe_map}-run-{run_index:03d}"
     if run_dir.exists() and args.clean:
         shutil.rmtree(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    command = command_for_run(args, game_map, run_dir)
+    command = command_for_run(args, scenario, run_dir)
     env = os.environ.copy()
     env["XDG_CACHE_HOME"] = str(run_dir / "cache")
     if script := script_override_value(args.script):
@@ -163,7 +260,17 @@ def run_one(args: argparse.Namespace, game_map: str, run_index: int) -> dict[str
     trace_dir = trace_dir_for_run(run_dir)
     trace_summary = summarize(iter_trace_files([str(trace_dir)])) if trace_dir.exists() else summarize([])
     result = {
-        "map": game_map,
+        "scenario": scenario.get("name"),
+        "group": scenario.get("group"),
+        "stage": scenario.get("stage"),
+        "kind": scenario.get("kind"),
+        "sourceType": source_type,
+        "source": source,
+        "map": scenario.get("map"),
+        "save": scenario.get("save"),
+        "seed": scenario.get("seed"),
+        "template": scenario.get("template"),
+        "tags": scenario.get("tags", []),
         "run": run_index,
         "runDir": str(run_dir),
         "command": command,
@@ -175,6 +282,7 @@ def run_one(args: argparse.Namespace, game_map: str, run_index: int) -> dict[str
         "trace": bool(args.trace),
         "traceDir": str(trace_dir),
         "traceSummary": trace_summary,
+        "outcome": run_outcome(stdout_path, timed_out, return_code),
     }
     (run_dir / "run.json").write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
     return result
@@ -185,6 +293,10 @@ def main() -> int:
     parser.add_argument("--client", required=True, help="Path to vcmiclient.")
     parser.add_argument("--map", action="append", default=[], help="VCMI map resource path. Can be repeated.")
     parser.add_argument("--scenario-file", type=Path, help="JSON file with batch scenarios.")
+    parser.add_argument("--group", action="append", default=[], help="Only run scenarios in this group. Can be repeated.")
+    parser.add_argument("--stage", action="append", default=[], help="Only run scenarios in this ladder stage. Can be repeated.")
+    parser.add_argument("--kind", action="append", default=[], help="Only run scenarios of this kind. Can be repeated.")
+    parser.add_argument("--include-disabled", action="store_true", help="Include scenarios marked enabled=false.")
     parser.add_argument("--ai", action="append", default=None, help="AI names for consecutive players.")
     parser.add_argument("--runs", type=int, default=1, help="Runs per map.")
     parser.add_argument("--testdays", type=int, default=0, help="Completed adventure days before the client exits.")
@@ -206,13 +318,15 @@ def main() -> int:
     for scenario in scenarios:
         scenario_args = args_for_scenario(args, scenario)
         for run_index in range(1, scenario["runs"] + 1):
-            result = run_one(scenario_args, scenario["map"], run_index)
-            result["scenario"] = scenario["name"]
+            result = run_one(scenario_args, scenario, run_index)
             results.append(result)
             if not args.json:
                 status = "timeout" if result["timedOut"] else f"exit {result['returnCode']}"
                 parsed = result["traceSummary"]["parsed"]
-                print(f"{scenario['name']} {scenario['map']} run {run_index}: {status}, traces parsed={parsed}, dir={result['runDir']}")
+                print(
+                    f"{scenario['name']} {scenario_source(scenario)[1]} run {run_index}: "
+                    f"{status}, outcome={result['outcome']['result']}, traces parsed={parsed}, dir={result['runDir']}"
+                )
 
     manifest = {"scenarios": scenarios, "runs": results}
     (args.output / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")

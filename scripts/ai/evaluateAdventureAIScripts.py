@@ -7,6 +7,7 @@ import argparse
 import json
 import shutil
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +15,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from compareAdventureTrace import compare  # noqa: E402
-from runAdventureAIBatch import run_one, script_override_value  # noqa: E402
+from runAdventureAIBatch import load_scenarios, run_one, safe_name, scenario_source, script_override_value  # noqa: E402
 
 
 def nested_int(summary: dict[str, Any], section: str, key: str) -> int:
@@ -29,60 +30,6 @@ def deep_int(summary: dict[str, Any], *keys: str) -> int:
             return 0
         value = value.get(key, 0)
     return int(value) if isinstance(value, int) else 0
-
-
-def safe_name(value: str) -> str:
-    return "".join(ch if ch.isalnum() else "_" for ch in value).strip("_") or "scenario"
-
-
-def as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
-
-
-def load_scenarios(args: argparse.Namespace) -> list[dict[str, Any]]:
-    scenarios: list[dict[str, Any]] = []
-
-    if args.scenario_file:
-        with args.scenario_file.open("r", encoding="utf-8") as handle:
-            raw = json.load(handle)
-        if isinstance(raw, dict) and "map" in raw:
-            raw_scenarios = [raw]
-        elif isinstance(raw, dict):
-            raw_scenarios = raw.get("scenarios", [])
-        else:
-            raw_scenarios = raw
-        for index, scenario in enumerate(as_list(raw_scenarios), start=1):
-            if not isinstance(scenario, dict):
-                raise ValueError(f"Scenario entry {index} must be an object")
-            if not scenario.get("map"):
-                raise ValueError(f"Scenario entry {index} is missing 'map'")
-            scenarios.append({
-                "name": str(scenario.get("name") or safe_name(str(scenario["map"]))),
-                "map": str(scenario["map"]),
-                "runs": int(scenario.get("runs", args.runs)),
-                "testdays": int(scenario.get("testdays", args.testdays)),
-                "timeout": int(scenario.get("timeout", args.timeout)),
-                "extra_arg": list(args.extra_arg) + [str(item) for item in as_list(scenario.get("extraArg"))],
-            })
-
-    for game_map in args.map or []:
-        scenarios.append({
-            "name": safe_name(game_map),
-            "map": game_map,
-            "runs": args.runs,
-            "testdays": args.testdays,
-            "timeout": args.timeout,
-            "extra_arg": list(args.extra_arg),
-        })
-
-    if not scenarios:
-        raise ValueError("At least one --map or --scenario-file entry is required")
-
-    for scenario in scenarios:
-        scenario["runs"] = max(1, int(scenario["runs"]))
-        scenario["testdays"] = max(0, int(scenario["testdays"]))
-        scenario["timeout"] = max(1, int(scenario["timeout"]))
-    return scenarios
 
 
 def script_snapshot_source(script: str, cwd: str | None) -> Path | None:
@@ -119,7 +66,11 @@ def snapshot_script(script: str, label: str, output: Path, cwd: str | None) -> s
 def make_side_args(args: argparse.Namespace, side_output: Path, script: str, scenario: dict[str, Any]) -> argparse.Namespace:
     return argparse.Namespace(
         client=args.client,
-        map=[scenario["map"]],
+        map=[scenario.get("map") or scenario.get("save")],
+        group=args.group,
+        stage=args.stage,
+        kind=args.kind,
+        include_disabled=args.include_disabled,
         ai=args.ai or ["ScriptedAdventureAI"],
         runs=scenario["runs"],
         testdays=scenario["testdays"],
@@ -145,15 +96,15 @@ def run_side(args: argparse.Namespace, label: str, script: str, scenarios: list[
         scenario_output = side_output / safe_name(str(scenario["name"]))
         scenario_args = make_side_args(args, scenario_output, script, scenario)
         for run_index in range(1, scenario["runs"] + 1):
-            result = run_one(scenario_args, scenario["map"], run_index)
+            result = run_one(scenario_args, scenario, run_index)
             result["side"] = label
-            result["scenario"] = scenario["name"]
             results.append(result)
             status = "timeout" if result["timedOut"] else f"exit {result['returnCode']}"
             parsed = result["traceSummary"]["parsed"]
+            source_type, source = scenario_source(scenario)
             print(
-                f"{label} {scenario['name']} {scenario['map']} run {run_index}: "
-                f"{status}, traces parsed={parsed}, dir={result['runDir']}"
+                f"{label} {scenario['name']} {source_type}:{source} run {run_index}: "
+                f"{status}, outcome={result['outcome']['result']}, traces parsed={parsed}, dir={result['runDir']}"
             )
 
     (side_output / "manifest.json").write_text(json.dumps({"runs": results}, indent=2, sort_keys=True), encoding="utf-8")
@@ -162,6 +113,17 @@ def run_side(args: argparse.Namespace, label: str, script: str, scenarios: list[
 
 def trace_dirs(results: list[dict[str, Any]]) -> list[str]:
     return [str(result["traceDir"]) for result in results]
+
+
+def outcome_counts(results: list[dict[str, Any]]) -> Counter[str]:
+    counts: Counter[str] = Counter()
+    for result in results:
+        outcome = result.get("outcome", {})
+        if isinstance(outcome, dict):
+            counts[str(outcome.get("result", "unknown"))] += 1
+        else:
+            counts["unknown"] += 1
+    return counts
 
 
 def run_metrics(results: list[dict[str, Any]], summary: dict[str, Any]) -> dict[str, Any]:
@@ -181,6 +143,7 @@ def run_metrics(results: list[dict[str, Any]], summary: dict[str, Any]) -> dict[
     quality_score = deep_int(summary, "quality", "score")
     mistakes = deep_int(summary, "mistakes", "total")
     important_mistakes = deep_int(summary, "mistakes", "important")
+    outcomes = outcome_counts(results)
 
     safety_score = (
         completed * 1000
@@ -199,7 +162,8 @@ def run_metrics(results: list[dict[str, Any]], summary: dict[str, Any]) -> dict[
         + recruit_actions * 15
     )
     mistake_penalty = mistakes * 40 + important_mistakes * 160
-    score = safety_score + activity_score + quality_score - mistake_penalty
+    outcome_score = outcomes["red_win"] * 4000 - outcomes["red_loss"] * 4000
+    score = safety_score + activity_score + quality_score + outcome_score - mistake_penalty
 
     return {
         "runs": len(results),
@@ -219,20 +183,86 @@ def run_metrics(results: list[dict[str, Any]], summary: dict[str, Any]) -> dict[
         "qualityScore": quality_score,
         "mistakes": mistakes,
         "importantMistakes": important_mistakes,
+        "outcomes": dict(outcomes),
+        "redWins": outcomes["red_win"],
+        "redLosses": outcomes["red_loss"],
         "safetyScore": safety_score,
         "activityScore": activity_score,
+        "outcomeScore": outcome_score,
         "mistakePenalty": mistake_penalty,
         "score": score,
     }
 
 
-def promotion_verdict(args: argparse.Namespace, baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+def metric_delta(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[str, int]:
+    fields = (
+        "score",
+        "qualityScore",
+        "mistakes",
+        "importantMistakes",
+        "fallbackOutputs",
+        "failedActions",
+        "redWins",
+        "redLosses",
+    )
+    return {field: int(candidate.get(field, 0)) - int(baseline.get(field, 0)) for field in fields}
+
+
+def bucket_report(baseline_results: list[dict[str, Any]], candidate_results: list[dict[str, Any]]) -> dict[str, Any]:
+    comparison = compare(trace_dirs(baseline_results), trace_dirs(candidate_results))
+    baseline_metrics = run_metrics(baseline_results, comparison["baseline"])
+    candidate_metrics = run_metrics(candidate_results, comparison["candidate"])
+    return {
+        "baseline": baseline_metrics,
+        "candidate": candidate_metrics,
+        "delta": metric_delta(baseline_metrics, candidate_metrics),
+    }
+
+
+def scenario_buckets(
+    scenarios: list[dict[str, Any]],
+    baseline_results: list[dict[str, Any]],
+    candidate_results: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    reports: dict[str, dict[str, Any]] = {}
+    for field in ("group", "stage", "kind"):
+        reports[field] = {}
+        values = sorted({str(scenario.get(field, "")) for scenario in scenarios if scenario.get(field)})
+        for value in values:
+            baseline_subset = [result for result in baseline_results if str(result.get(field)) == value]
+            candidate_subset = [result for result in candidate_results if str(result.get(field)) == value]
+            if baseline_subset or candidate_subset:
+                reports[field][value] = bucket_report(baseline_subset, candidate_subset)
+    return reports
+
+
+def bucket_delta(buckets: dict[str, dict[str, Any]], group: str) -> dict[str, int] | None:
+    report = buckets.get("group", {}).get(group)
+    if not report:
+        return None
+    delta = report.get("delta")
+    return delta if isinstance(delta, dict) else None
+
+
+def promotion_verdict(
+    args: argparse.Namespace,
+    baseline: dict[str, Any],
+    candidate: dict[str, Any],
+    buckets: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
     score_delta = candidate["score"] - baseline["score"]
     quality_delta = candidate["qualityScore"] - baseline["qualityScore"]
+    training_delta = bucket_delta(buckets, "training")
+    heldout_delta = bucket_delta(buckets, "heldout")
     reasons: list[str] = []
     gates = {
         "scoreDelta": score_delta,
         "qualityDelta": quality_delta,
+        "trainingScoreDelta": training_delta.get("score") if training_delta else None,
+        "trainingQualityDelta": training_delta.get("qualityScore") if training_delta else None,
+        "heldoutScoreDelta": heldout_delta.get("score") if heldout_delta else None,
+        "heldoutQualityDelta": heldout_delta.get("qualityScore") if heldout_delta else None,
+        "heldoutImportantMistakeDelta": heldout_delta.get("importantMistakes") if heldout_delta else None,
         "candidateCompletedAllRuns": candidate["completed"] == candidate["runs"],
         "candidateHasNoTimeouts": candidate["timeouts"] == 0,
         "candidateHasNoNonzeroExits": candidate["nonzeroExit"] == 0,
@@ -242,6 +272,17 @@ def promotion_verdict(args: argparse.Namespace, baseline: dict[str, Any], candid
         "candidateImportantMistakesAllowed": candidate["importantMistakes"] <= baseline["importantMistakes"] + args.allow_more_important_mistakes,
         "scoreDeltaEnough": score_delta >= args.min_score_delta,
         "qualityDeltaEnough": quality_delta >= args.min_quality_delta,
+        "trainingImproved": training_delta is None
+        or (
+            training_delta.get("score", 0) >= args.min_training_score_delta
+            and training_delta.get("qualityScore", 0) >= args.min_training_quality_delta
+        ),
+        "heldoutNotRegressed": heldout_delta is None
+        or (
+            heldout_delta.get("score", 0) >= -args.allow_heldout_score_regression
+            and heldout_delta.get("qualityScore", 0) >= -args.allow_heldout_quality_regression
+            and heldout_delta.get("importantMistakes", 0) <= args.allow_heldout_important_mistake_regression
+        ),
     }
 
     hard_fail_keys = [
@@ -252,6 +293,8 @@ def promotion_verdict(args: argparse.Namespace, baseline: dict[str, Any], candid
         "candidateFallbacksNotWorse",
         "candidateFailedActionsAllowed",
         "candidateImportantMistakesAllowed",
+        "trainingImproved",
+        "heldoutNotRegressed",
     ]
     for key in hard_fail_keys:
         if not gates[key]:
@@ -275,7 +318,7 @@ def promotion_verdict(args: argparse.Namespace, baseline: dict[str, Any], candid
         "verdict": verdict,
         "reasons": reasons,
         "gates": gates,
-        "notes": "Promote only when hard safety gates pass and candidate score/quality deltas meet configured thresholds.",
+        "notes": "Promote only when hard safety gates pass, training improves, held-out groups do not regress, and score/quality deltas meet configured thresholds.",
     }
 
 
@@ -284,7 +327,8 @@ def print_metrics(label: str, metrics: dict[str, Any]) -> None:
         f"{label}: score={metrics['score']} completed={metrics['completed']}/{metrics['runs']} "
         f"timeouts={metrics['timeouts']} failed_actions={metrics['failedActions']} "
         f"fallbacks={metrics['fallbackOutputs']} executed={metrics['executedActions']} "
-        f"quality={metrics['qualityScore']} mistakes={metrics['mistakes']}/{metrics['importantMistakes']}"
+        f"quality={metrics['qualityScore']} mistakes={metrics['mistakes']}/{metrics['importantMistakes']} "
+        f"red_w/l={metrics['redWins']}/{metrics['redLosses']}"
     )
 
 
@@ -293,6 +337,10 @@ def main() -> int:
     parser.add_argument("--client", required=True, help="Path to vcmiclient.")
     parser.add_argument("--map", action="append", default=[], help="VCMI map resource path. Can be repeated.")
     parser.add_argument("--scenario-file", type=Path, help="JSON file with evaluation scenarios.")
+    parser.add_argument("--group", action="append", default=[], help="Only run scenarios in this group. Can be repeated.")
+    parser.add_argument("--stage", action="append", default=[], help="Only run scenarios in this ladder stage. Can be repeated.")
+    parser.add_argument("--kind", action="append", default=[], help="Only run scenarios of this kind. Can be repeated.")
+    parser.add_argument("--include-disabled", action="store_true", help="Include scenarios marked enabled=false.")
     parser.add_argument("--baseline-script", required=True, help="Baseline script resource path or local Lua file.")
     parser.add_argument("--candidate-script", required=True, help="Candidate script resource path or local Lua file.")
     parser.add_argument("--ai", action="append", default=None, help="AI names for consecutive players.")
@@ -306,6 +354,11 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="Print machine-readable evaluation JSON.")
     parser.add_argument("--min-score-delta", type=int, default=1, help="Minimum total score delta required for promotion.")
     parser.add_argument("--min-quality-delta", type=int, default=0, help="Minimum final-state quality delta required for promotion.")
+    parser.add_argument("--min-training-score-delta", type=int, default=1, help="Minimum training-group score delta required for promotion.")
+    parser.add_argument("--min-training-quality-delta", type=int, default=0, help="Minimum training-group quality delta required for promotion.")
+    parser.add_argument("--allow-heldout-score-regression", type=int, default=0, help="Allowed held-out score regression before rejecting promotion.")
+    parser.add_argument("--allow-heldout-quality-regression", type=int, default=0, help="Allowed held-out quality regression before rejecting promotion.")
+    parser.add_argument("--allow-heldout-important-mistake-regression", type=int, default=0, help="Allowed held-out important-mistake increase before rejecting promotion.")
     parser.add_argument("--allow-more-failed-actions", type=int, default=0, help="Candidate failed actions allowed above baseline.")
     parser.add_argument("--allow-more-important-mistakes", type=int, default=0, help="Candidate important mistakes allowed above baseline.")
     args = parser.parse_args()
@@ -320,9 +373,10 @@ def main() -> int:
     comparison = compare(trace_dirs(baseline_results), trace_dirs(candidate_results))
     baseline_metrics = run_metrics(baseline_results, comparison["baseline"])
     candidate_metrics = run_metrics(candidate_results, comparison["candidate"])
+    buckets = scenario_buckets(scenarios, baseline_results, candidate_results)
     score_delta = candidate_metrics["score"] - baseline_metrics["score"]
     quality_delta = candidate_metrics["qualityScore"] - baseline_metrics["qualityScore"]
-    promotion = promotion_verdict(args, baseline_metrics, candidate_metrics)
+    promotion = promotion_verdict(args, baseline_metrics, candidate_metrics, buckets)
 
     evaluation = {
         "scenarios": scenarios,
@@ -339,6 +393,7 @@ def main() -> int:
             "runs": candidate_results,
         },
         "comparison": comparison,
+        "buckets": buckets,
         "scoreDelta": score_delta,
         "qualityDelta": quality_delta,
         "promotion": promotion,
