@@ -1,0 +1,72 @@
+{
+	"name": "build-and-resource",
+	"script": "scripts/ai/defaultAdventure.lua",
+	"input": {
+		"state": {
+			"day": 1,
+			"resources": {
+				"gold": 5000
+			}
+		},
+		"memory": {
+			"version": 1
+		},
+		"actionSpace": {
+			"buildOptions": [
+				{
+					"building": "City Hall",
+					"building_id": 11,
+					"town_id": 42,
+					"cost": {
+						"gold": 2500
+					},
+					"income": {
+						"gold": 1000
+					},
+					"planAction": {
+						"type": "build",
+						"town_id": 42,
+						"building_id": 11
+					}
+				}
+			],
+			"reachableObjects": [
+				{
+					"object": {
+						"id": 77,
+						"name": "Gold pile",
+						"type": "Resource"
+					},
+					"path": {
+						"cost": 0.25,
+						"pathAction": "visit",
+						"isTeleportAction": false
+					},
+					"planAction": {
+						"type": "visit_object",
+						"hero_id": 5,
+						"object_id": 77,
+						"route_id": "route"
+					}
+				}
+			]
+		}
+	},
+	"expect": {
+		"status": "need_replan",
+		"actionsExact": [
+			{
+				"type": "build",
+				"town_id": 42
+			},
+			{
+				"type": "visit_object",
+				"object_id": 77
+			}
+		],
+		"intentContains": "City Hall",
+		"memoryContains": {
+			"version": 1
+		}
+	}
+}

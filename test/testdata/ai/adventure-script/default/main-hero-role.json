@@ -1,0 +1,50 @@
+{
+	"name": "main-hero-role",
+	"script": "scripts/ai/defaultAdventure.lua",
+	"input": {
+		"state": {
+			"day": 3,
+			"resources": {
+				"gold": 1200
+			},
+			"heroes": [
+				{
+					"id": 5,
+					"name": "Scout",
+					"level": 1,
+					"army": [
+						{
+							"count": 8
+						}
+					]
+				},
+				{
+					"id": 9,
+					"name": "Main",
+					"level": 4,
+					"army": [
+						{
+							"count": 20
+						}
+					]
+				}
+			]
+		},
+		"memory": {
+			"version": 1
+		}
+	},
+	"expect": {
+		"status": "end_turn",
+		"actionsExact": [
+			{
+				"type": "end_turn"
+			}
+		],
+		"memoryContains": {
+			"roles": {
+				"mainHero": 9
+			}
+		}
+	}
+}

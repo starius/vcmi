@@ -1,7 +1,11 @@
 #include "../../StdInc.h"
 
+#include "../../lib/ai/AdventureScript.h"
 #include "../../luascript/LuaAdventureScriptRunner.h"
 
+#include <algorithm>
+#include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 
@@ -25,6 +29,192 @@ std::string readAdventureScript(const std::string & path)
 	std::ostringstream buffer;
 	buffer << stream.rdbuf();
 	return buffer.str();
+}
+
+JsonNode readJsonFile(const std::filesystem::path & path)
+{
+	std::ifstream stream(path);
+	if(!stream)
+		throw std::runtime_error("Unable to read adventure script fixture: " + path.string());
+
+	std::ostringstream buffer;
+	buffer << stream.rdbuf();
+	const std::string text = buffer.str();
+
+	JsonParsingSettings settings;
+	settings.strict = true;
+	return JsonNode(text.data(), text.size(), settings, path.string());
+}
+
+bool hasField(const JsonNode & node, const std::string & field)
+{
+	return node.isStruct() && node.Struct().find(field) != node.Struct().end();
+}
+
+bool numberEquals(const JsonNode & actual, const JsonNode & expected)
+{
+	return actual.isNumber() && expected.isNumber() && std::abs(actual.Float() - expected.Float()) < 1e-8;
+}
+
+bool matchesPartialJson(const JsonNode & actual, const JsonNode & expected)
+{
+	if(expected.isStruct())
+	{
+		if(!actual.isStruct())
+			return false;
+
+		for(const auto & [key, expectedValue] : expected.Struct())
+		{
+			if(!hasField(actual, key) || !matchesPartialJson(actual[key], expectedValue))
+				return false;
+		}
+		return true;
+	}
+
+	if(expected.isVector())
+	{
+		if(!actual.isVector() || actual.Vector().size() != expected.Vector().size())
+			return false;
+
+		for(size_t index = 0; index < expected.Vector().size(); ++index)
+		{
+			if(!matchesPartialJson(actual.Vector()[index], expected.Vector()[index]))
+				return false;
+		}
+		return true;
+	}
+
+	if(numberEquals(actual, expected))
+		return true;
+
+	return actual == expected;
+}
+
+bool containsMatchingAction(const std::vector<JsonNode> & actions, const JsonNode & expected)
+{
+	return std::any_of(actions.begin(), actions.end(), [&](const JsonNode & action)
+	{
+		return matchesPartialJson(action, expected);
+	});
+}
+
+AI::AdventureScriptInput readFixtureInput(const JsonNode & fixture)
+{
+	AI::AdventureScriptInput input;
+	const JsonNode & data = fixture["input"];
+
+	if(hasField(data, "state"))
+		input.state = data["state"];
+	if(hasField(data, "updates"))
+		input.updates = data["updates"];
+	if(hasField(data, "opponentUpdates"))
+		input.opponentUpdates = data["opponentUpdates"];
+	if(hasField(data, "progress"))
+		input.progress = data["progress"];
+	if(hasField(data, "memory"))
+		input.memory = data["memory"];
+	if(hasField(data, "actionSpace"))
+		input.actionSpace = data["actionSpace"];
+	if(hasField(data, "analysis"))
+		input.analysis = data["analysis"];
+	if(hasField(data, "limits"))
+		input.limits = data["limits"];
+
+	return input;
+}
+
+void expectStringContains(const std::string & value, const JsonNode & expected, const std::string & field)
+{
+	if(expected.isString())
+	{
+		EXPECT_NE(value.find(expected.String()), std::string::npos) << field;
+		return;
+	}
+
+	ASSERT_TRUE(expected.isVector()) << field << " must be a string or array of strings";
+	for(const JsonNode & item : expected.Vector())
+	{
+		ASSERT_TRUE(item.isString()) << field << " must contain only strings";
+		EXPECT_NE(value.find(item.String()), std::string::npos) << field;
+	}
+}
+
+void verifyFixtureExpectation(const std::filesystem::path & path, const JsonNode & fixture, const AI::AdventureScriptOutput & output)
+{
+	SCOPED_TRACE(path.string());
+	const JsonNode outputJson = AI::makeAdventureScriptOutputJson(output);
+	const JsonNode & expect = fixture["expect"];
+
+	if(hasField(expect, "status"))
+	{
+		EXPECT_EQ(AI::adventureScriptStatusToString(output.status), expect["status"].String());
+	}
+
+	if(hasField(expect, "firstAction"))
+	{
+		ASSERT_FALSE(output.actions.empty());
+		EXPECT_TRUE(matchesPartialJson(output.actions.front(), expect["firstAction"]))
+			<< "expected: " << expect["firstAction"].toCompactString()
+			<< "\nactual: " << output.actions.front().toCompactString();
+	}
+
+	if(hasField(expect, "actionsExact"))
+	{
+		ASSERT_TRUE(expect["actionsExact"].isVector());
+		ASSERT_EQ(output.actions.size(), expect["actionsExact"].Vector().size());
+		for(size_t index = 0; index < expect["actionsExact"].Vector().size(); ++index)
+		{
+			EXPECT_TRUE(matchesPartialJson(output.actions[index], expect["actionsExact"].Vector()[index]))
+				<< "action index: " << index
+				<< "\nexpected: " << expect["actionsExact"].Vector()[index].toCompactString()
+				<< "\nactual: " << output.actions[index].toCompactString();
+		}
+	}
+
+	if(hasField(expect, "actionsContain"))
+	{
+		ASSERT_TRUE(expect["actionsContain"].isVector());
+		for(const JsonNode & action : expect["actionsContain"].Vector())
+		{
+			EXPECT_TRUE(containsMatchingAction(output.actions, action)) << action.toCompactString();
+		}
+	}
+
+	if(hasField(expect, "actionsDoNotContain"))
+	{
+		ASSERT_TRUE(expect["actionsDoNotContain"].isVector());
+		for(const JsonNode & action : expect["actionsDoNotContain"].Vector())
+		{
+			EXPECT_FALSE(containsMatchingAction(output.actions, action)) << action.toCompactString();
+		}
+	}
+
+	if(hasField(expect, "intentContains"))
+	{
+		ASSERT_TRUE(output.intent);
+		expectStringContains(*output.intent, expect["intentContains"], "intentContains");
+	}
+
+	if(hasField(expect, "memoryContains"))
+	{
+		EXPECT_TRUE(matchesPartialJson(output.memory, expect["memoryContains"]))
+			<< "expected: " << expect["memoryContains"].toCompactString()
+			<< "\nactual: " << output.memory.toCompactString();
+	}
+
+	if(hasField(expect, "memoryDoesNotContain"))
+	{
+		EXPECT_FALSE(matchesPartialJson(output.memory, expect["memoryDoesNotContain"]))
+			<< "unexpected memory pattern: " << expect["memoryDoesNotContain"].toCompactString()
+			<< "\nactual: " << output.memory.toCompactString();
+	}
+
+	if(hasField(expect, "outputContains"))
+	{
+		EXPECT_TRUE(matchesPartialJson(outputJson, expect["outputContains"]))
+			<< "expected: " << expect["outputContains"].toCompactString()
+			<< "\nactual: " << outputJson.toCompactString();
+	}
 }
 
 }
@@ -117,136 +307,31 @@ TEST(LuaAdventureScriptRunnerTest, RemovesUnsafeGlobals)
 	EXPECT_FALSE(output.memory["hasRandom"].Bool());
 }
 
-TEST(LuaAdventureScriptRunnerTest, DefaultAdventureScriptScoresCandidates)
+TEST(LuaAdventureScriptRunnerTest, JsonPolicyFixtures)
 {
-	AI::AdventureScriptInput input = makeInput();
-	input.state["day"] = JsonNode(1);
-	input.state["resources"]["gold"] = JsonNode(5000);
+	const std::filesystem::path fixtureRoot = std::filesystem::path(VCMI_SOURCE_DIR) / "test/testdata/ai/adventure-script";
+	std::vector<std::filesystem::path> fixtures;
 
-	JsonNode buildOption;
-	buildOption["building"] = JsonNode("City Hall");
-	buildOption["building_id"] = JsonNode(11);
-	buildOption["town_id"] = JsonNode(42);
-	buildOption["cost"]["gold"] = JsonNode(2500);
-	buildOption["income"]["gold"] = JsonNode(1000);
-	buildOption["planAction"]["type"] = JsonNode("build");
-	buildOption["planAction"]["town_id"] = JsonNode(42);
-	buildOption["planAction"]["building_id"] = JsonNode(11);
-	input.actionSpace["buildOptions"].Vector().push_back(buildOption);
+	for(const auto & entry : std::filesystem::recursive_directory_iterator(fixtureRoot))
+	{
+		if(entry.is_regular_file() && entry.path().extension() == ".json")
+			fixtures.push_back(entry.path());
+	}
+	std::sort(fixtures.begin(), fixtures.end());
 
-	JsonNode target;
-	target["object"]["id"] = JsonNode(77);
-	target["object"]["name"] = JsonNode("Gold pile");
-	target["object"]["type"] = JsonNode("Resource");
-	target["path"]["cost"].Float() = 0.25;
-	target["path"]["pathAction"] = JsonNode("visit");
-	target["path"]["isTeleportAction"] = JsonNode(false);
-	target["planAction"]["type"] = JsonNode("visit_object");
-	target["planAction"]["hero_id"] = JsonNode(5);
-	target["planAction"]["object_id"] = JsonNode(77);
-	target["planAction"]["route_id"] = JsonNode("route");
-	input.actionSpace["reachableObjects"].Vector().push_back(target);
+	ASSERT_FALSE(fixtures.empty());
 
-	scripting::LuaAdventureScriptRunner runner("scripts/ai/defaultAdventure.lua", readAdventureScript("scripts/ai/defaultAdventure.lua"));
-	const AI::AdventureScriptOutput output = runner.planDay(input);
+	for(const std::filesystem::path & path : fixtures)
+	{
+		SCOPED_TRACE(path.string());
+		const JsonNode fixture = readJsonFile(path);
+		ASSERT_TRUE(fixture["script"].isString());
 
-	EXPECT_EQ(output.status, AI::AdventureScriptStatus::NEED_REPLAN);
-	ASSERT_EQ(output.actions.size(), 2);
-	EXPECT_EQ(output.actions[0]["type"].String(), "build");
-	EXPECT_EQ(output.actions[0]["town_id"].Integer(), 42);
-	EXPECT_EQ(output.actions[1]["type"].String(), "visit_object");
-	EXPECT_EQ(output.actions[1]["object_id"].Integer(), 77);
-	EXPECT_EQ(output.memory["version"].Integer(), 1);
-	ASSERT_TRUE(output.intent);
-	EXPECT_NE(output.intent->find("City Hall"), std::string::npos);
-}
+		scripting::LuaAdventureScriptRunner runner(fixture["script"].String(), readAdventureScript(fixture["script"].String()));
+		const AI::AdventureScriptOutput output = runner.planDay(readFixtureInput(fixture));
 
-TEST(LuaAdventureScriptRunnerTest, DefaultAdventureScriptMovesThreatenedHeroAway)
-{
-	AI::AdventureScriptInput input = makeInput();
-	input.state["day"] = JsonNode(2);
-
-	JsonNode alert;
-	alert["level"] = JsonNode("critical");
-	alert["hero_id"] = JsonNode(5);
-	alert["distanceSquared"] = JsonNode(4);
-	alert["enemyPosition"]["x"] = JsonNode(0);
-	alert["enemyPosition"]["y"] = JsonNode(0);
-	alert["enemyPosition"]["z"] = JsonNode(0);
-	input.analysis["heroThreatAlerts"].Vector().push_back(alert);
-
-	JsonNode movement;
-	movement["hero_id"] = JsonNode(5);
-	movement["hero"] = JsonNode("Scout");
-	movement["safe"] = JsonNode(true);
-	movement["value"] = JsonNode(100.0);
-	movement["path"]["destination"]["x"] = JsonNode(8);
-	movement["path"]["destination"]["y"] = JsonNode(8);
-	movement["path"]["destination"]["z"] = JsonNode(0);
-	movement["path"]["isTeleportAction"] = JsonNode(false);
-	movement["planAction"]["type"] = JsonNode("move_hero");
-	movement["planAction"]["hero_id"] = JsonNode(5);
-	movement["planAction"]["x"] = JsonNode(8);
-	movement["planAction"]["y"] = JsonNode(8);
-	movement["planAction"]["z"] = JsonNode(0);
-	movement["planAction"]["route_id"] = JsonNode("escape");
-	input.actionSpace["movementOptions"].Vector().push_back(movement);
-
-	scripting::LuaAdventureScriptRunner runner("scripts/ai/defaultAdventure.lua", readAdventureScript("scripts/ai/defaultAdventure.lua"));
-	const AI::AdventureScriptOutput output = runner.planDay(input);
-
-	EXPECT_EQ(output.status, AI::AdventureScriptStatus::NEED_REPLAN);
-	ASSERT_EQ(output.actions.size(), 1);
-	EXPECT_EQ(output.actions[0]["type"].String(), "move_hero");
-	EXPECT_EQ(output.actions[0]["route_id"].String(), "escape");
-	ASSERT_TRUE(output.intent);
-	EXPECT_NE(output.intent->find("move threatened hero"), std::string::npos);
-}
-
-TEST(LuaAdventureScriptRunnerTest, DefaultAdventureScriptPrefersSafeObjectTarget)
-{
-	AI::AdventureScriptInput input = makeInput();
-	input.state["day"] = JsonNode(2);
-
-	JsonNode unsafeTarget;
-	unsafeTarget["object"]["id"] = JsonNode(77);
-	unsafeTarget["object"]["name"] = JsonNode("Gold pile");
-	unsafeTarget["object"]["type"] = JsonNode("Resource");
-	unsafeTarget["path"]["cost"].Float() = 0.1;
-	unsafeTarget["path"]["pathAction"] = JsonNode("battle");
-	unsafeTarget["path"]["isTeleportAction"] = JsonNode(false);
-	unsafeTarget["safe"] = JsonNode(false);
-	unsafeTarget["dangerRatio"] = JsonNode(3.0);
-	unsafeTarget["value"] = JsonNode(1000.0);
-	unsafeTarget["planAction"]["type"] = JsonNode("visit_object");
-	unsafeTarget["planAction"]["hero_id"] = JsonNode(5);
-	unsafeTarget["planAction"]["object_id"] = JsonNode(77);
-	unsafeTarget["planAction"]["route_id"] = JsonNode("unsafe");
-	input.actionSpace["reachableObjects"].Vector().push_back(unsafeTarget);
-
-	JsonNode safeTarget;
-	safeTarget["object"]["id"] = JsonNode(88);
-	safeTarget["object"]["name"] = JsonNode("Wood pile");
-	safeTarget["object"]["type"] = JsonNode("Resource");
-	safeTarget["path"]["cost"].Float() = 0.4;
-	safeTarget["path"]["pathAction"] = JsonNode("visit");
-	safeTarget["path"]["isTeleportAction"] = JsonNode(false);
-	safeTarget["safe"] = JsonNode(true);
-	safeTarget["dangerRatio"] = JsonNode(0.0);
-	safeTarget["value"] = JsonNode(500.0);
-	safeTarget["planAction"]["type"] = JsonNode("visit_object");
-	safeTarget["planAction"]["hero_id"] = JsonNode(5);
-	safeTarget["planAction"]["object_id"] = JsonNode(88);
-	safeTarget["planAction"]["route_id"] = JsonNode("safe");
-	input.actionSpace["reachableObjects"].Vector().push_back(safeTarget);
-
-	scripting::LuaAdventureScriptRunner runner("scripts/ai/defaultAdventure.lua", readAdventureScript("scripts/ai/defaultAdventure.lua"));
-	const AI::AdventureScriptOutput output = runner.planDay(input);
-
-	EXPECT_EQ(output.status, AI::AdventureScriptStatus::NEED_REPLAN);
-	ASSERT_EQ(output.actions.size(), 1);
-	EXPECT_EQ(output.actions[0]["type"].String(), "visit_object");
-	EXPECT_EQ(output.actions[0]["object_id"].Integer(), 88);
+		verifyFixtureExpectation(path, fixture, output);
+	}
 }
 
 TEST(LuaAdventureScriptRunnerTest, BundledAdventureScriptVariantsRun)

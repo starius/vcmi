@@ -1,0 +1,76 @@
+{
+	"name": "safe-over-dangerous-target",
+	"script": "scripts/ai/defaultAdventure.lua",
+	"input": {
+		"state": {
+			"day": 2,
+			"resources": {
+				"gold": 1200
+			}
+		},
+		"memory": {
+			"version": 1
+		},
+		"actionSpace": {
+			"reachableObjects": [
+				{
+					"object": {
+						"id": 77,
+						"name": "Gold pile",
+						"type": "Resource"
+					},
+					"path": {
+						"cost": 0.1,
+						"pathAction": "battle",
+						"isTeleportAction": false
+					},
+					"safe": false,
+					"dangerRatio": 3,
+					"value": 1000,
+					"planAction": {
+						"type": "visit_object",
+						"hero_id": 5,
+						"object_id": 77,
+						"route_id": "unsafe"
+					}
+				},
+				{
+					"object": {
+						"id": 88,
+						"name": "Wood pile",
+						"type": "Resource"
+					},
+					"path": {
+						"cost": 0.4,
+						"pathAction": "visit",
+						"isTeleportAction": false
+					},
+					"safe": true,
+					"dangerRatio": 0,
+					"value": 500,
+					"planAction": {
+						"type": "visit_object",
+						"hero_id": 5,
+						"object_id": 88,
+						"route_id": "safe"
+					}
+				}
+			]
+		}
+	},
+	"expect": {
+		"status": "need_replan",
+		"actionsContain": [
+			{
+				"type": "visit_object",
+				"object_id": 88
+			}
+		],
+		"actionsDoNotContain": [
+			{
+				"type": "visit_object",
+				"object_id": 77
+			}
+		]
+	}
+}

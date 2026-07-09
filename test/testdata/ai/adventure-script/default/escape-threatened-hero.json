@@ -1,0 +1,65 @@
+{
+	"name": "escape-threatened-hero",
+	"script": "scripts/ai/defaultAdventure.lua",
+	"input": {
+		"state": {
+			"day": 2,
+			"resources": {
+				"gold": 1200
+			}
+		},
+		"memory": {
+			"version": 1
+		},
+		"analysis": {
+			"heroThreatAlerts": [
+				{
+					"level": "critical",
+					"hero_id": 5,
+					"distanceSquared": 4,
+					"enemyPosition": {
+						"x": 0,
+						"y": 0,
+						"z": 0
+					}
+				}
+			]
+		},
+		"actionSpace": {
+			"movementOptions": [
+				{
+					"hero_id": 5,
+					"hero": "Scout",
+					"safe": true,
+					"value": 100,
+					"path": {
+						"destination": {
+							"x": 8,
+							"y": 8,
+							"z": 0
+						},
+						"isTeleportAction": false
+					},
+					"planAction": {
+						"type": "move_hero",
+						"hero_id": 5,
+						"x": 8,
+						"y": 8,
+						"z": 0,
+						"route_id": "escape"
+					}
+				}
+			]
+		}
+	},
+	"expect": {
+		"status": "need_replan",
+		"actionsExact": [
+			{
+				"type": "move_hero",
+				"route_id": "escape"
+			}
+		],
+		"intentContains": "move threatened hero"
+	}
+}

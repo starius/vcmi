@@ -1,0 +1,88 @@
+{
+	"name": "progress-blocked-target",
+	"script": "scripts/ai/defaultAdventure.lua",
+	"input": {
+		"state": {
+			"day": 4,
+			"resources": {
+				"gold": 1200
+			}
+		},
+		"memory": {
+			"version": 1
+		},
+		"progress": {
+			"failed": [
+				{
+					"type": "visit_object",
+					"object_id": 77
+				}
+			]
+		},
+		"actionSpace": {
+			"reachableObjects": [
+				{
+					"object": {
+						"id": 77,
+						"name": "Gold pile",
+						"type": "Resource"
+					},
+					"path": {
+						"cost": 0.2,
+						"pathAction": "visit",
+						"isTeleportAction": false
+					},
+					"safe": true,
+					"value": 800,
+					"planAction": {
+						"type": "visit_object",
+						"hero_id": 5,
+						"object_id": 77,
+						"route_id": "blocked"
+					}
+				},
+				{
+					"object": {
+						"id": 88,
+						"name": "Wood pile",
+						"type": "Resource"
+					},
+					"path": {
+						"cost": 0.3,
+						"pathAction": "visit",
+						"isTeleportAction": false
+					},
+					"safe": true,
+					"value": 1500,
+					"planAction": {
+						"type": "visit_object",
+						"hero_id": 5,
+						"object_id": 88,
+						"route_id": "backup"
+					}
+				}
+			]
+		}
+	},
+	"expect": {
+		"status": "need_replan",
+		"actionsContain": [
+			{
+				"type": "visit_object",
+				"object_id": 88
+			}
+		],
+		"actionsDoNotContain": [
+			{
+				"type": "visit_object",
+				"object_id": 77
+			}
+		],
+		"memoryContains": {
+			"blockedTargets": {
+				"77": 1
+			},
+			"lastFailure": "replanning after failed action"
+		}
+	}
+}

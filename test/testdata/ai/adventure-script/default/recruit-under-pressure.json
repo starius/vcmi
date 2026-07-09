@@ -1,0 +1,72 @@
+{
+	"name": "recruit-under-pressure",
+	"script": "scripts/ai/defaultAdventure.lua",
+	"input": {
+		"state": {
+			"day": 5,
+			"resources": {
+				"gold": 3000
+			}
+		},
+		"memory": {
+			"version": 1
+		},
+		"analysis": {
+			"defenseAlerts": [
+				{
+					"level": "critical",
+					"town_id": 42
+				}
+			]
+		},
+		"actionSpace": {
+			"buildOptions": [
+				{
+					"building": "City Hall",
+					"building_id": 11,
+					"town_id": 42,
+					"cost": {
+						"gold": 2500
+					},
+					"income": {
+						"gold": 1000
+					},
+					"planAction": {
+						"type": "build",
+						"town_id": 42,
+						"building_id": 11
+					}
+				}
+			],
+			"recruitOptions": [
+				{
+					"creature": "Pikeman",
+					"creature_id": 1,
+					"source_id": 42,
+					"amount": 12,
+					"level": 1,
+					"planAction": {
+						"type": "recruit",
+						"source_id": 42,
+						"creature_id": 1,
+						"amount": 12
+					}
+				}
+			]
+		}
+	},
+	"expect": {
+		"status": "need_replan",
+		"firstAction": {
+			"type": "recruit",
+			"creature_id": 1
+		},
+		"actionsDoNotContain": [
+			{
+				"type": "build",
+				"building_id": 11
+			}
+		],
+		"intentContains": "recruit under pressure"
+	}
+}
