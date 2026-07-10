@@ -20,6 +20,7 @@
 #include "../../lib/entities/building/CBuilding.h"
 #include "../../lib/entities/faction/CTown.h"
 #include "../../lib/gameState/CGameState.h"
+#include "../../lib/gameState/UpgradeInfo.h"
 #include "../../lib/constants/StringConstants.h"
 #include "../../lib/mapObjects/CQuest.h"
 #include "../../lib/mapObjects/CGDwelling.h"
@@ -1880,6 +1881,42 @@ JsonNode jsonArmyTransferOption(
 	node["planAction"]["source_id"] = node["source_id"];
 	node["planAction"]["destination_id"] = node["destination_id"];
 	node["planAction"]["source_slot"] = node["source_slot"];
+	return node;
+}
+
+JsonNode jsonUpgradeCreatureOption(
+	const CArmedInstance * army,
+	SlotID slot,
+	const CStackInstance * stack,
+	CreatureID upgradeID,
+	const ResourceSet & unitCost,
+	const ResourceSet & totalCost,
+	const ResourceSet & resources)
+{
+	JsonNode node;
+	const CCreature * current = stack ? stack->getCreature() : nullptr;
+	const CCreature * upgraded = upgradeID.toCreature();
+	const int64_t count = stack ? static_cast<int64_t>(stack->getCount()) : 0;
+	const int64_t currentValue = current ? static_cast<int64_t>(current->getAIValue()) * count : 0;
+	const int64_t upgradedValue = upgraded ? static_cast<int64_t>(upgraded->getAIValue()) * count : 0;
+
+	node["army_id"] = JsonNode(army->id.getNum());
+	node["slot"] = JsonNode(slot.getNum());
+	node["creature_id"] = JsonNode(current ? current->getId().getNum() : CreatureID(CreatureID::NONE).getNum());
+	node["upgrade_creature_id"] = JsonNode(upgradeID.getNum());
+	node["count"] = JsonNode(count);
+	node["creature"] = JsonNode(current ? jsonText(current->getNamePluralTranslated()) : "");
+	node["upgradeCreature"] = JsonNode(upgraded ? jsonText(upgraded->getNamePluralTranslated()) : "");
+	node["unitCost"] = jsonResources(unitCost);
+	node["totalCost"] = jsonResources(totalCost);
+	node["affordable"] = JsonNode(resources.canAfford(totalCost));
+	node["currentValue"] = JsonNode(currentValue);
+	node["upgradedValue"] = JsonNode(upgradedValue);
+	node["value"] = JsonNode(upgradedValue - currentValue);
+	node["planAction"]["type"] = JsonNode("upgrade_creature");
+	node["planAction"]["army_id"] = node["army_id"];
+	node["planAction"]["slot"] = node["slot"];
+	node["planAction"]["creature_id"] = node["upgrade_creature_id"];
 	return node;
 }
 
@@ -4371,6 +4408,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["recruitOptions"].Vector();
 	actionSpace["hireHeroOptions"].Vector();
 	actionSpace["armyTransferOptions"].Vector();
+	actionSpace["upgradeCreatureOptions"].Vector();
 	actionSpace["reachableObjects"].Vector();
 	actionSpace["movementOptions"].Vector();
 	actionSpace["shipyardOptions"].Vector();
@@ -4387,10 +4425,41 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		return tile != nullptr;
 	});
 
+	std::set<int32_t> seenUpgradeArmies;
+	auto appendUpgradeOptions = [&](const CArmedInstance * army)
+	{
+		if(!army || army->tempOwner != playerID || !seenUpgradeArmies.insert(army->id.getNum()).second)
+			return;
+
+		for(int32_t slotIndex = 0; slotIndex < GameConstants::ARMY_SIZE; ++slotIndex)
+		{
+			const SlotID slot(slotIndex);
+			const CStackInstance * stack = army->getStackPtr(slot);
+			if(!stack || stack->getCount() <= 0)
+				continue;
+
+			UpgradeInfo upgradeInfo(stack->getId());
+			cc->fillUpgradeInfo(army, slot, upgradeInfo);
+			for(const CreatureID & upgradeID : upgradeInfo.getAvailableUpgrades())
+			{
+				const ResourceSet unitCost = upgradeInfo.getUpgradeCostsFor(upgradeID);
+				const ResourceSet totalCost = unitCost * stack->getCount();
+				JsonNode option = jsonUpgradeCreatureOption(army, slot, stack, upgradeID, unitCost, totalCost, resources);
+				actionSpace["upgradeCreatureOptions"].Vector().push_back(option);
+				if(option["affordable"].Bool() && option["value"].Integer() > 0)
+					actionSpace["recommendedActions"].Vector().push_back(option["planAction"]);
+			}
+		}
+	};
+
 	for(const CGTownInstance * town : cc->getTownsInfo(true))
 	{
 		if(!town || town->tempOwner != playerID)
 			continue;
+
+		appendUpgradeOptions(town);
+		appendUpgradeOptions(town->getVisitingHero());
+		appendUpgradeOptions(town->getGarrisonHero());
 
 		for(const auto & buildingEntry : town->getTown()->buildings)
 		{
@@ -4483,6 +4552,9 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 			}
 		}
 	}
+
+	for(const CGHeroInstance * hero : cc->getHeroesInfo())
+		appendUpgradeOptions(hero);
 
 	std::set<int32_t> seenShipyards;
 	for(const int3 & position : visibleTiles)

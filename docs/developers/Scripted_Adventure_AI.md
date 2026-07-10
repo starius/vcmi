@@ -902,6 +902,9 @@ Regression harness:
 - Hero input now exposes `formationId` and `tacticsEnabled`, and Lua can request exact creature stack
   rearrangement, stack splitting, stack merging, creature dismissal, creature upgrades, formation/tactics changes,
   and town garrison-hero swaps through the same checked callback/server packet path used by native clients and AI.
+- `actionSpace.upgradeCreatureOptions` now lists currently available upgrades for owned town and hero armies using
+  `fillUpgradeInfo`: source army id, slot, old/new creature ids, count, per-unit and total costs, affordability,
+  and estimated value delta.
 - Lua can now call `ai:nullkillerTrade()` to run Nullkiller's build-driven resource trader once,
   `ai:tradeResources(marketId, sellResourceId, buyResourceId, amount, heroId?)` for the common exact
   resource-to-resource path, or `ai:marketTrade({...})` and its mode-specific wrappers for every native
@@ -1107,8 +1110,8 @@ Regression harness:
 - Done: owned hero artifact state, exact artifact management calls, typed artifact assembly prompts, and checked
   assemble/disassemble actions are exposed through Lua facade methods. Remaining artifact work is richer artifact
   scoring helpers.
-- Done: exact army stack management, creature upgrades, formation/tactics changes, and town garrison-hero swaps
-  are exposed through checked Lua facade methods.
+- Done: exact army stack management, creature upgrades, upgrade candidates, formation/tactics changes, and town
+  garrison-hero swaps are exposed through checked Lua facade methods.
 - Done: pending dialog/window queries are exposed as typed read-side data under `state.turn.queries`, and direct
   Lua actions that open these dialogs now pause for a script answer instead of auto-answering. The bundled default
   script includes a conservative fallback answer policy; richer per-dialog strategy remains Lua policy work.
