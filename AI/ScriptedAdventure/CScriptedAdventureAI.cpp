@@ -2413,6 +2413,27 @@ bool hasVisibleThreat(const NK2AI::HitMapNode & node, const std::shared_ptr<CCal
 	return hasVisibleThreatHero(node.fastestDanger, cc, player) || hasVisibleThreatHero(node.maximumDanger, cc, player);
 }
 
+bool isScriptVisibleTile(const std::shared_ptr<CCallback> & cc, PlayerColor player, const int3 & position)
+{
+	return position.isValid() && (!cc || (cc->isInTheMap(position) && cc->isVisibleFor(position, player)));
+}
+
+bool isScriptVisibleObject(const std::shared_ptr<CCallback> & cc, PlayerColor player, const CGObjectInstance * object)
+{
+	return object && (!cc || object->tempOwner == player || cc->isVisibleFor(object, player));
+}
+
+const CGObjectInstance * getScriptVisibleObject(const std::shared_ptr<CCallback> & cc, PlayerColor player, ObjectInstanceID objectID)
+{
+	if(!cc)
+		return nullptr;
+
+	const CGObjectInstance * object = cc->getObj(objectID, false);
+	if(!isScriptVisibleObject(cc, player, object))
+		return nullptr;
+	return object;
+}
+
 ScriptSpecialActionKind specialActionKind(const NK2AI::SpecialAction & action)
 {
 	if(dynamic_cast<const NK2AI::CompositeAction *>(&action))
@@ -2447,7 +2468,7 @@ JsonNode jsonSpecialAction(
 	node["kind"] = JsonNode(scriptSpecialActionKindName(kind));
 	node["parts"].Vector();
 
-	if(destination.isValid())
+	if(isScriptVisibleTile(cc, player, destination))
 		node["destination"] = jsonPosition(destination);
 
 	if(const CGObjectInstance * target = action.targetObject())
@@ -2470,10 +2491,12 @@ JsonNode jsonSpecialAction(
 		node["plannedSourceMoveRemains"] = JsonNode(dimensionDoor->getPlannedSourceMoveRemains());
 		node["plannedSourceMoveLimit"] = JsonNode(dimensionDoor->getPlannedSourceMoveLimit());
 		node["plannedDimensionDoorCasts"] = JsonNode(dimensionDoor->getPlannedDimensionDoorCasts());
-		node["guardedLandingDanger"] = JsonNode(static_cast<int64_t>(dimensionDoor->getGuardedLandingDanger()));
-		node["guardedLandingArmyLoss"] = JsonNode(static_cast<int64_t>(dimensionDoor->getGuardedLandingArmyLoss()));
-		if(dimensionDoor->getDestination().isValid())
+		if(isScriptVisibleTile(cc, player, dimensionDoor->getDestination()))
+		{
+			node["guardedLandingDanger"] = JsonNode(static_cast<int64_t>(dimensionDoor->getGuardedLandingDanger()));
+			node["guardedLandingArmyLoss"] = JsonNode(static_cast<int64_t>(dimensionDoor->getGuardedLandingArmyLoss()));
 			node["spellDestination"] = jsonPosition(dimensionDoor->getDestination());
+		}
 	}
 	else if(const auto * townPortal = dynamic_cast<const NK2AI::AIPathfinding::TownPortalAction *>(&action))
 	{
@@ -2506,7 +2529,8 @@ JsonNode jsonSpecialAction(
 					node["shipyardStatusId"] = JsonNode(static_cast<int32_t>(shipyard->shipyardStatus()));
 					node["boatTypeId"] = JsonNode(shipyard->getBoatType().getNum());
 					node["boatLayerId"] = JsonNode(static_cast<int32_t>(shipyard->getBoatLayer()));
-					node["bestBoatLocation"] = jsonPosition(shipyard->bestLocation());
+					if(isScriptVisibleTile(cc, player, shipyard->bestLocation()))
+						node["bestBoatLocation"] = jsonPosition(shipyard->bestLocation());
 					node["boatCost"] = jsonResources(cost);
 				}
 			}
@@ -2564,24 +2588,35 @@ JsonNode jsonNullkillerPath(
 	size_t maxNodes = 16)
 {
 	JsonNode node;
+	const bool allNodesVisible = std::ranges::all_of(path.nodes, [&](const NK2AI::AIPathNodeInfo & pathNode)
+	{
+		return isScriptVisibleTile(cc, player, pathNode.coord);
+	});
+
 	node["nodeLimit"] = JsonNode(static_cast<int32_t>(maxNodes));
-	node["nodeCount"] = JsonNode(static_cast<int32_t>(path.nodes.size()));
-	node["nodesTruncated"] = JsonNode(path.nodes.size() > maxNodes);
+	node["nodeCount"] = JsonNode(allNodesVisible ? static_cast<int32_t>(path.nodes.size()) : 0);
+	node["nodesTruncated"] = JsonNode(allNodesVisible && path.nodes.size() > maxNodes);
 	node["nodes"].Vector();
+
+	if(!allNodesVisible)
+		return node;
+
 	node["exchangeCount"] = JsonNode(static_cast<int32_t>(path.exchangeCount));
 	node["chainMask"] = JsonNode(static_cast<int64_t>(path.chainMask));
 	node["targetObjectDanger"] = JsonNode(static_cast<int64_t>(path.targetObjectDanger));
 	node["armyLoss"] = JsonNode(static_cast<int64_t>(path.armyLoss));
 	node["targetObjectArmyLoss"] = JsonNode(static_cast<int64_t>(path.targetObjectArmyLoss));
-	if(path.targetHero)
+	if(path.targetHero && isScriptVisibleObject(cc, player, path.targetHero))
 	{
 		node["hero_id"] = JsonNode(path.targetHero->id.getNum());
 		node["heroStrength"] = JsonNode(static_cast<int64_t>(path.getHeroStrength()));
 	}
 	if(!path.nodes.empty())
 	{
-		node["firstTile"] = jsonPosition(path.firstTileToGet());
-		node["targetTile"] = jsonPosition(path.targetTile());
+		if(isScriptVisibleTile(cc, player, path.firstTileToGet()))
+			node["firstTile"] = jsonPosition(path.firstTileToGet());
+		if(isScriptVisibleTile(cc, player, path.targetTile()))
+			node["targetTile"] = jsonPosition(path.targetTile());
 		node["movementCost"] = JsonNode(static_cast<double>(path.movementCost()));
 		node["turn"] = JsonNode(static_cast<int32_t>(path.turn()));
 		node["pathDanger"] = JsonNode(static_cast<int64_t>(path.getPathDanger()));
@@ -2605,7 +2640,7 @@ JsonNode jsonNullkillerPath(
 		pathNodeJson["chainMask"] = JsonNode(static_cast<int64_t>(pathNode.chainMask));
 		pathNodeJson["actionIsBlocked"] = JsonNode(pathNode.actionIsBlocked);
 		pathNodeJson["hasSpecialAction"] = JsonNode(static_cast<bool>(pathNode.specialAction));
-		if(pathNode.targetHero)
+		if(pathNode.targetHero && isScriptVisibleObject(cc, player, pathNode.targetHero))
 			pathNodeJson["hero_id"] = JsonNode(pathNode.targetHero->id.getNum());
 		if(pathNode.specialAction)
 		{
@@ -2666,7 +2701,8 @@ JsonNode jsonNullkillerGoalDetails(const NK2AI::Goals::AbstractGoal & goal, cons
 			details["boatCost"] = jsonResources(boatCost);
 			details["boatTypeId"] = JsonNode(shipyard->getBoatType().getNum());
 			details["shipyardStatusId"] = JsonNode(static_cast<int32_t>(shipyard->shipyardStatus()));
-			details["bestBoatLocation"] = jsonPosition(shipyard->bestLocation());
+			if(isScriptVisibleTile(cc, playerID, shipyard->bestLocation()))
+				details["bestBoatLocation"] = jsonPosition(shipyard->bestLocation());
 			if(const auto * shipyardObject = dynamic_cast<const CGObjectInstance *>(shipyard->getObject()))
 			{
 				if(!cc || cc->isVisibleFor(shipyardObject, playerID))
@@ -2770,19 +2806,22 @@ JsonNode jsonNullkillerGoalSummary(const NK2AI::Goals::AbstractGoal & goal, cons
 	node["goalType"] = JsonNode(nullkillerGoalName(goal.goalType));
 	node["isElementar"] = JsonNode(goal.isElementar());
 	node["value"] = JsonNode(goal.value);
-	if(goal.hero)
+	if(isScriptVisibleObject(cc, playerID, goal.hero))
 		node["hero_id"] = JsonNode(goal.hero->id.getNum());
-	if(goal.town)
+	if(isScriptVisibleObject(cc, playerID, goal.town))
 		node["town_id"] = JsonNode(goal.town->id.getNum());
 	if(goal.objid >= 0)
-		node["object_id"] = JsonNode(goal.objid);
+	{
+		if(const CGObjectInstance * object = getScriptVisibleObject(cc, playerID, ObjectInstanceID(goal.objid)))
+			node["object_id"] = JsonNode(object->id.getNum());
+	}
 	if(goal.bid >= 0)
 		node["building_id"] = JsonNode(goal.bid);
 	if(goal.aid >= 0)
 		node["artifact_id"] = JsonNode(goal.aid);
 	if(goal.resID >= 0)
 		node["resource_id"] = JsonNode(goal.resID);
-	if(goal.tile.x >= 0 && goal.tile.y >= 0 && goal.tile.z >= 0)
+	if(isScriptVisibleTile(cc, playerID, goal.tile))
 		node["tile"] = jsonPosition(goal.tile);
 	if(goal.goldCost > 0)
 		node["goldCost"] = JsonNode(static_cast<int64_t>(goal.goldCost));
@@ -2793,7 +2832,10 @@ JsonNode jsonNullkillerGoalSummary(const NK2AI::Goals::AbstractGoal & goal, cons
 		node["priority"].Float() = task->priority;
 		node["affectedObjectIds"].Vector();
 		for(const ObjectInstanceID objectID : task->getAffectedObjects())
-			node["affectedObjectIds"].Vector().push_back(JsonNode(objectID.getNum()));
+		{
+			if(const CGObjectInstance * object = getScriptVisibleObject(cc, playerID, objectID))
+				node["affectedObjectIds"].Vector().push_back(JsonNode(object->id.getNum()));
+		}
 		node["heroExchangeCount"] = JsonNode(task->getHeroExchangeCount());
 	}
 
@@ -3098,21 +3140,19 @@ JsonNode jsonNullkillerTaskCandidate(
 	{
 		if(const CGHeroInstance * hero = candidate.task->getHero())
 		{
-			node["hero_id"] = JsonNode(hero->id.getNum());
-			if(!cc || cc->isVisibleFor(hero, playerID))
+			if(isScriptVisibleObject(cc, playerID, hero))
+			{
+				node["hero_id"] = JsonNode(hero->id.getNum());
 				node["hero"] = jsonHero(hero, hero->tempOwner == playerID);
+			}
 		}
 
 		for(const ObjectInstanceID objectID : candidate.task->getAffectedObjects())
 		{
-			node["affectedObjectIds"].Vector().push_back(JsonNode(objectID.getNum()));
-			if(cc)
+			if(const CGObjectInstance * object = getScriptVisibleObject(cc, playerID, objectID))
 			{
-				if(const CGObjectInstance * object = cc->getObj(objectID, false))
-				{
-					if(cc->isVisibleFor(object, playerID))
-						node["affectedObjects"].Vector().push_back(jsonMapObject(object, playerID, candidate.task->getHero()));
-				}
+				node["affectedObjectIds"].Vector().push_back(JsonNode(object->id.getNum()));
+				node["affectedObjects"].Vector().push_back(jsonMapObject(object, playerID, candidate.task->getHero()));
 			}
 		}
 
@@ -3123,20 +3163,18 @@ JsonNode jsonNullkillerTaskCandidate(
 			node["goalType"] = JsonNode(nullkillerGoalName(goal->goalType));
 			if(goal->town)
 			{
-				node["town_id"] = JsonNode(goal->town->id.getNum());
-				if(!cc || cc->isVisibleFor(goal->town, playerID))
+				if(isScriptVisibleObject(cc, playerID, goal->town))
+				{
+					node["town_id"] = JsonNode(goal->town->id.getNum());
 					node["townObject"] = jsonMapObject(goal->town, playerID, candidate.task->getHero());
+				}
 			}
 			if(goal->objid >= 0)
 			{
-				node["object_id"] = JsonNode(goal->objid);
-				if(cc)
+				if(const CGObjectInstance * object = getScriptVisibleObject(cc, playerID, ObjectInstanceID(goal->objid)))
 				{
-					if(const CGObjectInstance * object = cc->getObj(ObjectInstanceID(goal->objid), false))
-					{
-						if(cc->isVisibleFor(object, playerID))
-							node["object"] = jsonMapObject(object, playerID, candidate.task->getHero());
-					}
+					node["object_id"] = JsonNode(object->id.getNum());
+					node["object"] = jsonMapObject(object, playerID, candidate.task->getHero());
 				}
 			}
 			if(goal->bid >= 0)
@@ -3145,14 +3183,13 @@ JsonNode jsonNullkillerTaskCandidate(
 				node["artifact_id"] = JsonNode(goal->aid);
 			if(goal->resID >= 0)
 				node["resource_id"] = JsonNode(goal->resID);
-			if(goal->tile.x >= 0 && goal->tile.y >= 0 && goal->tile.z >= 0)
+			if(isScriptVisibleTile(cc, playerID, goal->tile))
 				node["tile"] = jsonPosition(goal->tile);
 			if(goal->goldCost > 0)
 				node["goldCost"] = JsonNode(static_cast<int64_t>(goal->goldCost));
 			node["buildingCost"] = jsonResources(goal->buildingCost);
-		}
 
-		node["debugDescription"] = JsonNode(jsonText(candidate.task->toString()));
+		}
 	}
 
 	return node;
@@ -5245,7 +5282,6 @@ JsonNode CScriptedAdventureAI::makeNullkillerTaskCandidates(const JsonNode & act
 	{
 		std::shared_lock gameStateLock(CGameState::mutex);
 		std::lock_guard sharedStorageLock(NK2AI::AISharedStorage::locker);
-		AIGateway::cheatMapReveal(nullkiller);
 		AIGateway::memorizeVisitableObjs(nullkiller->memory, nullkiller->dangerHitMap, playerID, cc);
 		AIGateway::memorizeRevisitableObjs(nullkiller->memory, playerID, cc);
 
@@ -5276,8 +5312,6 @@ bool CScriptedAdventureAI::executeNullkillerTaskAction(const JsonNode & action, 
 
 	const NK2AI::Goals::TTask task = taskIter->second;
 	actionResult["task_id"] = JsonNode(taskID);
-	if(task)
-		actionResult["debugDescription"] = JsonNode(jsonText(task->toString()));
 
 	bool executed = false;
 	{
@@ -5587,8 +5621,6 @@ bool CScriptedAdventureAI::executeNullkillerStepAction(const JsonNode & action, 
 		const JsonNode selectedTask = tasks[result.selectedTaskIndex];
 		actionResult["selectedTask"] = selectedTask;
 		actionResult["task_id"] = selectedTask["task_id"];
-		if(hasField(selectedTask, "debugDescription"))
-			actionResult["debugDescription"] = selectedTask["debugDescription"];
 	}
 	if(!result.error.empty())
 		actionResult["error"] = JsonNode(result.error);
@@ -6253,8 +6285,6 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		actionResult["attempts"] = JsonNode(result.attempts);
 		actionResult["executed"] = JsonNode(result.executed);
 		actionResult["lastPriority"].Float() = result.lastPriority;
-		if(!result.lastTaskDescription.empty())
-			actionResult["lastTaskDescription"] = JsonNode(jsonText(result.lastTaskDescription));
 		if(!result.error.empty())
 			actionResult["error"] = JsonNode(result.error);
 		if(!waitTillFreeForScriptAction(actionResult, type))

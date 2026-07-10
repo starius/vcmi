@@ -520,10 +520,10 @@ Current bounded subroutine surface:
   exposes these as numeric constants under `ai.nullkillerTaskModes`, so scripts can avoid magic numbers and
   brittle strings.
 - Candidate JSON contains stable machine fields such as `task_id`, `goalTypeId`, `priority`, `priorityTier`,
-  `hero_id`, `town_id`, `object_id`, `tile`, affected object ids, and hero role ids. Debug descriptions may be
-  present for traces, but scripts should use stable ids for strategy. Candidate records also include visible
-  structured `hero`, `object`, `townObject`, and `affectedObjects` payloads where those referenced entities are
-  visible to the scripted player.
+  `hero_id`, `town_id`, `object_id`, `tile`, affected object ids, and hero role ids. Raw native task debug
+  descriptions are intentionally omitted; scripts should use stable ids and typed records for strategy. Candidate
+  records also include visible structured `hero`, `object`, `townObject`, and `affectedObjects` payloads where
+  those referenced entities are visible to the scripted player.
 - Candidate JSON also contains a bounded structured `goal` summary. Its `details` object exposes typed native
   planning context such as composition subtask sequences, hero-chain paths, hero-exchange paths, visible
   defense threats, unlock-cluster blockers, army-upgrade value, building costs, boat locations, and adventure
@@ -585,6 +585,10 @@ Current bounded subroutine surface:
   native features. `analysis.nullkiller.state` exposes current bounded-planner state such as scan depth,
   open-map/object-graph flags, pathfinder storage misses, locked resources, and free resources. Scripts can use
   these fields to align policy with native Nullkiller without hard-coding engine constants.
+- Script-facing bounded Nullkiller candidate generation does not invoke Nullkiller's map-reveal helper. Candidate
+  task handles may still be opaque native planner handles, but the JSON surface only exposes target object ids,
+  affected object ids, goal tiles, and detailed path nodes when the referenced objects/tiles are visible or owned
+  by the scripted player.
 - `actionSpace.nullkillerSubroutineOptions` exposes the bounded task families as first-class candidate actions.
   Each option contains `tasksAction`, `stepAction`, and `passAction` payloads using numeric `mode` values, so Lua
   can discover and compose native subroutines the same way it discovers movement, build, recruitment, and
