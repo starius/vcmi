@@ -289,6 +289,11 @@ The `ai` facade:
   native turn pass: priority work, one bounded adventure step, resource trading, and artifact cleanup. Options can
   disable priority/adventure/trade/artifact phases or set an `adventure_mode` numeric task mode when Lua wants a
   specific native behavior family.
+- `ai:nullkillerNativePass(passIndex?, maxCandidates?, maxAttempts?)` and
+  `ai:nullkillerNativePasses(optionsOrMaxPasses?, maxCandidates?, maxAttempts?)`: convenience wrappers around
+  `nullkiller_turn_slice` for the common parity shape "run one native pass" or "run N bounded native passes",
+  without delegating the rest of the day. They keep the same checked C++ implementation, default to all native
+  phases enabled, and return the same structured slice result.
 - Named wrappers are available for every bounded Nullkiller task mode:
   `ai:nullkillerAllTasks/Step/Pass`, `ai:nullkillerPriorityTasks/Step/Pass`,
   `ai:nullkillerAdventureTasks/Step/Pass`, `ai:nullkillerRecruitHeroTasks/Step/Pass`,
@@ -628,8 +633,9 @@ Current bounded subroutine surface:
   The bundled default Lua policy treats a trade-only slice as end-of-day cleanup rather than a reason to request
   more slices, because repeated small resource trades can otherwise dominate the command budget without adding
   new adventure decisions.
-- Lua exposes `ai.nullkillerStepOutcomes`, `ai.nullkillerFailureActions`, and `ai.nullkillerTaskModes` numeric
-  constants. Scripts should branch on these constants rather than trace strings.
+- Lua exposes `ai.nullkillerStepOutcomes`, `ai.nullkillerFailureActions`, `ai.nullkillerTaskModes`, and
+  `ai.nullkillerPriorityTiers` numeric constants. Scripts should branch on these constants rather than trace
+  strings.
 - `analysis.nullkiller.settings` exposes Nullkiller's read-only operational thresholds, including max pass counts,
   safe attack ratio, retreat thresholds, army-loss target, hero roaming limits, pathfinder limits, and enabled
   native features. `analysis.nullkiller.state` exposes current bounded-planner state such as scan depth,

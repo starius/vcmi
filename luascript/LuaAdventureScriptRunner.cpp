@@ -227,6 +227,16 @@ ai.nullkillerTaskModes = {
 	startup = 12
 }
 
+ai.nullkillerPriorityTiers = {
+	buildings = 0,
+	instakill = 1,
+	instaDefend = 2,
+	kill = 3,
+	escape = 4,
+	exploreAndGather = 5,
+	defend = 6
+}
+
 ai.nullkillerHeroLockReasons = {
 	none = 0,
 	startup = 1,
@@ -308,6 +318,33 @@ function ai:nullkillerTurnSlice(maxPasses, maxCandidates, maxAttempts)
 	end
 	action.type = "nullkiller_turn_slice"
 	return self:execute(action)
+end
+
+function ai:nullkillerNativePass(passIndex, maxCandidates, maxAttempts)
+	local action = copyFields(passIndex)
+	if type(passIndex) ~= "table" then
+		action.first_pass_index = passIndex or 1
+		action.max_candidates = maxCandidates
+		action.max_attempts = maxAttempts
+	end
+	action.max_passes = action.max_passes or 1
+	action.include_priority = action.include_priority ~= false
+	action.include_adventure = action.include_adventure ~= false
+	action.include_trade = action.include_trade ~= false
+	action.optimize_artifacts = action.optimize_artifacts ~= false
+	action.type = "nullkiller_turn_slice"
+	return self:execute(action)
+end
+
+function ai:nullkillerNativePasses(maxPasses, maxCandidates, maxAttempts)
+	local action = copyFields(maxPasses)
+	if type(maxPasses) ~= "table" then
+		action.max_passes = maxPasses
+		action.max_candidates = maxCandidates
+		action.max_attempts = maxAttempts
+	end
+	action.max_passes = action.max_passes or 1
+	return self:nullkillerNativePass(action)
 end
 
 local function defineNullkillerModeHelpers(name, mode)

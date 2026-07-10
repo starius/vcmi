@@ -478,6 +478,8 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 				ai:nullkillerPass({ mode = ai.nullkillerTaskModes.adventure, max_steps = 3, max_candidates = 4, max_attempts = 5 })
 				ai:nullkillerAdventurePass(2, 6, 7)
 				ai:nullkillerTurnSlice({ max_passes = 2, max_candidates = 8, max_attempts = 3, adventure_mode = ai.nullkillerTaskModes.defense })
+				ai:nullkillerNativePass(3, 9, 4)
+				ai:nullkillerNativePasses({ max_passes = 2, first_pass_index = 4, max_candidates = 10, max_attempts = 5, adventure_mode = ai.nullkillerTaskModes.escape })
 				return {
 					status = "end_turn",
 					memory = {
@@ -486,6 +488,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 						stepTask = step.selectedTask.task_id,
 						executedOutcome = ai.nullkillerStepOutcomes.executed,
 						defenseMode = ai.nullkillerTaskModes.defense,
+						defendTier = ai.nullkillerPriorityTiers.defend,
 						dimensionDoorSpellKind = ai.adventureSpellKinds.dimensionDoor
 					},
 					actions = {}
@@ -521,7 +524,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 		return response;
 	});
 
-	ASSERT_EQ(commands.size(), 46);
+	ASSERT_EQ(commands.size(), 48);
 	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_tasks");
 	EXPECT_EQ(commands[0]["payload"]["mode"].String(), "adventure");
 	EXPECT_EQ(commands[0]["payload"]["max_candidates"].Integer(), 7);
@@ -673,11 +676,27 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 	EXPECT_EQ(commands[45]["payload"]["max_candidates"].Integer(), 8);
 	EXPECT_EQ(commands[45]["payload"]["max_attempts"].Integer(), 3);
 	EXPECT_EQ(commands[45]["payload"]["adventure_mode"].Integer(), 8);
+	EXPECT_EQ(commands[46]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[46]["payload"]["first_pass_index"].Integer(), 3);
+	EXPECT_EQ(commands[46]["payload"]["max_passes"].Integer(), 1);
+	EXPECT_EQ(commands[46]["payload"]["max_candidates"].Integer(), 9);
+	EXPECT_EQ(commands[46]["payload"]["max_attempts"].Integer(), 4);
+	EXPECT_TRUE(commands[46]["payload"]["include_priority"].Bool());
+	EXPECT_TRUE(commands[46]["payload"]["include_adventure"].Bool());
+	EXPECT_TRUE(commands[46]["payload"]["include_trade"].Bool());
+	EXPECT_TRUE(commands[46]["payload"]["optimize_artifacts"].Bool());
+	EXPECT_EQ(commands[47]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[47]["payload"]["first_pass_index"].Integer(), 4);
+	EXPECT_EQ(commands[47]["payload"]["max_passes"].Integer(), 2);
+	EXPECT_EQ(commands[47]["payload"]["max_candidates"].Integer(), 10);
+	EXPECT_EQ(commands[47]["payload"]["max_attempts"].Integer(), 5);
+	EXPECT_EQ(commands[47]["payload"]["adventure_mode"].Integer(), 9);
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	EXPECT_EQ(output.memory["firstTask"].Integer(), 41);
 	EXPECT_EQ(output.memory["stepTask"].Integer(), 42);
 	EXPECT_EQ(output.memory["executedOutcome"].Integer(), 1);
 	EXPECT_EQ(output.memory["defenseMode"].Integer(), 8);
+	EXPECT_EQ(output.memory["defendTier"].Integer(), 6);
 	EXPECT_EQ(output.memory["dimensionDoorSpellKind"].Integer(), 2);
 }
 
