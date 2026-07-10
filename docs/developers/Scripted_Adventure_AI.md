@@ -161,9 +161,10 @@ Input:
 - current day/week/month and active player color under `state`.
 - `state.turn.queries`: typed pending dialog/window queries with query ids, stable type labels, answer ids, and
   mode-specific numeric fields. Real server queries include `answerAction`, `nullkillerAnswerAction`, and
-  per-choice `planAction` fields where an answer id exists; local script-only prompts use their own checked
-  action fields such as `ignoreAction` or artifact assembly actions. This is the read-side model for Lua dialog
-  callbacks.
+  per-choice `planAction` fields where an answer id exists. Queries that use the player's optional reply channel,
+  such as map-object selection windows, expose `cancelAction`; blocking dialogs with a visible cancel button use
+  normal `answer_query` answer `0`. Local script-only prompts use their own checked action fields such as
+  `ignoreAction` or artifact assembly actions. This is the read-side model for Lua dialog callbacks.
 - `actionSpace`: currently legal or relevant high-level candidates.
 - `analysis`: host-provided derived facts such as reachability, danger, town build options, recruitment options,
   and object values.
@@ -201,6 +202,8 @@ The `ai` facade:
   `nullkillerPotentialArtifactScore`) so scripts can rank visible artifacts without parsing names.
 - `ai:ignoreScriptDecision(queryId)`: clear a script-local decision prompt such as an artifact assembly prompt
   without sending a server `QueryReply`.
+- `ai:cancelQuery(queryId)`: send an optional empty `QueryReply` for query records that advertise a
+  `cancelAction`, matching the real client path for cancelable generic object-list queries.
 - `ai:chooseChestReward(query, preference?)`: answer a chest-style blocking dialog by stable component ids.
   `preference` may be `experience` or `gold`; the default is experience.
 - `ai:nullkillerTrade()`: ask the host to run Nullkiller's resource-trading helper once, returning whether it
@@ -1354,7 +1357,9 @@ Regression harness:
   script includes a conservative fallback answer policy; richer per-dialog strategy remains Lua policy work.
 - Done: real server query records now include executable `answerAction`, `nullkillerAnswerAction`, and per-choice
   `planAction` payloads where answer ids exist, so scripts can use the same `ai:runOption` pattern for dialog
-  decisions that they use for action-space candidates.
+  decisions that they use for action-space candidates. Generic map-object selection records also expose
+  `cancelAction`, allowing Lua to send the same optional empty `QueryReply` as the real client when closing the
+  object-list window.
 - Done: teleport and map-object-selection query choices expose Nullkiller's current preferred offered object or
   exit when it is one of the choices already shown to the player, closing the read-side object-selection policy
   gap without revealing hidden objects.

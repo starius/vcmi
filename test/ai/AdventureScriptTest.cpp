@@ -49,6 +49,19 @@ TEST(AdventureScriptTest, RejectsUnsupportedStatus)
 	EXPECT_THROW(AI::parseAdventureScriptOutput(output), std::invalid_argument);
 }
 
+TEST(AdventureScriptTest, NormalizesCancelQueryAction)
+{
+	const JsonNode output = parseJson(R"({
+		"actions":[{"type":"query_cancel","query_id":91}]
+	})");
+
+	const AI::AdventureScriptOutput parsed = AI::parseAdventureScriptOutput(output);
+
+	ASSERT_EQ(parsed.actions.size(), 1);
+	EXPECT_EQ(parsed.actions[0]["type"].String(), "cancel_query");
+	EXPECT_EQ(parsed.actions[0]["query_id"].Integer(), 91);
+}
+
 TEST(AdventureScriptTest, AcceptsEmptyLuaTableActions)
 {
 	const JsonNode output = parseJson(R"({"actions":{},"returnSelect":{}})");

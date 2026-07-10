@@ -1116,6 +1116,55 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanReadAndAnswerPendingQueries)
 	EXPECT_EQ(output.memory["queryType"].String(), "blocking_dialog");
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCancelOptionalQueryReply)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				local queries = ai:pendingQueries()
+				ai:runOption(queries[1], "cancelAction")
+				ai:cancelQuery(queries[2].query_id)
+				return ai:output("end_turn", "cancelled optional query replies")
+			end
+		}
+	)lua";
+
+	AI::AdventureScriptInput input = makeInput();
+	input.state["turn"]["queries"].Vector();
+	for(int queryID : { 77, 78 })
+	{
+		JsonNode query;
+		query["query_id"] = JsonNode(queryID);
+		query["type"] = JsonNode("map_object_select");
+		query["cancelAction"]["type"] = JsonNode("cancel_query");
+		query["cancelAction"]["query_id"] = JsonNode(queryID);
+		input.state["turn"]["queries"].Vector().push_back(query);
+	}
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-cancel-query", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 2);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "cancel_query");
+	EXPECT_EQ(commands[0]["payload"]["query_id"].Integer(), 77);
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "cancel_query");
+	EXPECT_EQ(commands[1]["payload"]["query_id"].Integer(), 78);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "cancelled optional query replies");
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanChooseChestRewardByComponentIds)
 {
 	const std::string source = R"lua(

@@ -1017,6 +1017,15 @@ function ai:answerQuery(queryId, answer)
 	return self:execute(action)
 end
 
+function ai:cancelQuery(queryId)
+	local action = copyFields(queryId)
+	if type(queryId) ~= "table" then
+		action.query_id = queryId
+	end
+	action.type = "cancel_query"
+	return self:execute(action)
+end
+
 function ai:chooseChestReward(query, preference)
 	local preferred = preference or "experience"
 	local components = (query and query.components) or {}

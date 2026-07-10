@@ -2118,6 +2118,14 @@ JsonNode jsonAnswerQueryAction(QueryID queryID, int32_t answer)
 	return action;
 }
 
+JsonNode jsonCancelQueryAction(QueryID queryID)
+{
+	JsonNode action;
+	action["type"] = JsonNode("cancel_query");
+	action["query_id"] = JsonNode(queryID.getNum());
+	return action;
+}
+
 JsonNode jsonNullkillerAnswerQueryAction(QueryID queryID)
 {
 	JsonNode action;
@@ -2146,6 +2154,10 @@ void attachScriptQueryActions(JsonNode & query, QueryID queryID)
 	query["answerableByQueryReply"] = JsonNode(true);
 	query["answerAction"] = jsonAnswerQueryAction(queryID, 0);
 	query["nullkillerAnswerAction"] = jsonNullkillerAnswerQueryAction(queryID);
+	if(readString(query, "type") == "map_object_select")
+		query["cancelAction"] = jsonCancelQueryAction(queryID);
+	else if(readString(query, "type") == "blocking_dialog" && readBool(query, "cancel", false))
+		query["cancelAction"] = jsonAnswerQueryAction(queryID, 0);
 
 	for(const char * field : { "skill_options", "components", "exits", "objects" })
 		attachAnswerPlanActions(query, queryID, field);
@@ -7773,6 +7785,27 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		if(!request.applied)
 			actionResult["error"] = JsonNode(request.realized ? "Move request was rejected by server" : "Move request was not realized by server");
 		return request.applied && type != "visit_object" && !route.stopAfterMove;
+	}
+
+	if(type == "cancel_query")
+	{
+		const QueryID queryID(readInteger(action, "query_id"));
+		const auto query = getScriptQuery(queryID);
+		if(!query || !hasField(*query, "cancelAction") || readString((*query)["cancelAction"], "type") != "cancel_query")
+			throw std::invalid_argument("Query does not support optional cancel reply");
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(QueryReply), CTypeList::getInstance().getTypeID<QueryReply>(nullptr), [&]
+		{
+			cc->sendQueryReply(std::nullopt, queryID);
+		});
+		actionResult["query_id"] = JsonNode(queryID.getNum());
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Cancel query request was rejected by server" : "Cancel query request was not realized by server");
+		return true;
 	}
 
 	if(type == "answer_query")

@@ -73,7 +73,7 @@ JsonNode makeFlexibleTypedPlanActionSchema()
 	schema["additionalProperties"] = JsonNode(true);
 	schema["properties"]["id"]["type"] = JsonNode("string");
 	schema["properties"]["type"]["type"] = JsonNode("string");
-	schema["properties"]["type"]["description"] = JsonNode("Canonical or aliased plan action type. Canonical values: build, recruit, hire_hero, transfer_army, move_hero, visit_object, answer_query, end_turn.");
+	schema["properties"]["type"]["description"] = JsonNode("Canonical or aliased plan action type. Canonical values: build, recruit, hire_hero, transfer_army, move_hero, visit_object, answer_query, cancel_query, end_turn.");
 	setRequired(schema, {"type"});
 	return schema;
 }
@@ -104,6 +104,7 @@ std::vector<std::string> acceptedPlanActionTypes()
 		"move_hero",
 		"visit_object",
 		"answer_query",
+		"cancel_query",
 		"end_turn"
 	};
 }
@@ -126,6 +127,8 @@ std::string canonicalPlanActionType(std::string type)
 		return "visit_object";
 	if(type == "answer" || type == "query" || type == "query_answer")
 		return "answer_query";
+	if(type == "cancel" || type == "cancel_query" || type == "query_cancel")
+		return "cancel_query";
 	if(type == "end" || type == "end_day")
 		return "end_turn";
 	return type;
@@ -191,6 +194,7 @@ JsonNode makeExecutePlanSchema()
 	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("move_hero", {{"hero_id", "integer"}, {"x", "integer"}, {"y", "integer"}, {"z", "integer"}, {"route_id", "string"}}, {"type", "hero_id", "x", "y"}));
 	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("visit_object", {{"hero_id", "integer"}, {"object_id", "integer"}, {"route_id", "string"}}, {"type", "hero_id", "object_id"}));
 	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("answer_query", {{"query_id", "integer"}, {"answer", "integer"}}, {"type", "query_id"}));
+	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("cancel_query", {{"query_id", "integer"}}, {"type", "query_id"}));
 	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("end_turn", {}, {"type"}));
 	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makeFlexibleTypedPlanActionSchema());
 	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makeToolShapedPlanActionSchema());
