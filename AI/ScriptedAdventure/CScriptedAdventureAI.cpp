@@ -5628,7 +5628,17 @@ bool CScriptedAdventureAI::executeNullkillerQueryAction(const JsonNode & action,
 	const QueryID queryID(readInteger(action, "query_id"));
 	const std::optional<JsonNode> query = getScriptQuery(queryID);
 	if(!query)
+	{
+		if(readBool(action, "allow_expired", false))
+		{
+			actionResult["query_id"] = JsonNode(queryID.getNum());
+			actionResult["handledByNullkiller"] = JsonNode(false);
+			actionResult["expired"] = JsonNode(true);
+			actionResult["ok"] = JsonNode(true);
+			return true;
+		}
 		throw std::invalid_argument("Unknown or expired pending query");
+	}
 
 	const std::string queryType = readString(*query, "type");
 	actionResult["query_id"] = JsonNode(queryID.getNum());
@@ -5641,6 +5651,7 @@ bool CScriptedAdventureAI::executeNullkillerQueryAction(const JsonNode & action,
 		actionResult["answer"] = JsonNode(answer);
 		if(!waitTillFreeForScriptAction(actionResult, "nullkiller_answer_query"))
 			return false;
+		removeScriptQuery(queryID);
 		actionResult["ok"] = JsonNode(true);
 		return true;
 	};
@@ -8171,6 +8182,8 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		actionResult["request"] = jsonRequestWaitResult(request);
 		if(!waitTillFreeForScriptAction(actionResult, type))
 			return false;
+		if(request.applied)
+			removeScriptQuery(queryID);
 		actionResult["ok"] = JsonNode(request.applied);
 		if(!request.applied)
 			actionResult["error"] = JsonNode(request.realized ? "Cancel query request was rejected by server" : "Cancel query request was not realized by server");
@@ -8186,6 +8199,7 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		actionResult["answer"] = JsonNode(answer);
 		if(!waitTillFreeForScriptAction(actionResult, type))
 			return false;
+		removeScriptQuery(queryID);
 		actionResult["ok"] = JsonNode(true);
 		return true;
 	}

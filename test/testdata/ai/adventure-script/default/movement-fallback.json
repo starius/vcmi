@@ -1,5 +1,5 @@
 {
-	"name": "movement-delegates-to-nullkiller",
+	"name": "movement-switches-to-bounded-nullkiller-control",
 	"script": "scripts/ai/defaultAdventure.lua",
 	"input": {
 		"state": {
@@ -79,6 +79,6 @@
 	"expect": {
 		"status": "fallback",
 		"actionsExact": [],
-		"intentContains": "delegate remaining turn to Nullkiller"
+		"intentContains": "use bounded Nullkiller control"
 	}
 }

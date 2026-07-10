@@ -524,6 +524,7 @@ function ai:nullkillerAnswerQuery(query, defaultAnswer)
 	if defaultAnswer ~= nil then
 		action.default_answer = defaultAnswer
 	end
+	action.allow_expired = true
 	action.type = "nullkiller_answer_query"
 	return self:execute(action)
 end

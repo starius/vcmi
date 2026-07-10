@@ -1276,14 +1276,14 @@ function Script.planDay(input)
         }
     end
 
-    -- No high-confidence scripted action remains. Prefer bounded Nullkiller
-    -- turn slices from the imperative loop before using this full-day escape
-    -- hatch; full fallback should mean safety/conservatism, not a missing API.
+    -- No high-confidence scripted action remains. In the imperative entry point
+    -- this status means "switch to bounded native control", not "delegate the
+    -- rest of the day". Full-day fallback is reserved for host/script failure.
     return {
         status = "fallback",
         memory = memory,
         actions = {},
-        intent = "No high-confidence scripted candidate remains; delegate remaining turn to Nullkiller.",
+        intent = "No high-confidence scripted candidate remains; use bounded Nullkiller control.",
         confidence = Confidence.idle
     }
 end
@@ -1291,8 +1291,8 @@ end
 function Script.runDay(ai, input)
     -- Active imperative entry point. Lua owns the day loop: it reads visible
     -- state, executes checked host calls, refreshes after side effects, answers
-    -- dialogs, and uses bounded Nullkiller subroutines before delegating the
-    -- rest of the day.
+    -- dialogs, and uses bounded Nullkiller subroutines without handing the rest
+    -- of the day to full native fallback during normal play.
     adoptHostConstants(ai)
 
     local current = input
@@ -1324,7 +1324,7 @@ function Script.runDay(ai, input)
             local memory = ai:memory()
             memory.lastNullkillerTurnSliceError = tostring(result)
             ai:setMemory(memory)
-            return false
+            error("bounded Nullkiller turn slice failed: " .. tostring(result), 0)
         end
 
         if result.shouldStopTurn == true or (tonumber(result.adventureStopTurnSteps or 0) or 0) > 0 then
@@ -1335,19 +1335,12 @@ function Script.runDay(ai, input)
         local priorityWork = (tonumber(result.priorityTasksExecuted or 0) or 0) > 0
         local adventureWork = (tonumber(result.adventureStepsExecuted or 0) or 0) > 0
             or (tonumber(result.adventureReplanSteps or 0) or 0) > 0
-        local tradeOnlyWork = (tonumber(result.tradePasses or 0) or 0) > 0
-            and not priorityWork
-            and not adventureWork
-            and result.paused ~= true
-            and result.stop ~= true
-        if tradeOnlyWork then
-            ai:endTurn()
-            return false, ai:output("end_turn", "bounded Nullkiller turn slice only traded resources", Confidence.idle)
-        end
+        local tradeWork = (tonumber(result.tradePasses or 0) or 0) > 0
 
         if result.didWork == true
             or priorityWork
             or adventureWork
+            or tradeWork
             or result.paused == true
             or result.stop == true
         then
@@ -1355,7 +1348,8 @@ function Script.runDay(ai, input)
             return true
         end
 
-        return false
+        ai:endTurn()
+        return false, ai:output("end_turn", "bounded Nullkiller turn slice found no remaining native work", Confidence.idle)
     end
 
     while commands < commandLimit do
@@ -1387,7 +1381,8 @@ function Script.runDay(ai, input)
                     return finalOutput
                 end
                 if not continued then
-                    return ai:nullkiller(output.intent)
+                    ai:endTurn()
+                    return ai:output("end_turn", output.intent, output.confidence)
                 end
                 handledByNullkiller = true
             end
@@ -1424,7 +1419,7 @@ function Script.runDay(ai, input)
                 end
 
                 if failures >= 3 then
-                    return ai:nullkiller("imperative Lua policy hit repeated checked-action failures")
+                    error("imperative Lua policy hit repeated checked-action failures")
                 end
 
                 if (not executedAny or output.status ~= "need_replan") and not shouldReplan then
@@ -1433,14 +1428,15 @@ function Script.runDay(ai, input)
                         return finalOutput
                     end
                     if not continued then
-                        return ai:nullkiller(output.intent or "script completed its imperative actions")
+                        ai:endTurn()
+                        return ai:output("end_turn", output.intent or "script completed its imperative actions", output.confidence)
                     end
                 end
             end
         end
     end
 
-    return ai:nullkiller("imperative Lua policy reached command limit")
+    error("imperative Lua policy reached command limit before ending the day")
 end
 
 return Script

@@ -309,7 +309,8 @@ The `ai` facade:
   `ai:nullkillerStartupTasks/Step/Pass`. These wrappers pass stable numeric mode ids.
 - `ai:nullkillerAnswerQuery(queryOrId, defaultAnswer?)`: ask Nullkiller to handle one pending query through its
   native dialog heuristic, then return control to Lua. This is bounded to that one query and does not delegate the
-  rest of the day.
+  rest of the day. The Lua wrapper marks snapshot-derived query answers as stale-tolerant, so a query that expires
+  before the command reaches C++ becomes a checked no-op instead of normal fallback.
 - `ai:nullkillerAnswerPendingQueries(defaultAnswer?, maxQueries?)`: repeatedly apply `ai:nullkillerAnswerQuery` to
   currently pending typed query records, refreshing visible input between answers, then return control to Lua. This
   is a Lua convenience wrapper around the bounded one-query helper, not full-day delegation.
@@ -1588,6 +1589,10 @@ Regression harness:
   exchanges, garrison pickup, dwelling recruitment, and simple window-closing dialogs without surrendering the
   rest of the day. Teleport and map-object-select query options now include visible object records, so scripts
   can choose by object type, owner, position, or quest state without parsing dialog strings.
+- Done: `ai:nullkillerAnswerQuery` marks snapshot-derived answers with explicit stale-query tolerance. If a query
+  expires between `ai:refresh()` and the answer command, the checked host call returns a successful no-op instead
+  of forcing full-day fallback; raw `runAction({ type = "nullkiller_answer_query", ... })` remains strict unless
+  the script explicitly sets the same option.
 - Done: player-visible non-query adventure windows are mirrored into the script update journal. This covers
   generic info dialogs, shipyard dialogs, hill-fort windows, and thieves-guild windows, with stable component,
   object, hero, and shipyard fields where available.
@@ -1650,8 +1655,11 @@ Regression harness:
 - Done: it scores allowed builds, recruitment, and reachable object pickups.
 - Done: its active `runDay(ai, input)` path is imperative: Lua owns the day loop, executes checked `ai:*`
   calls directly, refreshes visible state after side effects, answers pending queries, and uses capped bounded
-  Nullkiller turn slices before delegating the remaining turn. The older `planDay(input)` path remains only as a
+  Nullkiller turn slices instead of delegating the remaining turn. The older `planDay(input)` path remains only as a
   compatibility shim for fixtures, tests, and the script's internal scoring reuse.
+- Done: the default policy no longer calls full-day `ai:nullkiller()` during normal `runDay` control flow. Idle
+  bounded slices end the turn, productive trade-only slices refresh and continue, and repeated checked-action or
+  bounded-helper failures surface as script errors so the host safety fallback can take over.
 - Done: opt-in personality profiles `aggressiveAdventure.lua`, `economyAdventure.lua`, and `explorerAdventure.lua`
   now expose imperative `runDay(ai, input)` wrappers. Their legacy `planDay(input)` scorers remain as readable
   policy cores, but active execution goes through checked host calls with refresh/query yield points.
@@ -1727,6 +1735,10 @@ Regression harness:
 - Done: a 16-map, 3-day traced smoke after the bounded-control exhaustion fix completed all scenarios at the day
   limit with 48 `end_turn` outputs, 60 bounded `nullkiller_turn_slice` calls, 18 bounded query answers, zero failed
   checked actions, and zero fallback outputs.
+- Done: after converting `defaultAdventure.lua` away from normal full-day fallback, an explicit 16-map, 3-day traced
+  smoke completed all scenarios at the day limit with 48 `end_turn` outputs, 391 checked `visit_object` actions,
+  74 bounded query answers, 58 bounded `nullkiller_turn_slice` calls, zero failed checked actions, and zero fallback
+  outputs.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus, then add
   engine-level explored-area and map-control deltas.
 

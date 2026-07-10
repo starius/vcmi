@@ -1709,8 +1709,10 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanLetNullkillerAnswerPendingQue
 	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_answer_query");
 	EXPECT_EQ(commands[0]["payload"]["query_id"].Integer(), 77);
 	EXPECT_EQ(commands[0]["payload"]["default_answer"].Integer(), 1);
+	EXPECT_TRUE(commands[0]["payload"]["allow_expired"].Bool());
 	EXPECT_EQ(commands[1]["payload"]["type"].String(), "nullkiller_answer_query");
 	EXPECT_EQ(commands[1]["payload"]["query_id"].Integer(), 78);
+	EXPECT_TRUE(commands[1]["payload"]["allow_expired"].Bool());
 	EXPECT_EQ(refreshes, 2);
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	EXPECT_EQ(output.memory["count"].Integer(), 2);
@@ -1969,7 +1971,7 @@ TEST(LuaAdventureScriptRunnerTest, BundledPersonalityScriptsRunImperatively)
 	}
 }
 
-TEST(LuaAdventureScriptRunnerTest, DefaultAdventureTriesBoundedNullkillerTurnSliceBeforeFallback)
+TEST(LuaAdventureScriptRunnerTest, DefaultAdventureEndsTurnAfterIdleBoundedNullkillerSlice)
 {
 	scripting::LuaAdventureScriptRunner runner(
 		"scripts/ai/defaultAdventure.lua",
@@ -1995,14 +1997,15 @@ TEST(LuaAdventureScriptRunnerTest, DefaultAdventureTriesBoundedNullkillerTurnSli
 		return response;
 	});
 
-	ASSERT_EQ(commands.size(), 1);
+	ASSERT_EQ(commands.size(), 2);
 	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_turn_slice");
 	EXPECT_EQ(commands[0]["payload"]["max_passes"].Integer(), 4);
 	EXPECT_EQ(commands[0]["payload"]["max_candidates"].Integer(), 16);
 	EXPECT_EQ(commands[0]["payload"]["max_attempts"].Integer(), 4);
-	EXPECT_EQ(output.status, AI::AdventureScriptStatus::FALLBACK);
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "end_turn");
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	ASSERT_TRUE(output.intent);
-	EXPECT_NE(output.intent->find("No high-confidence scripted candidate remains"), std::string::npos);
+	EXPECT_NE(output.intent->find("bounded Nullkiller turn slice found no remaining native work"), std::string::npos);
 }
 
 TEST(LuaAdventureScriptRunnerTest, DefaultAdventureEndsTurnOnBoundedNullkillerStopSignal)
@@ -2037,12 +2040,13 @@ TEST(LuaAdventureScriptRunnerTest, DefaultAdventureEndsTurnOnBoundedNullkillerSt
 	EXPECT_NE(output.intent->find("bounded Nullkiller turn slice accepted native stop-turn signal"), std::string::npos);
 }
 
-TEST(LuaAdventureScriptRunnerTest, DefaultAdventureEndsTurnOnTradeOnlyNullkillerSlice)
+TEST(LuaAdventureScriptRunnerTest, DefaultAdventureContinuesAfterTradeOnlyNullkillerSlice)
 {
 	scripting::LuaAdventureScriptRunner runner(
 		"scripts/ai/defaultAdventure.lua",
 		readAdventureScript("scripts/ai/defaultAdventure.lua"));
 	std::vector<JsonNode> commands;
+	int slices = 0;
 
 	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
 	{
@@ -2050,28 +2054,38 @@ TEST(LuaAdventureScriptRunnerTest, DefaultAdventureEndsTurnOnTradeOnlyNullkiller
 
 		JsonNode response;
 		response["ok"] = JsonNode(true);
+		if(command["kind"].String() == "refresh")
+		{
+			response["input"] = makeInput().toJson();
+			return response;
+		}
+
 		response["result"]["ok"] = JsonNode(true);
 		response["result"]["type"] = command["payload"]["type"];
 		if(command["payload"]["type"].String() == "nullkiller_turn_slice")
 		{
-			response["result"]["didWork"] = JsonNode(true);
+			++slices;
+			response["result"]["didWork"] = JsonNode(slices == 1);
 			response["result"]["priorityTasksExecuted"] = JsonNode(0);
 			response["result"]["adventureStepsExecuted"] = JsonNode(0);
 			response["result"]["adventureReplanSteps"] = JsonNode(0);
 			response["result"]["adventureStopTurnSteps"] = JsonNode(0);
-			response["result"]["tradePasses"] = JsonNode(2);
+			response["result"]["tradePasses"] = JsonNode(slices == 1 ? 2 : 0);
 			response["result"]["paused"] = JsonNode(false);
 			response["result"]["stop"] = JsonNode(false);
 		}
 		return response;
 	});
 
-	ASSERT_EQ(commands.size(), 2);
+	ASSERT_EQ(slices, 2);
+	ASSERT_EQ(commands.size(), 4);
 	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_turn_slice");
-	EXPECT_EQ(commands[1]["payload"]["type"].String(), "end_turn");
+	EXPECT_EQ(commands[1]["kind"].String(), "refresh");
+	EXPECT_EQ(commands[2]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[3]["payload"]["type"].String(), "end_turn");
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	ASSERT_TRUE(output.intent);
-	EXPECT_NE(output.intent->find("only traded resources"), std::string::npos);
+	EXPECT_NE(output.intent->find("bounded Nullkiller turn slice found no remaining native work"), std::string::npos);
 }
 
 TEST(LuaAdventureScriptRunnerTest, PackagedConfigUsesBoundedControlScript)
