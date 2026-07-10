@@ -163,6 +163,9 @@ The `ai` facade:
   `ai:limits()`: read current visible input sections.
 - `ai:pendingQueries()`: return `state.turn.queries` for dialog/window decisions.
 - `ai:memory()` and `ai:setMemory(memory)`: read/replace script-owned memory for this day.
+- `ai:runAction(action)` and `ai:runOption(option, actionField?)`: execute a checked action table directly,
+  or execute an action embedded in an action-space option. `actionField` defaults to `planAction`, and can be
+  `tasksAction`, `stepAction`, or `passAction` for bounded Nullkiller subroutine options.
 - `ai:refresh()`: yield to C++ and receive a new visible input snapshot after side effects.
 - `ai:build`, `ai:recruit`, `ai:hireHero`, `ai:transferArmy`, `ai:moveHero`, `ai:visitObject`,
   `ai:answerQuery`, `ai:endTurn`: request checked host actions.
@@ -542,6 +545,12 @@ Current bounded subroutine surface:
   planning, without handing over the rest of the day.
 - Lua exposes `ai.nullkillerStepOutcomes`, `ai.nullkillerFailureActions`, and `ai.nullkillerTaskModes` numeric
   constants. Scripts should branch on these constants rather than trace strings.
+- `actionSpace.nullkillerSubroutineOptions` exposes the bounded task families as first-class candidate actions.
+  Each option contains `tasksAction`, `stepAction`, and `passAction` payloads using numeric `mode` values, so Lua
+  can discover and compose native subroutines the same way it discovers movement, build, recruitment, and
+  preparation candidates. `actionSpace.nullkillerHelperOptions` similarly advertises bounded native helper calls
+  such as the priority pass and resource trader. These options are not automatically added to
+  `recommendedActions`.
 
 The script engine should reuse these Nullkiller systems where possible:
 
@@ -1264,6 +1273,10 @@ Regression harness:
   optional co-located source army, visited owned town, and optional co-located other hero. `actionSpace` exposes
   `prepareHeroOptions` so scripts can discover these opportunities from visible state instead of reimplementing
   the co-location scan.
+- Done: `actionSpace` advertises bounded Nullkiller subroutines through `nullkillerSubroutineOptions` and
+  `nullkillerHelperOptions`. Scripts can execute the advertised `planAction`, `tasksAction`, `stepAction`, or
+  `passAction` through `ai:runOption`, keeping native helper use discoverable and numeric-id based without
+  delegating the rest of the day.
 - Done: pending dialog/window queries are exposed as typed read-side data under `state.turn.queries`, and direct
   Lua actions that open these dialogs now pause for a script answer instead of auto-answering. The bundled default
   script includes a conservative fallback answer policy; richer per-dialog strategy remains Lua policy work.

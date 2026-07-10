@@ -1943,6 +1943,63 @@ std::string nullkillerTaskFailureActionName(NK2AI::TaskFailureAction action)
 	return "unknown";
 }
 
+JsonNode jsonNullkillerSubroutineOption(
+	NK2AI::ScriptTaskSearchMode mode,
+	int32_t maxSteps,
+	int32_t maxCandidates,
+	int32_t maxAttempts)
+{
+	JsonNode option;
+	option["modeId"] = JsonNode(static_cast<int32_t>(mode));
+	option["mode"] = JsonNode(nullkillerTaskSearchModeName(mode));
+	option["bounded"] = JsonNode(true);
+	option["delegatesRestOfDay"] = JsonNode(false);
+	option["maxSteps"] = JsonNode(maxSteps);
+	option["maxCandidates"] = JsonNode(maxCandidates);
+	option["maxAttempts"] = JsonNode(maxAttempts);
+
+	option["tasksAction"]["type"] = JsonNode("nullkiller_tasks");
+	option["tasksAction"]["mode"] = option["modeId"];
+	option["tasksAction"]["max_candidates"] = option["maxCandidates"];
+
+	option["stepAction"]["type"] = JsonNode("nullkiller_step");
+	option["stepAction"]["mode"] = option["modeId"];
+	option["stepAction"]["max_candidates"] = option["maxCandidates"];
+	option["stepAction"]["max_attempts"] = option["maxAttempts"];
+
+	option["passAction"]["type"] = JsonNode("nullkiller_pass");
+	option["passAction"]["mode"] = option["modeId"];
+	option["passAction"]["max_steps"] = option["maxSteps"];
+	option["passAction"]["max_candidates"] = option["maxCandidates"];
+	option["passAction"]["max_attempts"] = option["maxAttempts"];
+
+	option["planAction"] = option["stepAction"];
+	return option;
+}
+
+JsonNode jsonNullkillerPriorityPassOption()
+{
+	JsonNode option;
+	option["helperKindId"] = JsonNode(1);
+	option["helperKind"] = JsonNode("priority_pass");
+	option["bounded"] = JsonNode(true);
+	option["delegatesRestOfDay"] = JsonNode(false);
+	option["planAction"]["type"] = JsonNode("nullkiller_priority_pass");
+	option["planAction"]["pass_index"] = JsonNode(1);
+	return option;
+}
+
+JsonNode jsonNullkillerResourceTradeOption()
+{
+	JsonNode option;
+	option["helperKindId"] = JsonNode(2);
+	option["helperKind"] = JsonNode("resource_trade");
+	option["bounded"] = JsonNode(true);
+	option["delegatesRestOfDay"] = JsonNode(false);
+	option["planAction"]["type"] = JsonNode("nullkiller_trade");
+	return option;
+}
+
 std::string nullkillerHeroRoleName(NK2AI::HeroRole role)
 {
 	switch(role)
@@ -7317,7 +7374,29 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["buyArtifactOptions"].Vector();
 	actionSpace["spellResearchOptions"].Vector();
 	actionSpace["visitTownBuildingOptions"].Vector();
+	actionSpace["nullkillerSubroutineOptions"].Vector();
+	actionSpace["nullkillerHelperOptions"].Vector();
 	actionSpace["recommendedActions"].Vector();
+
+	for(const NK2AI::ScriptTaskSearchMode mode : {
+		NK2AI::ScriptTaskSearchMode::STARTUP,
+		NK2AI::ScriptTaskSearchMode::PRIORITY,
+		NK2AI::ScriptTaskSearchMode::ADVENTURE,
+		NK2AI::ScriptTaskSearchMode::RECRUIT_HERO,
+		NK2AI::ScriptTaskSearchMode::BUY_ARMY,
+		NK2AI::ScriptTaskSearchMode::BUILDING,
+		NK2AI::ScriptTaskSearchMode::CAPTURE,
+		NK2AI::ScriptTaskSearchMode::CLUSTER,
+		NK2AI::ScriptTaskSearchMode::DEFENSE,
+		NK2AI::ScriptTaskSearchMode::ESCAPE,
+		NK2AI::ScriptTaskSearchMode::GATHER_ARMY,
+		NK2AI::ScriptTaskSearchMode::EXPLORATION,
+		NK2AI::ScriptTaskSearchMode::ALL
+	})
+		actionSpace["nullkillerSubroutineOptions"].Vector().push_back(jsonNullkillerSubroutineOption(mode, 4, 16, 16));
+
+	actionSpace["nullkillerHelperOptions"].Vector().push_back(jsonNullkillerPriorityPassOption());
+	actionSpace["nullkillerHelperOptions"].Vector().push_back(jsonNullkillerResourceTradeOption());
 
 	std::shared_lock gameStateLock(CGameState::mutex);
 	const ResourceSet resources = cc->getResourceAmount();

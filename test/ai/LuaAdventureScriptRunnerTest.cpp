@@ -658,6 +658,73 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallNamedNullkillerModeHelper
 	EXPECT_EQ(*output.intent, "named bounded helpers");
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteActionSpaceOptions)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				local option = input.actionSpace.nullkillerSubroutineOptions[1]
+				local helper = input.actionSpace.nullkillerHelperOptions[1]
+				ai:runOption(option)
+				ai:runOption(option, "passAction")
+				ai:runOption(helper)
+				ai:runAction({ type = "nullkiller_tasks", mode = ai.nullkillerTaskModes.defense, max_candidates = 5 })
+				return ai:output("end_turn", "executed action-space options")
+			end
+		}
+	)lua";
+
+	AI::AdventureScriptInput input = makeInput();
+	JsonNode subroutine;
+	subroutine["modeId"] = JsonNode(8);
+	subroutine["planAction"]["type"] = JsonNode("nullkiller_step");
+	subroutine["planAction"]["mode"] = JsonNode(8);
+	subroutine["planAction"]["max_candidates"] = JsonNode(16);
+	subroutine["planAction"]["max_attempts"] = JsonNode(16);
+	subroutine["passAction"]["type"] = JsonNode("nullkiller_pass");
+	subroutine["passAction"]["mode"] = JsonNode(8);
+	subroutine["passAction"]["max_steps"] = JsonNode(4);
+	subroutine["passAction"]["max_candidates"] = JsonNode(16);
+	subroutine["passAction"]["max_attempts"] = JsonNode(16);
+	input.actionSpace["nullkillerSubroutineOptions"].Vector().push_back(subroutine);
+
+	JsonNode helper;
+	helper["planAction"]["type"] = JsonNode("nullkiller_priority_pass");
+	helper["planAction"]["pass_index"] = JsonNode(1);
+	input.actionSpace["nullkillerHelperOptions"].Vector().push_back(helper);
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-action-space-options", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		if(command["payload"]["type"].String() == "nullkiller_tasks")
+			response["result"]["nullkiller"]["tasks"].Vector();
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 4);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_step");
+	EXPECT_EQ(commands[0]["payload"]["mode"].Integer(), 8);
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "nullkiller_pass");
+	EXPECT_EQ(commands[1]["payload"]["mode"].Integer(), 8);
+	EXPECT_EQ(commands[1]["payload"]["max_steps"].Integer(), 4);
+	EXPECT_EQ(commands[2]["payload"]["type"].String(), "nullkiller_priority_pass");
+	EXPECT_EQ(commands[2]["payload"]["pass_index"].Integer(), 1);
+	EXPECT_EQ(commands[3]["payload"]["type"].String(), "nullkiller_tasks");
+	EXPECT_EQ(commands[3]["payload"]["mode"].Integer(), 8);
+	EXPECT_EQ(commands[3]["payload"]["max_candidates"].Integer(), 5);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "executed action-space options");
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanPrepareHero)
 {
 	const std::string source = R"lua(

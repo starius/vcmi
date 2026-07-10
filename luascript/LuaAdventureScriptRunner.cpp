@@ -104,6 +104,25 @@ function ai:execute(action)
 	return response.result or response
 end
 
+function ai:runAction(action)
+	if type(action) ~= "table" then
+		error("ai:runAction expects an action table", 2)
+	end
+	return self:execute(action)
+end
+
+function ai:runOption(option, actionField)
+	if type(option) ~= "table" then
+		error("ai:runOption expects an option table", 2)
+	end
+	local field = actionField or "planAction"
+	local action = option[field]
+	if type(action) ~= "table" then
+		error("ai:runOption option is missing action field '" .. tostring(field) .. "'", 2)
+	end
+	return self:execute(action)
+end
+
 function ai:refresh()
 	local response = coroutine.yield({ kind = "refresh" })
 	if type(response) ~= "table" or not response.ok then
