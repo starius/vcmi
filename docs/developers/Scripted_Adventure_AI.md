@@ -322,6 +322,11 @@ Script memory is a JSON-like value owned by the script and persisted by the AI w
 Rules:
 
 - Memory is strategy state, not game rules state.
+- With `reloadScriptEachTurn = false`, the AI keeps one Lua runner instance for the game and invokes `runDay`
+  once per scripted day. Lua module locals and script table fields therefore survive across days in that running
+  game.
+- `reloadScriptEachTurn = true` intentionally recreates the Lua runner every day for script-development reload.
+  Long-term strategy must still live in `memory` if it needs to survive reloads, saves, or game restarts.
 - The engine should not interpret arbitrary memory keys except for generic metadata such as version and size.
 - Memory is saved under the player-local JSON state with a script id and schema/version field. This uses the
   existing `SaveLocalState`/`PlayerState::playerLocalSettings` path, which is serialized with saves but is
@@ -1423,6 +1428,9 @@ Regression harness:
   `scriptedAdventureAI` key, with script-path and storage-version checks.
 - Done: `config/ai/scriptedAdventure.json` controls script path, reload behavior, action/memory/call limits,
   tracing, and repeated-failure throttling.
+- Done: when development reload is disabled, the host keeps a cached Lua runner for the game so the script has a
+  real per-game instance. Save/load durability still goes through explicit JSON memory, not arbitrary Lua VM
+  internals.
 - Done: development reload is available through `reloadScriptEachTurn`.
 
 ### Milestone 9: Evaluation Loop

@@ -351,6 +351,42 @@ TEST(LuaAdventureScriptRunnerTest, RunsImperativeDayAndExecutesHostCommand)
 	EXPECT_DOUBLE_EQ(*output.confidence, 0.75);
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeRunnerKeepsLuaStateBetweenDays)
+{
+	const std::string source = R"lua(
+		local invocations = 0
+		return {
+			runDay = function(ai, input)
+				invocations = invocations + 1
+				return {
+					status = "end_turn",
+					memory = {
+						version = 1,
+						invocations = invocations
+					},
+					actions = {}
+				}
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-persistent-state", source);
+	const auto commandHandler = [](const JsonNode &)
+	{
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		return response;
+	};
+
+	const AI::AdventureScriptOutput first = runner.runDayImperative(makeInput(), commandHandler);
+	const AI::AdventureScriptOutput second = runner.runDayImperative(makeInput(), commandHandler);
+
+	EXPECT_EQ(first.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_EQ(second.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_EQ(first.memory["invocations"].Integer(), 1);
+	EXPECT_EQ(second.memory["invocations"].Integer(), 2);
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubroutines)
 {
 	const std::string source = R"lua(

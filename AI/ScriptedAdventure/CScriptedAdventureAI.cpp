@@ -5883,6 +5883,7 @@ void CScriptedAdventureAI::makeScriptedTurn()
 	}
 	catch(const std::exception & e)
 	{
+		cachedRunner.reset();
 		fallbackToNullkiller(e.what());
 		AIGateway::makeTurn();
 	}
@@ -5905,7 +5906,21 @@ bool CScriptedAdventureAI::tryMakeScriptedTurn()
 		return false;
 	}
 
-	auto runner = makeRunner(*source);
+	std::unique_ptr<scripting::LuaAdventureScriptRunner> transientRunner;
+	scripting::LuaAdventureScriptRunner * runner = nullptr;
+	if(scriptConfig.reloadScriptEachTurn)
+	{
+		cachedRunner.reset();
+		transientRunner = makeRunner(*source);
+		runner = transientRunner.get();
+	}
+	else
+	{
+		if(!cachedRunner)
+			cachedRunner = makeRunner(*source);
+		runner = cachedRunner.get();
+	}
+
 	{
 		std::shared_lock gameStateLock(CGameState::mutex);
 		nullkiller->resetScriptTaskState();
@@ -8974,6 +8989,7 @@ void CScriptedAdventureAI::loadConfig()
 			{
 				scriptPath = normalizeScriptPath(*script);
 				cachedScriptSource.reset();
+				cachedRunner.reset();
 				logAi->info("ScriptedAdventureAI applied script override from %s.", envName.c_str());
 				break;
 			}
@@ -9016,9 +9032,13 @@ void CScriptedAdventureAI::applyConfig(const JsonNode & config, const std::strin
 	{
 		scriptPath = normalizeScriptPath(readString(config, "script"));
 		cachedScriptSource.reset();
+		cachedRunner.reset();
 	}
 
+	const bool previousReloadScriptEachTurn = scriptConfig.reloadScriptEachTurn;
 	scriptConfig.reloadScriptEachTurn = readBool(config, "reloadScriptEachTurn", scriptConfig.reloadScriptEachTurn);
+	if(scriptConfig.reloadScriptEachTurn != previousReloadScriptEachTurn || scriptConfig.reloadScriptEachTurn)
+		cachedRunner.reset();
 	scriptConfig.trace = readBool(config, "trace", scriptConfig.trace);
 	scriptConfig.experimentalSupportActions = readBool(config, "experimentalSupportActions", scriptConfig.experimentalSupportActions);
 	maxScriptCallsPerTurn = readSize(config, "maxScriptCallsPerTurn", maxScriptCallsPerTurn, 1, 64);

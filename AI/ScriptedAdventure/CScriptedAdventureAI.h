@@ -149,6 +149,7 @@ private:
 	size_t maxScriptCallsPerTurn = 8;
 	ScriptConfig scriptConfig;
 	std::optional<std::string> cachedScriptSource;
+	std::unique_ptr<scripting::LuaAdventureScriptRunner> cachedRunner;
 	size_t traceSequence = 0;
 	size_t consecutiveScriptFailures = 0;
 	int disabledUntilDay = 0;
