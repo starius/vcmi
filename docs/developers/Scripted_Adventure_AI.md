@@ -1244,10 +1244,10 @@ Regression harness:
   hero/object records use public fields only.
 - Done: additional player-visible lifecycle/window callbacks are mirrored into the script update journal:
   hero-visit start/end, center-view hints on visible tiles, bulk artifact movement start, puzzle/world/quest-log
-  windows, View Air/View Earth world-view object overlays, player block/start/end turn events, battle-finished
-  notifications, game-over messages, object-removal completion, and color-scheme changes. Puzzle-map updates do
-  not expose the Grail location; world-view overlays expose only the object positions/types supplied to the
-  player by the spell effect.
+  windows, View Air/View Earth world-view object overlays, player block/start/end turn events, battle start/end
+  boundaries, battle result summaries, battle-finished notifications, game-over messages, object-removal
+  completion, and color-scheme changes. Puzzle-map updates do not expose the Grail location; world-view overlays
+  expose only the object positions/types supplied to the player by the spell effect.
 - Done: Lua can invoke Nullkiller's local object-interaction helper for one owned hero at one visible current
   object, then regain control. This exposes native post-visit handling for towns and hill forts as a bounded
   subroutine instead of requiring full-day delegation.

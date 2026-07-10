@@ -42,6 +42,7 @@
 #include "../../lib/entities/hero/CHeroClass.h"
 #include "../../lib/entities/hero/CHeroHandler.h"
 #include "../../lib/networkPacks/PacksForClient.h"
+#include "../../lib/networkPacks/PacksForClientBattle.h"
 #include "../../lib/networkPacks/PacksForServer.h"
 #include "../../lib/networkPacks/SaveLocalState.h"
 #include "../../lib/pathfinder/CGPathNode.h"
@@ -1116,6 +1117,21 @@ JsonNode jsonArmy(const CCreatureSet & army)
 	return node;
 }
 
+JsonNode jsonBattleCasualties(const std::map<CreatureID, si32> & casualties)
+{
+	JsonNode node;
+	node.Vector();
+	for(const auto & [creatureID, count] : casualties)
+	{
+		JsonNode casualty;
+		casualty["creature_id"] = JsonNode(creatureID.getNum());
+		casualty["creatureIdentifier"] = JsonNode(stableIdentifier(creatureID));
+		casualty["count"] = JsonNode(count);
+		node.Vector().push_back(casualty);
+	}
+	return node;
+}
+
 JsonNode jsonSecondarySkill(SecondarySkill skillID, ui8 level)
 {
 	JsonNode node;
@@ -1388,6 +1404,38 @@ std::string colorSchemeName(ColorScheme scheme)
 		return "grayscale";
 	case ColorScheme::H2_SCHEME:
 		return "h2_scheme";
+	}
+	return "unknown";
+}
+
+std::string battleSideName(BattleSide side)
+{
+	switch(side)
+	{
+	case BattleSide::ATTACKER:
+		return "attacker";
+	case BattleSide::DEFENDER:
+		return "defender";
+	case BattleSide::NONE:
+		return "none";
+	case BattleSide::INVALID:
+		return "invalid";
+	case BattleSide::ALL_KNOWING:
+		return "all_knowing";
+	}
+	return "unknown";
+}
+
+std::string battleResultName(EBattleResult result)
+{
+	switch(result)
+	{
+	case EBattleResult::NORMAL:
+		return "normal";
+	case EBattleResult::ESCAPE:
+		return "escape";
+	case EBattleResult::SURRENDER:
+		return "surrender";
 	}
 	return "unknown";
 }
@@ -4192,6 +4240,58 @@ void CScriptedAdventureAI::playerEndsTurn(PlayerColor player)
 	data["player"] = JsonNode(jsonPlayerColor(player));
 	data["player_id"] = JsonNode(player.getNum());
 	appendScriptUpdate("player_ends_turn", data, isOpponent(player));
+}
+
+void CScriptedAdventureAI::battleStart(const BattleID & battleID, const CCreatureSet * army1, const CCreatureSet * army2, int3 tile, const CGHeroInstance * hero1, const CGHeroInstance * hero2, BattleSide side, bool replayAllowed)
+{
+	JsonNode data;
+	data["battle_id"] = JsonNode(battleID.getNum());
+	data["tile"] = jsonPosition(tile);
+	data["sideId"] = JsonNode(static_cast<int32_t>(side));
+	data["side"] = JsonNode(battleSideName(side));
+	data["replayAllowed"] = JsonNode(replayAllowed);
+	if(hero1)
+	{
+		data["attacker_hero_id"] = JsonNode(hero1->id.getNum());
+		if(cc && cc->isVisibleFor(hero1, playerID))
+			data["attackerHero"] = jsonHero(hero1, hero1->tempOwner == playerID);
+	}
+	if(hero2)
+	{
+		data["defender_hero_id"] = JsonNode(hero2->id.getNum());
+		if(cc && cc->isVisibleFor(hero2, playerID))
+			data["defenderHero"] = jsonHero(hero2, hero2->tempOwner == playerID);
+	}
+	if(army1)
+		data["attackerArmy"] = jsonArmy(*army1);
+	if(army2)
+		data["defenderArmy"] = jsonArmy(*army2);
+	appendScriptUpdate("battle_started", data, (hero1 && isOpponent(hero1->tempOwner)) || (hero2 && isOpponent(hero2->tempOwner)));
+
+	AIGateway::battleStart(battleID, army1, army2, tile, hero1, hero2, side, replayAllowed);
+}
+
+void CScriptedAdventureAI::battleEnd(const BattleID & battleID, const BattleResult * br, QueryID queryID)
+{
+	JsonNode data;
+	data["battle_id"] = JsonNode(battleID.getNum());
+	data["query_id"] = JsonNode(queryID.getNum());
+	if(br)
+	{
+		data["resultId"] = JsonNode(static_cast<int32_t>(br->result));
+		data["result"] = JsonNode(battleResultName(br->result));
+		data["winnerSideId"] = JsonNode(static_cast<int32_t>(br->winner));
+		data["winnerSide"] = JsonNode(battleSideName(br->winner));
+		data["attackerPlayer"] = JsonNode(jsonPlayerColor(br->attacker));
+		data["attackerPlayerId"] = JsonNode(br->attacker.getNum());
+		data["attackerExperience"] = JsonNode(static_cast<int64_t>(br->exp[BattleSide::ATTACKER]));
+		data["defenderExperience"] = JsonNode(static_cast<int64_t>(br->exp[BattleSide::DEFENDER]));
+		data["attackerCasualties"] = jsonBattleCasualties(br->casualties[BattleSide::ATTACKER]);
+		data["defenderCasualties"] = jsonBattleCasualties(br->casualties[BattleSide::DEFENDER]);
+	}
+	appendScriptUpdate("battle_ended_with_result", data, false);
+
+	AIGateway::battleEnd(battleID, br, queryID);
 }
 
 void CScriptedAdventureAI::battleResultsApplied()
