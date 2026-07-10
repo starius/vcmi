@@ -623,6 +623,16 @@ function ai:nullkillerUpgradeArmy(armyId)
 	return self:execute(action)
 end
 
+function ai:nullkillerRecruitCreatures(sourceId, destinationId)
+	local action = copyFields(sourceId)
+	if type(sourceId) ~= "table" then
+		action.source_id = sourceId
+		action.destination_id = destinationId
+	end
+	action.type = "nullkiller_recruit_creatures"
+	return self:execute(action)
+end
+
 function ai:requestStatistic()
 	return self:execute({ type = "request_statistic" })
 end

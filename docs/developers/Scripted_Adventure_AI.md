@@ -190,6 +190,9 @@ The `ai` facade:
   Lua.
 - `ai:nullkillerUpgradeArmy(armyId)`: ask the host to run Nullkiller's bounded possible-upgrades helper once for
   one visible owned army holder, choosing the best affordable upgrade per stack.
+- `ai:nullkillerRecruitCreatures(sourceId, destinationId?)`: ask the host to run Nullkiller's bounded recruitment
+  helper once for one visible owned dwelling/town. It recruits affordable creatures that fit the destination army,
+  including Nullkiller's duplicate-stack merge attempt.
 - `ai:requestStatistic()`: request the normal player statistics dataset; the server response is mirrored into
   `updates` as `statistics_response`.
 - `ai:tradeResources(marketId, sellResourceId, buyResourceId, amount, heroId?)`: request an exact
@@ -1210,6 +1213,9 @@ Regression harness:
   native upgrade/recruit/move-to-hero sequence for one visible owned town without delegating the rest of the day.
 - Done: Lua can call Nullkiller's bounded army-upgrade helper through `ai:nullkillerUpgradeArmy(armyId)`, reusing
   native affordable upgrade selection for one visible owned army holder.
+- Done: Lua can call Nullkiller's bounded recruitment helper through
+  `ai:nullkillerRecruitCreatures(sourceId, destinationId?)`, reusing native affordable recruitment and stack-fit
+  handling for one visible owned dwelling or town.
 - Done: pending dialog/window queries are exposed as typed read-side data under `state.turn.queries`, and direct
   Lua actions that open these dialogs now pause for a script answer instead of auto-answering. The bundled default
   script includes a conservative fallback answer policy; richer per-dialog strategy remains Lua policy work.

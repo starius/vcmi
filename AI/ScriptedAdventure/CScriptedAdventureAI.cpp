@@ -4797,6 +4797,29 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		return true;
 	}
 
+	if(type == "nullkiller_recruit_creatures")
+	{
+		const CGObjectInstance * sourceObject = cc->getObj(ObjectInstanceID(readInteger(action, "source_id")), false);
+		const CGDwelling * dwelling = dynamic_cast<const CGDwelling *>(sourceObject);
+		const CGTownInstance * town = dynamic_cast<const CGTownInstance *>(sourceObject);
+		if(!sourceObject || !dwelling || sourceObject->tempOwner != playerID || !cc->isVisibleFor(sourceObject, playerID))
+			throw std::invalid_argument("Unknown recruitment source, source is not visible, or source is not owned by scripted AI");
+
+		const CArmedInstance * destination = town ? town->getUpperArmy() : dynamic_cast<const CArmedInstance *>(sourceObject);
+		if(hasField(action, "destination_id"))
+			destination = readOwnedArmy("destination_id", "recruitment destination");
+		if(!destination || destination->tempOwner != playerID || !cc->isVisibleFor(destination, playerID))
+			throw std::invalid_argument("Unknown recruitment destination, destination is not visible, or destination is not owned by scripted AI");
+
+		recruitCreatures(dwelling, destination);
+		actionResult["source_id"] = JsonNode(sourceObject->id.getNum());
+		actionResult["destination_id"] = JsonNode(destination->id.getNum());
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(true);
+		return true;
+	}
+
 	if(type == "trade_resources")
 	{
 		const CGObjectInstance * object = cc->getObj(ObjectInstanceID(readInteger(action, "market_id")), false);
@@ -6257,7 +6280,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "erase_transition_artifact", "swap_creatures", "merge_stacks", "merge_or_swap_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "set_town_name", "swap_garrison_hero", "nullkiller_trade", "nullkiller_priority_pass", "nullkiller_build_army", "nullkiller_upgrade_army", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_answer_query", "nullkiller_object_interaction" })
+	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "erase_transition_artifact", "swap_creatures", "merge_stacks", "merge_or_swap_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "set_town_name", "swap_garrison_hero", "nullkiller_trade", "nullkiller_priority_pass", "nullkiller_build_army", "nullkiller_upgrade_army", "nullkiller_recruit_creatures", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_answer_query", "nullkiller_object_interaction" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();
