@@ -976,6 +976,77 @@ JsonNode jsonMarketModeDetails(const IMarket * market, EMarketMode mode)
 	return node;
 }
 
+JsonNode jsonMarketModeDetailsList(const IMarket * market)
+{
+	JsonNode node;
+	node.Vector();
+	if(!market)
+		return node;
+
+	for(EMarketMode mode : market->availableModes())
+		node.Vector().push_back(jsonMarketModeDetails(market, mode));
+
+	return node;
+}
+
+JsonNode jsonMarketSkillOption(
+	const IMarket * market,
+	const CGHeroInstance * visitor,
+	SecondarySkill skillID,
+	const ResourceSet & resources,
+	const IGameSettings & settings)
+{
+	const int32_t goldCost = settings.getInteger(EGameSettings::MARKETS_UNIVERSITY_GOLD_COST);
+	const bool alreadyKnown = visitor && visitor->getSecSkillLevel(skillID) != 0;
+	const bool canLearnAny = visitor && visitor->canLearnSkill();
+	const bool canLearn = visitor && visitor->canLearnSkill(skillID);
+	const bool affordable = resources[EGameResID::GOLD] >= goldCost;
+
+	JsonNode node;
+	node["skill_id"] = JsonNode(skillID.getNum());
+	node["skillIdentifier"] = JsonNode(stableIdentifier(skillID));
+	node["level"] = JsonNode(1);
+	node["market_id"] = JsonNode(market->getObjInstanceID().getNum());
+	if(visitor)
+		node["hero_id"] = JsonNode(visitor->id.getNum());
+	node["modeId"] = JsonNode(static_cast<int32_t>(EMarketMode::RESOURCE_SKILL));
+	node["mode"] = JsonNode(marketModeName(EMarketMode::RESOURCE_SKILL));
+	node["goldCost"] = JsonNode(goldCost);
+	node["affordable"] = JsonNode(affordable);
+	node["alreadyKnown"] = JsonNode(alreadyKnown);
+	node["canLearnAny"] = JsonNode(canLearnAny);
+	node["canLearn"] = JsonNode(canLearn);
+	node["buyable"] = JsonNode(visitor && !alreadyKnown && canLearnAny && canLearn && affordable);
+	node["planAction"]["type"] = JsonNode("market_trade");
+	node["planAction"]["market_id"] = JsonNode(market->getObjInstanceID().getNum());
+	node["planAction"]["mode_id"] = JsonNode(static_cast<int32_t>(EMarketMode::RESOURCE_SKILL));
+	if(visitor)
+		node["planAction"]["hero_id"] = JsonNode(visitor->id.getNum());
+	node["planAction"]["skill_id"] = JsonNode(skillID.getNum());
+	return node;
+}
+
+JsonNode jsonMarketSkillOptions(
+	const IMarket * market,
+	const CGHeroInstance * visitor,
+	const ResourceSet & resources,
+	const IGameSettings & settings)
+{
+	JsonNode node;
+	node.Vector();
+	if(!market || !visitor || !market->allowsTrade(EMarketMode::RESOURCE_SKILL))
+		return node;
+
+	for(const TradeItemBuy & item : market->availableItemsIds(EMarketMode::RESOURCE_SKILL))
+	{
+		const SecondarySkill skillID = item.as<SecondarySkill>();
+		if(skillID.hasValue())
+			node.Vector().push_back(jsonMarketSkillOption(market, visitor, skillID, resources, settings));
+	}
+
+	return node;
+}
+
 JsonNode jsonVisibleTile(const int3 & position, const TerrainTile & tile)
 {
 	JsonNode node;
@@ -3745,6 +3816,7 @@ void CScriptedAdventureAI::showUniversityWindow(const IMarket * market, const CG
 	if(market)
 	{
 		data["market_id"] = JsonNode(market->getObjInstanceID().getNum());
+		data["modeDetails"] = jsonMarketModeDetailsList(market);
 		if(const CGObjectInstance * object = cc->getObj(market->getObjInstanceID(), false))
 		{
 			if(cc->isVisibleFor(object, playerID))
@@ -3756,6 +3828,7 @@ void CScriptedAdventureAI::showUniversityWindow(const IMarket * market, const CG
 		data["visitor_hero_id"] = JsonNode(visitor->id.getNum());
 		data["visitorHero"] = jsonHero(visitor);
 	}
+	data["skillOptions"] = jsonMarketSkillOptions(market, visitor, cc->getResourceAmount(), cc->getSettings());
 	recordScriptQuery(queryID, "university_window", data);
 	if(isScriptActionAutoAnswerMode())
 	{
@@ -3815,6 +3888,7 @@ void CScriptedAdventureAI::showMarketWindow(const IMarket * market, const CGHero
 	if(market)
 	{
 		data["market_id"] = JsonNode(market->getObjInstanceID().getNum());
+		data["modeDetails"] = jsonMarketModeDetailsList(market);
 		if(const CGObjectInstance * object = cc->getObj(market->getObjInstanceID(), false))
 		{
 			if(cc->isVisibleFor(object, playerID))
@@ -3826,6 +3900,7 @@ void CScriptedAdventureAI::showMarketWindow(const IMarket * market, const CGHero
 		data["visitor_hero_id"] = JsonNode(visitor->id.getNum());
 		data["visitorHero"] = jsonHero(visitor);
 	}
+	data["skillOptions"] = jsonMarketSkillOptions(market, visitor, cc->getResourceAmount(), cc->getSettings());
 	recordScriptQuery(queryID, "market_window", data);
 	if(isScriptActionAutoAnswerMode())
 	{

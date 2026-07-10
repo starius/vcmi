@@ -491,6 +491,9 @@ Current bounded subroutine surface:
   typed context where available. Teleport and map-object-select choices include visible object payloads when the
   target object is visible to the scripted player. Tavern, recruitment, university, and market dialogs reuse the
   same hire, recruit, army, and market-detail payloads exposed in normal action-space snapshots.
+- University and market dialog records include `modeDetails` and `skillOptions` entries. `skillOptions` provide
+  stable `skill_id`, affordability/learnability flags, gold cost, and a ready checked `market_trade` `planAction`
+  for buying a secondary skill; scripts should use these fields instead of parsing dialog text.
 - `nullkiller_task` executes exactly one stored candidate snapshot through `Nullkiller::executeScriptTask`.
   Native Nullkiller dialog handlers stay active for this path, so the subroutine behaves like Nullkiller rather
   than simplified script auto-answer logic.
@@ -1221,6 +1224,9 @@ Regression harness:
 - Done: pending dialog/window queries are exposed as typed read-side data under `state.turn.queries`, and direct
   Lua actions that open these dialogs now pause for a script answer instead of auto-answering. The bundled default
   script includes a conservative fallback answer policy; richer per-dialog strategy remains Lua policy work.
+- Done: university and market dialog queries now expose stable mode/item details and buy-skill options with
+  checked `market_trade` actions, closing one read-side gap for player-choice dialogs without changing native
+  trade validation.
 - Done: Lua can ask Nullkiller to answer a single pending query through `ai:nullkillerAnswerQuery`, preserving
   native bounded handling for level-up skills, cautious yes/no prompts, teleport and map-object choices, hero
   exchanges, garrison pickup, dwelling recruitment, and simple window-closing dialogs without surrendering the
