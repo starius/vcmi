@@ -1162,4 +1162,50 @@ function Script.planDay(input)
     }
 end
 
+function Script.runDay(ai, input)
+    -- Imperative compatibility entry point. The old policy still computes one
+    -- small decision at a time, but this wrapper now executes each selected
+    -- action through the checked host API and refreshes visible state after
+    -- every side effect. Future policy work should move decisions directly into
+    -- this coroutine instead of returning declarative batches.
+    local current = input
+    local callLimit = (((current or {}).limits or {}).maxScriptCallsPerTurn) or 8
+
+    for _ = 1, callLimit do
+        local output = Script.planDay(current)
+        ai:setMemory(output.memory or ai:memory())
+
+        if output.status == "fallback" then
+            return ai:nullkiller(output.intent)
+        end
+
+        local shouldReplan = false
+        for _, action in ipairs(output.actions or {}) do
+            local ok, result = pcall(function()
+                return ai:execute(action)
+            end)
+
+            current = ai:refresh()
+            if not ok or (type(result) == "table" and result.stop) then
+                shouldReplan = true
+                break
+            end
+        end
+
+        if output.status == "end_turn" then
+            ai:endTurn()
+            return ai:output("end_turn", output.intent, output.confidence)
+        end
+
+        if output.status ~= "need_replan" and not shouldReplan then
+            return ai:nullkiller(output.intent or "script completed its imperative actions")
+        end
+
+        current = current or ai:refresh()
+        current.memory = ai:memory()
+    end
+
+    return ai:nullkiller("imperative compatibility wrapper reached replan limit")
+end
+
 return Script

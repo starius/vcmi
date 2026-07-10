@@ -129,6 +129,7 @@ private:
 
 	void makeScriptedTurn();
 	bool tryMakeScriptedTurn();
+	bool tryMakeImperativeScriptedTurn(scripting::LuaAdventureScriptRunner & runner);
 	bool executeScriptAction(const JsonNode & action, JsonNode & actionResult);
 	RequestWaitResult submitAndWaitForRequest(const std::type_info & requestType, uint16_t expectedPackType, const std::function<void()> & submit);
 	JsonNode jsonRequestWaitResult(const RequestWaitResult & request) const;
@@ -139,6 +140,7 @@ private:
 	void setScriptActionAutoAnswerMode(bool active);
 	bool isScriptActionAutoAnswerMode();
 	JsonNode makeScriptInputState();
+	AI::AdventureScriptInput makeAdventureScriptInput(const JsonNode & progress);
 	JsonNode makeScriptActionSpace() const;
 	JsonNode makeScriptAnalysis() const;
 	JsonNode makeScriptUpdates(bool opponentOnly) const;
@@ -156,7 +158,7 @@ private:
 	bool isOpponent(const PlayerColor & owner) const;
 	void appendScriptUpdate(const std::string & type, JsonNode data, bool opponent);
 	void writeTraceEvent(const std::string & label, const JsonNode & payload);
-	void fallbackToNullkiller(const std::string & reason);
+	void fallbackToNullkiller(const std::string & reason, bool recordFailure = true);
 };
 
 }

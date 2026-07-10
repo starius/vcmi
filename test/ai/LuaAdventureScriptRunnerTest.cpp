@@ -307,6 +307,163 @@ TEST(LuaAdventureScriptRunnerTest, RemovesUnsafeGlobals)
 	EXPECT_FALSE(output.memory["hasRandom"].Bool());
 }
 
+TEST(LuaAdventureScriptRunnerTest, RunsImperativeDayAndExecutesHostCommand)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				local result = ai:build(7, 12)
+				return ai:output("end_turn", "built from imperative script", 0.75)
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-execute", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		response["result"]["town_id"] = command["payload"]["town_id"];
+		response["result"]["building_id"] = command["payload"]["building_id"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 1);
+	EXPECT_EQ(commands[0]["kind"].String(), "execute");
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "build");
+	EXPECT_EQ(commands[0]["payload"]["town_id"].Integer(), 7);
+	EXPECT_EQ(commands[0]["payload"]["building_id"].Integer(), 12);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "built from imperative script");
+	ASSERT_TRUE(output.confidence);
+	EXPECT_DOUBLE_EQ(*output.confidence, 0.75);
+}
+
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanDelegateToFallback)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				ai:setMemory({ version = 1, delegated = true })
+				ai:nullkiller("delegate after opening checks")
+				error("host should not resume after fallback")
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-fallback", source);
+	bool commandHandlerCalled = false;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode &)
+	{
+		commandHandlerCalled = true;
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		return response;
+	});
+
+	EXPECT_FALSE(commandHandlerCalled);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::FALLBACK);
+	EXPECT_TRUE(output.memory["delegated"].Bool());
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "delegate after opening checks");
+}
+
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanRefreshVisibleInput)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				local refreshed = ai:refresh()
+				return {
+					status = "end_turn",
+					memory = { version = 1, refreshedDay = refreshed.state.day },
+					actions = {}
+				}
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-refresh", source);
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
+	{
+		EXPECT_EQ(command["kind"].String(), "refresh");
+
+		AI::AdventureScriptInput refreshed = makeInput();
+		refreshed.state["day"] = JsonNode(2);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["input"] = refreshed.toJson();
+		return response;
+	});
+
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_EQ(output.memory["refreshedDay"].Integer(), 2);
+}
+
+TEST(LuaAdventureScriptRunnerTest, ImperativeHostErrorsAreCatchable)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				local ok, err = pcall(function()
+					ai:build(7, 12)
+				end)
+				return {
+					status = "end_turn",
+					memory = { version = 1, caught = not ok, error = err },
+					actions = {}
+				}
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-catch", source);
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode &)
+	{
+		JsonNode response;
+		response["ok"] = JsonNode(false);
+		response["error"] = JsonNode("invalid build");
+		return response;
+	});
+
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_TRUE(output.memory["caught"].Bool());
+	EXPECT_NE(output.memory["error"].String().find("invalid build"), std::string::npos);
+}
+
+TEST(LuaAdventureScriptRunnerTest, UncaughtImperativeHostErrorFailsRunDay)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				ai:build(7, 12)
+				return ai:output("end_turn")
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-uncaught", source);
+
+	EXPECT_THROW(runner.runDayImperative(makeInput(), [&](const JsonNode &)
+	{
+		JsonNode response;
+		response["ok"] = JsonNode(false);
+		response["error"] = JsonNode("invalid build");
+		return response;
+	}), std::runtime_error);
+}
+
 TEST(LuaAdventureScriptRunnerTest, JsonPolicyFixtures)
 {
 	const std::filesystem::path fixtureRoot = std::filesystem::path(VCMI_SOURCE_DIR) / "test/testdata/ai/adventure-script";

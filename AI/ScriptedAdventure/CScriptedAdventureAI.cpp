@@ -1607,19 +1607,14 @@ bool CScriptedAdventureAI::tryMakeScriptedTurn()
 	}
 
 	auto runner = makeRunner(*source);
+	if(runner->hasRunDay())
+		return tryMakeImperativeScriptedTurn(*runner);
+
 	JsonNode progress;
 
 	for(size_t callIndex = 0; callIndex < maxScriptCallsPerTurn && status.haveTurn(); ++callIndex)
 	{
-		AI::AdventureScriptInput input;
-		input.state = makeScriptInputState();
-		input.updates = makeScriptUpdates(false);
-		input.opponentUpdates = makeScriptUpdates(true);
-		input.progress = progress;
-		input.memory = scriptMemory;
-		input.actionSpace = makeScriptActionSpace();
-		input.analysis = makeScriptAnalysis();
-		input.limits = makeScriptInputLimits();
+		AI::AdventureScriptInput input = makeAdventureScriptInput(progress);
 
 		if(scriptConfig.trace)
 		{
@@ -1642,7 +1637,7 @@ bool CScriptedAdventureAI::tryMakeScriptedTurn()
 
 		if(output.status == AI::AdventureScriptStatus::FALLBACK)
 		{
-			fallbackToNullkiller("script requested fallback");
+			fallbackToNullkiller("script requested fallback", false);
 			return false;
 		}
 
@@ -1721,6 +1716,134 @@ bool CScriptedAdventureAI::tryMakeScriptedTurn()
 	}
 
 	fallbackToNullkiller("script call limit reached");
+	return false;
+}
+
+bool CScriptedAdventureAI::tryMakeImperativeScriptedTurn(scripting::LuaAdventureScriptRunner & runner)
+{
+	JsonNode executed;
+	JsonNode failed;
+	JsonNode remaining;
+	executed.Vector();
+	failed.Vector();
+	remaining.Vector();
+
+	JsonNode progress = makeProgressJson(executed, failed, remaining);
+	AI::AdventureScriptInput input = makeAdventureScriptInput(progress);
+
+	if(scriptConfig.trace)
+	{
+		JsonNode trace;
+		trace["input"] = input.toJson();
+		writeTraceEvent("imperative-input", trace);
+	}
+
+	size_t commandIndex = 0;
+	const auto commandHandler = [&](const JsonNode & command) -> JsonNode
+	{
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+
+		try
+		{
+			const std::string kind = readString(command, "kind");
+			if(kind == "refresh")
+			{
+				response["input"] = makeAdventureScriptInput(progress).toJson();
+				return response;
+			}
+
+			if(kind != "execute")
+				throw std::invalid_argument("Unsupported imperative command kind: " + kind);
+
+			if(commandIndex >= limits.maxActions)
+				throw std::invalid_argument("Script exceeded configured command limit");
+
+			const JsonNode & action = command["payload"];
+			JsonNode actionResult;
+			actionResult["index"] = JsonNode(static_cast<int32_t>(commandIndex));
+			if(hasField(action, "id"))
+				actionResult["id"] = action["id"];
+
+			bool continueAfterAction = false;
+			try
+			{
+				continueAfterAction = executeScriptAction(action, actionResult);
+			}
+			catch(const std::exception & e)
+			{
+				actionResult["ok"] = JsonNode(false);
+				actionResult["error"] = JsonNode(e.what());
+			}
+
+			++commandIndex;
+			actionResult["stop"] = JsonNode(!continueAfterAction || !status.haveTurn());
+
+			if(actionResult["ok"].isBool() && !actionResult["ok"].Bool())
+			{
+				failed.Vector().push_back(actionResult);
+				progress = makeProgressJson(executed, failed, remaining);
+				response["ok"] = JsonNode(false);
+				response["error"] = actionResult["error"].isString()
+					? actionResult["error"]
+					: JsonNode("Script action failed");
+				response["result"] = actionResult;
+			}
+			else
+			{
+				executed.Vector().push_back(actionResult);
+				progress = makeProgressJson(executed, failed, remaining);
+				response["result"] = actionResult;
+			}
+
+			if(scriptConfig.trace)
+			{
+				JsonNode trace;
+				trace["commandIndex"] = JsonNode(static_cast<int32_t>(commandIndex - 1));
+				trace["command"] = command;
+				trace["response"] = response;
+				trace["progress"] = progress;
+				writeTraceEvent("imperative-command", trace);
+			}
+
+			return response;
+		}
+		catch(const std::exception & e)
+		{
+			response["ok"] = JsonNode(false);
+			response["error"] = JsonNode(e.what());
+			return response;
+		}
+	};
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, commandHandler);
+	scriptMemory = output.memory;
+	saveScriptMemoryToLocalState();
+
+	if(scriptConfig.trace)
+	{
+		JsonNode trace;
+		trace["output"] = AI::makeAdventureScriptOutputJson(output);
+		trace["progress"] = progress;
+		writeTraceEvent("imperative-output", trace);
+	}
+
+	if(output.status == AI::AdventureScriptStatus::FALLBACK)
+	{
+		fallbackToNullkiller("script requested fallback", false);
+		return false;
+	}
+
+	if(!status.haveTurn())
+		return true;
+
+	if(output.status == AI::AdventureScriptStatus::END_TURN)
+	{
+		endTurn();
+		return true;
+	}
+
+	fallbackToNullkiller("imperative script returned without ending turn");
 	return false;
 }
 
@@ -1957,6 +2080,20 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 	}
 
 	throw std::invalid_argument("Unsupported script action type: " + type);
+}
+
+AI::AdventureScriptInput CScriptedAdventureAI::makeAdventureScriptInput(const JsonNode & progress)
+{
+	AI::AdventureScriptInput input;
+	input.state = makeScriptInputState();
+	input.updates = makeScriptUpdates(false);
+	input.opponentUpdates = makeScriptUpdates(true);
+	input.progress = progress;
+	input.memory = scriptMemory;
+	input.actionSpace = makeScriptActionSpace();
+	input.analysis = makeScriptAnalysis();
+	input.limits = makeScriptInputLimits();
+	return input;
 }
 
 JsonNode CScriptedAdventureAI::makeScriptInputState()
@@ -2753,9 +2890,14 @@ void CScriptedAdventureAI::writeTraceEvent(const std::string & label, const Json
 	}
 }
 
-void CScriptedAdventureAI::fallbackToNullkiller(const std::string & reason)
+void CScriptedAdventureAI::fallbackToNullkiller(const std::string & reason, bool recordFailure)
 {
 	logAi->warn("ScriptedAdventureAI falling back to Nullkiller: %s", reason.c_str());
+	if(!recordFailure)
+	{
+		consecutiveScriptFailures = 0;
+		return;
+	}
 	if(failureRecordedThisTurn)
 		return;
 

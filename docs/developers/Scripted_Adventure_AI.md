@@ -1,30 +1,34 @@
 # Scripted Adventure AI Plan
 
-This document describes the path from the current MCP day-plan work to a real scripted adventure AI.
-The goal is to let VCMI AI behavior be improved by editing scripts, without rebuilding the heavy C++
+This document describes the path from the current ScriptedAdventureAI work to a real editable adventure AI.
+The goal is to let VCMI AI behavior be improved by editing Lua scripts, without rebuilding the heavy C++
 binaries, while keeping the game rules unchanged and the engine authoritative over all state changes.
 
-The scripting layer should be expressive enough to encode meaningful Heroes III strategy, but it should
-not expose imperative game-action calls. A script should be a planner: it receives facts and memory, then
-returns a declarative plan. C++ validates and executes that plan through the same adventure AI callback
-mechanisms used today.
+The current direction is an imperative Lua AI facade. A script gets visible state, persistent memory, and a
+checked `ai` object. The script can call methods such as `ai:build`, `ai:visitObject`, `ai:answerQuery`, and
+`ai:nullkiller`, and those calls yield back to C++. C++ validates and executes every request through the normal
+adventure AI callback/server path. Lua never receives mutable `CGameState`, raw server authority, hidden map
+information, or unchecked game-rule hooks.
 
 ## Goals
 
 - Make adventure AI behavior scriptable without recompiling the engine.
-- Reuse the current MCP day-plan contract as the first concrete action vocabulary.
-- Keep scripts functional in shape: state in, memory plus plan out.
+- Reuse the current AdventurePlan/MCP action vocabulary as the checked host command format.
+- Make scripts ergonomic to write: one `runDay(ai, input)` coroutine per player day, with refresh/yield points
+  after uncertain actions.
 - Preserve existing rules and validation. Scripts never modify `CGameState` and never bypass callbacks.
 - Keep Nullkiller as the safe fallback whenever script loading, planning, validation, or execution fails.
+- Make Nullkiller available as a callable fallback/subroutine surface, then expose more of its analyzers and
+  candidate generators as read-only script helpers over time.
 - Support iterative improvement: run scripted AI, inspect mistakes, edit script, repeat.
 - Support long-term strategy through script-owned memory serialized in saves.
-- Support partial-day replanning when an action fails, a query appears, a battle starts, terrain is revealed,
-  a teleport has unknown destination, or the returned plan intentionally stops early.
+- Support partial-day decisions when an action fails, a query appears, a battle starts, terrain is revealed,
+  a teleport has unknown destination, or the script intentionally asks for fresh state.
 
 ## Long-Term Iteration Vision
 
 The target development loop is a stable VCMI binary with a fully capable scripted adventure AI host. Once the
-host exposes enough visible state, host analysis, candidate tasks, and validated declarative actions, most AI
+host exposes enough visible state, host analysis, candidate tasks, and validated imperative commands, most AI
 improvement should happen by editing scripts rather than rebuilding C++.
 
 The desired loop:
@@ -45,6 +49,7 @@ scripted computer player whose policy can be iterated quickly, including with LL
 
 - Do not move game mechanics or rule calculations into AI scripts.
 - Do not expose mutable `CCallback` or server-side state mutation APIs to scripts.
+- Do not expose hidden information or anything unavailable to a normal player/AI callback.
 - Do not replace Nullkiller immediately. Scripted AI should wrap, steer, or override parts incrementally.
 - Do not require an LLM at runtime. LLMs may generate and refine scripts offline, but the game should run
   the resulting script normally.
@@ -83,28 +88,40 @@ Reasons:
 - Scripts are loaded as data from VFS/mod files.
 - Lua can return structured tables that map naturally to `JsonNode`.
 - The current Lua system already documents a "scripts must be constant and should not generate side effects"
-  rule, which matches the desired functional planner style.
+  rule. The AI facade keeps that spirit by routing every requested game action back through checked C++ code.
 
 The AI scripting API should still be backend-shaped as an interface:
 
 ```text
 IAdventureScriptRunner
-  planDay(input) -> output
+  runDay(ai, input) -> output
 ```
 
-Lua is the first implementation. A later backend could be added without changing the adventure plan executor.
+Lua is the first implementation. A later backend could be added without changing the C++ command executor.
 
 ## Core Script Contract
 
-The primary script entry point should be a pure planner function:
+The primary script entry point is a per-day coroutine:
 
 ```lua
-function ScriptedAI.planDay(input)
-    return {
-        memory = newMemory,
-        actions = actions,
-        status = "continue" -- or "end_turn", "need_replan", "fallback"
-    }
+function Script.runDay(ai, input)
+    local memory = input.memory or { version = 1 }
+    ai:setMemory(memory)
+
+    local state = ai:state()
+    local candidates = ai:actionSpace()
+
+    if shouldDelegate(state, candidates, memory) then
+        return ai:nullkiller("delegate difficult turn")
+    end
+
+    local result = ai:visitObject(bestHeroId, bestObjectId, bestRouteId)
+    if result.stop then
+        input = ai:refresh()
+    end
+
+    ai:endTurn()
+    return ai:output("end_turn", "script completed day")
 end
 ```
 
@@ -116,27 +133,40 @@ Input:
 - `opponentUpdates`: the same journal filtered to visible opponent-related changes.
 - `progress`: result of the previous plan execution, including executed, failed, and remaining actions.
 - `memory`: script-owned long-term context from previous calls/days.
-- `day`: current day/week/month and active player color.
+- current day/week/month and active player color under `state`.
 - `actionSpace`: currently legal or relevant high-level candidates.
 - `analysis`: host-provided derived facts such as reachability, danger, town build options, recruitment options,
   and object values.
 - `limits`: time, action count, max candidates, and max memory size limits for this call.
 
-Output:
+The `ai` facade:
+
+- `ai:state()`, `ai:updates()`, `ai:opponentUpdates()`, `ai:progress()`, `ai:actionSpace()`, `ai:analysis()`,
+  `ai:limits()`: read current visible input sections.
+- `ai:memory()` and `ai:setMemory(memory)`: read/replace script-owned memory for this day.
+- `ai:refresh()`: yield to C++ and receive a new visible input snapshot after side effects.
+- `ai:build`, `ai:recruit`, `ai:hireHero`, `ai:transferArmy`, `ai:moveHero`, `ai:visitObject`,
+  `ai:answerQuery`, `ai:endTurn`: request checked host actions.
+- `ai:nullkiller()` / `ai:nullkillerForRestOfDay()`: stop script control and let Nullkiller finish the turn.
+- `ai:output(status, intent, confidence)`: return final status plus current memory.
+
+Output from `runDay`:
 
 - `memory`: replacement script-owned memory to persist.
-- `actions`: declarative daily actions, initially the same action vocabulary as `AdventurePlan`.
+- `actions`: normally empty for imperative scripts. The host command boundary still uses AdventurePlan-shaped
+  action tables internally, but scripts should execute them through `ai:*` methods instead of returning a batch.
 - `intent`: optional high-level explanation or strategy labels for trace/debugging.
 - `status`:
-  - `continue`: execute actions, then call again if there is remaining turn capacity.
-  - `end_turn`: execute actions and end the turn if execution reaches the end.
-  - `need_replan`: do not end turn; call script again after applying returned actions.
+  - `continue`: script returned without ending the turn; current host treats this as unsafe and falls back.
+  - `end_turn`: script has ended or asks the host to end the turn.
+  - `need_replan`: legacy planner status; imperative scripts should prefer `ai:refresh()`.
   - `fallback`: stop script control and let Nullkiller finish the turn.
-- `returnSelect`: optional state sections to refresh after execution.
 - `confidence`: optional numeric value for trace/debugging and future arbitration.
 
-The script output is a request, not an order. C++ validates ownership, visibility, route freshness, resource
-availability, pending queries, battle state, and server request results before anything changes.
+Every script action call is a request, not an order. C++ validates ownership, visibility, route freshness,
+resource availability, pending queries, battle state, and server request results before anything changes. If a
+request is invalid, C++ returns an error to Lua; `ai:*` raises a Lua error that scripts can catch with `pcall`.
+Uncaught errors abort the script for the day and fall back to Nullkiller.
 
 ## Stable Identifiers
 
@@ -193,35 +223,49 @@ Example:
 }
 ```
 
-## Functional Planner Style
+## Imperative Command Style
 
-Scripts should not call `moveHero`, `buildBuilding`, `recruitCreatures`, or similar mutation APIs.
-Instead, they return data:
+Scripts may call the checked AI facade, not raw game mutation APIs. From Lua this feels imperative:
 
 ```lua
-return {
-    memory = memory,
-    actions = {
-        { id = "build-town-17", type = "build", town_id = 17, building_id = 5 },
-        { id = "visit-gold", type = "visit_object", hero_id = 34, object_id = 180, route_id = "..." },
-        { id = "end", type = "end_turn" }
-    },
-    status = "end_turn"
-}
+local ok, err = pcall(function()
+    ai:build(17, 5)
+end)
+
+if not ok then
+    memory.blockedBuilds[17] = err
+end
+
+local move = ai:visitObject(34, 180, routeId)
+if move.stop then
+    input = ai:refresh()
+end
 ```
+
+Internally each facade method yields an AdventurePlan-shaped command table to C++. The command still looks like:
+
+```lua
+{ type = "visit_object", hero_id = 34, object_id = 180, route_id = "..." }
+```
+
+C++ then validates and executes it through normal callback/server requests.
 
 Allowed script operations:
 
-- inspect immutable input tables
+- inspect visible input tables
 - compute scores
 - sort/filter/rank candidate actions
 - update and return memory
-- produce action/intention data
+- call checked `ai:*` facade methods
+- yield for `ai:refresh()` when state may have changed
+- catch invalid-action errors and choose another strategy
+- delegate to Nullkiller for the rest of the day
 
 Disallowed script operations:
 
 - direct game state mutation
 - direct callback calls
+- hidden map/state access
 - filesystem/network access
 - global mutable state that affects future calls outside returned memory
 - random decisions not mediated by deterministic host-provided randomness
@@ -281,19 +325,20 @@ This makes the script capable enough to express strategies such as:
 - multi-day target pursuit
 - opponent-aware avoidance or aggression
 
-## Plan Execution Loop
+## Imperative Execution Loop
 
 The day loop should be:
 
 1. Build script input from visible callback state, update journal, previous progress, memory, and host analysis.
-2. Call `planDay`.
-3. Validate output shape and memory size.
-4. Normalize actions with `AdventurePlan`.
-5. Execute actions sequentially through the normal callback request path.
-6. Stop execution at the first stop condition.
-7. If the script requested `end_turn` and execution reached `end_turn`, finish the turn.
-8. If there is progress but no end turn, rebuild input and call the script again up to a bounded limit.
-9. If the script fails or exceeds limits, fall back to Nullkiller.
+2. Create the restricted `ai` facade and start `runDay(ai, input)` as a Lua coroutine.
+3. When Lua yields `execute`, validate and execute the requested action through the normal callback request path.
+4. Return success or an error object to Lua. The facade converts host errors into catchable Lua errors.
+5. When Lua yields `refresh`, rebuild visible input and return it to the coroutine.
+6. When Lua yields `fallback`, stop the coroutine and let Nullkiller finish the turn.
+7. When Lua returns, validate output shape and memory size, then persist memory.
+8. If Lua ended the turn or the host has no active turn, finish successfully.
+9. If Lua returns while the turn is still active, fall back to Nullkiller.
+10. If the script fails, exceeds limits, or yields unsupported commands, fall back to Nullkiller.
 
 Stop conditions:
 
@@ -304,11 +349,11 @@ Stop conditions:
 - teleport/portal/ship/water action with unknown resulting state
 - object visit reveals important new state
 - server request rejected
-- script explicitly returns `need_replan`
+- script explicitly calls `ai:refresh()` or delegates to Nullkiller
 - call/action/time budget exhausted
 
-The ideal script should usually produce a full-day plan. Re-entry exists so one invalid or uncertain step does
-not allow many unscripted actions to happen.
+The ideal script should usually make enough decisions to control the whole day. `ai:refresh()` exists for
+uncertain steps such as object visits, portals, dialogs, and failed requests.
 
 ## Nullkiller Integration
 
@@ -344,7 +389,7 @@ The script engine should reuse these Nullkiller systems where possible:
 
 Reviewed in July 2026. The useful conclusion is that VCMI has had adjacent scripting, AI, LLM, and
 training-environment discussions for years, but no discovered public implementation appears to provide an
-in-process, editable adventure AI strategy script with engine-validated declarative actions and Nullkiller
+in-process, editable adventure AI strategy script with coroutine-style checked player actions and Nullkiller
 fallback.
 
 Relevant references:
@@ -359,11 +404,11 @@ Relevant references:
 - [Scripting forum thread](https://forum.vcmi.eu/t/scripting/235?page=2) and
   [modding-system discussion](https://forum.vcmi.eu/t/modding-system-discussion/451): cover older server/client
   scripting and ERM-style gameplay scripting ideas. Those are intentionally different from this design: game
-  rules stay in C++/server code, while AI scripts only return plans for normal AI callback execution.
+  rules stay in C++/server code, while AI scripts only request checked player/AI actions.
 - [GitHub issue #5586: LLM Learning Game Integration with VCMI](https://github.com/vcmi/vcmi/issues/5586):
   proposes structured game-state export and external commands for LLM learning. This aligns with the MCP/external
   agent path. `AdventurePlan` should remain reusable by that path, but the scripted adventure AI is an in-process
-  Lua planner that can run without an LLM or command server.
+  Lua AI that can run without an LLM or command server.
 - [GitHub issue #7108: VCMI Coach MVP](https://github.com/vcmi/vcmi/issues/7108): proposes a read-only coach
   that exposes and explains existing AI/engine recommendations. It is complementary: the same recommendation
   surfaces and trace explanations can help script authors, but it is explicitly not autonomous computer-player
@@ -378,7 +423,7 @@ Relevant references:
   `ScriptedAdventureAI` wrapper plus data-loaded script files, rather than a dynamically loaded AI plugin.
 - [vcmi-gym project notes](https://smanolloff.github.io/projects/vcmi-gym/): focus on reinforcement learning,
   currently battle-only AI, and explicitly leave adventure-only AI as a separate future project. This is related
-  to evaluation and training, not a replacement for the scripted adventure planner.
+  to evaluation and training, not a replacement for the scripted adventure AI.
 - Existing AI mods such as [Boost AI](https://vcmi.eu/Mod%20Repository/AI/Boost%20AI/) are useful precedent for
   player-facing AI configuration, but they change bonuses/resources or difficulty pressure, not the computer
   player's adventure decision policy.
@@ -389,8 +434,8 @@ is not "can Lua run" but "can AI strategy be scriptable without giving scripts m
 
 Ideas to adopt from this related work:
 
-- Keep the `AdventurePlan` schema transport-neutral. The same state/action vocabulary should serve Lua scripts,
-  MCP/external agents, trace replay, and evaluation tools where possible.
+- Keep the `AdventurePlan` schema transport-neutral. The same state/action vocabulary should serve Lua facade
+  commands, MCP/external agents, trace replay, and evaluation tools where possible.
 - Add lab-play evaluation scenarios alongside open-play map runs. Fixed tasks such as resource collection,
   town defense, guarded mine capture, exploration, and army gathering make script regressions easier to measure
   than full games alone.
@@ -402,8 +447,8 @@ Ideas to adopt from this related work:
 - Carry explanation fields with candidates and selected actions: `reason`, `risk`, `value`, `estimatedLoss`,
   `blockedBy`, and similar structured facts. These are useful for script scoring, trace review, future coach UI,
   and LLM-assisted script editing.
-- Preserve the strict boundary learned from old scripting discussions: scripts receive facts and return plans;
-  they do not receive mutable callbacks, direct server authority, or game-rule hooks.
+- Preserve the strict boundary learned from old scripting discussions: scripts receive facts and request checked
+  actions; they do not receive mutable callbacks, direct server authority, hidden information, or game-rule hooks.
 
 ## Files and Modules
 
@@ -488,14 +533,15 @@ Recommended layers:
    - threatened towns
    - avoid zones
    - retreat to town or gather army
-7. Action assembly:
+7. Action execution:
    - build/recruit first when clearly beneficial
    - move scouts to safe value
    - move main hero to strategic target
    - answer obvious queries
    - end turn only when no useful safe action remains
 
-The script should be written as scoring functions over host-provided candidates:
+The script should be written as scoring functions over host-provided candidates, followed by checked facade
+calls:
 
 ```lua
 local function scoreObject(hero, candidate, memory, input)
@@ -510,9 +556,18 @@ local function scoreObject(hero, candidate, memory, input)
     end
     return score
 end
+
+local target = chooseBestTarget(input, memory)
+if target then
+    local result = ai:visitObject(target.hero_id, target.object.id, target.route_id)
+    if result.stop then
+        input = ai:refresh()
+    end
+end
 ```
 
-This is functional in style: the script scores and selects data, then returns a plan.
+This keeps the policy readable: the script scores and selects data, then calls a small checked API rather than
+touching engine internals.
 
 ## Error Handling and Fallback
 
@@ -543,9 +598,10 @@ Repeated failures should disable the script for the game or for a configurable n
 The system should produce trace files suitable for AI improvement:
 
 - script input summary
+- yielded commands
+- host responses
 - script output
-- normalized plan
-- executed/failed/remaining actions
+- executed/failed actions and progress
 - state updates after execution
 - fallback reason, if any
 - final turn summary
@@ -560,8 +616,9 @@ scripts/ai/summarizeAdventureTrace.py <user-log-dir>/scriptedAdventureAI
 
 It reports player/script/day counts, script output statuses, requested/executed/failed action types, failure
 messages, visible update/opponent-update event types, defense-alert totals, hero-threat totals, candidate risks,
-script intents, final visible-state quality, and mined policy-mistake counts. Add `--json` for machine-readable
-output.
+script intents, final visible-state quality, and mined policy-mistake counts. Imperative runs emit
+`imperative-input`, `imperative-command`, and `imperative-output` trace events. Add `--json` for
+machine-readable output.
 
 The current quality score is intentionally trace-local and explainable. It uses the final visible input for each
 scripted player and combines resources, towns, heroes, army strength, movement, useful candidates, and visible
@@ -747,7 +804,7 @@ Regression harness:
 ## Implementation Notes for PR
 
 - The stable-binary/script-iteration direction is implemented by keeping C++ responsible for state extraction,
-  validation, pathfinding, and fallback while Lua only returns plans.
+  validation, pathfinding, checked execution, and fallback while Lua owns strategy and calls a restricted AI facade.
 - Script memory persistence uses the existing `PlayerState::playerLocalSettings` serialized JSON, namespaced
   under `scriptedAdventureAI`. This avoids adding AI-private strategy memory to authoritative game-rule objects.
 - Candidate actions now carry read-only explanation fields: `reason`, `value`, `riskId`, `risk`, `safe`, `danger`,
@@ -771,6 +828,12 @@ Regression harness:
 - `ScriptedAdventureAI` supports environment overrides for trace enablement and script path, including external
   `file:/...` Lua scripts. This makes script edits and candidate snapshots testable without rebuilding or editing
   packaged config.
+- The imperative Lua path is now present as `runDay(ai, input)`. The runner executes it as a coroutine, handles
+  yielded `execute`/`refresh`/`fallback` commands, and keeps the legacy `planDay(input)` path for old scripts.
+  A smoke run on `Dwarven Gold` and `Ready or Not` reached the one-day limit cleanly and wrote
+  `imperative-input`/`imperative-output` traces with fallback status through the configured fallback script.
+- Explicit script delegation through `fallback`/`ai:nullkiller()` is not counted as a script failure; syntax,
+  runtime, invalid-output, and exhausted-limit failures still use the repeated-failure throttle.
 - `scripts/ai/evaluateAdventureAIScripts.py` runs baseline and candidate scripts through the same fixed maps,
   collects traces, snapshots script files, and emits an evaluation JSON with heuristic score deltas, quality deltas,
   mistake penalties, stage/group/kind buckets, outcome counts, and a promotion verdict.
@@ -815,14 +878,13 @@ Regression harness:
   rearrangement. Fallback turns still use native Nullkiller dialog handling, but script-owned movement/object
   actions now answer garrison, hero-exchange, recruitment, teleport, map-object-selection, and blocking dialogs
   through the scripted executor boundary. This is a containment fix, not the final strategy interface.
-- Dialogs should become typed `AdventurePlan` decision points instead of raw UI automation. A plan may predeclare
-  semantic policies such as chest reward preference, teleport-exit preference, level-up preference, object-selection
-  preference, or "pause and replan on unexpected choice." If an unplanned query appears, the executor should return
-  structured progress such as `needs_choice` with the visible dialog state and current script memory, then call Lua
-  again. The Lua side still returns data; it does not call game actions directly.
+- Dialogs should become typed facade decision points instead of raw UI automation. Lua should receive visible
+  dialog/query data and call helpers such as `ai:chooseChestReward`, `ai:chooseTeleportExit`, or
+  `ai:answerQuery` with stable ids. If an unplanned query appears, the executor should return structured progress
+  such as `needs_choice` with the visible dialog state so Lua can refresh and decide.
 - Artifact and army rearrangement should be added back as explicit strategy capabilities, not hidden callback
-  behavior. Candidate action names should stay declarative, for example `prepare_hero`, `transfer_army`, and
-  `rearrange_artifacts`, with intent fields such as `combat`, `mobility`, `scout`, `defend_town`, or
+  behavior. Facade methods should stay semantic, for example `ai:prepareHero`, `ai:transferArmy`, and
+  `ai:rearrangeArtifacts`, with intent fields such as `combat`, `mobility`, `scout`, `defend_town`, or
   `deliver_army`. The C++ executor can then use existing legal Nullkiller mechanics and trace every resulting
   transfer so script iterations can learn whether the preparation helped.
 - A fresh 10-game default-script run after the callback-boundary fix ended without timeouts: ScriptedAdventureAI
@@ -876,15 +938,21 @@ Regression harness:
 
 ### Milestone 3: Lua Runner Prototype
 
-- Done: load a restricted Lua planner and call `planDay(input)`.
+- Done: load a restricted Lua runner and call legacy `planDay(input)`.
 - Done: convert returned Lua tables to JSON/contract structs.
 - Done: validate output status, memory size, action count, and normalized `AdventurePlan` actions.
 - Done: cover the Lua runner and default script with unit tests.
+- Done: load scripts with `runDay(ai, input)` and run them as coroutines.
+- Done: expose a restricted Lua `ai` facade with visible input access, memory access, checked action helpers,
+  `refresh`, and Nullkiller delegation.
+- Done: host action errors are returned to Lua as catchable errors; uncaught Lua failures abort script control and
+  fall back through the normal wrapper path.
 
 ### Milestone 4: Scripted AI Wrapper
 
 - Done: `ScriptedAdventureAI` is an adventure AI option built on top of Nullkiller's gateway.
 - Done: on turn start, it calls the script runner and executes returned `AdventurePlan` actions.
+- Done: scripts that define `runDay` take the imperative coroutine path before the legacy `planDay` path.
 - Done: build, recruit, move, visit-object, answer-query, and end-turn actions are validated through existing
   callback paths.
 - Done: script failures, invalid actions, missing scripts, and repeated failures fall back to Nullkiller.
@@ -917,8 +985,9 @@ Regression harness:
 ### Milestone 7: Default Script
 
 - Done: `scripts/ai/defaultAdventure.lua` is a readable Lua policy with explicit scoring functions.
-- Done: it scores allowed builds, recruitment, and reachable object pickups, then returns declarative actions.
-- Done: it requests replanning after useful work and ends turn when no useful scripted candidate remains.
+- Done: it scores allowed builds, recruitment, and reachable object pickups.
+- Done: it has an imperative `runDay` compatibility wrapper that executes selected actions through checked
+  `ai:*` calls and refreshes visible state after each side effect.
 - Done: it assigns a main hero, tracks consumed opponent-update revisions, prioritizes recruitment under strong
   defense pressure, and penalizes scout targets near visible enemy heroes.
 - Done: it consumes candidate risk/value fields, avoids unsafe object targets more aggressively, and can move a

@@ -11,6 +11,8 @@
 
 #include "../lib/ai/AdventureScript.h"
 
+#include <functional>
+
 #if __has_include(<lua.hpp>)
 #  include <lua.hpp>
 #else
@@ -33,7 +35,9 @@ public:
 	LuaAdventureScriptRunner(const LuaAdventureScriptRunner &) = delete;
 	LuaAdventureScriptRunner & operator=(const LuaAdventureScriptRunner &) = delete;
 
+	bool hasRunDay();
 	AI::AdventureScriptOutput planDay(const AI::AdventureScriptInput & input);
+	AI::AdventureScriptOutput runDayImperative(const AI::AdventureScriptInput & input, const std::function<JsonNode(const JsonNode &)> & commandHandler);
 
 private:
 	lua_State * L = nullptr;
@@ -43,6 +47,8 @@ private:
 
 	void cleanupGlobals();
 	std::string toStringRaw(int index) const;
+	std::string toStringRaw(lua_State * state, int index) const;
+	void pushImperativeApi(lua_State * state, const AI::AdventureScriptInput & input) const;
 
 	static int luaPrint(lua_State * L);
 	static int luaError(lua_State * L);

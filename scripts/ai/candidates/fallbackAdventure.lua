@@ -11,8 +11,9 @@ native Nullkiller adventure AI.
 
 Why keep this as a Lua script instead of just using Nullkiller2 directly?
 
-* It exercises the ScriptedAdventureAI wrapper, configuration, memory handling,
-  and promotion tooling without letting a weak Lua policy oversteer the game.
+* It exercises the ScriptedAdventureAI wrapper, imperative Lua API,
+  configuration, memory handling, and promotion tooling without letting a weak
+  Lua policy oversteer the game.
 * It is the baseline every candidate policy must beat before promotion.
 * It gives us a safe rollback target while richer declarative actions and typed
   dialog/preparation policies are developed.
@@ -21,7 +22,7 @@ The script still preserves memory shape so save/load and script-version checks
 continue to follow the same contract as real policies.
 ]]
 
-function Script.planDay(input)
+local function fallbackOutput(input)
     return {
         status = "fallback",
         memory = input.memory or { version = 1 },
@@ -29,6 +30,16 @@ function Script.planDay(input)
         intent = "control: delegate full turn to Nullkiller",
         confidence = 0.5
     }
+end
+
+function Script.runDay(ai, input)
+    local output = fallbackOutput(input)
+    ai:setMemory(output.memory)
+    ai:nullkiller(output.intent)
+end
+
+function Script.planDay(input)
+    return fallbackOutput(input)
 end
 
 return Script
