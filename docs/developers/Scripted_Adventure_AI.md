@@ -196,6 +196,12 @@ The `ai` facade:
   bounded Nullkiller helpers; scripts still execute through checked host actions.
 - `ai:pendingQueries()`: return `state.turn.queries` for dialog/window decisions.
 - `ai:memory()` and `ai:setMemory(memory)`: read/replace script-owned memory for this day.
+- `ai:inspect(request)`: yield to C++ for a checked read-only binding call against current visible game state.
+  Convenience wrappers include `ai:getState()`, `ai:getActionSpace()`, `ai:getAnalysis()`, `ai:getQueries()`,
+  `ai:getUpdates(opponentOnly?)`, `ai:getLimits()`, `ai:getObject(objectId, heroId?)`, `ai:getHero(heroId)`,
+  `ai:getTown(townId)`, `ai:getTile(x, y, z?)`, `ai:getObjectsAt(x, y, z?)`, and
+  `ai:getAvailableHeroes(sourceId)`. These calls do not expose hidden map data; unknown, hidden, or invalid
+  targets are host errors that Lua may catch with `pcall`.
 - `ai:runAction(action)` and `ai:runOption(option, actionField?)`: execute a checked action table directly,
   or execute an action embedded in an action-space option. `actionField` defaults to `planAction`, and can be
   `tasksAction`, `stepAction`, or `passAction` for bounded Nullkiller subroutine options.
@@ -755,6 +761,9 @@ The current Lua API is close to the intended parity boundary for adventure AI po
 - Player-visible callback actions that matter for adventure strategy are exposed as checked actions or typed
   query answers. The missing raw callbacks are intentionally outside AI strategy: save/pause/message/local-state
   plumbing.
+- Read-side Lua bindings can inspect the current visible state on demand through `ai:inspect` / `ai:get*`
+  helpers. The host validates visibility and ownership-sensitive detail level on each inspect call, so scripts can
+  use binding-style reads after side effects without scanning stale day-start snapshots or accessing hidden data.
 - Native helpers that can perform multiple internal requests use bounded calls and then return to Lua. This is the
   required shape for script-driven strategy: Lua can ask Nullkiller to do one pass, one task, one preparation helper,
   or one dialog answer, then inspect refreshed state and decide what comes next.
@@ -1501,6 +1510,10 @@ Regression harness:
   present. This reduces string drift at the Lua/C++ boundary while preserving existing scripts and trace readability.
   Host-generated executable action records are annotated with `type_id`, so scripts can rank and dispatch candidate
   actions without parsing action-name strings.
+- Done: Lua has checked read-side binding calls through `ai:inspect` and typed `ai:get*` wrappers for current
+  visible state, action space, analysis, queries, updates, limits, visible objects/heroes/towns/tiles, visible
+  objects at a tile, and visible tavern hero availability. Invalid or hidden targets raise host errors that scripts
+  can catch; uncaught errors keep the normal Nullkiller fallback path.
 - Bounded Nullkiller helpers that invoke native task decomposition, pathfinding, task execution, priority passes,
   or resource trading use the same shared pathfinder-storage lock as native `Nullkiller::makeTurn`; add new native
   subroutines at that primitive boundary rather than around higher-level Lua loops to avoid nested lock attempts.

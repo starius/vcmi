@@ -6490,6 +6490,20 @@ bool CScriptedAdventureAI::tryMakeImperativeScriptedTurn(scripting::LuaAdventure
 				return response;
 			}
 
+			if(kind == "inspect")
+			{
+				response["result"] = executeScriptInspect(command["payload"]);
+				if(scriptConfig.trace)
+				{
+					JsonNode trace;
+					trace["command"] = command;
+					trace["response"] = response;
+					trace["progress"] = progress;
+					writeTraceEvent("imperative-command", trace);
+				}
+				return response;
+			}
+
 			if(kind != "execute")
 				throw std::invalid_argument("Unsupported imperative command kind: " + kind);
 
@@ -6582,6 +6596,127 @@ bool CScriptedAdventureAI::tryMakeImperativeScriptedTurn(scripting::LuaAdventure
 
 	fallbackToNullkiller("imperative script returned without ending turn");
 	return false;
+}
+
+JsonNode CScriptedAdventureAI::executeScriptInspect(const JsonNode & request)
+{
+	const std::string what = readString(request, "what");
+
+	if(what == "state")
+		return makeScriptInputState();
+	if(what == "action_space")
+		return makeScriptActionSpace();
+	if(what == "analysis")
+		return makeScriptAnalysis();
+	if(what == "queries")
+		return makeScriptQueries();
+	if(what == "updates")
+		return makeScriptUpdates(readBool(request, "opponent_only", false));
+	if(what == "limits")
+		return makeScriptInputLimits();
+
+	if(what == "object")
+	{
+		std::shared_lock gameStateLock(CGameState::mutex);
+		const CGObjectInstance * object = cc->getObj(ObjectInstanceID(readInteger(request, "object_id")), false);
+		if(!object || !cc->isVisibleFor(object, playerID))
+			throw std::invalid_argument("Unknown object or object is not visible to scripted AI");
+
+		const CGHeroInstance * contextHero = nullptr;
+		if(hasField(request, "hero_id"))
+		{
+			contextHero = cc->getHero(ObjectInstanceID(readInteger(request, "hero_id")));
+			if(!contextHero || contextHero->tempOwner != playerID || !cc->isVisibleFor(contextHero, playerID))
+				throw std::invalid_argument("Unknown context hero, hero is not visible, or hero is not owned by scripted AI");
+		}
+
+		return jsonMapObject(object, playerID, contextHero);
+	}
+
+	if(what == "hero")
+	{
+		std::shared_lock gameStateLock(CGameState::mutex);
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(request, "hero_id")));
+		if(!hero || !cc->isVisibleFor(hero, playerID))
+			throw std::invalid_argument("Unknown hero or hero is not visible to scripted AI");
+
+		return jsonHero(hero, hero->tempOwner == playerID);
+	}
+
+	if(what == "town")
+	{
+		std::shared_lock gameStateLock(CGameState::mutex);
+		const CGTownInstance * town = cc->getTown(ObjectInstanceID(readInteger(request, "town_id")));
+		if(!town || !cc->isVisibleFor(town, playerID))
+			throw std::invalid_argument("Unknown town or town is not visible to scripted AI");
+
+		return jsonTown(town, cc->getResourceAmount(), town->tempOwner == playerID);
+	}
+
+	if(what == "tile" || what == "objects_at")
+	{
+		std::shared_lock gameStateLock(CGameState::mutex);
+		const int3 position(readInteger(request, "x"), readInteger(request, "y"), readInteger(request, "z", 0));
+		if(!cc->isInTheMap(position) || !cc->isVisibleFor(position, playerID))
+			throw std::invalid_argument("Requested tile is outside the map or is not visible to scripted AI");
+
+		const TerrainTile * tile = cc->getTile(position, false);
+		if(!tile)
+			throw std::invalid_argument("Requested tile is not available to scripted AI");
+
+		if(what == "tile")
+			return jsonVisibleTile(position, *tile, cc, playerID);
+
+		JsonNode node;
+		node["position"] = jsonPosition(position);
+		node["topObject"] = JsonNode();
+		if(const CGObjectInstance * topObject = cc->getTopObj(position))
+		{
+			if(cc->isVisibleFor(topObject, playerID))
+				node["topObject"] = jsonMapObject(topObject, playerID, nullptr);
+		}
+
+		auto appendVisibleObject = [&](JsonNode & target, const CGObjectInstance * object)
+		{
+			if(object && cc->isVisibleFor(object, playerID))
+				target.Vector().push_back(jsonMapObject(object, playerID, nullptr));
+		};
+
+		node["visitableObjects"].Vector();
+		for(const CGObjectInstance * object : cc->getVisitableObjs(position, false))
+			appendVisibleObject(node["visitableObjects"], object);
+
+		node["blockingObjects"].Vector();
+		for(const CGObjectInstance * object : cc->getBlockingObjs(position))
+			appendVisibleObject(node["blockingObjects"], object);
+
+		return node;
+	}
+
+	if(what == "available_heroes")
+	{
+		std::shared_lock gameStateLock(CGameState::mutex);
+		const CGObjectInstance * source = cc->getObj(ObjectInstanceID(readInteger(request, "source_id")), false);
+		if(!source || !cc->isVisibleFor(source, playerID))
+			throw std::invalid_argument("Unknown hero-recruitment source or source is not visible to scripted AI");
+
+		JsonNode node;
+		node["source_id"] = JsonNode(source->id.getNum());
+		node["sourceObject"] = jsonMapObject(source, playerID, nullptr);
+		node["heroes"].Vector();
+		for(const CGHeroInstance * hero : cc->getAvailableHeroes(source))
+		{
+			if(!hero)
+				continue;
+			JsonNode heroNode = jsonHero(hero, false);
+			heroNode["planAction"] = jsonAvailableHeroOption(source, hero, playerID)["planAction"];
+			node["heroes"].Vector().push_back(heroNode);
+		}
+		node["heroCount"] = JsonNode(static_cast<int32_t>(node["heroes"].Vector().size()));
+		return node;
+	}
+
+	throw std::invalid_argument("Unsupported inspect request: " + what);
 }
 
 bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode & actionResult)

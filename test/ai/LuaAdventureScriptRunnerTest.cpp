@@ -1391,6 +1391,166 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanRefreshVisibleInput)
 	EXPECT_EQ(output.memory["refreshedDay"].Integer(), 2);
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectVisibleState)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				local object = ai:getObject(42, 7)
+				local hero = ai:getHero(7)
+				local town = ai:getTown(9)
+				local tile = ai:getTile(1, 2, 0)
+				local objectsAt = ai:getObjectsAt(1, 2, 0)
+				local availableHeroes = ai:getAvailableHeroes(9)
+				local state = ai:getState()
+				local actionSpace = ai:getActionSpace()
+				local analysis = ai:getAnalysis()
+				local queries = ai:getQueries()
+				local updates = ai:getUpdates(true)
+				local limits = ai:getLimits()
+				return {
+					status = "end_turn",
+					memory = {
+						version = 1,
+						objectId = object.id,
+						heroId = hero.id,
+						townId = town.id,
+						tileX = tile.position.x,
+						objectsAtX = objectsAt.position.x,
+						availableHeroCount = availableHeroes.heroCount,
+						day = state.day,
+						hasEndTurn = actionSpace.endTurnAction ~= nil,
+						hasExecution = analysis.execution ~= nil,
+						queryCount = #queries,
+						opponentOnly = updates.opponentOnly,
+						maxActions = limits.maxActions
+					},
+					actions = {}
+				}
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-inspect", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		const std::string what = command["payload"]["what"].String();
+		if(what == "object")
+		{
+			response["result"]["id"] = command["payload"]["object_id"];
+			response["result"]["contextHeroId"] = command["payload"]["hero_id"];
+		}
+		else if(what == "hero")
+		{
+			response["result"]["id"] = command["payload"]["hero_id"];
+		}
+		else if(what == "town")
+		{
+			response["result"]["id"] = command["payload"]["town_id"];
+		}
+		else if(what == "tile" || what == "objects_at")
+		{
+			response["result"]["position"]["x"] = command["payload"]["x"];
+			response["result"]["position"]["y"] = command["payload"]["y"];
+			response["result"]["position"]["z"] = command["payload"]["z"];
+		}
+		else if(what == "available_heroes")
+		{
+			response["result"]["source_id"] = command["payload"]["source_id"];
+			response["result"]["heroCount"] = JsonNode(2);
+		}
+		else if(what == "state")
+		{
+			response["result"]["day"] = JsonNode(3);
+		}
+		else if(what == "action_space")
+		{
+			response["result"]["endTurnAction"]["type"] = JsonNode("end_turn");
+		}
+		else if(what == "analysis")
+		{
+			response["result"]["execution"]["validatesVisibility"] = JsonNode(true);
+		}
+		else if(what == "queries")
+		{
+			response["result"].Vector();
+		}
+		else if(what == "updates")
+		{
+			response["result"]["opponentOnly"] = command["payload"]["opponent_only"];
+		}
+		else if(what == "limits")
+		{
+			response["result"]["maxActions"] = JsonNode(64);
+		}
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 12);
+	for(const JsonNode & command : commands)
+		EXPECT_EQ(command["kind"].String(), "inspect");
+	EXPECT_EQ(commands[0]["payload"]["what"].String(), "object");
+	EXPECT_EQ(commands[0]["payload"]["object_id"].Integer(), 42);
+	EXPECT_EQ(commands[0]["payload"]["hero_id"].Integer(), 7);
+	EXPECT_EQ(commands[3]["payload"]["what"].String(), "tile");
+	EXPECT_EQ(commands[3]["payload"]["x"].Integer(), 1);
+	EXPECT_EQ(commands[3]["payload"]["y"].Integer(), 2);
+	EXPECT_EQ(commands[3]["payload"]["z"].Integer(), 0);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_EQ(output.memory["objectId"].Integer(), 42);
+	EXPECT_EQ(output.memory["heroId"].Integer(), 7);
+	EXPECT_EQ(output.memory["townId"].Integer(), 9);
+	EXPECT_EQ(output.memory["tileX"].Integer(), 1);
+	EXPECT_EQ(output.memory["objectsAtX"].Integer(), 1);
+	EXPECT_EQ(output.memory["availableHeroCount"].Integer(), 2);
+	EXPECT_EQ(output.memory["day"].Integer(), 3);
+	EXPECT_TRUE(output.memory["hasEndTurn"].Bool());
+	EXPECT_TRUE(output.memory["hasExecution"].Bool());
+	EXPECT_EQ(output.memory["queryCount"].Integer(), 0);
+	EXPECT_TRUE(output.memory["opponentOnly"].Bool());
+	EXPECT_EQ(output.memory["maxActions"].Integer(), 64);
+}
+
+TEST(LuaAdventureScriptRunnerTest, ImperativeInspectHostErrorsAreCatchable)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				local ok, err = pcall(function()
+					ai:getObject(999)
+				end)
+				return {
+					status = "end_turn",
+					memory = { version = 1, caught = not ok, error = err },
+					actions = {}
+				}
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-inspect-catch", source);
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
+	{
+		EXPECT_EQ(command["kind"].String(), "inspect");
+
+		JsonNode response;
+		response["ok"] = JsonNode(false);
+		response["error"] = JsonNode("hidden object");
+		return response;
+	});
+
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_TRUE(output.memory["caught"].Bool());
+	EXPECT_NE(output.memory["error"].String().find("hidden object"), std::string::npos);
+}
+
 TEST(LuaAdventureScriptRunnerTest, BoundedNullkillerControlEndsTurnWhenNativeSliceIsIdle)
 {
 	const std::string source = readAdventureScript("scripts/ai/candidates/boundedNullkillerControl.lua");

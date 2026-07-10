@@ -180,6 +180,7 @@ private:
 	bool tryMakeScriptedTurn();
 	bool tryMakeImperativeScriptedTurn(scripting::LuaAdventureScriptRunner & runner);
 	bool executeScriptAction(const JsonNode & action, JsonNode & actionResult);
+	JsonNode executeScriptInspect(const JsonNode & request);
 	JsonNode makeNullkillerTaskCandidates(const JsonNode & action);
 	bool executeNullkillerTaskAction(const JsonNode & action, JsonNode & actionResult);
 	bool executeNullkillerQueryAction(const JsonNode & action, JsonNode & actionResult);

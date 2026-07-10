@@ -160,6 +160,69 @@ function ai:refresh()
 	return self.input
 end
 
+function ai:inspect(request)
+	if type(request) ~= "table" then
+		error("ai:inspect expects a request table", 2)
+	end
+	local response = coroutine.yield({ kind = "inspect", payload = request })
+	if type(response) ~= "table" or not response.ok then
+		error(hostError(response), 2)
+	end
+	return response.result or response
+end
+
+function ai:getState()
+	return self:inspect({ what = "state" })
+end
+
+function ai:getActionSpace()
+	return self:inspect({ what = "action_space" })
+end
+
+function ai:getAnalysis()
+	return self:inspect({ what = "analysis" })
+end
+
+function ai:getQueries()
+	return self:inspect({ what = "queries" })
+end
+
+function ai:getUpdates(opponentOnly)
+	return self:inspect({ what = "updates", opponent_only = opponentOnly == true })
+end
+
+function ai:getLimits()
+	return self:inspect({ what = "limits" })
+end
+
+function ai:getObject(objectId, heroId)
+	local request = { what = "object", object_id = objectId }
+	if heroId ~= nil then
+		request.hero_id = heroId
+	end
+	return self:inspect(request)
+end
+
+function ai:getHero(heroId)
+	return self:inspect({ what = "hero", hero_id = heroId })
+end
+
+function ai:getTown(townId)
+	return self:inspect({ what = "town", town_id = townId })
+end
+
+function ai:getTile(x, y, z)
+	return self:inspect({ what = "tile", x = x, y = y, z = z or 0 })
+end
+
+function ai:getObjectsAt(x, y, z)
+	return self:inspect({ what = "objects_at", x = x, y = y, z = z or 0 })
+end
+
+function ai:getAvailableHeroes(sourceId)
+	return self:inspect({ what = "available_heroes", source_id = sourceId })
+end
+
 function ai:delegateToNullkiller(intent)
 	return coroutine.yield({
 		kind = "fallback",
@@ -1751,7 +1814,7 @@ AI::AdventureScriptOutput LuaAdventureScriptRunner::runDayImperative(
 			return AI::parseAdventureScriptOutput(rawOutput, limits);
 		}
 
-		if(kind != "execute" && kind != "refresh")
+		if(kind != "execute" && kind != "refresh" && kind != "inspect")
 		{
 			stack.restoreInitialTop();
 			throw std::runtime_error("Adventure script '" + identifier + "' yielded unsupported command kind: " + kind);
