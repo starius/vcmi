@@ -286,6 +286,12 @@ bool Nullkiller::executeScriptTask(const Goals::TTask & task)
 	return executeTask(task);
 }
 
+bool Nullkiller::executeScriptResourceTrade()
+{
+	updateState();
+	return ResourceTrader::trade(*buildAnalyzer, *cc, getFreeResources());
+}
+
 Goals::TTask Nullkiller::choseBestTask(Goals::TGoalVec & tasks) const
 {
 	if(tasks.empty())

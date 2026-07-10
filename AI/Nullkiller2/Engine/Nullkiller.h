@@ -144,6 +144,7 @@ public:
 	void resetScriptTaskState();
 	std::vector<ScriptTaskCandidate> getScriptTaskCandidates(ScriptTaskSearchMode mode, size_t maxCandidates);
 	bool executeScriptTask(const Goals::TTask & task);
+	bool executeScriptResourceTrade();
 	bool updateStateAndExecutePriorityPass(Goals::TGoalVec& tempResults, int passIndex);
 	bool isActive(const CGHeroInstance * hero) const { return activeHero == hero; }
 	bool isHeroLocked(const CGHeroInstance * hero) const;

@@ -149,6 +149,8 @@ The `ai` facade:
   `ai:answerQuery`, `ai:endTurn`: request checked host actions.
 - `ai:pickBestArtifacts(heroId, otherHeroId?)`: ask the host to run Nullkiller's artifact-preparation helper for
   one owned hero, or two co-located owned heroes, through the normal artifact swap callback path.
+- `ai:nullkillerTrade()`: ask the host to run Nullkiller's resource-trading helper once, returning whether it
+  traded anything.
 - `ai:nullkiller()` / `ai:nullkillerForRestOfDay()`: stop script control and let Nullkiller finish the turn.
 - `ai:nullkillerTasks(mode, maxCandidates)`: ask Nullkiller for a bounded snapshot of native task candidates.
   `mode` is `priority`, `adventure`, or `all`. Returned `task_id` values are opaque handles that expire on
@@ -842,6 +844,8 @@ Regression harness:
   `config/ai/scriptedAdventure.json`, so the loop can disable them for bisection without rebuilding.
 - Lua can now call `ai:pickBestArtifacts(heroId, otherHeroId?)` to reuse Nullkiller's artifact-preparation helper
   for one owned hero or two co-located owned heroes. This is a coarse helper, not yet a full artifact-slot API.
+- Lua can now call `ai:nullkillerTrade()` to run Nullkiller's build-driven resource trader once. This covers the
+  native support routine, but not exact script-selected market transactions yet.
 - `analysis.heroThreatAlerts` complements `analysis.defenseAlerts`, so scripts can respond to threatened roaming
   heroes as well as threatened towns.
 - Trace tooling now supports single-run summaries, baseline-vs-candidate comparisons, final visible-state quality
@@ -1022,6 +1026,8 @@ Regression harness:
   decisions, and deeper analyzer details.
 - Partial: artifact preparation is exposed through a coarse `pickBestArtifacts` helper, but scripts cannot yet
   inspect every artifact slot or request exact slot-to-slot moves.
+- Partial: resource trading is exposed through a coarse `nullkillerTrade` helper, but scripts cannot yet inspect
+  every market rate or request exact resource conversions.
 - Partial: full danger-map estimates are not exposed yet.
 - Partial: MCP and scripted AI still duplicate some JSON assembly code; extraction can happen once the surface
   stabilizes.

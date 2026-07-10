@@ -213,6 +213,10 @@ function ai:pickBestArtifacts(heroId, otherHeroId)
 	return self:execute(action)
 end
 
+function ai:nullkillerTrade()
+	return self:execute({ type = "nullkiller_trade" })
+end
+
 function ai:moveHero(heroId, x, y, z, routeId)
 	local action = copyFields(heroId)
 	if type(heroId) ~= "table" then

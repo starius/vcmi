@@ -2128,8 +2128,22 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 	};
 
 	std::optional<AutoAnswerModeGuard> autoAnswerModeGuard;
-	if(type != "nullkiller_tasks" && type != "nullkiller_task" && type != "nullkiller_step")
+	if(type != "nullkiller_trade" && type != "nullkiller_tasks" && type != "nullkiller_task" && type != "nullkiller_step")
 		autoAnswerModeGuard.emplace(*this);
+
+	if(type == "nullkiller_trade")
+	{
+		bool traded = false;
+		{
+			std::shared_lock gameStateLock(CGameState::mutex);
+			traded = nullkiller->executeScriptResourceTrade();
+		}
+		actionResult["ok"] = JsonNode(true);
+		actionResult["didTrade"] = JsonNode(traded);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		return true;
+	}
 
 	if(type == "nullkiller_tasks")
 	{
@@ -2489,7 +2503,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_artifacts", "nullkiller_tasks", "nullkiller_task", "nullkiller_step" })
+	for(const char * type : { "pick_best_artifacts", "nullkiller_trade", "nullkiller_tasks", "nullkiller_task", "nullkiller_step" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();
