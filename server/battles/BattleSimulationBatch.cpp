@@ -13,6 +13,7 @@
 #include "../CGameHandler.h"
 
 #include "../../lib/CConfigHandler.h"
+#include "../../lib/battle/BattleInfo.h"
 #include "../../lib/battle/CBattleInfoCallback.h"
 #include "../../lib/battle/IBattleState.h"
 #include "../../lib/constants/Enumerations.h"
@@ -20,8 +21,11 @@
 #include "../../lib/mapObjects/army/CCreatureSet.h"
 #include "../../lib/mapObjects/army/CStackInstance.h"
 #include "../../lib/networkPacks/PacksForClientBattle.h"
+#include "../../lib/spells/CSpell.h"
 
 #include <fstream>
+#include <iomanip>
+#include <map>
 #include <sstream>
 
 namespace BattleSimulationBatch
@@ -45,6 +49,7 @@ struct State
 	Config config;
 	std::ofstream output;
 	int64_t rowsWritten = 0;
+	std::map<ObjectInstanceID, int32_t> initialHeroMana;
 };
 
 State state;
@@ -150,7 +155,52 @@ void appendCasualties(std::ostream & out, const std::map<CreatureID, si32> & cas
 	out << ']';
 }
 
-void appendHero(std::ostream & out, const CGHeroInstance * hero)
+int32_t rememberInitialMana(const CGHeroInstance * hero, int32_t fallback)
+{
+	if(!hero)
+		return fallback;
+
+	const auto result = state.initialHeroMana.try_emplace(hero->id, fallback);
+	return result.first->second;
+}
+
+int countCombatSpells(const CGHeroInstance * hero)
+{
+	int result = 0;
+	for(const auto & spellID : hero->getSpellsInSpellbook())
+	{
+		if(spellID.toSpell()->isCombat())
+			++result;
+	}
+	return result;
+}
+
+double calculateMagicStrength(const CGHeroInstance * hero, int32_t mana, int combatSpellCount)
+{
+	if(!hero || !hero->hasSpellbook() || combatSpellCount == 0)
+		return 1.0;
+
+	const auto manaLimit = hero->manaLimit();
+	if(manaLimit <= 0)
+		return 1.0;
+
+	const auto spellPower = hero->getPrimSkillLevel(PrimarySkill::SPELL_POWER);
+	const auto knowledge = hero->getPrimSkillLevel(PrimarySkill::KNOWLEDGE);
+	const double manaRatio = static_cast<double>(mana) / manaLimit;
+	return std::sqrt((1.0 + 0.05 * knowledge * manaRatio) * (1.0 + 0.05 * spellPower * manaRatio));
+}
+
+int32_t getBattleInitialMana(const IBattleInfo * info, BattleSide side)
+{
+	const auto * battleInfo = dynamic_cast<const BattleInfo *>(info);
+	if(battleInfo)
+		return battleInfo->getSide(side).initialMana;
+
+	const auto * hero = info->getSideHero(side);
+	return hero ? hero->mana : 0;
+}
+
+void appendHero(std::ostream & out, const CGHeroInstance * hero, int32_t initialMana)
 {
 	if(!hero)
 	{
@@ -158,12 +208,24 @@ void appendHero(std::ostream & out, const CGHeroInstance * hero)
 		return;
 	}
 
+	initialMana = rememberInitialMana(hero, initialMana);
+	const int combatSpellCount = countCombatSpells(hero);
+	const double fightingStrength = hero->getFightingStrength();
+	const double magicStrength = calculateMagicStrength(hero, initialMana, combatSpellCount);
+
 	out << "{";
 	out << "\"objectId\":" << hero->id.getNum();
 	out << ",\"type\":" << hero->getHeroTypeID().getNum();
 	out << ",\"name\":" << quote(hero->getNameTranslated());
 	out << ",\"level\":" << hero->level;
-	out << ",\"mana\":" << hero->mana;
+	out << ",\"mana\":" << initialMana;
+	out << ",\"currentMana\":" << hero->mana;
+	out << ",\"manaLimit\":" << hero->manaLimit();
+	out << ",\"hasSpellbook\":" << (hero->hasSpellbook() ? "true" : "false");
+	out << ",\"combatSpellCount\":" << combatSpellCount;
+	out << ",\"fightingStrength\":" << std::setprecision(12) << fightingStrength;
+	out << ",\"magicStrength\":" << std::setprecision(12) << magicStrength;
+	out << ",\"heroStrength\":" << std::setprecision(12) << fightingStrength * magicStrength;
 	out << ",\"primary\":[";
 	for(size_t i = 0; i < GameConstants::PRIMARY_SKILLS; ++i)
 	{
@@ -225,7 +287,7 @@ void appendResultRow(const CBattleInfoCallback & battle, const BattleResult & re
 	const int64_t rowIndex = state.rowsWritten;
 
 	state.output << "{";
-	state.output << "\"schema\":1";
+	state.output << "\"schema\":2";
 	state.output << ",\"row\":" << rowIndex;
 	state.output << ",\"shardIndex\":" << state.config.shardIndex;
 	state.output << ",\"shardCount\":" << state.config.shardCount;
@@ -242,9 +304,9 @@ void appendResultRow(const CBattleInfoCallback & battle, const BattleResult & re
 	state.output << ",\"combatEnemyAI\":" << quote(settings["ai"]["combatEnemyAI"].String());
 	state.output << ",\"combatNeutralAI\":" << quote(settings["ai"]["combatNeutralAI"].String());
 	state.output << ",\"attackerHero\":";
-	appendHero(state.output, info->getSideHero(BattleSide::ATTACKER));
+	appendHero(state.output, info->getSideHero(BattleSide::ATTACKER), getBattleInitialMana(info, BattleSide::ATTACKER));
 	state.output << ",\"defenderHero\":";
-	appendHero(state.output, info->getSideHero(BattleSide::DEFENDER));
+	appendHero(state.output, info->getSideHero(BattleSide::DEFENDER), getBattleInitialMana(info, BattleSide::DEFENDER));
 	state.output << ",\"attackerArmyStrength\":" << info->getSideArmy(BattleSide::ATTACKER)->getArmyStrength();
 	state.output << ",\"defenderArmyStrength\":" << info->getSideArmy(BattleSide::DEFENDER)->getArmyStrength();
 	state.output << ",\"attackerArmy\":";
@@ -277,6 +339,19 @@ bool isEnabled()
 {
 	initialize();
 	return state.config.enabled;
+}
+
+int32_t getReplayInitialMana(const CGHeroInstance * hero, int32_t fallback)
+{
+	initialize();
+	if(!state.config.enabled || !hero)
+		return fallback;
+
+	const auto iter = state.initialHeroMana.find(hero->id);
+	if(iter == state.initialHeroMana.end())
+		return fallback;
+
+	return iter->second;
 }
 
 bool recordResultAndShouldReplay(CGameHandler &, const CBattleInfoCallback & battle, const BattleResult & result)

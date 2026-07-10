@@ -13,6 +13,7 @@
 #include "BattleActionProcessor.h"
 #include "BattleFlowProcessor.h"
 #include "BattleResultProcessor.h"
+#include "BattleSimulationBatch.h"
 
 #include "../CGameHandler.h"
 #include "../queries/QueriesProcessor.h"
@@ -75,20 +76,17 @@ void BattleProcessor::restartBattle(const BattleID & battleID, const CArmedInsta
 	assert(lastBattleQuery);
 
 	//existing battle query for retying auto-combat
+	BattleSideArray<const CGHeroInstance*> heroes{hero1, hero2};
+	BattleSideArray<int32_t> manaToRestore{
+		battle->getSide(BattleSide::ATTACKER).initialMana,
+		battle->getSide(BattleSide::DEFENDER).initialMana
+	};
 	if(lastBattleQuery)
 	{
-		BattleSideArray<const CGHeroInstance*> heroes{hero1, hero2};
-
 		for(auto i : {BattleSide::ATTACKER, BattleSide::DEFENDER})
 		{
 			if(heroes[i])
-			{
-				SetMana restoreInitialMana;
-				restoreInitialMana.val = battle->getSide(i).initialMana;
-				restoreInitialMana.hid = heroes[i]->id;
-				restoreInitialMana.mode = ChangeValueMode::ABSOLUTE;
-				gameHandler->sendAndApply(restoreInitialMana);
-			}
+				manaToRestore[i] = BattleSimulationBatch::getReplayInitialMana(heroes[i], battle->getSide(i).initialMana);
 		}
 
 		lastBattleQuery->result = std::nullopt;
@@ -101,6 +99,18 @@ void BattleProcessor::restartBattle(const BattleID & battleID, const CArmedInsta
 	bc.battleID = battleID;
 	gameHandler->sendAndApply(bc);
 	resultProcessor->discardBattleResult(battleID);
+
+	for(auto i : {BattleSide::ATTACKER, BattleSide::DEFENDER})
+	{
+		if(heroes[i])
+		{
+			SetMana restoreInitialMana;
+			restoreInitialMana.val = manaToRestore[i];
+			restoreInitialMana.hid = heroes[i]->id;
+			restoreInitialMana.mode = ChangeValueMode::ABSOLUTE;
+			gameHandler->sendAndApply(restoreInitialMana);
+		}
+	}
 
 	startBattle(army1, army2, tile, hero1, hero2, layout, town);
 }
