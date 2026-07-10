@@ -1090,8 +1090,8 @@ local function defaultQueryAnswer(query)
 end
 
 function Script.planDay(input)
-    -- The host calls exactly this method. Keep all game-state mutation out of
-    -- Lua: read input, update memory, return a declarative plan.
+    -- Legacy compatibility path for tests and older hosts. The active AI path
+    -- is runDay below, which executes checked actions imperatively.
     local memory = initializeMemory(input)
     markProgress(memory, input.progress)
     rememberOpponentUpdates(input, memory)
@@ -1206,76 +1206,125 @@ function Script.planDay(input)
 end
 
 function Script.runDay(ai, input)
-    -- Imperative compatibility entry point. The old policy still computes one
-    -- small decision at a time, but this wrapper now executes each selected
-    -- action through the checked host API and refreshes visible state after
-    -- every side effect. Future policy work should move decisions directly into
-    -- this coroutine instead of returning declarative batches.
+    -- Active imperative entry point. Lua owns the day loop: it reads visible
+    -- state, executes checked host calls, refreshes after side effects, answers
+    -- dialogs, and uses bounded Nullkiller subroutines before delegating the
+    -- rest of the day.
     local current = input
     local callLimit = (((current or {}).limits or {}).maxScriptCallsPerTurn) or 8
-    local scriptedActions = 0
+    local actionLimit = (((current or {}).limits or {}).maxActions) or callLimit
+    local commandLimit = math.max(callLimit, actionLimit)
+    local commands = 0
+    local failures = 0
 
-    local function isSupportAction(action)
-        local actionType = (action or {}).type
-        return actionType == "build"
-            or actionType == "recruit"
-            or actionType == "hire_hero"
-            or actionType == "transfer_army"
-            or actionType == "answer_query"
+    local function refreshAfterCommand()
+        current = ai:refresh()
+        current.memory = ai:memory()
+        return current
     end
 
-    for _ = 1, callLimit do
+    local function runBoundedNullkillerStep()
+        local ok, result = pcall(function()
+            return ai:nullkillerStep("all", 16, 4)
+        end)
+        commands = commands + 1
+
+        if not ok then
+            local memory = ai:memory()
+            memory.lastNullkillerStepError = tostring(result)
+            ai:setMemory(memory)
+            return false
+        end
+
+        if result.didExecute then
+            refreshAfterCommand()
+            return true
+        end
+
+        if result.outcomeId == ai.nullkillerStepOutcomes.replan then
+            refreshAfterCommand()
+            return true
+        end
+
+        if result.shouldStopTurn then
+            ai:endTurn()
+            return false, ai:output("end_turn", "bounded Nullkiller requested end turn", Confidence.idle)
+        end
+
+        return false
+    end
+
+    while commands < commandLimit do
         local query = firstPendingQuery(current)
         if query then
             ai:answerQuery(query.query_id, defaultQueryAnswer(query))
-            scriptedActions = scriptedActions + 1
-            current = ai:refresh()
-            current.memory = ai:memory()
+            commands = commands + 1
+            refreshAfterCommand()
         else
             local output = Script.planDay(current)
             ai:setMemory(output.memory or ai:memory())
 
+            local handledByNullkiller = false
             if output.status == "fallback" then
-                return ai:nullkiller(output.intent)
+                local continued, finalOutput = runBoundedNullkillerStep()
+                if finalOutput then
+                    return finalOutput
+                end
+                if not continued then
+                    return ai:nullkiller(output.intent)
+                end
+                handledByNullkiller = true
             end
 
-            local shouldReplan = false
-            for _, action in ipairs(output.actions or {}) do
-                if not isSupportAction(action) then
-                    return ai:nullkiller("delegate map movement and object routing to Nullkiller")
+            if not handledByNullkiller then
+                local shouldReplan = false
+                local executedAny = false
+                for _, action in ipairs(output.actions or {}) do
+                    local ok, result = pcall(function()
+                        return ai:execute(action)
+                    end)
+
+                    commands = commands + 1
+                    executedAny = true
+                    refreshAfterCommand()
+                    if not ok then
+                        failures = failures + 1
+                        local memory = ai:memory()
+                        memory.lastActionError = tostring(result)
+                        ai:setMemory(memory)
+                        shouldReplan = true
+                        break
+                    end
+
+                    if type(result) == "table" and result.stop then
+                        shouldReplan = true
+                        break
+                    end
                 end
 
-                local ok, result = pcall(function()
-                    return ai:execute(action)
-                end)
-
-                scriptedActions = scriptedActions + 1
-                current = ai:refresh()
-                if not ok or (type(result) == "table" and result.stop) then
-                    shouldReplan = true
-                    break
+                if output.status == "end_turn" then
+                    ai:endTurn()
+                    return ai:output("end_turn", output.intent, output.confidence)
                 end
 
-                if scriptedActions >= 1 then
-                    return ai:nullkiller(output.intent or "delegate after one scripted support action")
+                if failures >= 3 then
+                    return ai:nullkiller("imperative Lua policy hit repeated checked-action failures")
+                end
+
+                if (not executedAny or output.status ~= "need_replan") and not shouldReplan then
+                    local continued, finalOutput = runBoundedNullkillerStep()
+                    if finalOutput then
+                        return finalOutput
+                    end
+                    if not continued then
+                        return ai:nullkiller(output.intent or "script completed its imperative actions")
+                    end
                 end
             end
-
-            if output.status == "end_turn" then
-                ai:endTurn()
-                return ai:output("end_turn", output.intent, output.confidence)
-            end
-
-            if output.status ~= "need_replan" and not shouldReplan then
-                return ai:nullkiller(output.intent or "script completed its imperative actions")
-            end
-
-            current = current or ai:refresh()
-            current.memory = ai:memory()
         end
     end
 
-    return ai:nullkiller("imperative compatibility wrapper reached replan limit")
+    return ai:nullkiller("imperative Lua policy reached command limit")
 end
 
 return Script
