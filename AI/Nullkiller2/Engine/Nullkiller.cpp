@@ -360,6 +360,11 @@ bool Nullkiller::executeScriptTask(const Goals::TTask & task)
 ScriptTaskExecutionResult Nullkiller::executeScriptTaskSequence(const Goals::TTaskVec & tasks, const size_t maxAttempts)
 {
 	ScriptTaskExecutionResult result;
+	auto recordAttempt = [&result](size_t index, bool executed, TaskFailureAction failureAction, std::string error)
+	{
+		result.attemptResults.push_back(ScriptTaskAttemptResult{index, executed, failureAction, std::move(error)});
+	};
+
 	const size_t attemptsLimit = std::min(maxAttempts == 0 ? tasks.size() : maxAttempts, tasks.size());
 	if(attemptsLimit == 0)
 	{
@@ -379,12 +384,14 @@ ScriptTaskExecutionResult Nullkiller::executeScriptTaskSequence(const Goals::TTa
 		if(!selectedTask)
 		{
 			result.error = "Nullkiller task handle is empty";
+			recordAttempt(index, false, TaskFailureAction::TRY_NEXT_TASK, result.error);
 			continue;
 		}
 
 		if(!areAffectedObjectsPresent(selectedTask))
 		{
 			result.error = "Nullkiller task refers to an object that is no longer visible or present";
+			recordAttempt(index, false, TaskFailureAction::TRY_NEXT_TASK, result.error);
 			continue;
 		}
 
@@ -408,10 +415,12 @@ ScriptTaskExecutionResult Nullkiller::executeScriptTaskSequence(const Goals::TTa
 				result.failureAction = TaskFailureAction::REPLAN;
 				result.shouldReplan = true;
 				result.error = "Nullkiller increased scan depth and needs replanning";
+				recordAttempt(index, false, result.failureAction, result.error);
 				return result;
 			}
 
 			result.error = "Nullkiller task priority is no longer positive";
+			recordAttempt(index, false, TaskFailureAction::TRY_NEXT_TASK, result.error);
 			continue;
 		}
 
@@ -424,6 +433,7 @@ ScriptTaskExecutionResult Nullkiller::executeScriptTaskSequence(const Goals::TTa
 		if(!isRecruitHeroGoal && selectedTask->getHero() && !heroPtr.isVerified(false))
 		{
 			result.error = "Nullkiller task refers to an unavailable hero";
+			recordAttempt(index, false, TaskFailureAction::TRY_NEXT_TASK, result.error);
 			continue;
 		}
 
@@ -433,6 +443,7 @@ ScriptTaskExecutionResult Nullkiller::executeScriptTaskSequence(const Goals::TTa
 			hasAnySuccess = true;
 			scriptTaskStateHadSuccess = true;
 			result.error.clear();
+			recordAttempt(index, true, TaskFailureAction::TRY_NEXT_TASK, {});
 			return result;
 		}
 
@@ -440,6 +451,7 @@ ScriptTaskExecutionResult Nullkiller::executeScriptTaskSequence(const Goals::TTa
 		const bool hasRemainingTasks = index + 1 < tasks.size();
 		result.failureAction = chooseTaskFailureAction(hasAnySuccess, hasRemainingTasks, hasUnlockedHeroWithMovement());
 		result.error = "Nullkiller task failed to execute";
+		recordAttempt(index, false, result.failureAction, result.error);
 
 		if(result.failureAction == TaskFailureAction::TRY_NEXT_TASK)
 			continue;

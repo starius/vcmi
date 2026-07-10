@@ -107,6 +107,14 @@ struct ScriptTaskCandidate
 	HeroRole heroRole = SCOUT;
 };
 
+struct ScriptTaskAttemptResult
+{
+	size_t taskIndex = 0;
+	bool executed = false;
+	TaskFailureAction failureAction = TaskFailureAction::TRY_NEXT_TASK;
+	std::string error;
+};
+
 struct ScriptTaskExecutionResult
 {
 	bool attempted = false;
@@ -118,6 +126,7 @@ struct ScriptTaskExecutionResult
 	size_t attempts = 0;
 	TaskFailureAction failureAction = TaskFailureAction::TRY_NEXT_TASK;
 	std::string error;
+	std::vector<ScriptTaskAttemptResult> attemptResults;
 };
 
 struct ScriptPriorityPassResult

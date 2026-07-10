@@ -5780,6 +5780,24 @@ bool CScriptedAdventureAI::executeNullkillerStepAction(const JsonNode & action, 
 	actionResult["attempts"] = JsonNode(static_cast<int32_t>(result.attempts));
 	actionResult["maxAttempts"] = JsonNode(static_cast<int32_t>(maxAttempts));
 	actionResult["selectedTaskIndex"] = JsonNode(static_cast<int32_t>(result.selectedTaskIndex));
+	actionResult["attemptedTasks"].Vector();
+	for(const NK2AI::ScriptTaskAttemptResult & attemptResult : result.attemptResults)
+	{
+		JsonNode attempt;
+		attempt["taskIndex"] = JsonNode(static_cast<int32_t>(attemptResult.taskIndex));
+		attempt["executed"] = JsonNode(attemptResult.executed);
+		attempt["failureActionId"] = JsonNode(static_cast<int32_t>(attemptResult.failureAction));
+		attempt["failureAction"] = JsonNode(nullkillerTaskFailureActionName(attemptResult.failureAction));
+		if(attemptResult.taskIndex < tasks.size())
+		{
+			attempt["task"] = tasks[attemptResult.taskIndex];
+			attempt["task_id"] = tasks[attemptResult.taskIndex]["task_id"];
+		}
+		if(!attemptResult.error.empty())
+			attempt["error"] = JsonNode(attemptResult.error);
+		actionResult["attemptedTasks"].Vector().push_back(attempt);
+	}
+	actionResult["attemptedTaskCount"] = JsonNode(static_cast<int32_t>(actionResult["attemptedTasks"].Vector().size()));
 	actionResult["failureActionId"] = JsonNode(static_cast<int32_t>(result.failureAction));
 	actionResult["failureAction"] = JsonNode(nullkillerTaskFailureActionName(result.failureAction));
 	actionResult["shouldReplan"] = JsonNode(result.shouldReplan);

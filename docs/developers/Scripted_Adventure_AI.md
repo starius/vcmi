@@ -605,7 +605,9 @@ Current bounded subroutine surface:
 - `nullkiller_step` is a convenience call that selects the current best bounded candidate, can try later
   candidates using Nullkiller's own failure policy, then returns to Lua for refresh, more decisions, or end-turn.
   It accepts `max_attempts` and returns stable fields including `outcomeId`, `failureActionId`, `didExecute`,
-  `shouldReplan`, `shouldStopTurn`, `exhaustedCandidates`, `selectedTaskIndex`, and `attempts`.
+  `shouldReplan`, `shouldStopTurn`, `exhaustedCandidates`, `selectedTaskIndex`, `attempts`, and
+  `attemptedTasks`. Each attempted task record includes the candidate index, `task_id`, the visible task payload
+  when still available, whether it executed, stable failure-action ids, and any native error text.
 - `nullkiller_pass` is a capped multi-step wrapper around `nullkiller_step`. It is useful when Lua wants a
   native Nullkiller adventure subroutine larger than one task, but still wants control back before the whole day
   is delegated. It returns a `steps` array plus `executedSteps`, `replanSteps`, `stopTurnSteps`,
@@ -1252,9 +1254,9 @@ Regression harness:
 - The first bounded Nullkiller subroutine smoke used `scripts/ai/candidates/boundedNullkillerAdventure.lua` on
   `smoke-training-dwarven-gold` for one day. It executed four `nullkiller_step` actions with no failed host
   actions, then intentionally delegated the remaining turn when the bounded task surface had no executable native
-  task left. This confirms the Lua coroutine can call native Nullkiller task fragments and regain control, while
-  also showing the next API gap: failed or exhausted native task searches should provide richer replan/try-next
-  details to Lua.
+  task left. This confirms the Lua coroutine can call native Nullkiller task fragments and regain control.
+  Bounded step responses now include `attemptedTasks`, so failed or exhausted native task searches provide
+  per-candidate replan/try-next details to Lua and trace analysis.
 - Lua can now apply current-turn Nullkiller planner constraints before calling bounded native helpers:
   resource locks preserve strategic reserves for later candidate generation and hero locks keep a selected owned
   hero out of subsequent native task searches. These are AI-planner constraints only; they do not mutate game
@@ -1383,10 +1385,12 @@ Regression harness:
   can be restricted to granular behavior families such as defense, gather-army, exploration, building,
   recruitment, startup, or capture. Candidate snapshots now include bounded structured goal details for
   composition plans, hero-chain paths, cluster blockers, defense threats, upgrades, buildings, boats, and
-  adventure spells. Single-query Nullkiller dialog handling is also exposed through `ai:nullkillerAnswerQuery`.
-  The native priority-pass loop is exposed through `ai:nullkillerPriorityPass`, and the pass-shaped bridge is
-  exposed through `ai:nullkillerTurnSlice` for scripts that want Nullkiller-style priority/adventure/trade phases
-  without handing over the rest of the day.
+  adventure spells. Bounded step responses include per-attempt task diagnostics, so Lua and trace tooling can see
+  which native candidates were tried, skipped, executed, or used to trigger replan/stop-turn policy. Single-query
+  Nullkiller dialog handling is also exposed through `ai:nullkillerAnswerQuery`. The native priority-pass loop is
+  exposed through `ai:nullkillerPriorityPass`, and the pass-shaped bridge is exposed through
+  `ai:nullkillerTurnSlice` for scripts that want Nullkiller-style priority/adventure/trade phases without handing
+  over the rest of the day.
   This closes the full-day delegation gap for native task families: Lua can choose, rank, and run bounded native
   subroutines, then refresh visible state instead of handing Nullkiller the rest of the turn.
 - Contract: before optimizing a Lua policy, treat any required `ai:nullkiller()` / full-day fallback as a parity
