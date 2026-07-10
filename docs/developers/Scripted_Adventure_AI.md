@@ -458,7 +458,9 @@ Current bounded subroutine surface:
   as numeric constants under `ai.nullkillerTaskModes`, so scripts can avoid magic numbers and brittle strings.
 - Candidate JSON contains stable machine fields such as `task_id`, `goalTypeId`, `priority`, `priorityTier`,
   `hero_id`, `town_id`, `object_id`, `tile`, affected object ids, and hero role ids. Debug descriptions may be
-  present for traces, but scripts should use stable ids for strategy.
+  present for traces, but scripts should use stable ids for strategy. Candidate records also include visible
+  structured `hero`, `object`, `townObject`, and `affectedObjects` payloads where those referenced entities are
+  visible to the scripted player.
 - Candidate JSON also contains a bounded structured `goal` summary. Its `details` object exposes typed native
   planning context such as composition subtask sequences, hero-chain paths, hero-exchange paths, visible
   defense threats, unlock-cluster blockers, army-upgrade value, building costs, boat locations, and adventure
@@ -1174,6 +1176,8 @@ Regression harness:
   inspect native Dimension Door, Town Portal, boat, whirlpool, quest, adventure-cast, and composite path actions
   without relying on debug strings. The exposed action parameters use ids/numeric fields where possible and keep
   target object details behind visibility checks.
+- Done: Nullkiller task candidates include visible structured hero/object/town context in addition to stable ids,
+  so Lua can rank native fragments by typed object data instead of relying on native debug descriptions.
 - Done: owned hero/town snapshots expose richer inspectable state for script decisions: stable hero type/class,
   faction, creature, secondary-skill, building, spell, and artifact identifiers; hero progression and secondary
   skills; town hall/fort/mage-guild/town levels; built/destroyed counts; building detail records; owned mage-guild

@@ -2330,14 +2330,29 @@ JsonNode jsonNullkillerTaskCandidate(
 	node["heroRoleId"] = JsonNode(static_cast<int32_t>(candidate.heroRole));
 	node["heroRole"] = JsonNode(nullkillerHeroRoleName(candidate.heroRole));
 	node["affectedObjectIds"].Vector();
+	node["affectedObjects"].Vector();
 
 	if(candidate.task)
 	{
 		if(const CGHeroInstance * hero = candidate.task->getHero())
+		{
 			node["hero_id"] = JsonNode(hero->id.getNum());
+			if(!cc || cc->isVisibleFor(hero, playerID))
+				node["hero"] = jsonHero(hero, hero->tempOwner == playerID);
+		}
 
 		for(const ObjectInstanceID objectID : candidate.task->getAffectedObjects())
+		{
 			node["affectedObjectIds"].Vector().push_back(JsonNode(objectID.getNum()));
+			if(cc)
+			{
+				if(const CGObjectInstance * object = cc->getObj(objectID, false))
+				{
+					if(cc->isVisibleFor(object, playerID))
+						node["affectedObjects"].Vector().push_back(jsonMapObject(object, playerID, candidate.task->getHero()));
+				}
+			}
+		}
 
 		if(const auto * goal = dynamic_cast<const NK2AI::Goals::AbstractGoal *>(candidate.task.get()))
 		{
@@ -2345,9 +2360,23 @@ JsonNode jsonNullkillerTaskCandidate(
 			node["goalTypeId"] = JsonNode(static_cast<int32_t>(goal->goalType));
 			node["goalType"] = JsonNode(nullkillerGoalName(goal->goalType));
 			if(goal->town)
+			{
 				node["town_id"] = JsonNode(goal->town->id.getNum());
+				if(!cc || cc->isVisibleFor(goal->town, playerID))
+					node["townObject"] = jsonMapObject(goal->town, playerID, candidate.task->getHero());
+			}
 			if(goal->objid >= 0)
+			{
 				node["object_id"] = JsonNode(goal->objid);
+				if(cc)
+				{
+					if(const CGObjectInstance * object = cc->getObj(ObjectInstanceID(goal->objid), false))
+					{
+						if(cc->isVisibleFor(object, playerID))
+							node["object"] = jsonMapObject(object, playerID, candidate.task->getHero());
+					}
+				}
+			}
 			if(goal->bid >= 0)
 				node["building_id"] = JsonNode(goal->bid);
 			if(goal->aid >= 0)
