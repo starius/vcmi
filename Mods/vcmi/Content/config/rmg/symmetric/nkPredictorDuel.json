@@ -1,0 +1,38 @@
+{
+	"NK Predictor Duel" :
+	{
+		"minSize" : "s+u", "maxSize" : "s+u",
+		"players" : "2",
+		"description" : "Small two-player template for Nullkiller battle-predictor A/B tests.",
+		"allowedWaterContent" : [ "none" ],
+		"zones" :
+		{
+			"1" :
+			{
+				"type" : "playerStart",
+				"size" : 7,
+				"owner" : 1,
+				"monsters" : "none",
+				"playerTowns" : { "castles" : 1 },
+				"treasure" :
+				[
+					{ "min" : 1000, "max" : 3000, "density" : 2 },
+					{ "min" : 250, "max" : 1000, "density" : 3 }
+				]
+			},
+			"2" :
+			{
+				"type" : "playerStart",
+				"size" : 7,
+				"owner" : 2,
+				"monsters" : "none",
+				"playerTowns" : { "castles" : 1 },
+				"treasureLikeZone" : 1
+			}
+		},
+		"connections" :
+		[
+			{ "a" : "1", "b" : "2", "type" : "wide", "road" : "true" }
+		]
+	}
+}

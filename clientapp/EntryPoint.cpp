@@ -39,6 +39,8 @@
 #include "../lib/modding/CModHandler.h"
 #include "../lib/modding/ModDescription.h"
 #include "../lib/mapping/CMapHeader.h"
+#include "../lib/rmg/CRmgTemplate.h"
+#include "../lib/rmg/CRmgTemplateStorage.h"
 #include "../lib/rmg/CMapGenOptions.h"
 #include "../lib/texts/CGeneralTextHandler.h"
 #include "../lib/texts/MetaString.h"
@@ -180,6 +182,35 @@ static EMonsterStrength::EMonsterStrength parseRandomMapMonsterStrength(const st
 	return static_cast<EMonsterStrength::EMonsterStrength>(std::stoi(rawValue));
 }
 
+static bool stringEndsWith(const std::string & value, const std::string & suffix)
+{
+	return value.size() >= suffix.size()
+		&& value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+static const CRmgTemplate * resolveRandomMapTemplate(const std::string & requestedName)
+{
+	if(requestedName.empty())
+		return nullptr;
+
+	if(const auto * exactTemplate = LIBRARY->tplh->getTemplate(requestedName))
+		return exactTemplate;
+
+	const auto templates = LIBRARY->tplh->getTemplates();
+	const auto scopedSuffix = ":" + requestedName;
+	const auto iter = std::ranges::find_if(templates, [&](const CRmgTemplate * tmpl)
+	{
+		return tmpl->getId() == requestedName
+			|| tmpl->getName() == requestedName
+			|| stringEndsWith(tmpl->getId(), scopedSuffix);
+	});
+
+	if(iter != templates.end())
+		return *iter;
+
+	throw std::runtime_error("Unknown random map template: " + requestedName);
+}
+
 static std::shared_ptr<CMapGenOptions> makeRandomMapOptions(const po::variables_map & vm)
 {
 	auto options = std::make_shared<CMapGenOptions>();
@@ -208,7 +239,7 @@ static std::shared_ptr<CMapGenOptions> makeRandomMapOptions(const po::variables_
 	options->setMonsterStrength(parseRandomMapMonsterStrength(vm["randommap-monsters"].as<std::string>()));
 
 	if(vm.count("randommap-template"))
-		options->setMapTemplate(vm["randommap-template"].as<std::string>());
+		options->setMapTemplate(resolveRandomMapTemplate(vm["randommap-template"].as<std::string>()));
 
 	for(int playerIndex = 0; playerIndex < playerCount; ++playerIndex)
 		options->setPlayerTypeForStandardPlayer(PlayerColor(playerIndex), EPlayerType::AI);
