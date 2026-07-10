@@ -7445,11 +7445,77 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	const ResourceSet resources = cc->getResourceAmount();
 	const std::vector<int3> visibleTiles = visibleMapTiles(cc, playerID);
 
+	std::set<int32_t> seenNullkillerUpgradeArmies;
+	std::set<int32_t> seenNullkillerRecruitSources;
+	auto appendNullkillerBuildArmyHelperOption = [&](const CGTownInstance * town)
+	{
+		if(!town || town->tempOwner != playerID || !cc->isVisibleFor(town, playerID))
+			return;
+
+		JsonNode option;
+		option["helperKindId"] = JsonNode(3);
+		option["helperKind"] = JsonNode("town_army");
+		option["bounded"] = JsonNode(true);
+		option["delegatesRestOfDay"] = JsonNode(false);
+		option["town_id"] = JsonNode(town->id.getNum());
+		option["town"] = jsonTown(town, resources, true);
+		option["planAction"]["type"] = JsonNode("nullkiller_build_army");
+		option["planAction"]["town_id"] = option["town_id"];
+		actionSpace["nullkillerHelperOptions"].Vector().push_back(option);
+	};
+	auto appendNullkillerUpgradeHelperOption = [&](const CArmedInstance * army)
+	{
+		if(!army || army->tempOwner != playerID || !cc->isVisibleFor(army, playerID))
+			return;
+		if(!seenNullkillerUpgradeArmies.insert(army->id.getNum()).second)
+			return;
+
+		JsonNode option;
+		option["helperKindId"] = JsonNode(4);
+		option["helperKind"] = JsonNode("upgrade_army");
+		option["bounded"] = JsonNode(true);
+		option["delegatesRestOfDay"] = JsonNode(false);
+		option["army_id"] = JsonNode(army->id.getNum());
+		option["ownedArmy"] = jsonOwnedArmySnapshot(army);
+		option["planAction"]["type"] = JsonNode("nullkiller_upgrade_army");
+		option["planAction"]["army_id"] = option["army_id"];
+		actionSpace["nullkillerHelperOptions"].Vector().push_back(option);
+	};
+	auto appendNullkillerRecruitHelperOption = [&](const CGDwelling * source, const CArmedInstance * destination)
+	{
+		if(!source || source->tempOwner != playerID || !cc->isVisibleFor(source, playerID))
+			return;
+		if(!seenNullkillerRecruitSources.insert(source->id.getNum()).second)
+			return;
+		if(destination && (destination->tempOwner != playerID || !cc->isVisibleFor(destination, playerID)))
+			return;
+
+		JsonNode option;
+		option["helperKindId"] = JsonNode(5);
+		option["helperKind"] = JsonNode("recruit_creatures");
+		option["bounded"] = JsonNode(true);
+		option["delegatesRestOfDay"] = JsonNode(false);
+		option["source_id"] = JsonNode(source->id.getNum());
+		option["sourceObject"] = jsonMapObject(source, playerID, nullptr);
+		if(destination)
+		{
+			option["destination_id"] = JsonNode(destination->id.getNum());
+			option["destinationArmy"] = jsonOwnedArmySnapshot(destination);
+		}
+		option["planAction"]["type"] = JsonNode("nullkiller_recruit_creatures");
+		option["planAction"]["source_id"] = option["source_id"];
+		if(destination)
+			option["planAction"]["destination_id"] = option["destination_id"];
+		actionSpace["nullkillerHelperOptions"].Vector().push_back(option);
+	};
+
 	std::set<int32_t> seenUpgradeArmies;
 	auto appendUpgradeOptions = [&](const CArmedInstance * army)
 	{
 		if(!army || army->tempOwner != playerID || !seenUpgradeArmies.insert(army->id.getNum()).second)
 			return;
+
+		appendNullkillerUpgradeHelperOption(army);
 
 		for(int32_t slotIndex = 0; slotIndex < GameConstants::ARMY_SIZE; ++slotIndex)
 		{
@@ -7536,6 +7602,8 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		if(!town || town->tempOwner != playerID)
 			continue;
 
+		appendNullkillerBuildArmyHelperOption(town);
+		appendNullkillerRecruitHelperOption(town, nullptr);
 		appendUpgradeOptions(town);
 		appendUpgradeOptions(town->getVisitingHero());
 		appendUpgradeOptions(town->getGarrisonHero());
@@ -7762,9 +7830,17 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		};
 
 		for(ObjectInstanceID objectID : tile->visitableObjects)
+		{
 			appendShipyardOption(objectID);
+			if(const CGDwelling * dwelling = dynamic_cast<const CGDwelling *>(cc->getObj(objectID, false)))
+				appendNullkillerRecruitHelperOption(dwelling, nullptr);
+		}
 		for(ObjectInstanceID objectID : tile->blockingObjects)
+		{
 			appendShipyardOption(objectID);
+			if(const CGDwelling * dwelling = dynamic_cast<const CGDwelling *>(cc->getObj(objectID, false)))
+				appendNullkillerRecruitHelperOption(dwelling, nullptr);
+		}
 	}
 
 	constexpr size_t maxAdventureSpellOptions = 64;

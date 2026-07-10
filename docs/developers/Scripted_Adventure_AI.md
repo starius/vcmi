@@ -555,8 +555,8 @@ Current bounded subroutine surface:
   Each option contains `tasksAction`, `stepAction`, and `passAction` payloads using numeric `mode` values, so Lua
   can discover and compose native subroutines the same way it discovers movement, build, recruitment, and
   preparation candidates. `actionSpace.nullkillerHelperOptions` similarly advertises bounded native helper calls
-  such as the priority pass and resource trader. These options are not automatically added to
-  `recommendedActions`.
+  such as the priority pass, resource trader, town-army preparation, army upgrades, and owned-dwelling
+  recruitment. These options are not automatically added to `recommendedActions`.
 
 The script engine should reuse these Nullkiller systems where possible:
 
@@ -1283,6 +1283,9 @@ Regression harness:
   `nullkillerHelperOptions`. Scripts can execute the advertised `planAction`, `tasksAction`, `stepAction`, or
   `passAction` through `ai:runOption`, keeping native helper use discoverable and numeric-id based without
   delegating the rest of the day.
+- Done: `nullkillerHelperOptions` also includes concrete visible owned-object helpers for
+  `nullkiller_build_army`, `nullkiller_upgrade_army`, and `nullkiller_recruit_creatures`, so Lua can discover the
+  semantic native logistics helpers instead of hard-coding town, army, or dwelling scans.
 - Done: pending dialog/window queries are exposed as typed read-side data under `state.turn.queries`, and direct
   Lua actions that open these dialogs now pause for a script answer instead of auto-answering. The bundled default
   script includes a conservative fallback answer policy; richer per-dialog strategy remains Lua policy work.
