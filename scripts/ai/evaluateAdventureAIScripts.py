@@ -80,7 +80,7 @@ def make_side_args(args: argparse.Namespace, side_output: Path, script: str, sce
         clean=args.clean,
         extra_arg=scenario["extra_arg"],
         script=script,
-        trace=True,
+        trace=args.trace,
         json=False,
     )
 
@@ -102,9 +102,10 @@ def run_side(args: argparse.Namespace, label: str, script: str, scenarios: list[
             status = "timeout" if result["timedOut"] else f"exit {result['returnCode']}"
             parsed = result["traceSummary"]["parsed"]
             source_type, source = scenario_source(scenario)
+            trace_status = f"traces parsed={parsed}" if args.trace else "traces disabled"
             print(
                 f"{label} {scenario['name']} {source_type}:{source} run {run_index}: "
-                f"{status}, outcome={result['outcome']['result']}, traces parsed={parsed}, dir={result['runDir']}"
+                f"{status}, outcome={result['outcome']['result']}, {trace_status}, dir={result['runDir']}"
             )
 
     (side_output / "manifest.json").write_text(json.dumps({"runs": results}, indent=2, sort_keys=True), encoding="utf-8")
@@ -208,8 +209,14 @@ def metric_delta(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[st
     return {field: int(candidate.get(field, 0)) - int(baseline.get(field, 0)) for field in fields}
 
 
-def bucket_report(baseline_results: list[dict[str, Any]], candidate_results: list[dict[str, Any]]) -> dict[str, Any]:
-    comparison = compare(trace_dirs(baseline_results), trace_dirs(candidate_results))
+def compare_result_traces(trace_enabled: bool, baseline_results: list[dict[str, Any]], candidate_results: list[dict[str, Any]]) -> dict[str, Any]:
+    if not trace_enabled:
+        return compare([], [])
+    return compare(trace_dirs(baseline_results), trace_dirs(candidate_results))
+
+
+def bucket_report_for_trace_mode(trace_enabled: bool, baseline_results: list[dict[str, Any]], candidate_results: list[dict[str, Any]]) -> dict[str, Any]:
+    comparison = compare_result_traces(trace_enabled, baseline_results, candidate_results)
     baseline_metrics = run_metrics(baseline_results, comparison["baseline"])
     candidate_metrics = run_metrics(candidate_results, comparison["candidate"])
     return {
@@ -220,6 +227,7 @@ def bucket_report(baseline_results: list[dict[str, Any]], candidate_results: lis
 
 
 def scenario_buckets(
+    trace_enabled: bool,
     scenarios: list[dict[str, Any]],
     baseline_results: list[dict[str, Any]],
     candidate_results: list[dict[str, Any]],
@@ -232,7 +240,7 @@ def scenario_buckets(
             baseline_subset = [result for result in baseline_results if str(result.get(field)) == value]
             candidate_subset = [result for result in candidate_results if str(result.get(field)) == value]
             if baseline_subset or candidate_subset:
-                reports[field][value] = bucket_report(baseline_subset, candidate_subset)
+                reports[field][value] = bucket_report_for_trace_mode(trace_enabled, baseline_subset, candidate_subset)
     return reports
 
 
@@ -351,6 +359,8 @@ def main() -> int:
     parser.add_argument("--cwd", default=None, help="Working directory for vcmiclient.")
     parser.add_argument("--clean", action="store_true", help="Delete existing side/run directories before reuse.")
     parser.add_argument("--extra-arg", action="append", default=[], help="Extra argument passed to vcmiclient.")
+    parser.add_argument("--trace", dest="trace", action="store_true", default=True, help="Enable ScriptedAdventureAI trace collection for trace-local metrics.")
+    parser.add_argument("--no-trace", dest="trace", action="store_false", help="Disable trace collection for outcome-focused promotion runs.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable evaluation JSON.")
     parser.add_argument("--min-score-delta", type=int, default=1, help="Minimum total score delta required for promotion.")
     parser.add_argument("--min-quality-delta", type=int, default=0, help="Minimum final-state quality delta required for promotion.")
@@ -370,10 +380,10 @@ def main() -> int:
 
     baseline_results = run_side(args, "baseline", args.baseline_script, scenarios)
     candidate_results = run_side(args, "candidate", args.candidate_script, scenarios)
-    comparison = compare(trace_dirs(baseline_results), trace_dirs(candidate_results))
+    comparison = compare_result_traces(args.trace, baseline_results, candidate_results)
     baseline_metrics = run_metrics(baseline_results, comparison["baseline"])
     candidate_metrics = run_metrics(candidate_results, comparison["candidate"])
-    buckets = scenario_buckets(scenarios, baseline_results, candidate_results)
+    buckets = scenario_buckets(args.trace, scenarios, baseline_results, candidate_results)
     score_delta = candidate_metrics["score"] - baseline_metrics["score"]
     quality_delta = candidate_metrics["qualityScore"] - baseline_metrics["qualityScore"]
     promotion = promotion_verdict(args, baseline_metrics, candidate_metrics, buckets)
@@ -394,10 +404,11 @@ def main() -> int:
         },
         "comparison": comparison,
         "buckets": buckets,
+        "traceEnabled": args.trace,
         "scoreDelta": score_delta,
         "qualityDelta": quality_delta,
         "promotion": promotion,
-        "scoreNotes": "Iteration score combines safety, useful actions, final visible-state quality, and mined mistake penalties. Hard promotion gates reject crashes, parse errors, extra fallbacks, extra failed actions, and extra important mistakes.",
+        "scoreNotes": "Iteration score combines safety, useful actions, final visible-state quality, mined mistake penalties, and outcomes when traces are enabled. With --no-trace, trace-local quality, action, and mistake metrics are zeroed and the score is outcome/safety focused. Hard promotion gates reject crashes, parse errors, extra fallbacks, extra failed actions, and extra important mistakes.",
     }
 
     (args.output / "evaluation.json").write_text(json.dumps(evaluation, indent=2, sort_keys=True), encoding="utf-8")

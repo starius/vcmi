@@ -652,16 +652,20 @@ scripts/ai/evaluateAdventureAIScripts.py \
   --scenario-file scripts/ai/evaluationScenarios.json \
   --baseline-script scripts/ai/defaultAdventure.lua \
   --candidate-script /tmp/candidateAdventure.lua \
+  --no-trace \
   --output scripted-ai-eval \
   --clean
 ```
 
-The evaluator runs both sides with tracing enabled, snapshots script files into the output directory when possible,
-writes `evaluation.json`, and prints a heuristic score delta, quality delta, and promotion verdict. The score is
-not a gameplay rating; it is an iteration signal that rewards completed runs, useful actions, and final visible
-state quality while penalizing timeouts, nonzero exits, parse errors, fallbacks, failed actions, stopped batches,
-mined mistakes, and red-player losses. Red-player wins are rewarded when a run reaches a real victory outcome.
-The evaluator writes global metrics plus bucketed metrics by `group`, `stage`, and `kind`.
+The evaluator snapshots script files into the output directory when possible, writes `evaluation.json`, and prints
+a heuristic score delta, quality delta, and promotion verdict. Tracing is enabled by default for trace-local
+quality, action, and mistake metrics, but promotion/control runs can pass `--no-trace` to avoid trace I/O changing
+timing-sensitive full-game outcomes. With `--no-trace`, trace-local metrics are zeroed and scoring is focused on
+run safety plus win/loss outcomes. Use traced reruns on selected failures for diagnosis and JSON fixture mining.
+The score is not a gameplay rating; it is an iteration signal that rewards completed runs, useful actions, final
+visible-state quality when traces are enabled, and real red-player wins while penalizing timeouts, nonzero exits,
+parse errors, fallbacks, failed actions, stopped batches, mined mistakes, and red-player losses. The evaluator
+writes global metrics plus bucketed metrics by `group`, `stage`, and `kind`.
 
 Promotion gates now encode the training/held-out workflow: the candidate must improve on the `training` bucket and
 must not regress on the `heldout` bucket when those buckets are present. The fixed-seed random-map entries should be
@@ -821,6 +825,10 @@ Regression harness:
   contained, but the default script is still strategically weaker than native Nullkiller/fallback. Trace summaries
   point at oversteering, one-action replanning, visible-threat escape gaps, and missing high-level Nullkiller task
   fragments rather than game-data or run-control failures.
+- Current full-game controls on the same 10-map corpus are timing-sensitive. A plain Nullkiller2 mirror gave red
+  6/10. The all-fallback ScriptedAdventureAI control gave 4/10 with tracing enabled and 5/10 without tracing, with
+  different seed-level winners. Treat single full-outcome runs as noisy; use no-trace aggregate promotion batches
+  for win/loss control and traced reruns only for explanation, mistake mining, and regression fixtures.
 - `scripts/ai/runAdventureAIBatch.py` terminates a stale client process after a terminal game outcome has appeared
   in stdout and a short grace period has elapsed. This keeps unattended evaluation batches from hanging while still
   recording the completed outcome and traces.
