@@ -163,6 +163,10 @@ public:
 		Nullkiller & owner;
 		bool previousOpenMap;
 		bool previousUseObjectGraph;
+		std::set<ObjectInstanceID> previousVisitableObjects;
+		std::set<ObjectInstanceID> previousVisitedObjects;
+		std::map<TeleportChannelID, TeleportChannel> previousTeleportChannels;
+		std::map<const CGObjectInstance *, const CGObjectInstance *> previousSubterraneanGates;
 
 	public:
 		explicit ScriptVisibleOnlyScope(Nullkiller & owner);

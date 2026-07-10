@@ -2482,6 +2482,30 @@ std::vector<int3> visibleMapTiles(const std::shared_ptr<CCallback> & cc, PlayerC
 	return result;
 }
 
+void memorizeScriptVisibleVisitableObjs(
+	const std::unique_ptr<NK2AI::AIMemory> & memory,
+	const std::unique_ptr<NK2AI::DangerHitMapAnalyzer> & dangerHitMap,
+	PlayerColor playerID,
+	const std::shared_ptr<CCallback> & cc)
+{
+	if(!memory || !dangerHitMap || !cc)
+		return;
+
+	std::set<ObjectInstanceID> seenObjects;
+	for(const int3 & position : visibleMapTiles(cc, playerID))
+	{
+		for(const CGObjectInstance * object : cc->getVisitableObjs(position, false))
+		{
+			if(!object || !seenObjects.insert(object->id).second)
+				continue;
+			if(object->tempOwner != playerID && !cc->isVisibleFor(object, playerID))
+				continue;
+
+			NK2AI::AIGateway::memorizeVisitableObj(object, memory, dangerHitMap, playerID, cc);
+		}
+	}
+}
+
 JsonNode jsonPositions(const std::vector<int3> & positions)
 {
 	JsonNode node;
@@ -5520,7 +5544,7 @@ JsonNode CScriptedAdventureAI::makeNullkillerTaskCandidates(const JsonNode & act
 		std::shared_lock gameStateLock(CGameState::mutex);
 		std::lock_guard sharedStorageLock(NK2AI::AISharedStorage::locker);
 		NK2AI::Nullkiller::ScriptVisibleOnlyScope visibleOnly(*nullkiller);
-		AIGateway::memorizeVisitableObjs(nullkiller->memory, nullkiller->dangerHitMap, playerID, cc);
+		memorizeScriptVisibleVisitableObjs(nullkiller->memory, nullkiller->dangerHitMap, playerID, cc);
 		AIGateway::memorizeRevisitableObjs(nullkiller->memory, playerID, cc);
 
 		const auto candidates = nullkiller->getScriptTaskCandidates(mode, maxCandidates);

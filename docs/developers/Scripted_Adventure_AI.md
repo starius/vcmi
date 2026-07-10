@@ -1247,8 +1247,14 @@ Regression harness:
   callback paths, and invoke Nullkiller logic only through bounded helpers such as task candidate listing, one
   selected task, one step, one pass, one priority pass, resource trade, army/artifact preparation, query answers,
   and object interaction.
+- Bounded Nullkiller helpers now run with a visible-only script memory view. `ScriptVisibleOnlyScope` temporarily
+  filters Nullkiller's remembered objects, teleport channels, and subterranean-gate links to objects visible to
+  the scripted player, while preserving hidden native Nullkiller memory outside the scoped script helper. Task
+  candidate generation also uses a visible-only memorizer instead of seeding from the full map.
   A smoke run on `Dwarven Gold` and `Ready or Not` reached the one-day limit cleanly and wrote
   `imperative-input`/`imperative-output` traces with fallback status through the configured fallback script.
+- A one-day `Dwarven Gold` ScriptedAdventureAI-vs-Nullkiller smoke after this containment change exited cleanly
+  at the day limit and parsed 8 trace files.
 - Explicit script delegation through `fallback`/`ai:nullkiller()` is not counted as a script failure; syntax,
   runtime, invalid-output, and exhausted-limit failures still use the repeated-failure throttle.
 - `scripts/ai/evaluateAdventureAIScripts.py` runs baseline and candidate scripts through the same fixed maps,

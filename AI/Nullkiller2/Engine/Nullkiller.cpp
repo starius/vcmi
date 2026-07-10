@@ -38,6 +38,33 @@ using namespace Goals;
 // while we play vcmieagles graph can be shared
 std::unique_ptr<ObjectGraph> Nullkiller::baseGraph;
 
+bool scriptCanSeeObject(const Nullkiller & owner, ObjectInstanceID objectID)
+{
+	if(!owner.cc)
+		return false;
+
+	const CGObjectInstance * object = owner.cc->getObj(objectID, false);
+	return object && (object->tempOwner == owner.playerID || owner.cc->isVisibleFor(object, owner.playerID));
+}
+
+bool scriptCanSeeObject(const Nullkiller & owner, const CGObjectInstance * object)
+{
+	return object && (object->tempOwner == owner.playerID || (owner.cc && owner.cc->isVisibleFor(object, owner.playerID)));
+}
+
+bool objectStillExists(const Nullkiller & owner, ObjectInstanceID objectID)
+{
+	return owner.cc && owner.cc->getObj(objectID, false);
+}
+
+void keepOnlyScriptVisibleObjects(const Nullkiller & owner, std::set<ObjectInstanceID> & objects)
+{
+	std::erase_if(objects, [&](ObjectInstanceID objectID)
+	{
+		return !scriptCanSeeObject(owner, objectID);
+	});
+}
+
 Nullkiller::Nullkiller()
 	: activeHero(nullptr)
 	, scanDepth(ScanDepth::MAIN_FULL)
@@ -55,12 +82,85 @@ Nullkiller::ScriptVisibleOnlyScope::ScriptVisibleOnlyScope(Nullkiller & owner_)
 	, previousOpenMap(owner.openMap)
 	, previousUseObjectGraph(owner.useObjectGraph)
 {
+	if(owner.memory)
+	{
+		previousVisitableObjects = owner.memory->visitableObjs;
+		previousVisitedObjects = owner.memory->alreadyVisited;
+		for(const auto & [channelID, channel] : owner.memory->knownTeleportChannels)
+		{
+			if(channel)
+				previousTeleportChannels[channelID] = *channel;
+		}
+		previousSubterraneanGates = owner.memory->knownSubterraneanGates;
+
+		keepOnlyScriptVisibleObjects(owner, owner.memory->visitableObjs);
+		keepOnlyScriptVisibleObjects(owner, owner.memory->alreadyVisited);
+
+		owner.memory->knownTeleportChannels.clear();
+		for(ObjectInstanceID objectID : owner.memory->visitableObjs)
+		{
+			if(const auto * teleport = dynamic_cast<const CGTeleport *>(owner.cc->getObj(objectID, false)))
+				CGTeleport::addToChannel(owner.memory->knownTeleportChannels, teleport);
+		}
+		for(const auto & [channelID, previousChannel] : previousTeleportChannels)
+		{
+			auto iter = owner.memory->knownTeleportChannels.find(channelID);
+			if(iter != owner.memory->knownTeleportChannels.end() && iter->second && previousChannel.passability == TeleportChannel::IMPASSABLE)
+				iter->second->passability = TeleportChannel::IMPASSABLE;
+		}
+
+		std::erase_if(owner.memory->knownSubterraneanGates, [&](const auto & entry)
+		{
+			return !scriptCanSeeObject(owner, entry.first) || !scriptCanSeeObject(owner, entry.second);
+		});
+	}
+
 	owner.openMap = false;
 	owner.useObjectGraph = false;
 }
 
 Nullkiller::ScriptVisibleOnlyScope::~ScriptVisibleOnlyScope()
 {
+	if(owner.memory)
+	{
+		for(ObjectInstanceID objectID : previousVisitableObjects)
+		{
+			if(!scriptCanSeeObject(owner, objectID) && objectStillExists(owner, objectID))
+				owner.memory->visitableObjs.insert(objectID);
+		}
+		for(ObjectInstanceID objectID : previousVisitedObjects)
+		{
+			if(!scriptCanSeeObject(owner, objectID) && objectStillExists(owner, objectID))
+				owner.memory->alreadyVisited.insert(objectID);
+		}
+
+		for(const auto & [channelID, previousChannel] : previousTeleportChannels)
+		{
+			auto & channel = owner.memory->knownTeleportChannels[channelID];
+			if(!channel)
+				channel = std::make_shared<TeleportChannel>();
+
+			for(ObjectInstanceID entrance : previousChannel.entrances)
+			{
+				if(!vstd::contains(channel->entrances, entrance))
+					channel->entrances.push_back(entrance);
+			}
+			for(ObjectInstanceID exit : previousChannel.exits)
+			{
+				if(!vstd::contains(channel->exits, exit))
+					channel->exits.push_back(exit);
+			}
+			if(channel->passability == TeleportChannel::UNKNOWN)
+				channel->passability = previousChannel.passability;
+		}
+
+		for(const auto & [entrance, exit] : previousSubterraneanGates)
+		{
+			if(entrance && exit && (!scriptCanSeeObject(owner, entrance) || !scriptCanSeeObject(owner, exit)))
+				owner.memory->knownSubterraneanGates[entrance] = exit;
+		}
+	}
+
 	owner.openMap = previousOpenMap;
 	owner.useObjectGraph = previousUseObjectGraph;
 }
