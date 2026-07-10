@@ -54,6 +54,7 @@
 #include "../lib/CPlayerState.h"
 #include "../lib/mapping/CMap.h"
 #include "../lib/mapping/CMapInfo.h"
+#include "../lib/mapping/MapFormat.h"
 #include "../lib/mapObjects/CGTownInstance.h"
 #include "../lib/mapObjects/MiscObjects.h"
 #include "../lib/modding/ModIncompatibility.h"
@@ -68,6 +69,68 @@
 #include <vcmi/events/EventBus.h>
 #include <SDL_thread.h>
 
+namespace
+{
+std::shared_ptr<CMapInfo> makeDebugRandomMapInfo(const std::shared_ptr<CMapGenOptions> & mapGenOptions)
+{
+	auto mapInfo = std::make_shared<CMapInfo>();
+	mapInfo->isRandomMap = true;
+	mapInfo->fileURI = "RandomMaps/DebugGeneratedRandomMap.vmap";
+	mapInfo->mapHeader = std::make_unique<CMapHeader>();
+	mapInfo->mapHeader->version = EMapFormat::VCMI;
+	mapInfo->mapHeader->name.appendRawString("Generated random map");
+	mapInfo->mapHeader->description.appendRawString("Headless generated random map test.");
+
+	if(mapGenOptions->getWaterContent() != EWaterContent::RANDOM)
+		mapInfo->mapHeader->banWaterHeroes(mapGenOptions->getWaterContent() != EWaterContent::NONE);
+
+	const auto * tmpl = mapGenOptions->getMapTemplate();
+	if(tmpl)
+	{
+		for(const auto & hero : tmpl->getBannedHeroes())
+			mapInfo->mapHeader->allowedHeroes.erase(hero);
+
+		for(const auto & hero : tmpl->getEnabledHeroes())
+			mapInfo->mapHeader->allowedHeroes.insert(hero);
+	}
+
+	mapInfo->mapHeader->difficulty = EMapDifficulty::NORMAL;
+	mapInfo->mapHeader->height = mapGenOptions->getHeight();
+	mapInfo->mapHeader->width = mapGenOptions->getWidth();
+	mapInfo->mapHeader->mapLayers.clear();
+	for(int i = 0; i < mapGenOptions->getLevels(); i++)
+	{
+		if(i == 0)
+			mapInfo->mapHeader->mapLayers.push_back(MapLayerId::SURFACE);
+		else if(i == 1)
+			mapInfo->mapHeader->mapLayers.push_back(MapLayerId::UNDERGROUND);
+		else
+			mapInfo->mapHeader->mapLayers.push_back(MapLayerId::UNKNOWN);
+	}
+
+	const int playersToGenerate = mapGenOptions->getMaxPlayersCount();
+	mapInfo->mapHeader->howManyTeams = playersToGenerate;
+	for(int i = 0; i < PlayerColor::PLAYER_LIMIT_I; ++i)
+	{
+		mapInfo->mapHeader->players[i].canComputerPlay = false;
+		mapInfo->mapHeader->players[i].canHumanPlay = false;
+	}
+
+	for(const auto & player : mapGenOptions->getPlayersSettings())
+	{
+		PlayerInfo playerInfo;
+		playerInfo.isFactionRandom = (player.second.getStartingTown() == FactionID::RANDOM);
+		playerInfo.canComputerPlay = (player.second.getPlayerType() != EPlayerType::HUMAN);
+		playerInfo.canHumanPlay = (player.second.getPlayerType() != EPlayerType::COMP_ONLY);
+		playerInfo.team = player.second.getTeam();
+		playerInfo.hasMainTown = true;
+		playerInfo.generateHeroAtMainTown = true;
+		mapInfo->mapHeader->players[player.first.getNum()] = playerInfo;
+	}
+	mapInfo->countPlayers();
+	return mapInfo;
+}
+}
 
 CServerHandler::~CServerHandler()
 {
@@ -934,6 +997,47 @@ void CServerHandler::debugStartTest(std::string filename, bool save)
 		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	}
 	// "Click" on color to remove us from it
+	setPlayer(myFirstColor());
+	while(myFirstColor() != PlayerColor::CANNOT_DETERMINE)
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+	while(true)
+	{
+		try
+		{
+			sendStartGame();
+			break;
+		}
+		catch(...)
+		{
+
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+	}
+}
+
+void CServerHandler::debugStartRandomTest(std::shared_ptr<CMapGenOptions> mapGenOptions)
+{
+	logGlobal->info("Starting debug random map test");
+	resetStateForLobby(EStartMode::NEW_GAME, ESelectionScreen::newGame, EServerMode::LOCAL, {});
+	auto mapInfo = makeDebugRandomMapInfo(mapGenOptions);
+
+	if(settings["session"]["donotstartserver"].Bool())
+		connectToServer(getLocalHostname(), getLocalPort());
+	else
+		startLocalServerAndConnect(false);
+
+	std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+	while(!settings["session"]["headless"].Bool() && !ENGINE->windows().topWindow<CLobbyScreen>())
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+	while(!mi || !mi->isRandomMap || mapInfo->fileURI != mi->fileURI)
+	{
+		setMapInfo(mapInfo, mapGenOptions);
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+	}
+
 	setPlayer(myFirstColor());
 	while(myFirstColor() != PlayerColor::CANNOT_DETERMINE)
 		std::this_thread::sleep_for(std::chrono::milliseconds(50));

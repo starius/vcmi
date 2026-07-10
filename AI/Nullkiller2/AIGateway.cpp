@@ -382,7 +382,7 @@ void AIGateway::requestRealized(PackageApplied * pa)
 	{
 		if(pa->packType == CTypeList::getInstance().getTypeID<EndTurn>(nullptr))
 		{
-			if(pa->result)
+			if(pa->result || !cc->isPlayerMakingTurn(playerID))
 				status.madeTurn();
 		}
 	}
@@ -1333,7 +1333,7 @@ void AIGateway::endTurn()
 	{
 		cc->endTurn();
 	}
-	while(status.haveTurn()); //for some reasons, our request may fail -> stop requesting end of turn only after we've received a confirmation that it's over
+	while(status.waitForTurnEnd(std::chrono::milliseconds(100))); //for some reasons, our request may fail -> stop requesting end of turn only after we've received a confirmation that it's over
 
 	logGlobal->info("Player %d (%s) ended turn", playerID, playerID.toString());
 }
@@ -1504,6 +1504,21 @@ void AIStatus::madeTurn()
 	std::unique_lock<std::mutex> lock(mx);
 	havingTurn = false;
 	cv.notify_all();
+}
+
+bool AIStatus::waitForTurnEnd(std::chrono::milliseconds timeout)
+{
+	std::unique_lock<std::mutex> lock(mx);
+	if(!havingTurn)
+		return false;
+
+	cv.wait_for(lock, timeout, [this]()
+	{
+		return !havingTurn;
+	});
+	aiGw->nullkiller->makingTurnInterruption.interruptionPoint();
+
+	return havingTurn;
 }
 
 void AIStatus::waitTillFree()

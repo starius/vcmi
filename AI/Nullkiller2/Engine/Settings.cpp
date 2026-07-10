@@ -44,6 +44,8 @@ namespace NK2AI
 				return BattlePredictionModel::LEGACY;
 			if(value == "ratio")
 				return BattlePredictionModel::RATIO;
+			if(value == "v2")
+				return BattlePredictionModel::V2;
 
 			throw std::runtime_error("Unknown Nullkiller battle prediction model: " + value);
 		}

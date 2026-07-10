@@ -83,7 +83,18 @@ def parse_args() -> argparse.Namespace:
 	)
 	parser.add_argument("--client", default="./vcmiclient", help="Path to vcmiclient relative to --workdir unless absolute.")
 	parser.add_argument("--workdir", type=Path, default=None, help="Working directory for vcmiclient, usually the build bin directory.")
-	parser.add_argument("--map", dest="maps", action="append", required=True, help="Map path accepted by --testmap. Repeat to cycle maps.")
+	parser.add_argument("--map", dest="maps", action="append", help="Map path accepted by --testmap. Repeat to cycle maps.")
+	parser.add_argument("--random-map", action="store_true", help="Use --testrandommap instead of --testmap.")
+	parser.add_argument("--randommap-size", default="S", help="Generated map size for --random-map.")
+	parser.add_argument("--randommap-levels", type=int, default=2, help="Generated map level count for --random-map.")
+	parser.add_argument("--randommap-players", type=int, default=2, help="Generated human-or-AI player count for --random-map.")
+	parser.add_argument("--randommap-teams", type=int, default=0, help="Generated map team count; 0 means free-for-all.")
+	parser.add_argument("--randommap-comp-only-players", type=int, default=0, help="Generated computer-only player count.")
+	parser.add_argument("--randommap-comp-only-teams", type=int, default=0, help="Generated computer-only team count.")
+	parser.add_argument("--randommap-water", default="none", choices=("none", "normal", "islands", "random"), help="Generated map water content.")
+	parser.add_argument("--randommap-monsters", default="normal", choices=("weak", "normal", "strong", "random"), help="Generated map monster strength.")
+	parser.add_argument("--randommap-template", default=None, help="Generated map template id.")
+	parser.add_argument("--testdays", type=int, default=0, help="Optional completed-day limit passed to vcmiclient.")
 	parser.add_argument("--legacy-ai", default="Nullkiller2", help="AI name for the baseline player.")
 	parser.add_argument("--candidate-ai", default="Nullkiller2Ratio", help="AI name for the adjusted predictor player.")
 	parser.add_argument("--opponent-ai", default="Nullkiller2", help="Fixed Blue opponent for --comparison-mode red-role.")
@@ -107,6 +118,14 @@ def parse_args() -> argparse.Namespace:
 
 	if args.samples <= 0:
 		parser.error("--samples must be positive")
+	if not args.random_map and not args.maps:
+		parser.error("--map is required unless --random-map is used")
+	if args.random_map and args.maps:
+		parser.error("--map cannot be combined with --random-map")
+	if args.randommap_levels <= 0:
+		parser.error("--randommap-levels must be positive")
+	if args.randommap_players <= 0:
+		parser.error("--randommap-players must be positive")
 	if args.seed_step <= 0:
 		parser.error("--seed-step must be positive")
 	if args.timeout <= 0:
@@ -154,7 +173,7 @@ def build_tasks(args: argparse.Namespace, output_dir: Path) -> list[GameTask]:
 
 	for sample in range(1, args.samples + 1):
 		seed = args.seed_start + (sample - 1) * args.seed_step
-		map_path = args.maps[(sample - 1) % len(args.maps)]
+		map_path = "random-map" if args.random_map else args.maps[(sample - 1) % len(args.maps)]
 
 		for run, direction in enumerate(("legacy-red", "candidate-red"), start=1):
 			if args.comparison_mode == "red-role":
@@ -203,19 +222,52 @@ def build_command(args: argparse.Namespace, task: GameTask) -> list[str]:
 	command = [
 		args.client,
 		"--headless",
-		"--testmap",
-		task.map_path,
-		"--seed",
-		str(task.seed),
-		"--serverport",
-		str(task.server_port),
-		"--ai",
-		task.red_ai,
-		"--ai",
-		task.blue_ai,
-		"--logLocation",
-		str(task.run_dir.resolve()),
 	]
+	if args.random_map:
+		command.extend(
+			[
+				"--testrandommap",
+				"--randommap-seed",
+				str(task.seed),
+				"--randommap-size",
+				args.randommap_size,
+				"--randommap-levels",
+				str(args.randommap_levels),
+				"--randommap-players",
+				str(args.randommap_players),
+				"--randommap-teams",
+				str(args.randommap_teams),
+				"--randommap-comp-only-players",
+				str(args.randommap_comp_only_players),
+				"--randommap-comp-only-teams",
+				str(args.randommap_comp_only_teams),
+				"--randommap-water",
+				args.randommap_water,
+				"--randommap-monsters",
+				args.randommap_monsters,
+			]
+		)
+		if args.randommap_template:
+			command.extend(["--randommap-template", args.randommap_template])
+	else:
+		command.extend(["--testmap", task.map_path])
+
+	command.extend(
+		[
+			"--seed",
+			str(task.seed),
+			"--serverport",
+			str(task.server_port),
+			"--ai",
+			task.red_ai,
+			"--ai",
+			task.blue_ai,
+			"--logLocation",
+			str(task.run_dir.resolve()),
+		]
+	)
+	if args.testdays:
+		command.extend(["--testdays", str(args.testdays)])
 	command.extend(args.extra_arg)
 	return command
 
@@ -490,7 +542,20 @@ def analyze_results(args: argparse.Namespace, results: list[GameResult]) -> dict
 			"opponentAI": args.opponent_ai,
 			"comparisonMode": args.comparison_mode,
 			"samplesRequested": args.samples,
-			"maps": args.maps,
+			"maps": args.maps or [],
+			"randomMap": args.random_map,
+			"randomMapOptions": {
+				"size": args.randommap_size,
+				"levels": args.randommap_levels,
+				"players": args.randommap_players,
+				"teams": args.randommap_teams,
+				"compOnlyPlayers": args.randommap_comp_only_players,
+				"compOnlyTeams": args.randommap_comp_only_teams,
+				"water": args.randommap_water,
+				"monsterStrength": args.randommap_monsters,
+				"template": args.randommap_template,
+			},
+			"testdays": args.testdays,
 			"seedStart": args.seed_start,
 			"seedStep": args.seed_step,
 			"jobs": args.jobs,

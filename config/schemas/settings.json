@@ -595,6 +595,10 @@
 				"seed" : {
 					"type" : "number",
 					"default" : 0
+				},
+				"mapGenSeed" : {
+					"type" : "number",
+					"default" : 0
 				}
 			}
 		},
@@ -606,12 +610,12 @@
 			"properties" : {
 				"adventureAlliedAI" : {
 					"type" : "string",
-					"enum" : [ "EmptyAI", "Nullkiller2", "Nullkiller2Ratio" ],
+					"enum" : [ "EmptyAI", "Nullkiller2", "Nullkiller2Ratio", "Nullkiller2V2" ],
 					"default" : "Nullkiller2"
 				},
 				"adventureEnemyAI" : {
 					"type" : "string",
-					"enum" : [ "EmptyAI", "Nullkiller2", "Nullkiller2Ratio" ],
+					"enum" : [ "EmptyAI", "Nullkiller2", "Nullkiller2Ratio", "Nullkiller2V2" ],
 					"default" : "Nullkiller2"
 				},
 				"combatEnemyAI" : {

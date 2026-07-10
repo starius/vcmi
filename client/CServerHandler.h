@@ -209,6 +209,7 @@ public:
 	void startMapAfterConnection(std::shared_ptr<CMapInfo> to);
 	bool validateGameStart(bool allowOnlyAI = false) const;
 	void debugStartTest(std::string filename, bool save = false);
+	void debugStartRandomTest(std::shared_ptr<CMapGenOptions> mapGenOptions);
 
 	void startGameplay(std::shared_ptr<CGameState> gameState);
 	std::optional<std::string> canQuickLoadGame(const std::string & path) const; // returns reason why not compatible, or nullopt if can

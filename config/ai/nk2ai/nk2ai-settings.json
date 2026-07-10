@@ -33,7 +33,7 @@
 	// retreatThresholdAbsolute: how close to death (strength of army) to be before AI considers retreating
 	// safeAttackRatio: extra ratio added on top of hero's strength to determine if it's stronger than the enemy (danger)
 	// - general formula: heroStrength > dangerStrength * safeAttackRatio
-	// battlePredictionModel: "legacy" uses safeAttackRatio directly, "ratio" derives safeAttackRatio from a fitted strength-ratio model
+	// battlePredictionModel: "legacy" uses safeAttackRatio directly, "ratio" derives safeAttackRatio from a fitted strength-ratio model, "v2" calibrates hero/monster danger in FuzzyHelper
 	// battlePredictionSafeProbability: minimum model probability used by the "ratio" battlePredictionModel
 	// maxArmyLossTarget: how much (% of army) the AI is willing to lose before it considers getting into a battle
 	// - this is an approximation and doesn't guarantee winning the battle due to many army particularities and battle styles

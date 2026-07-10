@@ -87,3 +87,20 @@ For scripted AI-test maps where Red is the tested role, use
 `--comparison-mode red-role`. That mode runs legacy-as-Red and candidate-as-Red
 against the same Blue opponent and sign-tests only samples where one Red player
 wins and the other does not.
+
+For generated-map experiments, use `--random-map` instead of `--map`. The
+sample seed is passed both as the game seed and as `--randommap-seed`, so the
+legacy and candidate runs in a pair use the same generated map:
+
+```sh
+python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
+  --comparison-mode color-swap \
+  --random-map \
+  --randommap-size S \
+  --randommap-levels 2 \
+  --randommap-water none \
+  --randommap-players 2 \
+  --samples 50 \
+  --legacy-ai Nullkiller2 \
+  --candidate-ai Nullkiller2V2
+```

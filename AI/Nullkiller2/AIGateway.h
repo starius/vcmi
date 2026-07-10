@@ -20,6 +20,7 @@
 #include "Pathfinding/AIPathfinder.h"
 #include "Engine/Nullkiller.h"
 
+#include <chrono>
 #include <optional>
 
 class AsyncRunner;
@@ -55,6 +56,7 @@ public:
 	int getQueriesCount();
 	void startedTurn();
 	void madeTurn();
+	bool waitForTurnEnd(std::chrono::milliseconds timeout);
 	void waitTillFree();
 	bool haveTurn();
 	void attemptedAnsweringQuery(QueryID queryID, int answerRequestID);

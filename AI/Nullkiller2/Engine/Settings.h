@@ -17,7 +17,8 @@ namespace NK2AI
 	enum class BattlePredictionModel
 	{
 		LEGACY,
-		RATIO
+		RATIO,
+		V2
 	};
 
 	class Settings
