@@ -39,7 +39,7 @@ namespace Goals
 
 		uint8_t getTurn() const { return turn; }
 
-		bool isCounterAttack() { return counterattack; }
+		bool isCounterAttack() const { return counterattack; }
 	};
 }
 

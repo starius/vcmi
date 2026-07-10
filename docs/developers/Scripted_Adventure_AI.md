@@ -425,6 +425,11 @@ Current bounded subroutine surface:
 - Candidate JSON contains stable machine fields such as `task_id`, `goalTypeId`, `priority`, `priorityTier`,
   `hero_id`, `town_id`, `object_id`, `tile`, affected object ids, and hero role ids. Debug descriptions may be
   present for traces, but scripts should use stable ids for strategy.
+- Candidate JSON also contains a bounded structured `goal` summary. Its `details` object exposes typed native
+  planning context such as composition subtask sequences, hero-chain paths, hero-exchange paths, visible
+  defense threats, unlock-cluster blockers, army-upgrade value, building costs, boat locations, and adventure
+  spell ids. This is read-only planner state; executing still goes through `nullkiller_task` or
+  `nullkiller_step`.
 - `nullkiller_task` executes exactly one stored candidate snapshot through `Nullkiller::executeScriptTask`.
   Native Nullkiller dialog handlers stay active for this path, so the subroutine behaves like Nullkiller rather
   than simplified script auto-answer logic.
@@ -1105,9 +1110,10 @@ Regression harness:
 - Partial: bounded Nullkiller task fragments are exposed through `ai:nullkillerTasks`, `ai:runNullkillerTask`,
   and `ai:nullkillerStep`. The bounded step now preserves Nullkiller script-task state across a scripted turn,
   returns structured execution outcomes, and can be restricted to granular behavior families such as defense,
-  gather-army, exploration, building, recruitment, or capture. This is still not full parity: scripts need richer
-  direct access to typed dialogs and deeper analyzer details before serious script optimization should be treated
-  as meaningful.
+  gather-army, exploration, building, recruitment, or capture. Candidate snapshots now include bounded
+  structured goal details for composition plans, hero-chain paths, cluster blockers, defense threats, upgrades,
+  buildings, boats, and adventure spells. This is still not full parity: scripts need richer direct access to
+  typed dialogs and remaining player choices before serious script optimization should be treated as meaningful.
 - Done: known quest requirements are exposed on visible quest objects using stable ids without revealing inactive
   quest internals. Lua can reason about known blockers, while still using movement actions or bounded Nullkiller
   tasks for actual unlock-chain execution.
@@ -1213,8 +1219,8 @@ The next high-value implementation steps are:
 - Add richer Lua decision policies and read-side candidate data for dialogs and remaining player choices:
   quests/gates, level-up choices, university choices, object selection, and deeper adventure-spell target
   ranking beyond the current sampled candidate surface.
-- Expose richer Nullkiller analyzer data, especially danger-map and blocker/cluster details, as read-only
-  candidate fields instead of rebuilding those analyses in Lua.
+- Expose any remaining Nullkiller analyzer data as read-only candidate fields only when a concrete script policy
+  needs it; do not rebuild those analyses in Lua.
 - Expand the default Lua policy to rank and compose bounded Nullkiller candidates after the API can express the
   same meaningful choices Nullkiller can make.
 - Run fixed-map `--testdays N` batches comparing default, aggressive, economy, explorer, Nullkiller, and older

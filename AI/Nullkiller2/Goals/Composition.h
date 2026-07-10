@@ -35,6 +35,7 @@ namespace Goals
 		TGoalVec decompose(const Nullkiller * aiNk) const override;
 		bool isElementar() const override;
 		int getHeroExchangeCount() const override;
+		const std::vector<TGoalVec> & getSubtasks() const { return subtasks; }
 
 		std::vector<ObjectInstanceID> getAffectedObjects() const override;
 		bool isObjectAffected(ObjectInstanceID id) const override;

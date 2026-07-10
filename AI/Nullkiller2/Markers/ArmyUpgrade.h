@@ -32,8 +32,10 @@ namespace Goals
 		bool operator==(const ArmyUpgrade & other) const override;
 		std::string toString() const override;
 
+		const CGObjectInstance * getUpgrader() const { return upgrader; }
 		uint64_t getUpgradeValue() const { return upgradeValue; }
 		uint64_t getInitialArmyValue() const { return initialValue; }
+		uint64_t getGoldCost() const { return goldCost; }
 	};
 }
 

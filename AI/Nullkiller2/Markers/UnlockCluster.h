@@ -40,7 +40,7 @@ namespace Goals
 		bool operator==(const UnlockCluster & other) const override;
 		std::string toString() const override;
 		std::shared_ptr<ObjectCluster> getCluster() const { return cluster; }
-		const AIPath & getPathToCenter() { return pathToCenter; }
+		const AIPath & getPathToCenter() const { return pathToCenter; }
 	};
 }
 
