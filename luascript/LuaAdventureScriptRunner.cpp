@@ -197,7 +197,8 @@ ai.nullkillerTaskModes = {
 	defense = 8,
 	escape = 9,
 	gatherArmy = 10,
-	exploration = 11
+	exploration = 11,
+	startup = 12
 }
 
 function ai:nullkillerTasks(mode, maxCandidates)
@@ -260,6 +261,7 @@ defineNullkillerModeHelpers("Defense", ai.nullkillerTaskModes.defense)
 defineNullkillerModeHelpers("Escape", ai.nullkillerTaskModes.escape)
 defineNullkillerModeHelpers("GatherArmy", ai.nullkillerTaskModes.gatherArmy)
 defineNullkillerModeHelpers("Exploration", ai.nullkillerTaskModes.exploration)
+defineNullkillerModeHelpers("Startup", ai.nullkillerTaskModes.startup)
 
 function ai:nullkillerAnswerQuery(query, defaultAnswer)
 	local action = copyFields(query)

@@ -24,6 +24,7 @@
 #include "../Behaviors/ExplorationBehavior.h"
 #include "../Behaviors/GatherArmyBehavior.h"
 #include "../Behaviors/RecruitHeroBehavior.h"
+#include "../Behaviors/StartupBehavior.h"
 #include "../Behaviors/StayAtTownBehavior.h"
 #include "../Goals/Invalid.h"
 #include "Goals/RecruitHero.h"
@@ -213,6 +214,31 @@ std::vector<ScriptTaskCandidate> Nullkiller::getScriptTaskCandidates(const Scrip
 	{
 		return mode == ScriptTaskSearchMode::ADVENTURE || mode == ScriptTaskSearchMode::ALL || mode == selected;
 	};
+	constexpr int MAX_DEPTH = 10;
+
+	if(mode == ScriptTaskSearchMode::STARTUP || mode == ScriptTaskSearchMode::ALL)
+	{
+		Goals::TGoalVec startupTasks;
+		decompose(startupTasks, sptr(StartupBehavior()), MAX_DEPTH);
+
+		for(const Goals::TSubgoal & task : startupTasks)
+		{
+			if(task->asTask()->priority <= 0)
+				task->asTask()->priority = priorityEvaluator->evaluate(task);
+		}
+
+		std::ranges::sort(startupTasks, [](const Goals::TSubgoal & left, const Goals::TSubgoal & right)
+		{
+			return left->asTask()->priority > right->asTask()->priority;
+		});
+
+		for(const Goals::TSubgoal & task : startupTasks)
+		{
+			appendCandidate(taskptr(*task), ScriptTaskSearchMode::STARTUP, PriorityEvaluator::PriorityTier::BUILDINGS);
+			if(result.size() >= maxCandidates)
+				return result;
+		}
+	}
 
 	if(includePriorityMode(ScriptTaskSearchMode::RECRUIT_HERO)
 		|| includePriorityMode(ScriptTaskSearchMode::BUY_ARMY)
@@ -258,7 +284,6 @@ std::vector<ScriptTaskCandidate> Nullkiller::getScriptTaskCandidates(const Scrip
 		const ScriptTaskSearchMode sourceMode = (mode == ScriptTaskSearchMode::ADVENTURE || mode == ScriptTaskSearchMode::ALL)
 			? ScriptTaskSearchMode::ADVENTURE
 			: mode;
-		constexpr int MAX_DEPTH = 10;
 		Goals::TGoalVec tasks;
 		if(includeAdventureMode(ScriptTaskSearchMode::CAPTURE))
 			decompose(tasks, sptr(CaptureObjectsBehavior()), 1);

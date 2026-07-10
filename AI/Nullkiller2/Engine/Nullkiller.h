@@ -95,7 +95,8 @@ enum class ScriptTaskSearchMode
 	DEFENSE = 8,
 	ESCAPE = 9,
 	GATHER_ARMY = 10,
-	EXPLORATION = 11
+	EXPLORATION = 11,
+	STARTUP = 12
 };
 
 struct ScriptTaskCandidate

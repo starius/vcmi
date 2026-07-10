@@ -716,6 +716,8 @@ NK2AI::ScriptTaskSearchMode readNullkillerTaskSearchMode(const JsonNode & node, 
 			return NK2AI::ScriptTaskSearchMode::GATHER_ARMY;
 		case static_cast<int32_t>(NK2AI::ScriptTaskSearchMode::EXPLORATION):
 			return NK2AI::ScriptTaskSearchMode::EXPLORATION;
+		case static_cast<int32_t>(NK2AI::ScriptTaskSearchMode::STARTUP):
+			return NK2AI::ScriptTaskSearchMode::STARTUP;
 		default:
 			throw std::invalid_argument("Unsupported Nullkiller task search mode id");
 		}
@@ -731,6 +733,8 @@ NK2AI::ScriptTaskSearchMode readNullkillerTaskSearchMode(const JsonNode & node, 
 		return NK2AI::ScriptTaskSearchMode::ADVENTURE;
 	if(mode == "all")
 		return NK2AI::ScriptTaskSearchMode::ALL;
+	if(mode == "startup" || mode == "start_up" || mode == "start-up")
+		return NK2AI::ScriptTaskSearchMode::STARTUP;
 	if(mode == "recruit_hero" || mode == "recruit-hero" || mode == "recruithero")
 		return NK2AI::ScriptTaskSearchMode::RECRUIT_HERO;
 	if(mode == "buy_army" || mode == "buy-army" || mode == "buyarmy")
@@ -1404,6 +1408,8 @@ std::string nullkillerTaskSearchModeName(NK2AI::ScriptTaskSearchMode mode)
 		return "gather_army";
 	case NK2AI::ScriptTaskSearchMode::EXPLORATION:
 		return "exploration";
+	case NK2AI::ScriptTaskSearchMode::STARTUP:
+		return "startup";
 	}
 	return "unknown";
 }

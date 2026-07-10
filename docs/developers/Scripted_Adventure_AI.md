@@ -205,8 +205,8 @@ The `ai` facade:
   normal callback/server path.
 - `ai:nullkiller()` / `ai:nullkillerForRestOfDay()`: stop script control and let Nullkiller finish the turn.
 - `ai:nullkillerTasks(mode, maxCandidates)`: ask Nullkiller for a bounded snapshot of native task candidates.
-  `mode` is `priority`, `adventure`, or `all`. Returned `task_id` values are opaque handles that expire on
-  `ai:refresh()` or the next candidate snapshot.
+  `mode` is `priority`, `adventure`, `startup`, or `all`. Returned `task_id` values are opaque handles that
+  expire on `ai:refresh()` or the next candidate snapshot.
 - `ai:runNullkillerTask(taskId)`: execute one previously returned native Nullkiller task through C++ validation
   and Nullkiller's normal task machinery, then return control to Lua.
 - `ai:nullkillerStep(mode, maxCandidates)`: ask for candidates and execute the best one as a single bounded
@@ -216,7 +216,8 @@ The `ai` facade:
   `ai:nullkillerRecruitHeroTasks/Step`, `ai:nullkillerBuyArmyTasks/Step`, `ai:nullkillerBuildingTasks/Step`,
   `ai:nullkillerCaptureTasks/Step`, `ai:nullkillerClusterTasks/Step`, `ai:nullkillerDefenseTasks/Step`,
   `ai:nullkillerEscapeTasks/Step`, `ai:nullkillerGatherArmyTasks/Step`, and
-  `ai:nullkillerExplorationTasks/Step`. These wrappers pass stable numeric mode ids.
+  `ai:nullkillerExplorationTasks/Step`, plus `ai:nullkillerStartupTasks/Step`. These wrappers pass stable
+  numeric mode ids.
 - `ai:nullkillerAnswerQuery(queryOrId, defaultAnswer?)`: ask Nullkiller to handle one pending query through its
   native dialog heuristic, then return control to Lua. This is bounded to that one query and does not delegate the
   rest of the day.
@@ -461,12 +462,13 @@ task execution code.
 
 Current bounded subroutine surface:
 
-- `nullkiller_tasks` exposes priority tasks from `RecruitHeroBehavior`, `BuyArmyBehavior`, and
-  `BuildingBehavior`, plus adventure tasks from capture, cluster, defense, escape, gather-army, and exploration
-  behavior decomposition.
+- `nullkiller_tasks` exposes startup tasks from `StartupBehavior`, priority tasks from `RecruitHeroBehavior`,
+  `BuyArmyBehavior`, and `BuildingBehavior`, plus adventure tasks from capture, cluster, defense, escape,
+  gather-army, and exploration behavior decomposition.
 - Task search modes can be aggregate (`priority`, `adventure`, `all`) or granular (`recruit_hero`, `buy_army`,
-  `building`, `capture`, `cluster`, `defense`, `escape`, `gather_army`, `exploration`). Lua also exposes these
-  as numeric constants under `ai.nullkillerTaskModes`, so scripts can avoid magic numbers and brittle strings.
+  `building`, `capture`, `cluster`, `defense`, `escape`, `gather_army`, `exploration`, `startup`). Lua also
+  exposes these as numeric constants under `ai.nullkillerTaskModes`, so scripts can avoid magic numbers and
+  brittle strings.
 - Candidate JSON contains stable machine fields such as `task_id`, `goalTypeId`, `priority`, `priorityTier`,
   `hero_id`, `town_id`, `object_id`, `tile`, affected object ids, and hero role ids. Debug descriptions may be
   present for traces, but scripts should use stable ids for strategy. Candidate records also include visible
@@ -1181,7 +1183,7 @@ Regression harness:
 - Partial: bounded Nullkiller task fragments are exposed through `ai:nullkillerTasks`, `ai:runNullkillerTask`,
   and `ai:nullkillerStep`. The bounded step now preserves Nullkiller script-task state across a scripted turn,
   returns structured execution outcomes, and can be restricted to granular behavior families such as defense,
-  gather-army, exploration, building, recruitment, or capture. Candidate snapshots now include bounded
+  gather-army, exploration, building, recruitment, startup, or capture. Candidate snapshots now include bounded
   structured goal details for composition plans, hero-chain paths, cluster blockers, defense threats, upgrades,
   buildings, boats, and adventure spells. Single-query Nullkiller dialog handling is also exposed through
   `ai:nullkillerAnswerQuery`. The native priority-pass loop is exposed through `ai:nullkillerPriorityPass`.
@@ -1236,6 +1238,9 @@ Regression harness:
   subroutine instead of requiring full-day delegation.
 - Done: Lua has named wrappers for every bounded Nullkiller task mode, using stable numeric mode ids while keeping
   scripts readable.
+- Done: Lua can request Nullkiller startup tasks as a bounded task mode. This exposes the native startup helper
+  for early tavern/build/recruit/hero-swap decisions without delegating the rest of the day. The compiled but
+  disabled `StayAtTownBehavior` remains unexposed because native `makeTurn` does not currently use it.
 - Done: spell research is exposed as checked `ai:spellResearch` plus read-side `spellResearchOptions`. Mage-guild
   snapshots now hide deeper research queues and expose only currently visible spells plus the next research-dialog
   candidate.
