@@ -141,6 +141,9 @@ Input:
   garrison changes, artifact movement, available creature/artifact changes, resource receipts, adventure spell
   casts, revealed tiles, and hidden tiles. Owned objects include detailed snapshots; visible non-owned objects stay
   on public object fields.
+- It also mirrors player-visible lifecycle/window events such as hero visits, quest-log/world-view/puzzle-map
+  windows, player turn starts/ends, battle-finished notifications, and game-over messages without adding hidden
+  map state.
 - `opponentUpdates`: the same journal filtered to visible opponent-related changes.
 - `progress`: result of the previous plan execution, including executed, failed, and remaining actions.
 - `memory`: script-owned long-term context from previous calls/days.
@@ -1239,6 +1242,12 @@ Regression harness:
   hero stat/mana/skill/bonus changes, garrison changes, artifact movement, available creature/artifact changes,
   tile hiding, resource receipts, and adventure spell casts. Hidden bonuses are not exposed, and non-owned visible
   hero/object records use public fields only.
+- Done: additional player-visible lifecycle/window callbacks are mirrored into the script update journal:
+  hero-visit start/end, center-view hints on visible tiles, bulk artifact movement start, puzzle/world/quest-log
+  windows, View Air/View Earth world-view object overlays, player block/start/end turn events, battle-finished
+  notifications, game-over messages, object-removal completion, and color-scheme changes. Puzzle-map updates do
+  not expose the Grail location; world-view overlays expose only the object positions/types supplied to the
+  player by the spell effect.
 - Done: Lua can invoke Nullkiller's local object-interaction helper for one owned hero at one visible current
   object, then regain control. This exposes native post-visit handling for towns and hill forts as a bounded
   subroutine instead of requiring full-day delegation.

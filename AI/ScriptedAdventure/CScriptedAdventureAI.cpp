@@ -51,6 +51,7 @@
 #include "../../lib/spells/CSpell.h"
 #include "../../lib/spells/CSpellHandler.h"
 #include "../../lib/spells/Problem.h"
+#include "../../lib/spells/ViewSpellInt.h"
 #include "../../lib/spells/adventure/AdventureSpellMechanics.h"
 #include "../../luascript/LuaAdventureScriptRunner.h"
 #include "../Nullkiller2/Analyzers/DangerHitMapAnalyzer.h"
@@ -852,6 +853,23 @@ JsonNode jsonPosition(const int3 & position)
 	return node;
 }
 
+JsonNode jsonObjectPosInfo(const ObjectPosInfo & info)
+{
+	JsonNode node;
+	const MapObjectID objectID(info.id.getNum());
+	const MapObjectSubID subtypeID(info.subId);
+	const ScriptObjectKind kind = scriptObjectKind(objectID);
+	node["position"] = jsonPosition(info.pos);
+	node["typeId"] = JsonNode(objectID.getNum());
+	node["subtypeId"] = JsonNode(subtypeID.getNum());
+	node["kindId"] = JsonNode(static_cast<int32_t>(kind));
+	node["kind"] = JsonNode(scriptObjectKindName(kind));
+	node["typeIdentifier"] = JsonNode(mapObjectIdentifier(objectID));
+	node["subtypeIdentifier"] = JsonNode(mapObjectSubtypeIdentifier(objectID, subtypeID));
+	node["owner"] = JsonNode(jsonPlayerColor(info.owner));
+	return node;
+}
+
 JsonNode jsonComponent(const Component & component)
 {
 	JsonNode node;
@@ -1341,6 +1359,35 @@ std::string marketModeName(EMarketMode mode)
 		return "resource_skill";
 	case EMarketMode::MARKET_AFTER_LAST_PLACEHOLDER:
 		break;
+	}
+	return "unknown";
+}
+
+std::string playerBlockedReasonName(int reason)
+{
+	switch(reason)
+	{
+	case PlayerBlocked::UPCOMING_BATTLE:
+		return "upcoming_battle";
+	case PlayerBlocked::ONGOING_MOVEMENT:
+		return "ongoing_movement";
+	default:
+		return "unknown";
+	}
+}
+
+std::string colorSchemeName(ColorScheme scheme)
+{
+	switch(scheme)
+	{
+	case ColorScheme::NONE:
+		return "none";
+	case ColorScheme::KEEP:
+		return "keep";
+	case ColorScheme::GRAYSCALE:
+		return "grayscale";
+	case ColorScheme::H2_SCHEME:
+		return "h2_scheme";
 	}
 	return "unknown";
 }
@@ -2316,6 +2363,25 @@ JsonNode jsonMapObject(const CGObjectInstance * object, PlayerColor player, cons
 			for(EMarketMode mode : market->availableModes())
 				node["market"]["modeDetails"].Vector().push_back(jsonMarketModeDetails(market, mode));
 		}
+	}
+	return node;
+}
+
+JsonNode jsonQuestInfo(const QuestInfo & questInfo, CCallback * callback, PlayerColor player)
+{
+	JsonNode node;
+	node["object_id"] = JsonNode(questInfo.obj.getNum());
+	if(!callback)
+		return node;
+
+	node["position"] = jsonPosition(questInfo.getPosition(callback));
+	if(const CGObjectInstance * object = questInfo.getObject(callback))
+	{
+		if(callback->isVisibleFor(object, player))
+			node["object"] = jsonMapObject(object, player, nullptr);
+
+		if(const auto * questObject = dynamic_cast<const IQuestObject *>(object))
+			node["quest"] = jsonQuestObject(questObject, player, nullptr);
 	}
 	return node;
 }
@@ -3440,6 +3506,19 @@ void CScriptedAdventureAI::heroMoved(const TryMoveHero & details, bool verbose)
 	AIGateway::heroMoved(details, verbose);
 }
 
+void CScriptedAdventureAI::centerView(int3 pos, int focusTime)
+{
+	if(cc && cc->isInTheMap(pos) && cc->isVisibleFor(pos, playerID))
+	{
+		JsonNode data;
+		data["position"] = jsonPosition(pos);
+		data["focusTime"] = JsonNode(focusTime);
+		appendScriptUpdate("center_view", data, false);
+	}
+
+	AIGateway::centerView(pos, focusTime);
+}
+
 void CScriptedAdventureAI::heroInGarrisonChange(const CGTownInstance * town)
 {
 	if(town && cc && cc->isVisibleFor(town, playerID))
@@ -3510,6 +3589,36 @@ void CScriptedAdventureAI::artifactRemoved(const ArtifactLocation & location)
 	}
 
 	AIGateway::artifactRemoved(location);
+}
+
+void CScriptedAdventureAI::bulkArtMovementStart(size_t totalNumOfArts, size_t possibleAssemblyNumOfArts)
+{
+	JsonNode data;
+	data["totalArtifacts"] = JsonNode(static_cast<int32_t>(totalNumOfArts));
+	data["possibleAssemblyArtifacts"] = JsonNode(static_cast<int32_t>(possibleAssemblyNumOfArts));
+	appendScriptUpdate("bulk_artifact_movement_started", data, false);
+}
+
+void CScriptedAdventureAI::heroVisit(const CGHeroInstance * visitor, const CGObjectInstance * visitedObj, bool start)
+{
+	const bool visitorVisible = visitor && cc && cc->isVisibleFor(visitor, playerID);
+	const bool objectVisible = visitedObj && cc && cc->isVisibleFor(visitedObj, playerID);
+	if(visitorVisible || objectVisible)
+	{
+		JsonNode data;
+		data["start"] = JsonNode(start);
+		if(visitor)
+			data["hero_id"] = JsonNode(visitor->id.getNum());
+		if(visitorVisible)
+			data["hero"] = jsonHero(visitor, visitor->tempOwner == playerID);
+		if(visitedObj)
+			data["object_id"] = JsonNode(visitedObj->id.getNum());
+		if(objectVisible)
+			data["object"] = jsonMapObject(visitedObj, playerID, visitorVisible ? visitor : nullptr);
+		appendScriptUpdate("hero_visit", data, (visitor && isOpponent(visitor->tempOwner)) || (visitedObj && isOpponent(visitedObj->tempOwner)));
+	}
+
+	AIGateway::heroVisit(visitor, visitedObj, start);
 }
 
 void CScriptedAdventureAI::heroCreated(const CGHeroInstance * hero)
@@ -3600,6 +3709,21 @@ void CScriptedAdventureAI::garrisonsChanged(ObjectInstanceID id1, ObjectInstance
 	}
 
 	AIGateway::garrisonsChanged(id1, id2);
+}
+
+void CScriptedAdventureAI::showPuzzleMap()
+{
+	JsonNode data;
+	data["grailPositionHidden"] = JsonNode(true);
+	appendScriptUpdate("puzzle_map_shown", data, false);
+
+	AIGateway::showPuzzleMap();
+}
+
+void CScriptedAdventureAI::viewWorldMap()
+{
+	JsonNode data;
+	appendScriptUpdate("world_map_viewed", data, false);
 }
 
 void CScriptedAdventureAI::showTavernWindow(const CGObjectInstance * object, const CGHeroInstance * visitor, QueryID queryID)
@@ -3810,6 +3934,19 @@ void CScriptedAdventureAI::receivedResource()
 	AIGateway::receivedResource();
 }
 
+void CScriptedAdventureAI::showQuestLog()
+{
+	JsonNode data;
+	data["quests"].Vector();
+	if(cc)
+	{
+		for(const QuestInfo & questInfo : cc->getMyQuests())
+			data["quests"].Vector().push_back(jsonQuestInfo(questInfo, cc.get(), playerID));
+	}
+	data["count"] = JsonNode(static_cast<int32_t>(data["quests"].Vector().size()));
+	appendScriptUpdate("quest_log_shown", data, false);
+}
+
 void CScriptedAdventureAI::showUniversityWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID)
 {
 	JsonNode data;
@@ -4007,6 +4144,91 @@ void CScriptedAdventureAI::objectRemoved(const CGObjectInstance * obj, const Pla
 	}
 
 	AIGateway::objectRemoved(obj, initiator);
+}
+
+void CScriptedAdventureAI::objectRemovedAfter()
+{
+	JsonNode data;
+	appendScriptUpdate("object_removed_after", data, false);
+}
+
+void CScriptedAdventureAI::playerBlocked(int reason, bool start)
+{
+	JsonNode data;
+	data["reasonId"] = JsonNode(reason);
+	data["reason"] = JsonNode(playerBlockedReasonName(reason));
+	data["started"] = JsonNode(start);
+	appendScriptUpdate("player_blocked", data, false);
+
+	AIGateway::playerBlocked(reason, start);
+}
+
+void CScriptedAdventureAI::gameOver(PlayerColor player, const EVictoryLossCheckResult & victoryLossCheckResult)
+{
+	JsonNode data;
+	data["player"] = JsonNode(jsonPlayerColor(player));
+	data["player_id"] = JsonNode(player.getNum());
+	data["victory"] = JsonNode(victoryLossCheckResult.victory());
+	data["loss"] = JsonNode(victoryLossCheckResult.loss());
+	data["resultId"] = JsonNode(victoryLossCheckResult.victory() ? 1 : (victoryLossCheckResult.loss() ? -1 : 0));
+	data["messageToSelf"] = JsonNode(jsonText(victoryLossCheckResult.messageToSelf.toString()));
+	data["messageToOthers"] = JsonNode(jsonText(victoryLossCheckResult.messageToOthers.toString()));
+	appendScriptUpdate("game_over", data, isOpponent(player));
+
+	AIGateway::gameOver(player, victoryLossCheckResult);
+}
+
+void CScriptedAdventureAI::playerStartsTurn(PlayerColor player)
+{
+	JsonNode data;
+	data["player"] = JsonNode(jsonPlayerColor(player));
+	data["player_id"] = JsonNode(player.getNum());
+	appendScriptUpdate("player_starts_turn", data, isOpponent(player));
+}
+
+void CScriptedAdventureAI::playerEndsTurn(PlayerColor player)
+{
+	JsonNode data;
+	data["player"] = JsonNode(jsonPlayerColor(player));
+	data["player_id"] = JsonNode(player.getNum());
+	appendScriptUpdate("player_ends_turn", data, isOpponent(player));
+}
+
+void CScriptedAdventureAI::battleResultsApplied()
+{
+	JsonNode data;
+	appendScriptUpdate("battle_results_applied", data, false);
+
+	AIGateway::battleResultsApplied();
+}
+
+void CScriptedAdventureAI::battleEnded()
+{
+	JsonNode data;
+	appendScriptUpdate("battle_ended", data, false);
+
+	AIGateway::battleEnded();
+}
+
+void CScriptedAdventureAI::showWorldViewEx(const std::vector<ObjectPosInfo> & objectPositions, bool showTerrain)
+{
+	JsonNode data;
+	data["showTerrain"] = JsonNode(showTerrain);
+	data["objects"].Vector();
+	for(const ObjectPosInfo & objectPosition : objectPositions)
+		data["objects"].Vector().push_back(jsonObjectPosInfo(objectPosition));
+	data["count"] = JsonNode(static_cast<int32_t>(data["objects"].Vector().size()));
+	appendScriptUpdate("world_view_shown", data, false);
+
+	AIGateway::showWorldViewEx(objectPositions, showTerrain);
+}
+
+void CScriptedAdventureAI::setColorScheme(ColorScheme scheme)
+{
+	JsonNode data;
+	data["schemeId"] = JsonNode(static_cast<int32_t>(scheme));
+	data["scheme"] = JsonNode(colorSchemeName(scheme));
+	appendScriptUpdate("color_scheme_changed", data, false);
 }
 
 void CScriptedAdventureAI::requestSent(const CPackForServer * pack, int requestID)

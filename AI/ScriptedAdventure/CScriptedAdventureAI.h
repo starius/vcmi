@@ -46,17 +46,22 @@ public:
 	void showMapObjectSelectDialog(QueryID askID, const Component & icon, const MetaString & title, const MetaString & description, const std::vector<ObjectInstanceID> & objects) override;
 	void buildChanged(const CGTownInstance * town, BuildingID buildingID, int what) override;
 	void heroMoved(const TryMoveHero & details, bool verbose = true) override;
+	void centerView(int3 pos, int focusTime) override;
 	void heroInGarrisonChange(const CGTownInstance * town) override;
 	void tileHidden(const FowTilesType & pos) override;
+	void bulkArtMovementStart(size_t totalNumOfArts, size_t possibleAssemblyNumOfArts) override;
 	void artifactMoved(const ArtifactLocation & src, const ArtifactLocation & dst) override;
 	void artifactPut(const ArtifactLocation & location) override;
 	void artifactRemoved(const ArtifactLocation & location) override;
+	void heroVisit(const CGHeroInstance * visitor, const CGObjectInstance * visitedObj, bool start) override;
 	void heroCreated(const CGHeroInstance * hero) override;
 	void heroVisitsTown(const CGHeroInstance * hero, const CGTownInstance * town) override;
 	void heroExperienceChanged(const CGHeroInstance * hero, si64 val) override;
 	void heroPrimarySkillChanged(const CGHeroInstance * hero, PrimarySkill which, si64 val) override;
 	void heroMovePointsChanged(const CGHeroInstance * hero) override;
 	void garrisonsChanged(ObjectInstanceID id1, ObjectInstanceID id2) override;
+	void showPuzzleMap() override;
+	void viewWorldMap() override;
 	void showTavernWindow(const CGObjectInstance * object, const CGHeroInstance * visitor, QueryID queryID) override;
 	void showThievesGuildWindow(const CGObjectInstance * obj) override;
 	void showShipyardDialog(const IShipyard * obj) override;
@@ -68,6 +73,7 @@ public:
 	void showHillFortWindow(const CGObjectInstance * object, const CGHeroInstance * visitor) override;
 	void showInfoDialog(EInfoWindowMode type, const std::string & text, const std::vector<Component> & components, int soundID) override;
 	void receivedResource() override;
+	void showQuestLog() override;
 	void showUniversityWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID) override;
 	void heroManaPointsChanged(const CGHeroInstance * hero) override;
 	void heroSecondarySkillChanged(const CGHeroInstance * hero, int which, int val) override;
@@ -81,6 +87,15 @@ public:
 	void tileRevealed(const FowTilesType & pos) override;
 	void newObject(const CGObjectInstance * obj) override;
 	void objectRemoved(const CGObjectInstance * obj, const PlayerColor & initiator) override;
+	void objectRemovedAfter() override;
+	void playerBlocked(int reason, bool start) override;
+	void gameOver(PlayerColor player, const EVictoryLossCheckResult & victoryLossCheckResult) override;
+	void playerStartsTurn(PlayerColor player) override;
+	void playerEndsTurn(PlayerColor player) override;
+	void battleResultsApplied() override;
+	void battleEnded() override;
+	void showWorldViewEx(const std::vector<ObjectPosInfo> & objectPositions, bool showTerrain) override;
+	void setColorScheme(ColorScheme scheme) override;
 	void requestSent(const CPackForServer * pack, int requestID) override;
 	void requestRealized(PackageApplied * pa) override;
 
