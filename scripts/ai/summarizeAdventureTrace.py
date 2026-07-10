@@ -234,11 +234,30 @@ def output_has_defensive_response(actions: Any, action_space: Any) -> bool:
     return False
 
 
-def hero_has_safe_move_candidate(action_space: Any, hero_id: Any) -> bool:
+def distance_squared(left: Any, right: Any) -> float | None:
+    left_data = as_dict(left)
+    right_data = as_dict(right)
+    if not left_data or not right_data:
+        return None
+    if left_data.get("z") is not None and right_data.get("z") is not None and as_int(left_data.get("z")) != as_int(right_data.get("z")):
+        return None
+    dx = as_float(left_data.get("x")) - as_float(right_data.get("x"))
+    dy = as_float(left_data.get("y")) - as_float(right_data.get("y"))
+    return dx * dx + dy * dy
+
+
+def hero_has_escape_candidate(action_space: Any, alert: Any) -> bool:
+    alert_data = as_dict(alert)
+    hero_id = alert_data.get("hero_id")
+    current_distance = as_float(alert_data.get("distanceSquared"))
+    enemy_position = alert_data.get("enemyPosition")
     for option in as_list(as_dict(action_space).get("movementOptions")):
         data = as_dict(option)
         action = candidate_action(data)
-        if data.get("hero_id") == hero_id and data.get("safe") is not False and action.get("type") == "move_hero":
+        if data.get("hero_id") != hero_id or data.get("safe") is False or action.get("type") != "move_hero":
+            continue
+        next_distance = distance_squared(nested(data, "path", "destination"), enemy_position)
+        if next_distance is not None and next_distance > current_distance:
             return True
     return False
 
@@ -543,7 +562,7 @@ def analyze_mistakes(
         actionable_threats = [
             alert
             for alert in high_threats
-            if alert.get("hero_id") is not None and hero_has_safe_move_candidate(action_space, alert.get("hero_id"))
+            if alert.get("hero_id") is not None and hero_has_escape_candidate(action_space, alert)
         ]
         moved_heroes = {
             as_dict(action).get("hero_id")

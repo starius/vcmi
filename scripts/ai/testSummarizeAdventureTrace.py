@@ -139,10 +139,22 @@ class HeroThreatMistakeTest(unittest.TestCase):
                     {
                         "level": "critical",
                         "hero_id": 5,
+                        "distanceSquared": 4,
+                        "enemyPosition": {
+                            "x": 0,
+                            "y": 0,
+                            "z": 0,
+                        },
                     },
                     {
                         "level": "critical",
                         "hero_id": 6,
+                        "distanceSquared": 4,
+                        "enemyPosition": {
+                            "x": 10,
+                            "y": 10,
+                            "z": 0,
+                        },
                     },
                 ]
             },
@@ -166,6 +178,13 @@ class HeroThreatMistakeTest(unittest.TestCase):
                         "type": "move_hero",
                         "hero_id": 5,
                     },
+                    "path": {
+                        "destination": {
+                            "x": 5,
+                            "y": 0,
+                            "z": 0,
+                        }
+                    },
                 },
                 {
                     "hero_id": 6,
@@ -173,6 +192,13 @@ class HeroThreatMistakeTest(unittest.TestCase):
                     "planAction": {
                         "type": "move_hero",
                         "hero_id": 6,
+                    },
+                    "path": {
+                        "destination": {
+                            "x": 10,
+                            "y": 15,
+                            "z": 0,
+                        }
                     },
                 },
             ],
@@ -195,6 +221,13 @@ class HeroThreatMistakeTest(unittest.TestCase):
                         "type": "move_hero",
                         "hero_id": 5,
                     },
+                    "path": {
+                        "destination": {
+                            "x": 5,
+                            "y": 0,
+                            "z": 0,
+                        }
+                    },
                 }
             ],
             [
@@ -215,6 +248,41 @@ class HeroThreatMistakeTest(unittest.TestCase):
                     "planAction": {
                         "type": "move_hero",
                         "hero_id": 5,
+                    },
+                    "path": {
+                        "destination": {
+                            "x": 5,
+                            "y": 0,
+                            "z": 0,
+                        }
+                    },
+                }
+            ],
+            [
+                {
+                    "type": "build",
+                    "town_id": 10,
+                }
+            ],
+        )
+        self.assertNotIn("hero_threat_without_escape", {item["type"] for item in mistakes})
+
+    def test_threat_without_distance_improving_move_is_not_actionable(self) -> None:
+        mistakes = self.mistakes_for(
+            [
+                {
+                    "hero_id": 5,
+                    "safe": True,
+                    "planAction": {
+                        "type": "move_hero",
+                        "hero_id": 5,
+                    },
+                    "path": {
+                        "destination": {
+                            "x": 1,
+                            "y": 0,
+                            "z": 0,
+                        }
                     },
                 }
             ],
