@@ -1434,6 +1434,60 @@ TEST(LuaAdventureScriptRunnerTest, BoundedNullkillerControlAnswersQueriesBeforeN
 	EXPECT_EQ(output.memory["totalQueriesAnswered"].Integer(), 1);
 }
 
+TEST(LuaAdventureScriptRunnerTest, BoundedNullkillerControlUsesImperativeActionBudget)
+{
+	const std::string source = readAdventureScript("scripts/ai/candidates/boundedNullkillerControl.lua");
+	scripting::LuaAdventureScriptRunner runner("test:bounded-nullkiller-control-action-budget", source);
+
+	AI::AdventureScriptInput input = makeInput();
+	input.state["turn"]["active"] = JsonNode(true);
+	input.state["turn"]["queries"].Vector();
+	input.limits["maxScriptCallsPerTurn"] = JsonNode(4);
+	input.limits["maxActions"] = JsonNode(16);
+	input.analysis["nullkiller"]["settings"]["maxPass"] = JsonNode(10);
+
+	std::vector<JsonNode> commands;
+	int slices = 0;
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		const std::string kind = command["kind"].String();
+		if(kind == "refresh")
+		{
+			response["input"] = input.toJson();
+			return response;
+		}
+
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		if(command["payload"]["type"].String() == "nullkiller_turn_slice")
+		{
+			++slices;
+			response["result"]["didWork"] = JsonNode(slices <= 5);
+			response["result"]["priorityTasksExecuted"] = JsonNode(slices <= 5 ? 1 : 0);
+			response["result"]["shouldStopTurn"] = JsonNode(false);
+			response["result"]["exhaustedCandidates"] = JsonNode(false);
+		}
+		return response;
+	});
+
+	ASSERT_EQ(slices, 6);
+	ASSERT_EQ(commands.size(), 12);
+	for(size_t index = 0; index < 10; index += 2)
+	{
+		EXPECT_EQ(commands[index]["payload"]["type"].String(), "nullkiller_turn_slice");
+		EXPECT_EQ(commands[index]["payload"]["max_passes"].Integer(), 10);
+		EXPECT_EQ(commands[index + 1]["kind"].String(), "refresh");
+	}
+	EXPECT_EQ(commands[10]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[11]["payload"]["type"].String(), "end_turn");
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_EQ(output.memory["totalSlices"].Integer(), 6);
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanReadNullkillerSnapshots)
 {
 	const std::string source = R"lua(

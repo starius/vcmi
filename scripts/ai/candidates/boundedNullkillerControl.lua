@@ -24,8 +24,10 @@ script/host failures, not for ordinary strategy.
 ]]
 
 local MemoryVersion = 1
-local DefaultMaxSlicesPerDay = 8
+local DefaultMaxCommandsPerDay = 64
+local SafetyMaxSlicesPerDay = 64
 local DefaultMaxPassesPerSlice = 16
+local SafetyMaxPassesPerSlice = 64
 local DefaultMaxCandidates = 64
 local DefaultMaxAttempts = 64
 local MaxQueriesPerSlice = 16
@@ -52,15 +54,22 @@ end
 
 local function commandBudget(input)
     local limits = (input and input.limits) or {}
-    local scriptCalls = tonumber(limits.maxScriptCallsPerTurn)
     local actions = tonumber(limits.maxActions)
-    local budget = scriptCalls or actions or DefaultMaxSlicesPerDay
+    local scriptCalls = tonumber(limits.maxScriptCallsPerTurn)
 
-    if actions then
-        budget = math.min(budget, actions)
-    end
+    -- Imperative scripts run once per day and may yield/resume many checked
+    -- host commands. The old maxScriptCallsPerTurn limit describes legacy
+    -- multi-call planning; use it only when the host does not expose the real
+    -- imperative command budget.
+    local budget = actions or scriptCalls or DefaultMaxCommandsPerDay
 
-    return math.max(1, math.min(DefaultMaxSlicesPerDay, budget))
+    return math.max(1, math.min(SafetyMaxSlicesPerDay, budget))
+end
+
+local function nullkillerSettings(input)
+    local analysis = (input and input.analysis) or {}
+    local nullkiller = analysis.nullkiller or {}
+    return nullkiller.settings or {}
 end
 
 local function pendingQueries(input)
@@ -128,9 +137,12 @@ local function sliceDidWork(result)
         or result.paused == true
 end
 
-local function runNativeSlice(ai)
+local function runNativeSlice(ai, current)
+    local settings = nullkillerSettings(current)
+    local maxPasses = tonumber(settings.maxPass) or DefaultMaxPassesPerSlice
+
     return ai:nullkillerTurnSlice({
-        max_passes = DefaultMaxPassesPerSlice,
+        max_passes = math.max(1, math.min(SafetyMaxPassesPerSlice, maxPasses)),
         max_candidates = DefaultMaxCandidates,
         max_attempts = DefaultMaxAttempts
     })
@@ -152,7 +164,7 @@ function Script.runDay(ai, input)
             return ai:output("end_turn", "turn ended while answering bounded-control queries", 0.5)
         end
 
-        local result = runNativeSlice(ai)
+        local result = runNativeSlice(ai, current)
         memory.slicesToday = memory.slicesToday + 1
         memory.totalSlices = memory.totalSlices + 1
         ai:setMemory(memory)

@@ -1708,7 +1708,14 @@ Regression harness:
   priority/adventure/trade/artifact phases through bounded Lua calls, answers dialogs through the bounded
   `ai:nullkillerAnswerQuery` helper, refreshes after side effects, and ends the turn when native slices report no
   remaining work. It intentionally avoids normal `ai:nullkiller()` full-day delegation; full fallback is reserved
-  for actual script or host failures.
+  for actual script or host failures. Its loop budgets against the imperative `maxActions` limit and reads the
+  exposed native `analysis.nullkiller.settings.maxPass`, so legacy per-turn script-call limits do not truncate
+  bounded native day control.
+- Done: a traced 16-map, 14-day parity run of `boundedNullkillerControl.lua` against `Nullkiller2` reached the day
+  limit in all scenarios with zero fallback outputs and zero failed checked actions. The trace set contained 225
+  bounded `nullkiller_turn_slice` calls, 69 bounded query answers, and 224 script-requested end turns. A no-trace
+  full-outcome probe was stopped after 11/16 completed because the long tail continued through blue-only late
+  turns; the completed subset was 4 red wins and 7 red losses, so outcome tuning still needs separate evaluation.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus, then add
   engine-level explored-area and map-control deltas.
 
