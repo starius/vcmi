@@ -130,6 +130,8 @@ Input:
 - `state`: complete visible player state or selected state sections.
 - `state.map`: map dimensions, visible tile count, a capped sample of visible terrain tiles, and a capped list
   of visible objects gathered through player-specific fog-of-war checks.
+- `state.quests`: current player quest-log entries in the same stable shape as the mirrored quest-log window
+  update. Visible quest object details are attached only when they are visible to the player.
 - Visible quest objects include a `quest` block. Requirement details are exposed only when the quest is already
   active/known for the player; inactive visible quest objects expose only active/completed flags.
 - `updates`: capped revisioned journal of recent visible changes. Scripts can store the last consumed revision
@@ -996,6 +998,9 @@ Regression harness:
 - Visible quest objects now expose known requirements as stable ids after they become active for the player:
   mission id, last day, required resources, artifacts, creatures, skills, heroes/classes, players, spells, nested
   limiter counts, kill targets, and `canCompleteWithContextHero` for reachable-object context.
+- Script input now includes the current player quest log under `state.quests`, using the same visible-only object
+  details as the quest-log callback mirror. Scripts no longer need to wait for a quest-log window event to reason
+  about accepted quests and known quest gates.
 - Candidate actions now include `hire_hero` and `transfer_army` for two previously missing Nullkiller-level
   capabilities: adding tavern heroes and concentrating or reinforcing armies through the normal server-validated
   request path. Their candidate generation is controlled by `experimentalSupportActions` in
@@ -1236,9 +1241,9 @@ Regression harness:
   skills; town hall/fort/mage-guild/town levels; built/destroyed counts; building detail records; owned mage-guild
   spells; dwelling pools/growth; horde structures; and blacksmith war-machine availability. Owned-only details
   stay out of visible enemy town/hero analysis to avoid turning the script bridge into a hidden-information path.
-- Done: known quest requirements are exposed on visible quest objects using stable ids without revealing inactive
-  quest internals. Lua can reason about known blockers, while still using movement actions or bounded Nullkiller
-  tasks for actual unlock-chain execution.
+- Done: known quest requirements are exposed on visible quest objects and current quest-log entries using stable
+  ids without revealing inactive quest internals. Lua can reason about known blockers, while still using movement
+  actions or bounded Nullkiller tasks for actual unlock-chain execution.
 - Done: owned hero artifact state, Nullkiller artifact scores, exact artifact management calls, typed artifact
   assembly prompts, checked assemble/disassemble actions, and transition-slot artifact cleanup are exposed through
   Lua facade methods. Remaining artifact work is higher-level artifact intent helpers.

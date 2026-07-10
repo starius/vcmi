@@ -7239,6 +7239,11 @@ JsonNode CScriptedAdventureAI::makeScriptInputState()
 			state["towns"].Vector().push_back(jsonTown(town, resources, true));
 	}
 
+	state["quests"].Vector();
+	for(const QuestInfo & questInfo : cc->getMyQuests())
+		state["quests"].Vector().push_back(jsonQuestInfo(questInfo, cc.get(), playerID));
+	state["questCount"] = JsonNode(static_cast<int32_t>(state["quests"].Vector().size()));
+
 	const std::vector<int3> visibleTiles = visibleMapTiles(cc, playerID);
 
 	state["map"]["visibleTilesCount"] = JsonNode(static_cast<int32_t>(visibleTiles.size()));
