@@ -151,7 +151,10 @@ Input:
 - `memory`: script-owned long-term context from previous calls/days.
 - current day/week/month and active player color under `state`.
 - `state.turn.queries`: typed pending dialog/window queries with query ids, stable type labels, answer ids, and
-  mode-specific numeric fields. This is the read-side model for Lua dialog callbacks.
+  mode-specific numeric fields. Real server queries include `answerAction`, `nullkillerAnswerAction`, and
+  per-choice `planAction` fields where an answer id exists; local script-only prompts use their own checked
+  action fields such as `ignoreAction` or artifact assembly actions. This is the read-side model for Lua dialog
+  callbacks.
 - `actionSpace`: currently legal or relevant high-level candidates.
 - `analysis`: host-provided derived facts such as reachability, danger, town build options, recruitment options,
   and object values.
@@ -516,9 +519,12 @@ Current bounded subroutine surface:
   boat type, boat layer, build status, build position, and cost; quest actions include visible quest object ids.
 - Modal query records expose stable `query_id`, type ids/names, and answer ids. Level-up, blocking, teleport,
   map-object-select, artifact assembly, tavern, garrison, recruitment, university, and market dialogs include
-  typed context where available. Teleport and map-object-select choices include visible object payloads when the
-  target object is visible to the scripted player. Tavern, recruitment, university, and market dialogs reuse the
-  same hire, recruit, army, and market-detail payloads exposed in normal action-space snapshots.
+  typed context where available. Real server query records include a default `answerAction`, a bounded
+  `nullkillerAnswerAction`, and `planAction` fields on answer-bearing choices such as level-up skills, blocking
+  dialog components, teleport exits, and map-object selections. Teleport and map-object-select choices include
+  visible object payloads when the target object is visible to the scripted player. Tavern, recruitment,
+  university, and market dialogs reuse the same hire, recruit, army, and market-detail payloads exposed in normal
+  action-space snapshots.
 - University and market dialog records include `modeDetails` and `skillOptions` entries. `skillOptions` provide
   stable `skill_id`, affordability/learnability flags, gold cost, and a ready checked `market_trade` `planAction`
   for buying a secondary skill; scripts should use these fields instead of parsing dialog text. Market dialogs
@@ -1280,6 +1286,9 @@ Regression harness:
 - Done: pending dialog/window queries are exposed as typed read-side data under `state.turn.queries`, and direct
   Lua actions that open these dialogs now pause for a script answer instead of auto-answering. The bundled default
   script includes a conservative fallback answer policy; richer per-dialog strategy remains Lua policy work.
+- Done: real server query records now include executable `answerAction`, `nullkillerAnswerAction`, and per-choice
+  `planAction` payloads where answer ids exist, so scripts can use the same `ai:runOption` pattern for dialog
+  decisions that they use for action-space candidates.
 - Done: university and market dialog queries now expose stable mode/item details and buy-skill options with
   checked `market_trade` actions, closing one read-side gap for player-choice dialogs without changing native
   trade validation.

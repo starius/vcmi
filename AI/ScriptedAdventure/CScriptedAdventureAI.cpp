@@ -2000,6 +2000,48 @@ JsonNode jsonNullkillerResourceTradeOption()
 	return option;
 }
 
+JsonNode jsonAnswerQueryAction(QueryID queryID, int32_t answer)
+{
+	JsonNode action;
+	action["type"] = JsonNode("answer_query");
+	action["query_id"] = JsonNode(queryID.getNum());
+	action["answer"] = JsonNode(answer);
+	return action;
+}
+
+JsonNode jsonNullkillerAnswerQueryAction(QueryID queryID)
+{
+	JsonNode action;
+	action["type"] = JsonNode("nullkiller_answer_query");
+	action["query_id"] = JsonNode(queryID.getNum());
+	return action;
+}
+
+void attachAnswerPlanActions(JsonNode & query, QueryID queryID, const std::string & field)
+{
+	if(!hasField(query, field) || !query[field].isVector())
+		return;
+
+	for(JsonNode & option : query[field].Vector())
+	{
+		if(hasField(option, "answer"))
+			option["planAction"] = jsonAnswerQueryAction(queryID, readInteger(option, "answer"));
+	}
+}
+
+void attachScriptQueryActions(JsonNode & query, QueryID queryID)
+{
+	if(hasField(query, "answerableByQueryReply") && !readBool(query, "answerableByQueryReply", true))
+		return;
+
+	query["answerableByQueryReply"] = JsonNode(true);
+	query["answerAction"] = jsonAnswerQueryAction(queryID, 0);
+	query["nullkillerAnswerAction"] = jsonNullkillerAnswerQueryAction(queryID);
+
+	for(const char * field : { "skill_options", "components", "exits", "objects" })
+		attachAnswerPlanActions(query, queryID, field);
+}
+
 std::string nullkillerHeroRoleName(NK2AI::HeroRole role)
 {
 	switch(role)
@@ -3733,6 +3775,7 @@ void CScriptedAdventureAI::recordScriptQuery(QueryID queryID, const std::string 
 
 	data["query_id"] = JsonNode(queryID.getNum());
 	data["type"] = JsonNode(type);
+	attachScriptQueryActions(data, queryID);
 
 	std::lock_guard guard(scriptQueryMutex);
 	scriptQueries[queryID] = data;

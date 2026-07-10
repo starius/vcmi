@@ -975,7 +975,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanReadAndAnswerPendingQueries)
 		return {
 			runDay = function(ai, input)
 				local queries = ai:pendingQueries()
-				ai:answerQuery(queries[1].query_id, queries[1].components[1].answer)
+				ai:runOption(queries[1].components[1])
 				return {
 					status = "end_turn",
 					memory = { version = 1, queryType = queries[1].type },
@@ -993,6 +993,9 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanReadAndAnswerPendingQueries)
 	query["components"].Vector();
 	JsonNode component;
 	component["answer"] = JsonNode(2);
+	component["planAction"]["type"] = JsonNode("answer_query");
+	component["planAction"]["query_id"] = JsonNode(77);
+	component["planAction"]["answer"] = JsonNode(2);
 	query["components"].Vector().push_back(component);
 	input.state["turn"]["queries"].Vector().push_back(query);
 
