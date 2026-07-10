@@ -171,6 +171,9 @@ Input:
 - `actionSpace`: currently legal or relevant high-level candidates.
 - `analysis`: host-provided derived facts such as reachability, danger, town build options, recruitment options,
   and object values.
+- `analysis.nullkiller.economy`: read-only native economy analysis derived from owned objects, owned towns, and
+  current resources. It includes daily income, gold pressure, missing resources now/total, and free resources after
+  planned development costs.
 - `limits`: time, action count, max candidates, and max memory size limits for this call.
 
 The `ai` facade:
@@ -1328,6 +1331,9 @@ Regression harness:
   stay out of visible enemy town/hero analysis to avoid turning the script bridge into a hidden-information path.
 - Done: script input exposes `state.ownedObjects` from the normal player-specific owned-object callback, so Lua can
   reason over flagged mines/dwellings/assets without relying on capped visible tile/object samples.
+- Done: `analysis.nullkiller.economy` exposes Nullkiller's build-analyzer economy summary: daily income, gold
+  pressure, missing resources, and free resources after planned development costs. These are derived from
+  player-owned objects/towns and current resources, not hidden map data.
 - Done: known quest requirements are exposed on visible quest objects and current quest-log entries using stable
   ids without revealing inactive quest internals. Lua can reason about known blockers, while still using movement
   actions or bounded Nullkiller tasks for actual unlock-chain execution.

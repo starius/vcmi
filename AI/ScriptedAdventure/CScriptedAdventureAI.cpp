@@ -8891,6 +8891,16 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 		analysis["nullkiller"]["state"]["pathfinderTurnStorageMisses"] = JsonNode(nullkiller->pathfinderTurnStorageMisses.load());
 		analysis["nullkiller"]["state"]["lockedResources"] = jsonResources(nullkiller->getLockedResources());
 		analysis["nullkiller"]["state"]["freeResources"] = jsonResources(nullkiller->getFreeResources());
+		if(nullkiller->buildAnalyzer)
+		{
+			nullkiller->buildAnalyzer->update();
+			analysis["nullkiller"]["economy"]["dailyIncome"] = jsonResources(nullkiller->buildAnalyzer->getDailyIncome());
+			analysis["nullkiller"]["economy"]["goldPressure"].Float() = nullkiller->buildAnalyzer->getGoldPressure();
+			analysis["nullkiller"]["economy"]["goldPressureOverMax"] = JsonNode(nullkiller->buildAnalyzer->isGoldPressureOverMax());
+			analysis["nullkiller"]["economy"]["missingResourcesNow"] = jsonResources(nullkiller->buildAnalyzer->getMissingResourcesNow());
+			analysis["nullkiller"]["economy"]["missingResourcesTotal"] = jsonResources(nullkiller->buildAnalyzer->getMissingResourcesInTotal());
+			analysis["nullkiller"]["economy"]["freeResourcesAfterMissingTotal"] = jsonResources(nullkiller->buildAnalyzer->getFreeResourcesAfterMissingTotal());
+		}
 	}
 
 	for(const CGObjectInstance * object : cc->getAllVisitableObjs())
