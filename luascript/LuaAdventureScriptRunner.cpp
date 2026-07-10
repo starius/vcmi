@@ -227,6 +227,19 @@ ai.nullkillerTaskModes = {
 	startup = 12
 }
 
+ai.adventureSpellKinds = {
+	unknown = 0,
+	generic = 1,
+	dimensionDoor = 2,
+	townPortal = 3,
+	summonBoat = 4,
+	removeObject = 5,
+	reinforcements = 6,
+	viewWorld = 7,
+	waterWalk = 8,
+	fly = 9
+}
+
 function ai:nullkillerTasks(mode, maxCandidates)
 	local action = copyFields(mode)
 	if type(mode) ~= "table" then

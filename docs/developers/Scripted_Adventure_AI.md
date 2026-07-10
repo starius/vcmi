@@ -136,6 +136,13 @@ Input:
   active/known for the player; inactive visible quest objects expose only active/completed flags.
 - `actionSpace.questObjectOptions`: a capped index of visible quest/guard/gate objects with owned-hero
   completion candidates.
+- `actionSpace.adventureSpellOptions`: checked adventure spell cast candidates for owned heroes. Each option
+  includes stable numeric ids for the hero, spell, target kind, and spell kind; mana/cost/cast-limit accounting;
+  effect-specific numeric metadata for Dimension Door, Town Portal, Summon Boat, and ranged spells; water-walk
+  and fly capability flags; visible target object data where a target tile contains a visible object; and a
+  `planAction` that still goes through the normal server-side spell validation. Spells whose useful target choice
+  is owned by native pathfinding, such as Dimension Door, Town Portal, Summon Boat, water walk, and fly, also include
+  `nativePlanner` bounded Nullkiller `tasksAction`, `stepAction`, and `passAction` payloads.
 - `updates`: capped revisioned journal of recent visible changes. Scripts can store the last consumed revision
   in memory when they want delta processing.
 - `updates` also includes player-visible non-query windows such as generic info dialogs, shipyard dialogs,
@@ -1357,13 +1364,14 @@ Regression harness:
 - Done: visible owned/neutral market objects expose read-side mode details, available items, available unit
   counts, efficiency, and resource-resource exchange rates. Enemy market details remain hidden beyond public
   visible-object mode metadata.
-- Partial: primitive adventure spells, digging, boat building, Castle Gate teleport, hero dismissal, and
+- Done: primitive adventure spells, digging, boat building, Castle Gate teleport, hero dismissal, and
   spellbook/war-machine purchases are exposed. Owned hero records now include spellbook ids, and action space
   includes read-side `digOptions`, `shipyardOptions`, `castleTeleportOptions`, `adventureSpellOptions`, and
-  `buyArtifactOptions` with checked `planAction` payloads. Deeper
-  adventure-spell routing remains partial: Lua gets default casts, owned-town targets, and nearby visible tile
-  samples, while complex Dimension Door, Town Portal, boat, and unlock-chain planning should still use bounded
-  Nullkiller tasks until richer analyzer exports exist.
+  `buyArtifactOptions` with checked `planAction` payloads. Adventure spell options now carry typed spell-kind,
+  remaining-cast, range, movement-cost, dialog, summon-boat, and visible-target metadata. Complex Dimension Door,
+  Town Portal, boat, water-walk, fly, and unlock-chain planning remains intentionally delegated to bounded
+  Nullkiller adventure subroutines through the option's `nativePlanner` actions, because the pathfinder owns
+  those routing decisions.
 - Partial: full danger-map estimates are not exposed intentionally; Lua gets capped visible-only enemy threat
   tiles and visible blocker clusters, while hidden enemy reach remains private to avoid cheating.
 - Partial: MCP and scripted AI still duplicate some JSON assembly code; extraction can happen once the surface
@@ -1446,8 +1454,9 @@ The next high-value implementation steps are:
 - Treat Lua API parity as the gate for script optimization. A script that cannot express the same meaningful
   choices as Nullkiller should use bounded Nullkiller subroutines and checked facades first; tuning before this
   point mostly optimizes around missing host capabilities.
-- Add richer Lua decision policies and read-side candidate data for remaining player choices: deeper
-  adventure-spell target ranking beyond the current sampled candidate surface.
+- Keep adventure-spell optimization on the hybrid path: scripts should rank when to use native adventure
+  spell-routing subroutines, then inspect returned task/path `specialAction` records, instead of attempting to
+  recreate Nullkiller's pathfinder in Lua.
 - Close remaining Lua API parity gaps before tuning scripts: expose bounded Nullkiller helpers or checked facade
   calls for any player-visible action/subroutine that still requires full-day `ai:nullkiller()` delegation.
 - Expose any remaining Nullkiller analyzer data as read-only candidate fields only when a concrete script policy

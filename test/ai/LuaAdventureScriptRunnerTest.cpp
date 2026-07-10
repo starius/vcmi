@@ -408,7 +408,8 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 						firstTask = candidates.tasks[1].task_id,
 						stepTask = step.selectedTask.task_id,
 						executedOutcome = ai.nullkillerStepOutcomes.executed,
-						defenseMode = ai.nullkillerTaskModes.defense
+						defenseMode = ai.nullkillerTaskModes.defense,
+						dimensionDoorSpellKind = ai.adventureSpellKinds.dimensionDoor
 					},
 					actions = {}
 				}
@@ -595,6 +596,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 	EXPECT_EQ(output.memory["stepTask"].Integer(), 42);
 	EXPECT_EQ(output.memory["executedOutcome"].Integer(), 1);
 	EXPECT_EQ(output.memory["defenseMode"].Integer(), 8);
+	EXPECT_EQ(output.memory["dimensionDoorSpellKind"].Integer(), 2);
 }
 
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallNamedNullkillerModeHelpers)

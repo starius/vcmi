@@ -54,7 +54,14 @@
 #include "../../lib/spells/CSpellHandler.h"
 #include "../../lib/spells/Problem.h"
 #include "../../lib/spells/ViewSpellInt.h"
+#include "../../lib/spells/adventure/AdventureSpellEffect.h"
 #include "../../lib/spells/adventure/AdventureSpellMechanics.h"
+#include "../../lib/spells/adventure/DimensionDoorEffect.h"
+#include "../../lib/spells/adventure/ReinforcementsEffect.h"
+#include "../../lib/spells/adventure/RemoveObjectEffect.h"
+#include "../../lib/spells/adventure/SummonBoatEffect.h"
+#include "../../lib/spells/adventure/TownPortalEffect.h"
+#include "../../lib/spells/adventure/ViewWorldEffect.h"
 #include "../../luascript/LuaAdventureScriptRunner.h"
 #include "../Nullkiller2/AIUtility.h"
 #include "../Nullkiller2/Analyzers/DangerHitMapAnalyzer.h"
@@ -167,6 +174,20 @@ enum class ScriptSpecialActionKind : int32_t
 	WHIRLPOOL = 6,
 	QUEST = 7,
 	ADVENTURE_CAST = 8
+};
+
+enum class ScriptAdventureSpellKind : int32_t
+{
+	UNKNOWN = 0,
+	GENERIC = 1,
+	DIMENSION_DOOR = 2,
+	TOWN_PORTAL = 3,
+	SUMMON_BOAT = 4,
+	REMOVE_OBJECT = 5,
+	REINFORCEMENTS = 6,
+	VIEW_WORLD = 7,
+	WATER_WALK = 8,
+	FLY = 9
 };
 
 const char * scriptBuildingKindName(ScriptBuildingKind kind)
@@ -310,6 +331,72 @@ const char * scriptSpecialActionKindName(ScriptSpecialActionKind kind)
 		return "adventure_cast";
 	default:
 		return "unknown";
+	}
+}
+
+const char * scriptAdventureSpellKindName(ScriptAdventureSpellKind kind)
+{
+	switch(kind)
+	{
+	case ScriptAdventureSpellKind::GENERIC:
+		return "generic";
+	case ScriptAdventureSpellKind::DIMENSION_DOOR:
+		return "dimension_door";
+	case ScriptAdventureSpellKind::TOWN_PORTAL:
+		return "town_portal";
+	case ScriptAdventureSpellKind::SUMMON_BOAT:
+		return "summon_boat";
+	case ScriptAdventureSpellKind::REMOVE_OBJECT:
+		return "remove_object";
+	case ScriptAdventureSpellKind::REINFORCEMENTS:
+		return "reinforcements";
+	case ScriptAdventureSpellKind::VIEW_WORLD:
+		return "view_world";
+	case ScriptAdventureSpellKind::WATER_WALK:
+		return "water_walk";
+	case ScriptAdventureSpellKind::FLY:
+		return "fly";
+	default:
+		return "unknown";
+	}
+}
+
+ScriptAdventureSpellKind scriptAdventureSpellKind(const CSpell * spell, const CGHeroInstance * hero)
+{
+	const auto & mechanics = spell->getAdventureMechanics();
+
+	if(mechanics.getEffectAs<DimensionDoorEffect>(hero))
+		return ScriptAdventureSpellKind::DIMENSION_DOOR;
+	if(mechanics.getEffectAs<TownPortalEffect>(hero))
+		return ScriptAdventureSpellKind::TOWN_PORTAL;
+	if(mechanics.getEffectAs<SummonBoatEffect>(hero))
+		return ScriptAdventureSpellKind::SUMMON_BOAT;
+	if(mechanics.getEffectAs<RemoveObjectEffect>(hero))
+		return ScriptAdventureSpellKind::REMOVE_OBJECT;
+	if(mechanics.getEffectAs<ReinforcementsEffect>(hero))
+		return ScriptAdventureSpellKind::REINFORCEMENTS;
+	if(mechanics.getEffectAs<ViewWorldEffect>(hero))
+		return ScriptAdventureSpellKind::VIEW_WORLD;
+	if(mechanics.givesBonus(hero, BonusType::FLYING_MOVEMENT))
+		return ScriptAdventureSpellKind::FLY;
+	if(mechanics.givesBonus(hero, BonusType::WATER_WALKING))
+		return ScriptAdventureSpellKind::WATER_WALK;
+
+	return ScriptAdventureSpellKind::GENERIC;
+}
+
+bool adventureSpellUsesNativeRouting(ScriptAdventureSpellKind kind)
+{
+	switch(kind)
+	{
+	case ScriptAdventureSpellKind::DIMENSION_DOOR:
+	case ScriptAdventureSpellKind::TOWN_PORTAL:
+	case ScriptAdventureSpellKind::SUMMON_BOAT:
+	case ScriptAdventureSpellKind::WATER_WALK:
+	case ScriptAdventureSpellKind::FLY:
+		return true;
+	default:
+		return false;
 	}
 }
 
@@ -3587,8 +3674,23 @@ JsonNode jsonShipyardOption(const CGObjectInstance * object, const IShipyard * s
 	return node;
 }
 
-JsonNode jsonAdventureSpellOption(const CGHeroInstance * hero, const CSpell * spell, const std::optional<int3> & target, int32_t targetKindID, const std::string & targetKind)
+JsonNode jsonAdventureSpellOption(
+	const std::shared_ptr<CCallback> & cc,
+	PlayerColor player,
+	const CGHeroInstance * hero,
+	const CSpell * spell,
+	const std::optional<int3> & target,
+	int32_t targetKindID,
+	const std::string & targetKind)
 {
+	const auto & mechanics = spell->getAdventureMechanics();
+	const ScriptAdventureSpellKind spellKind = scriptAdventureSpellKind(spell, hero);
+	const int castsLimit = mechanics.getCastsLimit(hero, cc->getMapSize());
+	const int castsAlreadyPerformed = mechanics.getCastsAlreadyPerformed(hero);
+	const int castsByMana = hero->getSpellCost(spell) > 0 ? hero->mana / hero->getSpellCost(spell) : 0;
+	const int castsRemainingByLimit = castsLimit > 0 ? std::max(0, castsLimit - castsAlreadyPerformed) : castsByMana;
+	const int castsRemaining = std::min(castsByMana, castsRemainingByLimit);
+
 	JsonNode node;
 	node["hero_id"] = JsonNode(hero->id.getNum());
 	node["hero"] = JsonNode(jsonText(hero->getNameTranslated()));
@@ -3599,14 +3701,73 @@ JsonNode jsonAdventureSpellOption(const CGHeroInstance * hero, const CSpell * sp
 	node["schoolLevel"] = JsonNode(hero->getSpellSchoolLevel(spell));
 	node["cost"] = JsonNode(hero->getSpellCost(spell));
 	node["mana"] = JsonNode(hero->mana);
+	node["castsLimit"] = JsonNode(castsLimit);
+	node["castsAlreadyPerformed"] = JsonNode(castsAlreadyPerformed);
+	node["castsRemaining"] = JsonNode(castsRemaining);
+	node["spellKindId"] = JsonNode(static_cast<int32_t>(spellKind));
+	node["spellKind"] = JsonNode(scriptAdventureSpellKindName(spellKind));
+	node["givesWaterWalking"] = JsonNode(mechanics.givesBonus(hero, BonusType::WATER_WALKING));
+	node["givesFlyingMovement"] = JsonNode(mechanics.givesBonus(hero, BonusType::FLYING_MOVEMENT));
 	node["targetKindId"] = JsonNode(targetKindID);
 	node["targetKind"] = JsonNode(targetKind);
+	node["hasTarget"] = JsonNode(static_cast<bool>(target));
 	node["planAction"]["type"] = JsonNode("cast_spell");
 	node["planAction"]["hero_id"] = node["hero_id"];
 	node["planAction"]["spell_id"] = node["spell_id"];
+
+	if(const auto * ranged = dynamic_cast<const AdventureSpellRangedEffect *>(mechanics.getEffectAs<IAdventureSpellEffect>(hero)))
+	{
+		node["range"]["x"] = JsonNode(ranged->getRangeX());
+		node["range"]["y"] = JsonNode(ranged->getRangeY());
+		node["range"]["ignoresFogOfWar"] = JsonNode(ranged->ignoresFogOfWar());
+	}
+	if(const auto * dimensionDoor = mechanics.getEffectAs<DimensionDoorEffect>(hero))
+	{
+		node["dimensionDoor"]["movementPointsRequired"] = JsonNode(dimensionDoor->getMovementPointsRequired());
+		node["dimensionDoor"]["movementPointsTaken"] = JsonNode(dimensionDoor->getMovementPointsTaken());
+		node["dimensionDoor"]["waterLandFailureTakesPoints"] = JsonNode(dimensionDoor->doesWaterLandFailureTakePoints());
+		node["dimensionDoor"]["exposesFogOfWar"] = JsonNode(dimensionDoor->doesExposeFogOfWar());
+	}
+	if(const auto * townPortal = mechanics.getEffectAs<TownPortalEffect>(hero))
+	{
+		node["townPortal"]["movementPointsRequired"] = JsonNode(townPortal->getMovementPointsRequired());
+		node["townPortal"]["townSelectionAllowed"] = JsonNode(townPortal->townSelectionAllowed());
+		node["townPortal"]["opensSelectionDialog"] = JsonNode(townPortal->townSelectionAllowed() && !target);
+	}
+	if(const auto * summonBoat = mechanics.getEffectAs<SummonBoatEffect>(hero))
+	{
+		node["summonBoat"]["successChance"] = JsonNode(summonBoat->getSuccessChance(hero));
+		node["summonBoat"]["canCreateNewBoat"] = JsonNode(summonBoat->canCreateNewBoat());
+		node["summonBoat"]["bestLocation"] = jsonPosition(hero->bestLocation());
+	}
+
+	node["nativePlanner"]["recommended"] = JsonNode(adventureSpellUsesNativeRouting(spellKind));
+	node["nativePlanner"]["modeId"] = JsonNode(static_cast<int32_t>(NK2AI::ScriptTaskSearchMode::ADVENTURE));
+	node["nativePlanner"]["mode"] = JsonNode(nullkillerTaskSearchModeName(NK2AI::ScriptTaskSearchMode::ADVENTURE));
+	if(adventureSpellUsesNativeRouting(spellKind))
+	{
+		JsonNode option = jsonNullkillerSubroutineOption(NK2AI::ScriptTaskSearchMode::ADVENTURE, 4, 16, 16);
+		node["nativePlanner"]["tasksAction"] = option["tasksAction"];
+		node["nativePlanner"]["stepAction"] = option["stepAction"];
+		node["nativePlanner"]["passAction"] = option["passAction"];
+	}
+
 	if(target)
 	{
 		node["target"] = jsonPosition(*target);
+		node["targetVisible"] = JsonNode(cc->isVisibleFor(*target, player));
+		node["targetGuarded"] = JsonNode(cc->isVisibleFor(*target, player) && cc->isTileGuardedUnchecked(*target));
+		if(const CGObjectInstance * targetObject = cc->getTopObj(*target))
+		{
+			if(cc->isVisibleFor(targetObject, player))
+			{
+				node["targetObjectId"] = JsonNode(targetObject->id.getNum());
+				node["targetObjectTypeId"] = JsonNode(targetObject->ID.getNum());
+				node["targetObjectKindId"] = JsonNode(static_cast<int32_t>(scriptObjectKind(targetObject->ID)));
+				node["targetObjectKind"] = JsonNode(scriptObjectKindName(scriptObjectKind(targetObject->ID)));
+				node["targetObject"] = jsonMapObject(targetObject, player, hero);
+			}
+		}
 		node["planAction"]["x"] = JsonNode(target->x);
 		node["planAction"]["y"] = JsonNode(target->y);
 		node["planAction"]["z"] = JsonNode(target->z);
@@ -8010,7 +8171,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 				if(!spell->getAdventureMechanics().canBeCastAt(problem, cc.get(), hero, keyTarget))
 					return;
 
-				JsonNode option = jsonAdventureSpellOption(hero, spell, target, targetKindID, targetKind);
+				JsonNode option = jsonAdventureSpellOption(cc, playerID, hero, spell, target, targetKindID, targetKind);
 				actionSpace["adventureSpellOptions"].Vector().push_back(option);
 			};
 
