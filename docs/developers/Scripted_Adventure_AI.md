@@ -174,6 +174,10 @@ Input:
 - `analysis.nullkiller.economy`: read-only native economy analysis derived from owned objects, owned towns, and
   current resources. It includes daily income, gold pressure, missing resources now/total, and free resources after
   planned development costs.
+- `analysis.nullkiller.townDevelopment`: read-only native BuildAnalyzer development records for owned towns that
+  can still build today. Each record includes the town id, town-level development costs, required resources, army
+  cost/strength, and `toBuild` / `built` building arrays with stable building, creature, cost, income, prerequisite,
+  buildability, and missing-resource fields.
 - `analysis.nullkiller.heroRecruitment`: read-only native hero-cap and recruitability analysis. It includes owned
   hero counts, town count, Nullkiller's effective roaming cap, engine on-map/total hero caps, whether the cap is
   reached, whether any owned town can recruit, and per-owned-town recruitability records. Per-town
@@ -1346,6 +1350,9 @@ Regression harness:
 - Done: `analysis.nullkiller.economy` exposes Nullkiller's build-analyzer economy summary: daily income, gold
   pressure, missing resources, and free resources after planned development costs. These are derived from
   player-owned objects/towns and current resources, not hidden map data.
+- Done: `analysis.nullkiller.townDevelopment` exposes Nullkiller's BuildAnalyzer town-development records for
+  owned towns, including current native `toBuild` / `built` building info and town-level cost summaries. This lets
+  Lua policy reason over Nullkiller's long-term building queue without delegating the full priority pass.
 - Done: `analysis.nullkiller.heroRecruitment` exposes Nullkiller's hero-cap and recruitability analysis, including
   owned hero counts, cap state, recruitable owned towns, available hero type ids, and stable numeric blocker ids.
   This lets Lua make hire/defer decisions with the same native constraints while still executing only checked

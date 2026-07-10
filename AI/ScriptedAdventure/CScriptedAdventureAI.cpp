@@ -2673,6 +2673,44 @@ JsonNode jsonNullkillerPath(
 
 JsonNode jsonNullkillerGoalSummary(const NK2AI::Goals::AbstractGoal & goal, const std::shared_ptr<CCallback> & cc, PlayerColor playerID, int depth);
 
+JsonNode jsonNullkillerBuildingInfo(const NK2AI::BuildingInfo & building)
+{
+	JsonNode node;
+	node["building_id"] = JsonNode(building.id.getNum());
+	node["buildCost"] = jsonResources(building.buildCost);
+	node["buildCostWithPrerequisites"] = jsonResources(building.buildCostWithPrerequisites);
+	node["dailyIncome"] = jsonResources(building.dailyIncome);
+	node["armyCost"] = jsonResources(building.armyCost);
+	node["creatureGrowth"] = JsonNode(building.creatureGrowth);
+	node["creatureLevel"] = JsonNode(static_cast<int32_t>(building.creatureLevel));
+	node["creature_id"] = JsonNode(building.creatureID.getNum());
+	node["base_creature_id"] = JsonNode(building.baseCreatureID.getNum());
+	node["prerequisitesCount"] = JsonNode(static_cast<int32_t>(building.prerequisitesCount));
+	node["armyStrength"] = JsonNode(static_cast<int64_t>(building.armyStrength));
+	node["isBuilt"] = JsonNode(building.isBuilt);
+	node["isBuildable"] = JsonNode(building.isBuildable);
+	node["isMissingResources"] = JsonNode(building.isMissingResources);
+	return node;
+}
+
+JsonNode jsonNullkillerTownDevelopmentInfo(const NK2AI::TownDevelopmentInfo & developmentInfo)
+{
+	JsonNode node;
+	if(developmentInfo.town)
+		node["town_id"] = JsonNode(developmentInfo.town->id.getNum());
+	node["townDevelopmentCost"] = jsonResources(developmentInfo.townDevelopmentCost);
+	node["requiredResources"] = jsonResources(developmentInfo.requiredResources);
+	node["armyCost"] = jsonResources(developmentInfo.armyCost);
+	node["armyStrength"] = JsonNode(static_cast<int64_t>(developmentInfo.armyStrength));
+	node["toBuild"].Vector();
+	for(const NK2AI::BuildingInfo & building : developmentInfo.toBuild)
+		node["toBuild"].Vector().push_back(jsonNullkillerBuildingInfo(building));
+	node["built"].Vector();
+	for(const NK2AI::BuildingInfo & building : developmentInfo.built)
+		node["built"].Vector().push_back(jsonNullkillerBuildingInfo(building));
+	return node;
+}
+
 JsonNode jsonNullkillerGoalDetails(const NK2AI::Goals::AbstractGoal & goal, const std::shared_ptr<CCallback> & cc, PlayerColor playerID, int depth)
 {
 	JsonNode details;
@@ -2689,19 +2727,9 @@ JsonNode jsonNullkillerGoalDetails(const NK2AI::Goals::AbstractGoal & goal, cons
 	if(const auto * buildThis = dynamic_cast<const NK2AI::Goals::BuildThis *>(&goal))
 	{
 		const NK2AI::BuildingInfo & building = buildThis->buildingInfo;
-		details["buildCost"] = jsonResources(building.buildCost);
-		details["buildCostWithPrerequisites"] = jsonResources(building.buildCostWithPrerequisites);
-		details["dailyIncome"] = jsonResources(building.dailyIncome);
-		details["armyCost"] = jsonResources(building.armyCost);
-		details["creatureGrowth"] = JsonNode(building.creatureGrowth);
-		details["creatureLevel"] = JsonNode(static_cast<int32_t>(building.creatureLevel));
-		details["creature_id"] = JsonNode(building.creatureID.getNum());
-		details["base_creature_id"] = JsonNode(building.baseCreatureID.getNum());
-		details["prerequisitesCount"] = JsonNode(static_cast<int32_t>(building.prerequisitesCount));
-		details["armyStrength"] = JsonNode(static_cast<int64_t>(building.armyStrength));
-		details["isBuilt"] = JsonNode(building.isBuilt);
-		details["isBuildable"] = JsonNode(building.isBuildable);
-		details["isMissingResources"] = JsonNode(building.isMissingResources);
+		const JsonNode buildingInfo = jsonNullkillerBuildingInfo(building);
+		for(const auto & [field, value] : buildingInfo.Struct())
+			details[field] = value;
 	}
 
 	if(const auto * buildBoat = dynamic_cast<const NK2AI::Goals::BuildBoat *>(&goal))
@@ -9050,6 +9078,9 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 			analysis["nullkiller"]["economy"]["missingResourcesNow"] = jsonResources(nullkiller->buildAnalyzer->getMissingResourcesNow());
 			analysis["nullkiller"]["economy"]["missingResourcesTotal"] = jsonResources(nullkiller->buildAnalyzer->getMissingResourcesInTotal());
 			analysis["nullkiller"]["economy"]["freeResourcesAfterMissingTotal"] = jsonResources(nullkiller->buildAnalyzer->getFreeResourcesAfterMissingTotal());
+			analysis["nullkiller"]["townDevelopment"].Vector();
+			for(const NK2AI::TownDevelopmentInfo & developmentInfo : nullkiller->buildAnalyzer->getDevelopmentInfo())
+				analysis["nullkiller"]["townDevelopment"].Vector().push_back(jsonNullkillerTownDevelopmentInfo(developmentInfo));
 		}
 	}
 
