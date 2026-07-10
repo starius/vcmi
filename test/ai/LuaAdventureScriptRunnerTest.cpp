@@ -1015,6 +1015,53 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanConstrainNullkillerPlanner)
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanUseNumericActionTypeIds)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				ai:nullkillerReset()
+				ai:runAction({
+					type_id = ai.actionTypeIds.nullkillerTurnSlice,
+					max_passes = 1
+				})
+				ai:runAction({
+					type_id = ai.actionTypeIds.endTurn,
+					typeId = ai.queryTypes.blockingDialog
+				})
+				return ai:output("end_turn", "used numeric action ids")
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:numeric-action-type-ids", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		if(hasField(command["payload"], "type"))
+			response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 3);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_reset");
+	EXPECT_EQ(commands[0]["payload"]["type_id"].Integer(), 100);
+	EXPECT_FALSE(hasField(commands[1]["payload"], "type"));
+	EXPECT_EQ(commands[1]["payload"]["type_id"].Integer(), 106);
+	EXPECT_FALSE(hasField(commands[2]["payload"], "type"));
+	EXPECT_EQ(commands[2]["payload"]["type_id"].Integer(), 9);
+	EXPECT_EQ(commands[2]["payload"]["typeId"].Integer(), 3);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "used numeric action ids");
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteActionSpaceOptions)
 {
 	const std::string source = R"lua(

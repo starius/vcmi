@@ -199,6 +199,9 @@ The `ai` facade:
 - `ai:runAction(action)` and `ai:runOption(option, actionField?)`: execute a checked action table directly,
   or execute an action embedded in an action-space option. `actionField` defaults to `planAction`, and can be
   `tasksAction`, `stepAction`, or `passAction` for bounded Nullkiller subroutine options.
+  Action dispatch accepts stable numeric `type_id` values from `ai.actionTypeIds`, with the legacy string `type`
+  kept for traces and compatibility. When both are present, the host verifies that the id and string agree. Camel-case
+  `typeId` remains read-side metadata for objects, queries, and action-space records, not an action dispatch field.
 - `ai:refresh()`: yield to C++ and receive a new visible input snapshot after side effects.
 - `ai:build`, `ai:recruit`, `ai:hireHero`, `ai:transferArmy`, `ai:moveHero`, `ai:visitObject`,
   `ai:answerQuery`, `ai:endTurn`: request checked host actions.
@@ -672,8 +675,9 @@ Current bounded subroutine surface:
   before entering `runDay`, and stale duplicate turn tasks exit if the turn already ended, including before
   waiting on any old query or movement blocker.
 - Lua exposes numeric constants for stable host ids used by the strategic contract:
-  `ai.buildingKinds`, `ai.objectKinds`, `ai.armyTransferKinds`, `ai.queryTypes`, `ai.pathActions`, `ai.threatLevels`,
-  `ai.riskLevels`, `ai.specialActionKinds`, `ai.adventureSpellKinds`, `ai.nullkillerStepOutcomes`,
+  `ai.actionTypeIds`, `ai.buildingKinds`, `ai.objectKinds`, `ai.armyTransferKinds`, `ai.queryTypes`,
+  `ai.pathActions`, `ai.threatLevels`, `ai.riskLevels`, `ai.specialActionKinds`, `ai.adventureSpellKinds`,
+  `ai.nullkillerStepOutcomes`,
   `ai.nullkillerFailureActions`, `ai.nullkillerTaskModes`, `ai.nullkillerPriorityTiers`,
   `ai.nullkillerHeroLockReasons`, and `ai.nullkillerHeroRoles`. Scripts should
   branch on these constants rather than trace strings or raw magic numbers.
@@ -1214,6 +1218,10 @@ Regression harness:
   `typeId`/`subtypeId` plus `kindId`; town build options provide `building_id`, `buildingKindId`,
   `buildingLevel`, and `buildingUpgrade`; paths provide `pathActionId`; visible threat alerts provide `levelId`.
   Localized display strings remain useful in traces but are not part of the strategic contract.
+- Script action dispatch now has stable numeric action ids. `actionSpace.acceptedActions` lists `{ type, typeId }`
+  records, Lua publishes the same ids under `ai.actionTypeIds`, and the host accepts numeric-only `type_id` actions for
+  checked execution. String `type` fields remain compatibility and trace affordances, not the preferred policy
+  branching surface.
 - Pending query records expose stable numeric `typeId` values, mirrored by `ai.queryTypes`, so Lua can branch on
   dialog/window kinds without parsing trace labels.
 - Script input now includes complete player-visible `state.map.visibleTiles` terrain records, tile-level visible
@@ -1488,6 +1496,8 @@ Regression harness:
 - Contract: before optimizing a Lua policy, treat any required `ai:nullkiller()` / full-day fallback as a parity
   bug unless the script deliberately uses it as a safety escape. The preferred integration point is a checked
   action, read-only candidate/analyzer field, or bounded Nullkiller helper that returns control to Lua.
+- Done: checked script actions can now be dispatched by stable numeric `type_id`, with `type` strings verified when
+  present. This reduces string drift at the Lua/C++ boundary while preserving existing scripts and trace readability.
 - Bounded Nullkiller helpers that invoke native task decomposition, pathfinding, task execution, priority passes,
   or resource trading use the same shared pathfinder-storage lock as native `Nullkiller::makeTurn`; add new native
   subroutines at that primitive boundary rather than around higher-level Lua loops to avoid nested lock attempts.

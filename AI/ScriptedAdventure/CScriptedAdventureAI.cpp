@@ -103,6 +103,10 @@ namespace
 
 const std::string SCRIPT_MEMORY_LOCAL_STATE_KEY = "scriptedAdventureAI";
 
+bool hasField(const JsonNode & node, const std::string & field);
+int32_t readInteger(const JsonNode & node, const std::string & field);
+std::string readString(const JsonNode & node, const std::string & field);
+
 enum class ScriptBuildingKind : int32_t
 {
 	UNKNOWN = 0,
@@ -320,6 +324,135 @@ ScriptQueryKind scriptQueryKind(const std::string & type)
 	if(type == "artifact_assembly_prompt")
 		return ScriptQueryKind::ARTIFACT_ASSEMBLY_PROMPT;
 	return ScriptQueryKind::UNKNOWN;
+}
+
+const std::vector<std::pair<int32_t, std::string>> & scriptActionTypeRegistry()
+{
+	static const std::vector<std::pair<int32_t, std::string>> registry = {
+		{1, "build"},
+		{2, "recruit"},
+		{3, "hire_hero"},
+		{4, "transfer_army"},
+		{5, "move_hero"},
+		{6, "visit_object"},
+		{7, "answer_query"},
+		{8, "cancel_query"},
+		{9, "end_turn"},
+		{20, "pick_best_creatures"},
+		{21, "pick_best_artifacts"},
+		{22, "prepare_hero"},
+		{23, "swap_artifacts"},
+		{24, "bulk_move_artifacts"},
+		{25, "sort_backpack_artifacts"},
+		{26, "scroll_backpack_artifacts"},
+		{27, "manage_hero_costume"},
+		{28, "assemble_artifacts"},
+		{29, "ignore_script_query"},
+		{30, "erase_transition_artifact"},
+		{40, "swap_creatures"},
+		{41, "merge_stacks"},
+		{42, "merge_or_swap_stacks"},
+		{43, "split_stack"},
+		{44, "bulk_move_army"},
+		{45, "bulk_split_stack"},
+		{46, "bulk_merge_stacks"},
+		{47, "bulk_split_rebalance_stack"},
+		{48, "dismiss_creature"},
+		{49, "upgrade_creature"},
+		{50, "set_formation"},
+		{51, "set_tactics"},
+		{52, "set_town_name"},
+		{53, "swap_garrison_hero"},
+		{60, "trade_resources"},
+		{61, "market_trade"},
+		{62, "request_statistic"},
+		{63, "dismiss_hero"},
+		{64, "build_boat"},
+		{65, "castle_teleport"},
+		{66, "dig"},
+		{67, "cast_spell"},
+		{68, "buy_artifact"},
+		{69, "spell_research"},
+		{70, "visit_town_building"},
+		{100, "nullkiller_reset"},
+		{101, "nullkiller_lock_resources"},
+		{102, "nullkiller_lock_hero"},
+		{103, "nullkiller_unlock_hero"},
+		{104, "nullkiller_trade"},
+		{105, "nullkiller_priority_pass"},
+		{106, "nullkiller_turn_slice"},
+		{107, "nullkiller_build_army"},
+		{108, "nullkiller_upgrade_army"},
+		{109, "nullkiller_recruit_creatures"},
+		{110, "nullkiller_move_creatures_to_hero"},
+		{111, "nullkiller_dismiss_weak_hero"},
+		{112, "nullkiller_optimize_artifacts"},
+		{113, "nullkiller_add_single_creature_stacks"},
+		{114, "nullkiller_rearrange_for_whirlpool"},
+		{115, "nullkiller_rearrange_for_siege"},
+		{116, "nullkiller_tasks"},
+		{117, "nullkiller_task"},
+		{118, "nullkiller_step"},
+		{119, "nullkiller_pass"},
+		{120, "nullkiller_answer_query"},
+		{121, "nullkiller_object_interaction"},
+	};
+	return registry;
+}
+
+int32_t scriptActionTypeId(const std::string & type)
+{
+	for(const auto & entry : scriptActionTypeRegistry())
+	{
+		if(entry.second == type)
+			return entry.first;
+	}
+	return 0;
+}
+
+std::string scriptActionTypeFromId(int32_t typeId)
+{
+	for(const auto & entry : scriptActionTypeRegistry())
+	{
+		if(entry.first == typeId)
+			return entry.second;
+	}
+	return {};
+}
+
+std::optional<int32_t> readScriptActionTypeId(const JsonNode & action)
+{
+	if(hasField(action, "type_id"))
+		return readInteger(action, "type_id");
+	return std::nullopt;
+}
+
+std::string readScriptActionType(const JsonNode & action)
+{
+	const std::optional<int32_t> typeId = readScriptActionTypeId(action);
+	if(hasField(action, "type"))
+	{
+		const std::string type = readString(action, "type");
+		if(typeId)
+		{
+			const int32_t expectedTypeId = scriptActionTypeId(type);
+			if(expectedTypeId == 0)
+				throw std::invalid_argument("Script action type has no stable numeric id: " + type);
+			if(expectedTypeId != *typeId)
+				throw std::invalid_argument("Script action type_id does not match type string: " + type);
+		}
+		return type;
+	}
+
+	if(typeId)
+	{
+		const std::string type = scriptActionTypeFromId(*typeId);
+		if(type.empty())
+			throw std::invalid_argument("Unknown script action type_id: " + std::to_string(*typeId));
+		return type;
+	}
+
+	return readString(action, "type");
 }
 
 const char * scriptThreatLevelName(ScriptThreatLevel level)
@@ -6444,9 +6577,12 @@ bool CScriptedAdventureAI::tryMakeImperativeScriptedTurn(scripting::LuaAdventure
 
 bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode & actionResult)
 {
-	const std::string type = readString(action, "type");
+	const std::string type = readScriptActionType(action);
 	ScopedCallbackWaitMode callbackWaitMode(cc, usesSynchronousNativeAiRequests(type));
 	actionResult["type"] = JsonNode(type);
+	const int32_t typeId = scriptActionTypeId(type);
+	if(typeId != 0)
+		actionResult["typeId"] = JsonNode(typeId);
 	struct AutoAnswerModeGuard
 	{
 		CScriptedAdventureAI & owner;
@@ -8396,10 +8532,23 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 {
 	JsonNode actionSpace;
 	actionSpace["acceptedActionTypes"].Vector();
+	actionSpace["acceptedActions"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
+	{
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
+		JsonNode accepted;
+		accepted["type"] = JsonNode(type);
+		accepted["typeId"] = JsonNode(scriptActionTypeId(type));
+		actionSpace["acceptedActions"].Vector().push_back(accepted);
+	}
 	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "prepare_hero", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "erase_transition_artifact", "swap_creatures", "merge_stacks", "merge_or_swap_stacks", "split_stack", "bulk_move_army", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "set_town_name", "swap_garrison_hero", "nullkiller_reset", "nullkiller_lock_resources", "nullkiller_lock_hero", "nullkiller_unlock_hero", "nullkiller_trade", "nullkiller_priority_pass", "nullkiller_turn_slice", "nullkiller_build_army", "nullkiller_upgrade_army", "nullkiller_recruit_creatures", "nullkiller_move_creatures_to_hero", "nullkiller_dismiss_weak_hero", "nullkiller_optimize_artifacts", "nullkiller_add_single_creature_stacks", "nullkiller_rearrange_for_whirlpool", "nullkiller_rearrange_for_siege", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_pass", "nullkiller_answer_query", "nullkiller_object_interaction" })
+	{
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
+		JsonNode accepted;
+		accepted["type"] = JsonNode(type);
+		accepted["typeId"] = JsonNode(scriptActionTypeId(type));
+		actionSpace["acceptedActions"].Vector().push_back(accepted);
+	}
 
 	actionSpace["buildOptions"].Vector();
 	actionSpace["recruitOptions"].Vector();
