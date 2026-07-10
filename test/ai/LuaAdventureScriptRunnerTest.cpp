@@ -492,6 +492,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 						mineKind = ai.objectKinds.mine,
 						dwellingBuildingKind = ai.buildingKinds.dwelling,
 						gatherTransferKind = ai.armyTransferKinds.gatherToHero,
+						blockingQueryType = ai.queryTypes.blockingDialog,
 						criticalThreat = ai.threatLevels.critical,
 						riskyRisk = ai.riskLevels.risky,
 						townPortalSpecialAction = ai.specialActionKinds.townPortal,
@@ -706,6 +707,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 	EXPECT_EQ(output.memory["mineKind"].Integer(), 3);
 	EXPECT_EQ(output.memory["dwellingBuildingKind"].Integer(), 11);
 	EXPECT_EQ(output.memory["gatherTransferKind"].Integer(), 1);
+	EXPECT_EQ(output.memory["blockingQueryType"].Integer(), 3);
 	EXPECT_EQ(output.memory["criticalThreat"].Integer(), 3);
 	EXPECT_EQ(output.memory["riskyRisk"].Integer(), 2);
 	EXPECT_EQ(output.memory["townPortalSpecialAction"].Integer(), 3);
@@ -1306,7 +1308,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanReadAndAnswerPendingQueries)
 				ai:runOption(queries[1].components[1])
 				return {
 					status = "end_turn",
-					memory = { version = 1, queryType = queries[1].type },
+					memory = { version = 1, queryType = queries[1].type, queryTypeId = queries[1].typeId },
 					actions = {}
 				}
 			end
@@ -1317,6 +1319,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanReadAndAnswerPendingQueries)
 	input.state["turn"]["queries"].Vector();
 	JsonNode query;
 	query["query_id"] = JsonNode(77);
+	query["typeId"] = JsonNode(3);
 	query["type"] = JsonNode("blocking_dialog");
 	query["components"].Vector();
 	JsonNode component;
@@ -1347,6 +1350,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanReadAndAnswerPendingQueries)
 	EXPECT_EQ(commands[0]["payload"]["answer"].Integer(), 2);
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	EXPECT_EQ(output.memory["queryType"].String(), "blocking_dialog");
+	EXPECT_EQ(output.memory["queryTypeId"].Integer(), 3);
 }
 
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanLetNullkillerAnswerPendingQueries)

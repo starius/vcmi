@@ -147,6 +147,23 @@ enum class ScriptArmyTransferKind : int32_t
 	REINFORCE_TOWN = 2
 };
 
+enum class ScriptQueryKind : int32_t
+{
+	UNKNOWN = 0,
+	HERO_LEVEL_UP = 1,
+	COMMANDER_LEVEL_UP = 2,
+	BLOCKING_DIALOG = 3,
+	TELEPORT_DIALOG = 4,
+	MAP_OBJECT_SELECT = 5,
+	TAVERN_WINDOW = 6,
+	HERO_EXCHANGE = 7,
+	GARRISON_DIALOG = 8,
+	RECRUITMENT_DIALOG = 9,
+	UNIVERSITY_WINDOW = 10,
+	MARKET_WINDOW = 11,
+	ARTIFACT_ASSEMBLY_PROMPT = 12
+};
+
 enum class ScriptThreatLevel : int32_t
 {
 	UNKNOWN = 0,
@@ -274,6 +291,35 @@ const char * scriptArmyTransferKindName(ScriptArmyTransferKind kind)
 	default:
 		return "unknown";
 	}
+}
+
+ScriptQueryKind scriptQueryKind(const std::string & type)
+{
+	if(type == "hero_level_up")
+		return ScriptQueryKind::HERO_LEVEL_UP;
+	if(type == "commander_level_up")
+		return ScriptQueryKind::COMMANDER_LEVEL_UP;
+	if(type == "blocking_dialog")
+		return ScriptQueryKind::BLOCKING_DIALOG;
+	if(type == "teleport_dialog")
+		return ScriptQueryKind::TELEPORT_DIALOG;
+	if(type == "map_object_select")
+		return ScriptQueryKind::MAP_OBJECT_SELECT;
+	if(type == "tavern_window")
+		return ScriptQueryKind::TAVERN_WINDOW;
+	if(type == "hero_exchange")
+		return ScriptQueryKind::HERO_EXCHANGE;
+	if(type == "garrison_dialog")
+		return ScriptQueryKind::GARRISON_DIALOG;
+	if(type == "recruitment_dialog")
+		return ScriptQueryKind::RECRUITMENT_DIALOG;
+	if(type == "university_window")
+		return ScriptQueryKind::UNIVERSITY_WINDOW;
+	if(type == "market_window")
+		return ScriptQueryKind::MARKET_WINDOW;
+	if(type == "artifact_assembly_prompt")
+		return ScriptQueryKind::ARTIFACT_ASSEMBLY_PROMPT;
+	return ScriptQueryKind::UNKNOWN;
 }
 
 const char * scriptThreatLevelName(ScriptThreatLevel level)
@@ -4189,6 +4235,7 @@ void CScriptedAdventureAI::recordScriptQuery(QueryID queryID, const std::string 
 		return;
 
 	data["query_id"] = JsonNode(queryID.getNum());
+	data["typeId"] = JsonNode(static_cast<int32_t>(scriptQueryKind(type)));
 	data["type"] = JsonNode(type);
 	attachScriptQueryActions(data, queryID);
 
@@ -9179,7 +9226,7 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 	analysis["scriptMemory"]["persistedInPlayerLocalSettings"] = JsonNode(true);
 	analysis["scriptMemory"]["localStateKey"] = JsonNode(SCRIPT_MEMORY_LOCAL_STATE_KEY);
 	analysis["candidateFields"].Vector();
-	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "kindId", "buildingKindId", "transferKindId", "preparationKindId", "pathActionId", "levelId", "statusId", "targetKindId", "spell_id", "task_id", "goalTypeId", "priorityTier", "heroRoleId", "nullkillerRoleId", "nullkillerArtifactScore", "nullkillerPotentialArtifactScore", "outcomeId", "failureActionId" })
+	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "typeId", "subtypeId", "kindId", "buildingKindId", "transferKindId", "preparationKindId", "pathActionId", "levelId", "statusId", "targetKindId", "spell_id", "task_id", "goalTypeId", "priorityTier", "heroRoleId", "nullkillerRoleId", "nullkillerArtifactScore", "nullkillerPotentialArtifactScore", "outcomeId", "failureActionId" })
 		analysis["candidateFields"].Vector().push_back(JsonNode(field));
 	analysis["danger"]["candidateDangerSource"] = JsonNode("Nullkiller direct object/guard danger evaluator");
 	analysis["danger"]["enemyReachSource"] = JsonNode("visible enemy distance and strength alerts");

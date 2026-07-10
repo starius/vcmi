@@ -238,6 +238,22 @@ ai.armyTransferKinds = {
 	reinforceTown = 2
 }
 
+ai.queryTypes = {
+	unknown = 0,
+	heroLevelUp = 1,
+	commanderLevelUp = 2,
+	blockingDialog = 3,
+	teleportDialog = 4,
+	mapObjectSelect = 5,
+	tavernWindow = 6,
+	heroExchange = 7,
+	garrisonDialog = 8,
+	recruitmentDialog = 9,
+	universityWindow = 10,
+	marketWindow = 11,
+	artifactAssemblyPrompt = 12
+}
+
 ai.threatLevels = {
 	unknown = 0,
 	watch = 1,

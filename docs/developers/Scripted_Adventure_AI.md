@@ -162,8 +162,9 @@ Input:
 - `progress`: result of the previous plan execution, including executed, failed, and remaining actions.
 - `memory`: script-owned long-term context from previous calls/days.
 - current day/week/month and active player color under `state`.
-- `state.turn.queries`: typed pending dialog/window queries with query ids, stable type labels, answer ids, and
-  mode-specific numeric fields. Real server queries include `answerAction`, `nullkillerAnswerAction`, and
+- `state.turn.queries`: typed pending dialog/window queries with query ids, stable `typeId` values, trace-friendly
+  type labels, answer ids, and mode-specific numeric fields. Real server queries include `answerAction`,
+  `nullkillerAnswerAction`, and
   per-choice `planAction` fields where an answer id exists. Queries that use the player's optional reply channel,
   such as map-object selection windows, expose `cancelAction`; blocking dialogs with a visible cancel button use
   normal `answer_query` answer `0`. Local script-only prompts use their own checked action fields such as
@@ -634,8 +635,8 @@ Current bounded subroutine surface:
   more slices, because repeated small resource trades can otherwise dominate the command budget without adding
   new adventure decisions.
 - Lua exposes numeric constants for stable host ids used by the strategic contract:
-  `ai.buildingKinds`, `ai.objectKinds`, `ai.armyTransferKinds`, `ai.threatLevels`, `ai.riskLevels`,
-  `ai.specialActionKinds`, `ai.adventureSpellKinds`, `ai.nullkillerStepOutcomes`,
+  `ai.buildingKinds`, `ai.objectKinds`, `ai.armyTransferKinds`, `ai.queryTypes`, `ai.threatLevels`,
+  `ai.riskLevels`, `ai.specialActionKinds`, `ai.adventureSpellKinds`, `ai.nullkillerStepOutcomes`,
   `ai.nullkillerFailureActions`, `ai.nullkillerTaskModes`, and `ai.nullkillerPriorityTiers`. Scripts should
   branch on these constants rather than trace strings or raw magic numbers.
 - `analysis.nullkiller.settings` exposes Nullkiller's read-only operational thresholds, including max pass counts,
@@ -1148,6 +1149,8 @@ Regression harness:
   `typeId`/`subtypeId` plus `kindId`; town build options provide `building_id`, `buildingKindId`,
   `buildingLevel`, and `buildingUpgrade`; paths provide `pathActionId`; visible threat alerts provide `levelId`.
   Localized display strings remain useful in traces but are not part of the strategic contract.
+- Pending query records expose stable numeric `typeId` values, mirrored by `ai.queryTypes`, so Lua can branch on
+  dialog/window kinds without parsing trace labels.
 - Script input now includes complete player-visible `state.map.visibleTiles` terrain records, tile-level visible
   visitable/blocking object ids, and complete player-visible `state.map.visibleObjects`, plus full
   `state.ownedObjects` from the player-specific owned-object callback. Visible map data is produced through
