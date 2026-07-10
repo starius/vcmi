@@ -1402,6 +1402,13 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectVisibleState)
 				local tile = ai:getTile(1, 2, 0)
 				local objectsAt = ai:getObjectsAt(1, 2, 0)
 				local availableHeroes = ai:getAvailableHeroes(9)
+				local path = ai:getPath(7, 3, 4, 0)
+				local objectPath = ai:getPathToObject(7, 42)
+				local reachable = ai:getReachable(7, {
+					radius = 8,
+					maxMovementOptions = 5,
+					maxObjectTargets = 6
+				})
 				local state = ai:getState()
 				local actionSpace = ai:getActionSpace()
 				local analysis = ai:getAnalysis()
@@ -1418,6 +1425,11 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectVisibleState)
 						tileX = tile.position.x,
 						objectsAtX = objectsAt.position.x,
 						availableHeroCount = availableHeroes.heroCount,
+						pathReachable = path.reachable,
+						pathRoute = path.route_id,
+						objectPathObjectId = objectPath.object_id,
+						reachableRadius = reachable.radius,
+						reachableMoves = #reachable.movementOptions,
 						day = state.day,
 						hasEndTurn = actionSpace.endTurnAction ~= nil,
 						hasExecution = analysis.execution ~= nil,
@@ -1465,6 +1477,29 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectVisibleState)
 			response["result"]["source_id"] = command["payload"]["source_id"];
 			response["result"]["heroCount"] = JsonNode(2);
 		}
+		else if(what == "path")
+		{
+			response["result"]["hero_id"] = command["payload"]["hero_id"];
+			response["result"]["reachable"] = JsonNode(true);
+			response["result"]["route_id"] = JsonNode("route:test");
+			if(hasField(command["payload"], "object_id"))
+				response["result"]["object_id"] = command["payload"]["object_id"];
+			else
+			{
+				response["result"]["destination"]["x"] = command["payload"]["x"];
+				response["result"]["destination"]["y"] = command["payload"]["y"];
+				response["result"]["destination"]["z"] = command["payload"]["z"];
+			}
+		}
+		else if(what == "reachable")
+		{
+			response["result"]["hero_id"] = command["payload"]["hero_id"];
+			response["result"]["radius"] = command["payload"]["radius"];
+			JsonNode option;
+			option["route_id"] = JsonNode("route:test");
+			response["result"]["movementOptions"].Vector().push_back(option);
+			response["result"]["reachableObjects"].Vector();
+		}
 		else if(what == "state")
 		{
 			response["result"]["day"] = JsonNode(3);
@@ -1492,7 +1527,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectVisibleState)
 		return response;
 	});
 
-	ASSERT_EQ(commands.size(), 12);
+	ASSERT_EQ(commands.size(), 15);
 	for(const JsonNode & command : commands)
 		EXPECT_EQ(command["kind"].String(), "inspect");
 	EXPECT_EQ(commands[0]["payload"]["what"].String(), "object");
@@ -1502,6 +1537,17 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectVisibleState)
 	EXPECT_EQ(commands[3]["payload"]["x"].Integer(), 1);
 	EXPECT_EQ(commands[3]["payload"]["y"].Integer(), 2);
 	EXPECT_EQ(commands[3]["payload"]["z"].Integer(), 0);
+	EXPECT_EQ(commands[6]["payload"]["what"].String(), "path");
+	EXPECT_EQ(commands[6]["payload"]["hero_id"].Integer(), 7);
+	EXPECT_EQ(commands[6]["payload"]["x"].Integer(), 3);
+	EXPECT_EQ(commands[6]["payload"]["y"].Integer(), 4);
+	EXPECT_EQ(commands[6]["payload"]["z"].Integer(), 0);
+	EXPECT_EQ(commands[7]["payload"]["what"].String(), "path");
+	EXPECT_EQ(commands[7]["payload"]["object_id"].Integer(), 42);
+	EXPECT_EQ(commands[8]["payload"]["what"].String(), "reachable");
+	EXPECT_EQ(commands[8]["payload"]["radius"].Integer(), 8);
+	EXPECT_EQ(commands[8]["payload"]["max_movement_options"].Integer(), 5);
+	EXPECT_EQ(commands[8]["payload"]["max_object_targets"].Integer(), 6);
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	EXPECT_EQ(output.memory["objectId"].Integer(), 42);
 	EXPECT_EQ(output.memory["heroId"].Integer(), 7);
@@ -1509,6 +1555,11 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectVisibleState)
 	EXPECT_EQ(output.memory["tileX"].Integer(), 1);
 	EXPECT_EQ(output.memory["objectsAtX"].Integer(), 1);
 	EXPECT_EQ(output.memory["availableHeroCount"].Integer(), 2);
+	EXPECT_TRUE(output.memory["pathReachable"].Bool());
+	EXPECT_EQ(output.memory["pathRoute"].String(), "route:test");
+	EXPECT_EQ(output.memory["objectPathObjectId"].Integer(), 42);
+	EXPECT_EQ(output.memory["reachableRadius"].Integer(), 8);
+	EXPECT_EQ(output.memory["reachableMoves"].Integer(), 1);
 	EXPECT_EQ(output.memory["day"].Integer(), 3);
 	EXPECT_TRUE(output.memory["hasEndTurn"].Bool());
 	EXPECT_TRUE(output.memory["hasExecution"].Bool());

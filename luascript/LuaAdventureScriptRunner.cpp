@@ -223,6 +223,24 @@ function ai:getAvailableHeroes(sourceId)
 	return self:inspect({ what = "available_heroes", source_id = sourceId })
 end
 
+function ai:getPath(heroId, x, y, z)
+	return self:inspect({ what = "path", hero_id = heroId, x = x, y = y, z = z })
+end
+
+function ai:getPathToObject(heroId, objectId)
+	return self:inspect({ what = "path", hero_id = heroId, object_id = objectId })
+end
+
+function ai:getReachable(heroId, options)
+	local request = { what = "reachable", hero_id = heroId }
+	if type(options) == "table" then
+		request.radius = options.radius
+		request.max_movement_options = options.max_movement_options or options.maxMovementOptions
+		request.max_object_targets = options.max_object_targets or options.maxObjectTargets
+	end
+	return self:inspect(request)
+end
+
 function ai:delegateToNullkiller(intent)
 	return coroutine.yield({
 		kind = "fallback",

@@ -200,8 +200,11 @@ The `ai` facade:
   Convenience wrappers include `ai:getState()`, `ai:getActionSpace()`, `ai:getAnalysis()`, `ai:getQueries()`,
   `ai:getUpdates(opponentOnly?)`, `ai:getLimits()`, `ai:getObject(objectId, heroId?)`, `ai:getHero(heroId)`,
   `ai:getTown(townId)`, `ai:getTile(x, y, z?)`, `ai:getObjectsAt(x, y, z?)`, and
-  `ai:getAvailableHeroes(sourceId)`. These calls do not expose hidden map data; unknown, hidden, or invalid
-  targets are host errors that Lua may catch with `pcall`.
+  `ai:getAvailableHeroes(sourceId)`. Movement-specific wrappers include `ai:getPath(heroId, x, y, z?)`,
+  `ai:getPathToObject(heroId, objectId)`, and `ai:getReachable(heroId, options?)`; they return current route ids
+  and executable `planAction` records, but movement execution still recalculates the route and rejects stale ids.
+  These calls do not expose hidden map data; unknown, hidden, or invalid targets are host errors that Lua may catch
+  with `pcall`.
 - `ai:runAction(action)` and `ai:runOption(option, actionField?)`: execute a checked action table directly,
   or execute an action embedded in an action-space option. `actionField` defaults to `planAction`, and can be
   `tasksAction`, `stepAction`, or `passAction` for bounded Nullkiller subroutine options.
@@ -1512,8 +1515,9 @@ Regression harness:
   actions without parsing action-name strings.
 - Done: Lua has checked read-side binding calls through `ai:inspect` and typed `ai:get*` wrappers for current
   visible state, action space, analysis, queries, updates, limits, visible objects/heroes/towns/tiles, visible
-  objects at a tile, and visible tavern hero availability. Invalid or hidden targets raise host errors that scripts
-  can catch; uncaught errors keep the normal Nullkiller fallback path.
+  objects at a tile, visible tavern hero availability, on-demand path lookup, and bounded current-turn reachable
+  tile/object lookup. Invalid or hidden targets raise host errors that scripts can catch; uncaught errors keep the
+  normal Nullkiller fallback path. Returned route ids are advisory and are revalidated by checked movement actions.
 - Bounded Nullkiller helpers that invoke native task decomposition, pathfinding, task execution, priority passes,
   or resource trading use the same shared pathfinder-storage lock as native `Nullkiller::makeTurn`; add new native
   subroutines at that primitive boundary rather than around higher-level Lua loops to avoid nested lock attempts.

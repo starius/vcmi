@@ -6716,6 +6716,177 @@ JsonNode CScriptedAdventureAI::executeScriptInspect(const JsonNode & request)
 		return node;
 	}
 
+	if(what == "path")
+	{
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(request, "hero_id")));
+		if(!hero || hero->tempOwner != playerID || !cc->isVisibleFor(hero, playerID))
+			throw std::invalid_argument("Unknown hero, hero is not visible, or hero is not owned by scripted AI");
+
+		int3 destination;
+		ObjectInstanceID objectID = ObjectInstanceID::NONE;
+		if(hasField(request, "object_id"))
+		{
+			const CGObjectInstance * object = cc->getObj(ObjectInstanceID(readInteger(request, "object_id")), false);
+			if(!object || !cc->isVisibleFor(object, playerID))
+				throw std::invalid_argument("Unknown object or object is not visible to scripted AI");
+			if(!isScriptObjectTarget(object, playerID))
+				throw std::invalid_argument("Path target object is not a valid script visit target");
+			objectID = object->id;
+			destination = object->visitablePos();
+		}
+		else
+		{
+			destination = int3(readInteger(request, "x"), readInteger(request, "y"), readInteger(request, "z", hero->visitablePos().z));
+			if(!cc->isInTheMap(destination) || !cc->isVisibleFor(destination, playerID))
+				throw std::invalid_argument("Path destination is outside the map or is not visible to scripted AI");
+		}
+
+		JsonNode node;
+		node["hero_id"] = JsonNode(hero->id.getNum());
+		node["destination"] = jsonPosition(destination);
+		if(objectID != ObjectInstanceID::NONE)
+			node["object_id"] = JsonNode(objectID.getNum());
+
+		const RoutePlan route = makeRoutePlan(hero, destination, std::nullopt);
+		node["reachable"] = JsonNode(route.ok);
+		if(!route.ok)
+		{
+			node["error"] = JsonNode(route.error);
+			return node;
+		}
+
+		node["route_id"] = JsonNode(route.routeID);
+		node["submittedPath"] = jsonPositions(route.requestPath);
+		node["stopAfterMove"] = JsonNode(route.stopAfterMove);
+		node["transit"] = JsonNode(route.transit);
+		node["layerId"] = JsonNode(route.layer.getNum());
+		if(objectID != ObjectInstanceID::NONE)
+		{
+			setScriptActionType(node["planAction"], "visit_object");
+			node["planAction"]["hero_id"] = JsonNode(hero->id.getNum());
+			node["planAction"]["object_id"] = JsonNode(objectID.getNum());
+			node["planAction"]["route_id"] = JsonNode(route.routeID);
+		}
+		else
+		{
+			setScriptActionType(node["planAction"], "move_hero");
+			node["planAction"]["hero_id"] = JsonNode(hero->id.getNum());
+			node["planAction"]["x"] = JsonNode(destination.x);
+			node["planAction"]["y"] = JsonNode(destination.y);
+			node["planAction"]["z"] = JsonNode(destination.z);
+			node["planAction"]["route_id"] = JsonNode(route.routeID);
+		}
+		return node;
+	}
+
+	if(what == "reachable")
+	{
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(request, "hero_id")));
+		if(!hero || hero->tempOwner != playerID || !cc->isVisibleFor(hero, playerID))
+			throw std::invalid_argument("Unknown hero, hero is not visible, or hero is not owned by scripted AI");
+
+		const int32_t radius = std::clamp(readInteger(request, "radius", 16), 1, 64);
+		const size_t maxMovementOptions = static_cast<size_t>(std::clamp(readInteger(request, "max_movement_options", 64), 0, 512));
+		const size_t maxObjectTargets = static_cast<size_t>(std::clamp(readInteger(request, "max_object_targets", 64), 0, 512));
+
+		JsonNode node;
+		node["hero_id"] = JsonNode(hero->id.getNum());
+		node["radius"] = JsonNode(radius);
+		node["movementOptions"].Vector();
+		node["reachableObjects"].Vector();
+
+		std::shared_lock gameStateLock(CGameState::mutex);
+		if(hero->movementPointsRemaining() <= 0)
+			return node;
+
+		CPathsInfo paths(cc->getMapSize(), hero);
+		auto config = std::make_shared<SingleHeroPathfinderConfig>(paths, *cc, hero);
+		cc->calculatePaths(config);
+
+		FowTilesType tiles;
+		cc->getTilesInRange(tiles, hero->visitablePos(), radius, ETileVisibility::REVEALED, playerID);
+
+		size_t reachableTileCount = 0;
+		size_t reachableObjectCount = 0;
+		std::set<int32_t> seenTargetObjects;
+		for(const int3 & position : tiles)
+		{
+			if(position == hero->visitablePos())
+				continue;
+			if(!cc->isInTheMap(position) || !cc->isVisibleFor(position, playerID))
+				continue;
+
+			const CGPathNode * pathNode = paths.getPathInfo(position);
+			if(!pathNode || !pathNode->reachable() || pathNode->turns != 0)
+				continue;
+			if(pathNode->accessible == EPathAccessibility::NOT_SET || pathNode->accessible == EPathAccessibility::BLOCKED)
+				continue;
+
+			++reachableTileCount;
+			const std::string routeID = makeRouteId(hero->id.getNum(), hero->visitablePos(), position, pathNode->layer, pathNode->moveRemains);
+			const uint64_t danger = nullkiller && nullkiller->dangerEvaluator ? nullkiller->dangerEvaluator->evaluateDanger(position, hero, true) : 0;
+			const bool safe = !danger || (nullkiller && nullkiller->settings && NK2AI::isSafeToVisit(hero, danger, nullkiller->settings->getSafeAttackRatio()));
+			const JsonNode risk = jsonRisk(hero, danger, safe);
+
+			if(node["movementOptions"].Vector().size() < maxMovementOptions)
+			{
+				JsonNode option;
+				option["hero_id"] = JsonNode(hero->id.getNum());
+				option["hero"] = JsonNode(jsonText(hero->getNameTranslated()));
+				option["path"] = jsonPathNode(*pathNode);
+				option["route_id"] = JsonNode(routeID);
+				option["danger"] = risk["danger"];
+				option["dangerRatio"] = risk["dangerRatio"];
+				option["estimatedLoss"] = risk["estimatedLoss"];
+				option["risk"] = risk["risk"];
+				option["safe"] = risk["safe"];
+				option["riskInfo"] = risk;
+				setScriptActionType(option["planAction"], "move_hero");
+				option["planAction"]["hero_id"] = JsonNode(hero->id.getNum());
+				option["planAction"]["x"] = JsonNode(position.x);
+				option["planAction"]["y"] = JsonNode(position.y);
+				option["planAction"]["z"] = JsonNode(position.z);
+				option["planAction"]["route_id"] = JsonNode(routeID);
+				node["movementOptions"].Vector().push_back(option);
+			}
+
+			const CGObjectInstance * topObject = cc->getTopObj(position);
+			if(topObject
+				&& isObjectPathAction(pathNode->action)
+				&& isScriptObjectTarget(topObject, playerID)
+				&& seenTargetObjects.insert(topObject->id.getNum()).second)
+			{
+				++reachableObjectCount;
+				if(node["reachableObjects"].Vector().size() < maxObjectTargets)
+				{
+					JsonNode target;
+					target["object"] = jsonMapObject(topObject, playerID, hero);
+					target["hero_id"] = JsonNode(hero->id.getNum());
+					target["hero"] = JsonNode(jsonText(hero->getNameTranslated()));
+					target["path"] = jsonPathNode(*pathNode);
+					target["route_id"] = JsonNode(routeID);
+					target["danger"] = risk["danger"];
+					target["dangerRatio"] = risk["dangerRatio"];
+					target["estimatedLoss"] = risk["estimatedLoss"];
+					target["risk"] = risk["risk"];
+					target["safe"] = risk["safe"];
+					target["riskInfo"] = risk;
+					setScriptActionType(target["planAction"], "visit_object");
+					target["planAction"]["hero_id"] = JsonNode(hero->id.getNum());
+					target["planAction"]["object_id"] = JsonNode(topObject->id.getNum());
+					target["planAction"]["route_id"] = JsonNode(routeID);
+					node["reachableObjects"].Vector().push_back(target);
+				}
+			}
+		}
+
+		node["reachableTileCount"] = JsonNode(static_cast<int32_t>(reachableTileCount));
+		node["reachableObjectCount"] = JsonNode(static_cast<int32_t>(reachableObjectCount));
+		node["movementOptionsTruncated"] = JsonNode(reachableTileCount > node["movementOptions"].Vector().size());
+		node["reachableObjectsTruncated"] = JsonNode(reachableObjectCount > node["reachableObjects"].Vector().size());
+		return node;
+	}
+
 	throw std::invalid_argument("Unsupported inspect request: " + what);
 }
 
