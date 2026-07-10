@@ -34,6 +34,7 @@
 #include "../../lib/mapObjects/IObjectInterface.h"
 #include "../../lib/mapObjects/army/CArmedInstance.h"
 #include "../../lib/mapObjects/army/CStackInstance.h"
+#include "../../lib/entities/artifact/CArtifactFittingSet.h"
 #include "../../lib/entities/artifact/ArtifactUtils.h"
 #include "../../lib/entities/artifact/CArtifact.h"
 #include "../../lib/entities/artifact/CArtifactInstance.h"
@@ -1286,6 +1287,331 @@ JsonNode jsonArtifacts(const CGHeroInstance * hero)
 		const ArtSlotInfo & slotInfo = hero->artifactsInBackpack[index];
 		if(slotInfo.getArt())
 			node["backpack"].Vector().push_back(jsonArtifactSlot(hero, ArtifactPosition::BACKPACK_START + static_cast<int>(index), slotInfo, true));
+	}
+
+	return node;
+}
+
+bool heroCanUseMarketAltar(const CGHeroInstance * hero, const CGObjectInstance * marketObject)
+{
+	if(!hero || !marketObject)
+		return false;
+
+	if(const auto * town = dynamic_cast<const CGTownInstance *>(marketObject))
+	{
+		if(hero->getVisitedTown() == town)
+			return true;
+	}
+
+	return marketObject->visitablePos().isValid() && hero->visitablePos() == marketObject->visitablePos();
+}
+
+JsonNode jsonArtifactAltarStageAction(ObjectInstanceID marketID, ObjectInstanceID heroID, ArtifactPosition slot)
+{
+	JsonNode action;
+	action["type"] = JsonNode("swap_artifacts");
+	action["src"]["holder_id"] = JsonNode(heroID.getNum());
+	action["src"]["slot"] = JsonNode(slot.getNum());
+	action["dst"]["holder_id"] = JsonNode(marketID.getNum());
+	action["dst"]["slot"] = JsonNode(ArtifactPosition(ArtifactPosition::ALTAR).getNum());
+	return action;
+}
+
+JsonNode jsonArtifactAltarBulkStageAction(ObjectInstanceID marketID, ObjectInstanceID heroID, bool equipped, bool backpack)
+{
+	JsonNode action;
+	action["type"] = JsonNode("bulk_move_artifacts");
+	action["src_id"] = JsonNode(heroID.getNum());
+	action["dst_id"] = JsonNode(marketID.getNum());
+	action["src_hero_id"] = JsonNode(heroID.getNum());
+	action["swap"] = JsonNode(false);
+	action["equipped"] = JsonNode(equipped);
+	action["backpack"] = JsonNode(backpack);
+	return action;
+}
+
+JsonNode jsonArtifactAltarSacrificeAction(ObjectInstanceID marketID, ObjectInstanceID heroID, ArtifactInstanceID artifactInstanceID)
+{
+	JsonNode action;
+	action["type"] = JsonNode("market_trade");
+	action["market_id"] = JsonNode(marketID.getNum());
+	action["mode_id"] = JsonNode(static_cast<int32_t>(EMarketMode::ARTIFACT_EXP));
+	action["hero_id"] = JsonNode(heroID.getNum());
+	action["artifact_instance_id"] = JsonNode(artifactInstanceID.getNum());
+	return action;
+}
+
+JsonNode jsonArtifactAltarBulkSacrificeAction(ObjectInstanceID marketID, ObjectInstanceID heroID, const std::vector<ArtifactInstanceID> & artifactInstanceIDs)
+{
+	JsonNode action;
+	action["type"] = JsonNode("market_trade");
+	action["market_id"] = JsonNode(marketID.getNum());
+	action["mode_id"] = JsonNode(static_cast<int32_t>(EMarketMode::ARTIFACT_EXP));
+	action["hero_id"] = JsonNode(heroID.getNum());
+	action["artifact_instance_ids"].Vector();
+	for(const ArtifactInstanceID & artifactInstanceID : artifactInstanceIDs)
+		action["artifact_instance_ids"].Vector().push_back(JsonNode(artifactInstanceID.getNum()));
+	return action;
+}
+
+JsonNode jsonCreatureAltarSacrificeAction(ObjectInstanceID marketID, ObjectInstanceID heroID, SlotID slot, int32_t amount)
+{
+	JsonNode action;
+	action["type"] = JsonNode("market_trade");
+	action["market_id"] = JsonNode(marketID.getNum());
+	action["mode_id"] = JsonNode(static_cast<int32_t>(EMarketMode::CREATURE_EXP));
+	action["hero_id"] = JsonNode(heroID.getNum());
+	action["slot"] = JsonNode(slot.getNum());
+	action["amount"] = JsonNode(amount);
+	return action;
+}
+
+JsonNode jsonCreatureAltarBulkSacrificeAction(ObjectInstanceID marketID, ObjectInstanceID heroID, const std::vector<SlotID> & slots, const std::vector<int32_t> & amounts)
+{
+	JsonNode action;
+	action["type"] = JsonNode("market_trade");
+	action["market_id"] = JsonNode(marketID.getNum());
+	action["mode_id"] = JsonNode(static_cast<int32_t>(EMarketMode::CREATURE_EXP));
+	action["hero_id"] = JsonNode(heroID.getNum());
+	action["slots"].Vector();
+	action["amounts"].Vector();
+	for(const SlotID & slot : slots)
+		action["slots"].Vector().push_back(JsonNode(slot.getNum()));
+	for(const int32_t amount : amounts)
+		action["amounts"].Vector().push_back(JsonNode(amount));
+	return action;
+}
+
+JsonNode jsonArtifactAltarCandidate(
+	const IMarket * market,
+	const CArtifactSet * altarStorage,
+	const CGHeroInstance * hero,
+	ArtifactPosition position,
+	const ArtSlotInfo & slotInfo,
+	bool backpack,
+	CArtifactFittingSet & fittingSet)
+{
+	JsonNode node = jsonArtifactSlot(hero, position, slotInfo, backpack);
+	const CArtifactInstance * artifact = slotInfo.getArt();
+	if(!artifact || !artifact->getType())
+		return node;
+
+	int bidQty = 0;
+	int rawExperience = 0;
+	const bool hasOffer = market->getOffer(artifact->getTypeId(), 0, bidQty, rawExperience, EMarketMode::ARTIFACT_EXP);
+	const bool tradable = artifact->getType()->isTradable() && hasOffer && rawExperience > 0;
+	const bool removable = backpack || ArtifactUtils::isArtRemovable({ position, slotInfo });
+	const ArtifactPosition stageSlot = ArtifactUtils::getArtAnyPosition(&fittingSet, artifact->getTypeId());
+	const bool fitsAltar = stageSlot != ArtifactPosition::PRE_FIRST && altarStorage && artifact->canBePutAt(altarStorage, ArtifactPosition::ALTAR);
+	const bool canStage = tradable && removable && fitsAltar;
+
+	node["tradable"] = JsonNode(tradable);
+	node["removable"] = JsonNode(removable);
+	node["fitsAltar"] = JsonNode(fitsAltar);
+	node["canStage"] = JsonNode(canStage);
+	node["rawExperience"] = JsonNode(rawExperience);
+	node["heroExperience"] = JsonNode(hero->calculateXp(rawExperience));
+
+	if(canStage)
+	{
+		node["stageAction"] = jsonArtifactAltarStageAction(market->getObjInstanceID(), hero->id, position);
+		node["sacrificeAction"] = jsonArtifactAltarSacrificeAction(market->getObjInstanceID(), hero->id, artifact->getId());
+		node["planActions"].Vector();
+		node["planActions"].Vector().push_back(node["stageAction"]);
+		node["planActions"].Vector().push_back(node["sacrificeAction"]);
+		fittingSet.putArtifact(stageSlot, artifact);
+	}
+
+	return node;
+}
+
+JsonNode jsonStagedAltarArtifact(const IMarket * market, const CGHeroInstance * hero, ArtifactPosition position, const ArtSlotInfo & slotInfo)
+{
+	JsonNode node;
+	node["holder_id"] = JsonNode(market->getObjInstanceID().getNum());
+	node["slot"] = JsonNode(position.getNum());
+	node["slotInfo"] = jsonArtifactPosition(position);
+
+	const CArtifactInstance * artifact = slotInfo.getArt();
+	if(!artifact || !artifact->getType())
+		return node;
+
+	node["artifactInstanceId"] = JsonNode(artifact->getId().getNum());
+	node["artifactTypeId"] = JsonNode(artifact->getTypeId().getNum());
+	node["artifactIdentifier"] = JsonNode(artifact->getType()->getJsonKey());
+	node["artifactName"] = JsonNode(jsonText(artifact->getType()->getNameTranslated()));
+	const bool tradable = artifact->getType()->isTradable();
+	node["tradable"] = JsonNode(tradable);
+	int bidQty = 0;
+	int rawExperience = 0;
+	if(tradable && market->getOffer(artifact->getTypeId(), 0, bidQty, rawExperience, EMarketMode::ARTIFACT_EXP))
+	{
+		node["rawExperience"] = JsonNode(rawExperience);
+		node["heroExperience"] = JsonNode(hero->calculateXp(rawExperience));
+		if(rawExperience > 0)
+			node["sacrificeAction"] = jsonArtifactAltarSacrificeAction(market->getObjInstanceID(), hero->id, artifact->getId());
+	}
+	return node;
+}
+
+JsonNode jsonMarketAltarOptions(const IMarket * market, const CGHeroInstance * hero)
+{
+	JsonNode node;
+	node["artifactSacrificeOptions"].Vector();
+	node["stagedArtifactOptions"].Vector();
+	node["creatureSacrificeOptions"].Vector();
+	node["available"] = JsonNode(false);
+
+	if(!market || !hero)
+		return node;
+
+	node["market_id"] = JsonNode(market->getObjInstanceID().getNum());
+	node["hero_id"] = JsonNode(hero->id.getNum());
+	node["available"] = JsonNode(true);
+
+	if(market->allowsTrade(EMarketMode::ARTIFACT_EXP))
+	{
+		node["artifactAltarAvailable"] = JsonNode(true);
+		const bool artifactAltarBlockedByAlignment = hero->getAlignment() == EAlignment::EVIL;
+		node["artifactAltarBlockedByAlignment"] = JsonNode(artifactAltarBlockedByAlignment);
+		CArtifactSet * altarStorage = market->getArtifactsStorage();
+		if(altarStorage && !artifactAltarBlockedByAlignment)
+		{
+			CArtifactFittingSet fittingSet(*altarStorage);
+			std::vector<ArtifactInstanceID> stagedFromHero;
+			int rawBulkExperience = 0;
+
+			for(const auto & [position, slotInfo] : hero->artifactsWorn)
+			{
+				if(!slotInfo.getArt())
+					continue;
+				JsonNode option = jsonArtifactAltarCandidate(market, altarStorage, hero, position, slotInfo, false, fittingSet);
+				if(option["canStage"].Bool())
+				{
+					stagedFromHero.push_back(slotInfo.getArt()->getId());
+					rawBulkExperience += static_cast<int32_t>(option["rawExperience"].Integer());
+				}
+				node["artifactSacrificeOptions"].Vector().push_back(option);
+			}
+
+			for(size_t index = 0; index < hero->artifactsInBackpack.size(); ++index)
+			{
+				const ArtSlotInfo & slotInfo = hero->artifactsInBackpack[index];
+				if(!slotInfo.getArt())
+					continue;
+				const ArtifactPosition position = ArtifactPosition::BACKPACK_START + static_cast<int>(index);
+				JsonNode option = jsonArtifactAltarCandidate(market, altarStorage, hero, position, slotInfo, true, fittingSet);
+				if(option["canStage"].Bool())
+				{
+					stagedFromHero.push_back(slotInfo.getArt()->getId());
+					rawBulkExperience += static_cast<int32_t>(option["rawExperience"].Integer());
+				}
+				node["artifactSacrificeOptions"].Vector().push_back(option);
+			}
+
+			if(!stagedFromHero.empty())
+			{
+				node["sacrificeAllArtifactPlanActions"].Vector();
+				node["sacrificeAllArtifactPlanActions"].Vector().push_back(jsonArtifactAltarBulkStageAction(market->getObjInstanceID(), hero->id, true, true));
+				node["sacrificeAllArtifactPlanActions"].Vector().push_back(jsonArtifactAltarBulkSacrificeAction(market->getObjInstanceID(), hero->id, stagedFromHero));
+				node["sacrificeAllArtifactRawExperience"] = JsonNode(rawBulkExperience);
+				node["sacrificeAllArtifactHeroExperience"] = JsonNode(hero->calculateXp(rawBulkExperience));
+			}
+
+			for(size_t index = 0; index < altarStorage->artifactsInBackpack.size(); ++index)
+			{
+				const ArtSlotInfo & slotInfo = altarStorage->artifactsInBackpack[index];
+				if(slotInfo.getArt())
+					node["stagedArtifactOptions"].Vector().push_back(jsonStagedAltarArtifact(market, hero, ArtifactPosition::BACKPACK_START + static_cast<int>(index), slotInfo));
+			}
+		}
+	}
+	else
+	{
+		node["artifactAltarAvailable"] = JsonNode(false);
+	}
+
+	if(market->allowsTrade(EMarketMode::CREATURE_EXP))
+	{
+		node["creatureAltarAvailable"] = JsonNode(true);
+		const bool creatureAltarBlockedByAlignment = hero->getAlignment() == EAlignment::GOOD;
+		node["creatureAltarBlockedByAlignment"] = JsonNode(creatureAltarBlockedByAlignment);
+		if(creatureAltarBlockedByAlignment)
+			return node;
+
+		std::vector<SlotID> bulkSlots;
+		std::vector<int32_t> bulkAmounts;
+		int rawBulkExperience = 0;
+
+		for(const auto & [slot, stack] : hero->Slots())
+		{
+			if(!stack)
+				continue;
+
+			const int32_t count = stack->getCount();
+			int bidQty = 0;
+			int rawPerUnitExperience = 0;
+			market->getOffer(stack->getCreatureID(), 0, bidQty, rawPerUnitExperience, EMarketMode::CREATURE_EXP);
+
+			JsonNode option;
+			const bool wouldSacrificeLastStack = hero->stacksCount() == 1 && hero->needsLastStack();
+			const int32_t maxSacrificeAmount = wouldSacrificeLastStack ? std::max<int32_t>(0, count - 1) : count;
+			option["slot"] = JsonNode(slot.getNum());
+			option["creatureId"] = JsonNode(stack->getCreatureID().getNum());
+			option["creatureIdentifier"] = JsonNode(stableIdentifier(stack->getCreatureID()));
+			option["count"] = JsonNode(count);
+			option["rawExperiencePerUnit"] = JsonNode(rawPerUnitExperience);
+			option["heroExperiencePerUnit"] = JsonNode(hero->calculateXp(rawPerUnitExperience));
+			option["maxSacrificeAmount"] = JsonNode(maxSacrificeAmount);
+			if(maxSacrificeAmount > 0)
+				option["planAction"] = jsonCreatureAltarSacrificeAction(market->getObjInstanceID(), hero->id, slot, maxSacrificeAmount);
+			node["creatureSacrificeOptions"].Vector().push_back(option);
+
+			if(count > 0)
+			{
+				bulkSlots.push_back(slot);
+				bulkAmounts.push_back(count);
+				rawBulkExperience += rawPerUnitExperience * count;
+			}
+		}
+
+		if(hero->needsLastStack() && !bulkAmounts.empty())
+		{
+			bulkAmounts.back() -= 1;
+			const SlotID preservedSlot = bulkSlots.back();
+			const CStackInstance * preservedStack = hero->getStackPtr(preservedSlot);
+			if(preservedStack)
+			{
+				int bidQty = 0;
+				int rawPerUnitExperience = 0;
+				market->getOffer(preservedStack->getCreatureID(), 0, bidQty, rawPerUnitExperience, EMarketMode::CREATURE_EXP);
+				rawBulkExperience -= rawPerUnitExperience;
+			}
+		}
+
+		for(size_t index = 0; index < bulkAmounts.size();)
+		{
+			if(bulkAmounts[index] <= 0)
+			{
+				bulkAmounts.erase(bulkAmounts.begin() + index);
+				bulkSlots.erase(bulkSlots.begin() + index);
+			}
+			else
+			{
+				++index;
+			}
+		}
+
+		if(!bulkSlots.empty())
+		{
+			node["sacrificeAllCreatureAction"] = jsonCreatureAltarBulkSacrificeAction(market->getObjInstanceID(), hero->id, bulkSlots, bulkAmounts);
+			node["sacrificeAllCreatureRawExperience"] = JsonNode(rawBulkExperience);
+			node["sacrificeAllCreatureHeroExperience"] = JsonNode(hero->calculateXp(rawBulkExperience));
+		}
+	}
+	else
+	{
+		node["creatureAltarAvailable"] = JsonNode(false);
 	}
 
 	return node;
@@ -4108,6 +4434,7 @@ void CScriptedAdventureAI::showMarketWindow(const IMarket * market, const CGHero
 		data["visitor_hero_id"] = JsonNode(visitor->id.getNum());
 		data["visitorHero"] = jsonHero(visitor);
 	}
+	data["altarOptions"] = jsonMarketAltarOptions(market, visitor);
 	data["skillOptions"] = jsonMarketSkillOptions(market, visitor, cc->getResourceAmount(), cc->getSettings());
 	recordScriptQuery(queryID, "market_window", data);
 	if(isScriptActionAutoAnswerMode())
@@ -6469,17 +6796,36 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 	{
 		const ArtifactLocation src = readArtifactLocation(action, "src");
 		const ArtifactLocation dst = readArtifactLocation(action, "dst");
-		const auto validateArtifactHolder = [&](const ArtifactLocation & location, const std::string & label)
+		const auto validateArtifactHolder = [&](const ArtifactLocation & location, const std::string & label, bool allowFirstAvailable) -> const CGObjectInstance *
 		{
-			const auto * holder = dynamic_cast<const CArtifactSet *>(cc->getObj(location.artHolder, false));
-			const auto * object = dynamic_cast<const CGObjectInstance *>(holder);
-			if(!holder || !object || object->tempOwner != playerID)
-				throw std::invalid_argument("Artifact " + label + " holder is unknown, hidden, or not owned by scripted AI");
-			if(!ArtifactUtils::checkIfSlotValid(*holder, location.slot))
+			const CArtifactSet * holder = cc->getArtSet(location);
+			const CGObjectInstance * object = cc->getObj(location.artHolder, false);
+			const IMarket * market = object ? dynamic_cast<const IMarket *>(object) : nullptr;
+			const bool ownedHolder = object && object->tempOwner == playerID;
+			const bool visibleAltarHolder = object && market && market->allowsTrade(EMarketMode::ARTIFACT_EXP) && cc->isVisibleFor(object, playerID);
+			if(!holder || !object || (!ownedHolder && !visibleAltarHolder))
+				throw std::invalid_argument("Artifact " + label + " holder is unknown, hidden, or unavailable to scripted AI");
+			const bool firstAvailableDestination = location.slot == ArtifactPosition::FIRST_AVAILABLE && allowFirstAvailable;
+			if(!firstAvailableDestination && !ArtifactUtils::checkIfSlotValid(*holder, location.slot))
 				throw std::invalid_argument("Artifact " + label + " slot is invalid for holder");
+			return object;
 		};
-		validateArtifactHolder(src, "source");
-		validateArtifactHolder(dst, "destination");
+		const CGObjectInstance * srcObject = validateArtifactHolder(src, "source", false);
+		const CGObjectInstance * dstObject = validateArtifactHolder(dst, "destination", true);
+
+		const IMarket * srcMarket = dynamic_cast<const IMarket *>(srcObject);
+		const IMarket * dstMarket = dynamic_cast<const IMarket *>(dstObject);
+		if(srcMarket || dstMarket)
+		{
+			if(srcMarket && dstMarket)
+				throw std::invalid_argument("Artifact exchange cannot move directly between two market altars");
+			const CGObjectInstance * marketObject = srcMarket ? srcObject : dstObject;
+			const CGHeroInstance * hero = dynamic_cast<const CGHeroInstance *>(srcMarket ? dstObject : srcObject);
+			if(!hero || hero->tempOwner != playerID)
+				throw std::invalid_argument("Artifact altar exchange requires an owned hero");
+			if(!heroCanUseMarketAltar(hero, marketObject))
+				throw std::invalid_argument("Hero must be visiting the market altar for artifact exchange");
+		}
 
 		const RequestWaitResult request = submitAndWaitForRequest(typeid(ExchangeArtifacts), CTypeList::getInstance().getTypeID<ExchangeArtifacts>(nullptr), [&]
 		{
@@ -6527,22 +6873,55 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 
 	if(type == "bulk_move_artifacts")
 	{
-		const CGHeroInstance * srcHero = cc->getHero(ObjectInstanceID(readInteger(action, "src_hero_id")));
-		const CGHeroInstance * dstHero = cc->getHero(ObjectInstanceID(readInteger(action, "dst_hero_id")));
-		if(!srcHero || !dstHero || srcHero->tempOwner != playerID || dstHero->tempOwner != playerID)
-			throw std::invalid_argument("Artifact bulk move heroes must both be owned by scripted AI");
-		if(srcHero->visitablePos() != dstHero->visitablePos())
-			throw std::invalid_argument("Heroes must be co-located for artifact bulk movement");
+		const ObjectInstanceID srcID(hasField(action, "src_id") ? readInteger(action, "src_id") : readInteger(action, "src_hero_id"));
+		const ObjectInstanceID dstID(hasField(action, "dst_id") ? readInteger(action, "dst_id") : readInteger(action, "dst_hero_id"));
+		const CGObjectInstance * srcObject = cc->getObj(srcID, false);
+		const CGObjectInstance * dstObject = cc->getObj(dstID, false);
+		if(!srcObject || !dstObject || !cc->getArtSet(ArtifactLocation(srcID)) || !cc->getArtSet(ArtifactLocation(dstID)))
+			throw std::invalid_argument("Artifact bulk move source or destination is unknown, hidden, or not an artifact holder");
 
+		const CGHeroInstance * srcHero = dynamic_cast<const CGHeroInstance *>(srcObject);
+		const CGHeroInstance * dstHero = dynamic_cast<const CGHeroInstance *>(dstObject);
+		const IMarket * srcMarket = dynamic_cast<const IMarket *>(srcObject);
+		const IMarket * dstMarket = dynamic_cast<const IMarket *>(dstObject);
 		const bool swap = readBool(action, "swap", false);
 		const bool equipped = readBool(action, "equipped", true);
 		const bool backpack = readBool(action, "backpack", true);
+
+		if(srcMarket || dstMarket)
+		{
+			if(srcMarket && dstMarket)
+				throw std::invalid_argument("Artifact bulk move cannot move directly between two market altars");
+			if(swap)
+				throw std::invalid_argument("Artifact altar bulk move does not support swapping");
+			const CGObjectInstance * marketObject = srcMarket ? srcObject : dstObject;
+			const IMarket * market = srcMarket ? srcMarket : dstMarket;
+			const CGHeroInstance * hero = srcMarket ? dstHero : srcHero;
+			if(!market->allowsTrade(EMarketMode::ARTIFACT_EXP))
+				throw std::invalid_argument("Market does not provide an artifact sacrifice altar");
+			if(!hero || hero->tempOwner != playerID)
+				throw std::invalid_argument("Artifact altar bulk move requires an owned hero");
+			if(!heroCanUseMarketAltar(hero, marketObject))
+				throw std::invalid_argument("Hero must be visiting the market altar for artifact bulk movement");
+		}
+		else
+		{
+			if(!srcHero || !dstHero || srcHero->tempOwner != playerID || dstHero->tempOwner != playerID)
+				throw std::invalid_argument("Artifact bulk move heroes must both be owned by scripted AI");
+			if(srcHero->visitablePos() != dstHero->visitablePos())
+				throw std::invalid_argument("Heroes must be co-located for artifact bulk movement");
+		}
+
 		const RequestWaitResult request = submitAndWaitForRequest(typeid(BulkExchangeArtifacts), CTypeList::getInstance().getTypeID<BulkExchangeArtifacts>(nullptr), [&]
 		{
-			cc->bulkMoveArtifacts(srcHero->id, dstHero->id, swap, equipped, backpack);
+			cc->bulkMoveArtifacts(srcID, dstID, swap, equipped, backpack);
 		});
-		actionResult["src_hero_id"] = JsonNode(srcHero->id.getNum());
-		actionResult["dst_hero_id"] = JsonNode(dstHero->id.getNum());
+		actionResult["src_id"] = JsonNode(srcID.getNum());
+		actionResult["dst_id"] = JsonNode(dstID.getNum());
+		if(srcHero)
+			actionResult["src_hero_id"] = JsonNode(srcHero->id.getNum());
+		if(dstHero)
+			actionResult["dst_hero_id"] = JsonNode(dstHero->id.getNum());
 		actionResult["swap"] = JsonNode(swap);
 		actionResult["equipped"] = JsonNode(equipped);
 		actionResult["backpack"] = JsonNode(backpack);

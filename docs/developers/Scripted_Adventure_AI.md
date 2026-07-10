@@ -206,6 +206,12 @@ The `ai` facade:
   `ai:sacrificeCreatureStacks`, `ai:transformToUndead`, and `ai:buySkill`: request every native market mode
   through stable numeric mode/resource/player/slot/artifact/skill ids. Bulk altar helpers use the same vector
   `TradeOnMarketplace` path as the normal UI.
+- `ai.artifactSlots` exposes stable numeric artifact positions for `transition`, `firstAvailable`, `altar`, and
+  `backpackStart`. `ai:moveArtifactToAltar`, `ai:returnArtifactFromAltar`, `ai:moveArtifactsToAltar`, and
+  `ai:returnArtifactsFromAltar` wrap the native artifact exchange/bulk-exchange callbacks for sacrifice-altars.
+  Artifact sacrifice is a two-step UI-equivalent sequence: stage artifacts into the altar holder, then send the
+  `market_trade` sacrifice action for the staged artifact instance ids. Directly sacrificing artifacts still
+  means "sacrifice artifacts already present in the altar storage."
 - `ai:dismissHero`, `ai:buildBoat`, `ai:castleTeleport`, `ai:dig`, `ai:castSpell`, `ai:buyArtifact`,
   `ai:spellResearch`, and `ai:visitTownBuilding`: request checked primitive adventure/town actions through the
   normal callback/server path.
@@ -506,7 +512,11 @@ Current bounded subroutine surface:
   same hire, recruit, army, and market-detail payloads exposed in normal action-space snapshots.
 - University and market dialog records include `modeDetails` and `skillOptions` entries. `skillOptions` provide
   stable `skill_id`, affordability/learnability flags, gold cost, and a ready checked `market_trade` `planAction`
-  for buying a secondary skill; scripts should use these fields instead of parsing dialog text.
+  for buying a secondary skill; scripts should use these fields instead of parsing dialog text. Market dialogs
+  with a visiting hero also include `altarOptions`, which expose legal artifact/creature sacrifice candidates,
+  expected experience, staged altar contents, and ready action/action-sequence payloads. Artifact options model
+  the native UI explicitly: a `swap_artifacts` or `bulk_move_artifacts` staging action must happen before the
+  `market_trade` sacrifice action can consume those artifact instance ids.
 - `nullkiller_task` executes exactly one stored candidate snapshot through `Nullkiller::executeScriptTask`.
   Native Nullkiller dialog handlers stay active for this path, so the subroutine behaves like Nullkiller rather
   than simplified script auto-answer logic.
@@ -1286,6 +1296,11 @@ Regression harness:
   helper, and a generic `marketTrade` action with wrappers for resource transfer, creature/resource sale,
   artifact purchase/sale/sacrifice, bulk artifact sacrifice, creature sacrifice, bulk creature-stack sacrifice,
   undead transformation, and university skill purchase.
+- Done: sacrifice-altar artifact staging is exposed as checked artifact movement. Lua can move one artifact or
+  bulk equipped/backpack artifacts to and from the market altar through normal server callbacks, and market-dialog
+  `altarOptions` now provide sacrifice candidates plus explicit staging-and-sacrifice action sequences. This
+  keeps scripts aligned with the native UI instead of treating hero inventory artifact ids as directly
+  sacrificable.
 - Done: visible owned/neutral market objects expose read-side mode details, available items, available unit
   counts, efficiency, and resource-resource exchange rates. Enemy market details remain hidden beyond public
   visible-object mode metadata.

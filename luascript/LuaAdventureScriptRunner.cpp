@@ -136,6 +136,13 @@ ai.marketModes = {
 	resourceSkill = 8
 }
 
+ai.artifactSlots = {
+	transition = -3,
+	firstAvailable = -2,
+	altar = 19,
+	backpackStart = 19
+}
+
 ai.formations = {
 	loose = 0,
 	tight = 1
@@ -553,12 +560,50 @@ function ai:bulkMoveArtifacts(srcHeroId, dstHeroId, swap, equipped, backpack)
 	if type(srcHeroId) ~= "table" then
 		action.src_hero_id = srcHeroId
 		action.dst_hero_id = dstHeroId
+		action.src_id = srcHeroId
+		action.dst_id = dstHeroId
 		action.swap = swap
 		action.equipped = equipped
 		action.backpack = backpack
 	end
 	action.type = "bulk_move_artifacts"
 	return self:execute(action)
+end
+
+function ai:moveArtifactToAltar(marketId, heroId, slot)
+	return self:swapArtifacts(
+		{ holder_id = heroId, slot = slot },
+		{ holder_id = marketId, slot = self.artifactSlots.altar }
+	)
+end
+
+function ai:returnArtifactFromAltar(marketId, heroId, altarSlot)
+	return self:swapArtifacts(
+		{ holder_id = marketId, slot = altarSlot or self.artifactSlots.altar },
+		{ holder_id = heroId, slot = self.artifactSlots.firstAvailable }
+	)
+end
+
+function ai:moveArtifactsToAltar(marketId, heroId, equipped, backpack)
+	return self:bulkMoveArtifacts({
+		src_id = heroId,
+		dst_id = marketId,
+		src_hero_id = heroId,
+		swap = false,
+		equipped = equipped ~= false,
+		backpack = backpack ~= false
+	})
+end
+
+function ai:returnArtifactsFromAltar(marketId, heroId, equipped, backpack)
+	return self:bulkMoveArtifacts({
+		src_id = marketId,
+		dst_id = heroId,
+		dst_hero_id = heroId,
+		swap = false,
+		equipped = equipped ~= false,
+		backpack = backpack ~= false
+	})
 end
 
 function ai:sortBackpackArtifacts(heroId, mode)
