@@ -1,0 +1,70 @@
+{
+	"name": "localized-dwelling-over-utility",
+	"script": "scripts/ai/defaultAdventure.lua",
+	"input": {
+		"state": {
+			"day": 2,
+			"resources": {
+				"gold": 5000
+			}
+		},
+		"memory": {
+			"version": 1
+		},
+		"actionSpace": {
+			"buildOptions": [
+				{
+					"building": "Кузница",
+					"building_id": 16,
+					"buildingKindId": 8,
+					"buildingLevel": 0,
+					"town_id": 42,
+					"cost": {
+						"gold": 1000
+					},
+					"income": {
+						"gold": 0
+					},
+					"planAction": {
+						"type": "build",
+						"town_id": 42,
+						"building_id": 16
+					}
+				},
+				{
+					"building": "Роща",
+					"building_id": 37,
+					"buildingKindId": 11,
+					"buildingLevel": 1,
+					"buildingUpgrade": 1,
+					"town_id": 42,
+					"cost": {
+						"gold": 1000
+					},
+					"income": {
+						"gold": 0
+					},
+					"planAction": {
+						"type": "build",
+						"town_id": 42,
+						"building_id": 37
+					}
+				}
+			]
+		}
+	},
+	"expect": {
+		"status": "need_replan",
+		"firstAction": {
+			"type": "build",
+			"building_id": 37
+		},
+		"actionsDoNotContain": [
+			{
+				"type": "build",
+				"building_id": 16
+			}
+		],
+		"intentContains": "building 37"
+	}
+}

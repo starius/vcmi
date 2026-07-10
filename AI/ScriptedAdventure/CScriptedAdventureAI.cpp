@@ -54,6 +54,359 @@ namespace
 
 const std::string SCRIPT_MEMORY_LOCAL_STATE_KEY = "scriptedAdventureAI";
 
+enum class ScriptBuildingKind : int32_t
+{
+	UNKNOWN = 0,
+	MAGE_GUILD = 1,
+	TAVERN = 2,
+	SHIPYARD = 3,
+	FORTIFICATION = 4,
+	HALL = 5,
+	MARKET = 6,
+	RESOURCE_SILO = 7,
+	BLACKSMITH = 8,
+	SPECIAL = 9,
+	HORDE = 10,
+	DWELLING = 11,
+	GRAIL = 12,
+	SHIP = 13
+};
+
+enum class ScriptObjectKind : int32_t
+{
+	UNKNOWN = 0,
+	TREASURE = 1,
+	RESOURCE = 2,
+	MINE = 3,
+	ARTIFACT = 4,
+	TOWN = 5,
+	HERO = 6,
+	CREATURE_BANK = 7,
+	DWELLING = 8,
+	MONSTER = 9,
+	TELEPORT = 10,
+	SHRINE = 11,
+	VISIT_BONUS = 12,
+	MARKET = 13,
+	QUEST = 14
+};
+
+const char * scriptBuildingKindName(ScriptBuildingKind kind)
+{
+	switch(kind)
+	{
+	case ScriptBuildingKind::MAGE_GUILD:
+		return "mage_guild";
+	case ScriptBuildingKind::TAVERN:
+		return "tavern";
+	case ScriptBuildingKind::SHIPYARD:
+		return "shipyard";
+	case ScriptBuildingKind::FORTIFICATION:
+		return "fortification";
+	case ScriptBuildingKind::HALL:
+		return "hall";
+	case ScriptBuildingKind::MARKET:
+		return "market";
+	case ScriptBuildingKind::RESOURCE_SILO:
+		return "resource_silo";
+	case ScriptBuildingKind::BLACKSMITH:
+		return "blacksmith";
+	case ScriptBuildingKind::SPECIAL:
+		return "special";
+	case ScriptBuildingKind::HORDE:
+		return "horde";
+	case ScriptBuildingKind::DWELLING:
+		return "dwelling";
+	case ScriptBuildingKind::GRAIL:
+		return "grail";
+	case ScriptBuildingKind::SHIP:
+		return "ship";
+	default:
+		return "unknown";
+	}
+}
+
+const char * scriptObjectKindName(ScriptObjectKind kind)
+{
+	switch(kind)
+	{
+	case ScriptObjectKind::TREASURE:
+		return "treasure";
+	case ScriptObjectKind::RESOURCE:
+		return "resource";
+	case ScriptObjectKind::MINE:
+		return "mine";
+	case ScriptObjectKind::ARTIFACT:
+		return "artifact";
+	case ScriptObjectKind::TOWN:
+		return "town";
+	case ScriptObjectKind::HERO:
+		return "hero";
+	case ScriptObjectKind::CREATURE_BANK:
+		return "creature_bank";
+	case ScriptObjectKind::DWELLING:
+		return "dwelling";
+	case ScriptObjectKind::MONSTER:
+		return "monster";
+	case ScriptObjectKind::TELEPORT:
+		return "teleport";
+	case ScriptObjectKind::SHRINE:
+		return "shrine";
+	case ScriptObjectKind::VISIT_BONUS:
+		return "visit_bonus";
+	case ScriptObjectKind::MARKET:
+		return "market";
+	case ScriptObjectKind::QUEST:
+		return "quest";
+	default:
+		return "unknown";
+	}
+}
+
+ScriptBuildingKind scriptBuildingKind(BuildingID buildingID)
+{
+	if(buildingID.isDwelling())
+		return ScriptBuildingKind::DWELLING;
+
+	switch(buildingID.toEnum())
+	{
+	case BuildingID::MAGES_GUILD_1:
+	case BuildingID::MAGES_GUILD_2:
+	case BuildingID::MAGES_GUILD_3:
+	case BuildingID::MAGES_GUILD_4:
+	case BuildingID::MAGES_GUILD_5:
+		return ScriptBuildingKind::MAGE_GUILD;
+	case BuildingID::TAVERN:
+		return ScriptBuildingKind::TAVERN;
+	case BuildingID::SHIPYARD:
+		return ScriptBuildingKind::SHIPYARD;
+	case BuildingID::FORT:
+	case BuildingID::CITADEL:
+	case BuildingID::CASTLE:
+		return ScriptBuildingKind::FORTIFICATION;
+	case BuildingID::VILLAGE_HALL:
+	case BuildingID::TOWN_HALL:
+	case BuildingID::CITY_HALL:
+	case BuildingID::CAPITOL:
+	case BuildingID::EXTRA_TOWN_HALL:
+	case BuildingID::EXTRA_CITY_HALL:
+	case BuildingID::EXTRA_CAPITOL:
+		return ScriptBuildingKind::HALL;
+	case BuildingID::MARKETPLACE:
+		return ScriptBuildingKind::MARKET;
+	case BuildingID::RESOURCE_SILO:
+		return ScriptBuildingKind::RESOURCE_SILO;
+	case BuildingID::BLACKSMITH:
+		return ScriptBuildingKind::BLACKSMITH;
+	case BuildingID::SPECIAL_1:
+	case BuildingID::SPECIAL_2:
+	case BuildingID::SPECIAL_3:
+	case BuildingID::SPECIAL_4:
+		return ScriptBuildingKind::SPECIAL;
+	case BuildingID::HORDE_1:
+	case BuildingID::HORDE_1_UPGR:
+	case BuildingID::HORDE_2:
+	case BuildingID::HORDE_2_UPGR:
+		return ScriptBuildingKind::HORDE;
+	case BuildingID::GRAIL:
+		return ScriptBuildingKind::GRAIL;
+	case BuildingID::SHIP:
+		return ScriptBuildingKind::SHIP;
+	default:
+		return ScriptBuildingKind::UNKNOWN;
+	}
+}
+
+int32_t scriptBuildingLevel(BuildingID buildingID)
+{
+	if(buildingID.isDwelling())
+		return BuildingID::getLevelIndexFromDwelling(buildingID) + 1;
+
+	switch(buildingID.toEnum())
+	{
+	case BuildingID::MAGES_GUILD_1:
+	case BuildingID::MAGES_GUILD_2:
+	case BuildingID::MAGES_GUILD_3:
+	case BuildingID::MAGES_GUILD_4:
+	case BuildingID::MAGES_GUILD_5:
+		return buildingID.getMagesGuildLevel();
+	case BuildingID::VILLAGE_HALL:
+		return 1;
+	case BuildingID::TOWN_HALL:
+	case BuildingID::EXTRA_TOWN_HALL:
+		return 2;
+	case BuildingID::CITY_HALL:
+	case BuildingID::EXTRA_CITY_HALL:
+		return 3;
+	case BuildingID::CAPITOL:
+	case BuildingID::EXTRA_CAPITOL:
+		return 4;
+	case BuildingID::FORT:
+		return 1;
+	case BuildingID::CITADEL:
+		return 2;
+	case BuildingID::CASTLE:
+		return 3;
+	default:
+		return 0;
+	}
+}
+
+int32_t scriptBuildingUpgrade(BuildingID buildingID)
+{
+	if(buildingID.isDwelling())
+		return BuildingID::getUpgradeNoFromDwelling(buildingID);
+	return 0;
+}
+
+ScriptObjectKind scriptObjectKind(MapObjectID objectID)
+{
+	switch(objectID)
+	{
+	case Obj::RESOURCE:
+	case Obj::RANDOM_RESOURCE:
+		return ScriptObjectKind::RESOURCE;
+	case Obj::TREASURE_CHEST:
+	case Obj::SEA_CHEST:
+	case Obj::CAMPFIRE:
+	case Obj::FLOTSAM:
+	case Obj::SHIPWRECK_SURVIVOR:
+	case Obj::WAGON:
+	case Obj::LEAN_TO:
+	case Obj::CORPSE:
+		return ScriptObjectKind::TREASURE;
+	case Obj::MINE:
+	case Obj::ABANDONED_MINE:
+		return ScriptObjectKind::MINE;
+	case Obj::ARTIFACT:
+	case Obj::SPELL_SCROLL:
+	case Obj::RANDOM_ART:
+	case Obj::RANDOM_TREASURE_ART:
+	case Obj::RANDOM_MINOR_ART:
+	case Obj::RANDOM_MAJOR_ART:
+	case Obj::RANDOM_RELIC_ART:
+		return ScriptObjectKind::ARTIFACT;
+	case Obj::TOWN:
+	case Obj::RANDOM_TOWN:
+		return ScriptObjectKind::TOWN;
+	case Obj::HERO:
+	case Obj::HERO_PLACEHOLDER:
+	case Obj::RANDOM_HERO:
+	case Obj::PRISON:
+		return ScriptObjectKind::HERO;
+	case Obj::CREATURE_BANK:
+	case Obj::CRYPT:
+	case Obj::DERELICT_SHIP:
+	case Obj::DRAGON_UTOPIA:
+	case Obj::PYRAMID:
+	case Obj::SHIPWRECK:
+		return ScriptObjectKind::CREATURE_BANK;
+	case Obj::CREATURE_GENERATOR1:
+	case Obj::CREATURE_GENERATOR2:
+	case Obj::CREATURE_GENERATOR3:
+	case Obj::CREATURE_GENERATOR4:
+	case Obj::RANDOM_DWELLING:
+	case Obj::RANDOM_DWELLING_LVL:
+	case Obj::RANDOM_DWELLING_FACTION:
+	case Obj::REFUGEE_CAMP:
+		return ScriptObjectKind::DWELLING;
+	case Obj::MONSTER:
+	case Obj::RANDOM_MONSTER:
+	case Obj::RANDOM_MONSTER_L1:
+	case Obj::RANDOM_MONSTER_L2:
+	case Obj::RANDOM_MONSTER_L3:
+	case Obj::RANDOM_MONSTER_L4:
+	case Obj::RANDOM_MONSTER_L5:
+	case Obj::RANDOM_MONSTER_L6:
+	case Obj::RANDOM_MONSTER_L7:
+		return ScriptObjectKind::MONSTER;
+	case Obj::MONOLITH_ONE_WAY_ENTRANCE:
+	case Obj::MONOLITH_ONE_WAY_EXIT:
+	case Obj::MONOLITH_TWO_WAY:
+	case Obj::SUBTERRANEAN_GATE:
+	case Obj::WHIRLPOOL:
+		return ScriptObjectKind::TELEPORT;
+	case Obj::SHRINE_OF_MAGIC_INCANTATION:
+	case Obj::SHRINE_OF_MAGIC_GESTURE:
+	case Obj::SHRINE_OF_MAGIC_THOUGHT:
+		return ScriptObjectKind::SHRINE;
+	case Obj::ARENA:
+	case Obj::MARLETTO_TOWER:
+	case Obj::MERCENARY_CAMP:
+	case Obj::SCHOOL_OF_MAGIC:
+	case Obj::SCHOOL_OF_WAR:
+	case Obj::STAR_AXIS:
+	case Obj::GARDEN_OF_REVELATION:
+	case Obj::LEARNING_STONE:
+	case Obj::TREE_OF_KNOWLEDGE:
+	case Obj::LIBRARY_OF_ENLIGHTENMENT:
+	case Obj::STABLES:
+	case Obj::MAGIC_WELL:
+	case Obj::MAGIC_SPRING:
+	case Obj::FOUNTAIN_OF_FORTUNE:
+	case Obj::FOUNTAIN_OF_YOUTH:
+	case Obj::OASIS:
+	case Obj::BUOY:
+	case Obj::IDOL_OF_FORTUNE:
+	case Obj::RALLY_FLAG:
+	case Obj::SWAN_POND:
+	case Obj::FAERIE_RING:
+	case Obj::MERMAID:
+	case Obj::MYSTICAL_GARDEN:
+	case Obj::WATER_WHEEL:
+	case Obj::WATERING_HOLE:
+	case Obj::WINDMILL:
+	case Obj::WITCH_HUT:
+		return ScriptObjectKind::VISIT_BONUS;
+	case Obj::ALTAR_OF_SACRIFICE:
+	case Obj::BLACK_MARKET:
+	case Obj::FREELANCERS_GUILD:
+	case Obj::HILL_FORT:
+	case Obj::MARKET_OF_TIME:
+	case Obj::SHIPYARD:
+	case Obj::TAVERN:
+	case Obj::TRADING_POST:
+	case Obj::TRADING_POST_SNOW:
+	case Obj::UNIVERSITY:
+	case Obj::WAR_MACHINE_FACTORY:
+		return ScriptObjectKind::MARKET;
+	case Obj::BORDERGUARD:
+	case Obj::BORDER_GATE:
+	case Obj::HUT_OF_MAGI:
+	case Obj::KEYMASTER:
+	case Obj::OBELISK:
+	case Obj::QUEST_GUARD:
+	case Obj::SEER_HUT:
+		return ScriptObjectKind::QUEST;
+	default:
+		return ScriptObjectKind::UNKNOWN;
+	}
+}
+
+std::string mapObjectIdentifier(MapObjectID objectID)
+{
+	try
+	{
+		return MapObjectID::encode(objectID.getNum());
+	}
+	catch(const std::exception &)
+	{
+		return std::to_string(objectID.getNum());
+	}
+}
+
+std::string mapObjectSubtypeIdentifier(MapObjectID objectID, MapObjectSubID subtypeID)
+{
+	try
+	{
+		return MapObjectSubID::encode(objectID, subtypeID.getNum());
+	}
+	catch(const std::exception &)
+	{
+		return std::to_string(subtypeID.getNum());
+	}
+}
+
 bool hasField(const JsonNode & node, const std::string & field)
 {
 	return node.isStruct() && node.Struct().find(field) != node.Struct().end();
@@ -409,10 +762,15 @@ JsonNode jsonRisk(const CGHeroInstance * hero, uint64_t danger, bool safe)
 
 JsonNode jsonMapObject(const CGObjectInstance * object, PlayerColor player, const CGHeroInstance * contextHero)
 {
+	const ScriptObjectKind kind = scriptObjectKind(object->ID);
 	JsonNode node;
 	node["id"] = JsonNode(object->id.getNum());
 	node["typeId"] = JsonNode(object->ID.getNum());
 	node["subtypeId"] = JsonNode(object->subID.getNum());
+	node["kindId"] = JsonNode(static_cast<int32_t>(kind));
+	node["kind"] = JsonNode(scriptObjectKindName(kind));
+	node["typeIdentifier"] = JsonNode(mapObjectIdentifier(object->ID));
+	node["subtypeIdentifier"] = JsonNode(mapObjectSubtypeIdentifier(object->ID, object->subID));
 	node["type"] = JsonNode(jsonText(object->getTypeName()));
 	node["subtype"] = JsonNode(jsonText(object->getSubtypeName()));
 	node["name"] = JsonNode(jsonText(object->getObjectName()));
@@ -511,10 +869,15 @@ JsonNode jsonTown(const CGTownInstance * town, const ResourceSet & resources)
 
 JsonNode jsonBuildOption(const CGTownInstance * town, const CBuilding * building)
 {
+	const ScriptBuildingKind kind = scriptBuildingKind(building->bid);
 	JsonNode node;
 	node["town_id"] = JsonNode(town->id.getNum());
 	node["town"] = JsonNode(jsonText(town->getNameTranslated()));
 	node["building_id"] = JsonNode(building->bid.getNum());
+	node["buildingKindId"] = JsonNode(static_cast<int32_t>(kind));
+	node["buildingKind"] = JsonNode(scriptBuildingKindName(kind));
+	node["buildingLevel"] = JsonNode(scriptBuildingLevel(building->bid));
+	node["buildingUpgrade"] = JsonNode(scriptBuildingUpgrade(building->bid));
 	node["building"] = JsonNode(jsonText(building->getNameTranslated()));
 	node["cost"] = jsonResources(building->resources);
 	node["income"] = jsonResources(building->produce);

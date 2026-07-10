@@ -104,6 +104,100 @@ local Confidence = {
     idle = 0.5
 }
 
+-- Stable enum values mirrored from the C++ scripted adventure host. Lua policy
+-- decisions should use these numeric fields, not localized display names.
+local BuildingKind = {
+    unknown = 0,
+    mageGuild = 1,
+    tavern = 2,
+    shipyard = 3,
+    fortification = 4,
+    hall = 5,
+    market = 6,
+    resourceSilo = 7,
+    blacksmith = 8,
+    special = 9,
+    horde = 10,
+    dwelling = 11,
+    grail = 12,
+    ship = 13
+}
+
+local ObjectKind = {
+    unknown = 0,
+    treasure = 1,
+    resource = 2,
+    mine = 3,
+    artifact = 4,
+    town = 5,
+    hero = 6,
+    creatureBank = 7,
+    dwelling = 8,
+    monster = 9,
+    teleport = 10,
+    shrine = 11,
+    visitBonus = 12,
+    market = 13,
+    quest = 14
+}
+
+-- Raw engine IDs are kept as compatibility fallbacks for older traces/tests
+-- that do not yet include host-provided kind IDs.
+local Building = {
+    mageGuild1 = 0,
+    mageGuild5 = 4,
+    fort = 7,
+    citadel = 8,
+    castle = 9,
+    villageHall = 10,
+    townHall = 11,
+    cityHall = 12,
+    capitol = 13,
+    marketplace = 14,
+    resourceSilo = 15,
+    blacksmith = 16,
+    special1 = 17,
+    horde1 = 18,
+    horde1Upgrade = 19,
+    special2 = 21,
+    special3 = 22,
+    special4 = 23,
+    horde2 = 24,
+    horde2Upgrade = 25,
+    extraTownHall = 27,
+    extraCityHall = 28,
+    extraCapitol = 29,
+    dwelling1 = 30,
+    dwelling7Upgrade5 = 64,
+    dwelling8 = 150,
+    dwelling8Upgrade5 = 155
+}
+
+local Obj = {
+    artifact = 5,
+    creatureBank = 16,
+    mine = 53,
+    monster = 54,
+    randomArtifact = 65,
+    randomRelicArtifact = 69,
+    randomMonster = 71,
+    randomMonsterLevel4 = 75,
+    randomResource = 76,
+    randomTown = 77,
+    resource = 79,
+    seaChest = 82,
+    shrineOfMagicIncantation = 88,
+    shrineOfMagicThought = 90,
+    spellScroll = 93,
+    town = 98,
+    treasureChest = 101,
+    randomMonsterLevel5 = 162,
+    randomMonsterLevel7 = 164,
+    randomDwelling = 216,
+    randomDwellingFaction = 218,
+    abandonedMine = 220
+}
+
 -- Lua receives JSON arrays as tables, but missing fields arrive as nil. This
 -- helper lets every loop treat absent optional arrays as empty arrays.
 local function asArray(value)
@@ -127,6 +221,127 @@ end
 -- mostly for policy readability, so string matching is deliberately forgiving.
 local function text(value)
     return string.lower(tostring(value or ""))
+end
+
+local function buildingId(option)
+    return tonumber(option and option.building_id or nil)
+end
+
+local function inferredBuildingKindFromId(id)
+    if not id then
+        return BuildingKind.unknown
+    end
+    if id >= Building.mageGuild1 and id <= Building.mageGuild5 then
+        return BuildingKind.mageGuild
+    end
+    if id == Building.fort or id == Building.citadel or id == Building.castle then
+        return BuildingKind.fortification
+    end
+    if id == Building.villageHall or id == Building.townHall or id == Building.cityHall or id == Building.capitol
+        or id == Building.extraTownHall or id == Building.extraCityHall or id == Building.extraCapitol
+    then
+        return BuildingKind.hall
+    end
+    if id == Building.marketplace then
+        return BuildingKind.market
+    end
+    if id == Building.resourceSilo then
+        return BuildingKind.resourceSilo
+    end
+    if id == Building.blacksmith then
+        return BuildingKind.blacksmith
+    end
+    if id == Building.special1 or id == Building.special2
+        or id == Building.special3 or id == Building.special4
+    then
+        return BuildingKind.special
+    end
+    if id == Building.horde1 or id == Building.horde1Upgrade
+        or id == Building.horde2 or id == Building.horde2Upgrade
+    then
+        return BuildingKind.horde
+    end
+    if (id >= Building.dwelling1 and id <= Building.dwelling7Upgrade5)
+        or (id >= Building.dwelling8 and id <= Building.dwelling8Upgrade5)
+    then
+        return BuildingKind.dwelling
+    end
+    return BuildingKind.unknown
+end
+
+local function buildingKindId(option)
+    local kind = tonumber(option and (option.buildingKindId or option.building_kind_id) or nil)
+    if kind then
+        return kind
+    end
+    return inferredBuildingKindFromId(buildingId(option))
+end
+
+local function buildingLevel(option)
+    local level = tonumber(option and (option.buildingLevel or option.building_level) or nil)
+    if level then
+        return level
+    end
+
+    local id = buildingId(option)
+    if not id then
+        return 0
+    end
+    if id >= Building.mageGuild1 and id <= Building.mageGuild5 then
+        return id - Building.mageGuild1 + 1
+    end
+    if id == Building.villageHall then
+        return 1
+    end
+    if id == Building.townHall or id == Building.extraTownHall then
+        return 2
+    end
+    if id == Building.cityHall or id == Building.extraCityHall then
+        return 3
+    end
+    if id == Building.capitol or id == Building.extraCapitol then
+        return 4
+    end
+    if id == Building.fort then
+        return 1
+    end
+    if id == Building.citadel then
+        return 2
+    end
+    if id == Building.castle then
+        return 3
+    end
+    if id >= Building.dwelling1 and id <= Building.dwelling7Upgrade5 then
+        return ((id - Building.dwelling1) % 7) + 1
+    end
+    if id >= Building.dwelling8 and id <= Building.dwelling8Upgrade5 then
+        return 8
+    end
+    return 0
+end
+
+local function isTownHallBuilding(option)
+    return buildingKindId(option) == BuildingKind.hall and buildingLevel(option) == 2
+end
+
+local function isCityHallOrCapitolBuilding(option)
+    return buildingKindId(option) == BuildingKind.hall and buildingLevel(option) >= 3
+end
+
+local function isFortificationBuilding(option)
+    return buildingKindId(option) == BuildingKind.fortification
+end
+
+local function isDwellingBuilding(option)
+    return buildingKindId(option) == BuildingKind.dwelling
+end
+
+local function isCreatureGrowthBuilding(option)
+    return buildingKindId(option) == BuildingKind.horde
+end
+
+local function isStrategicSpecialBuilding(option)
+    return buildingKindId(option) == BuildingKind.special
 end
 
 -- Resources can be missing in narrow tests or future reduced snapshots. Missing
@@ -338,7 +553,6 @@ end
 
 local function scoreBuild(option, input)
     local score = Score.build.base
-    local name = text(option.building)
     local gold = resourceValue(input.state and input.state.resources, "gold")
     local costGold = resourceValue(option.cost, "gold")
     local incomeGold = resourceValue(option.income, "gold")
@@ -346,32 +560,40 @@ local function scoreBuild(option, input)
 
     -- Income buildings are valuable in normal development because they compound
     -- over future days. City Hall and Capitol get extra priority because their
-    -- names are stable and they are the main economic milestones.
+    -- stable host-provided kind/level marks them as economic milestones.
     score = score + incomeGold * Score.build.incomeGold
-    if name:find("city hall", 1, true) or name:find("capitol", 1, true) then
+    if isCityHallOrCapitolBuilding(option) then
         score = score + Score.build.cityHallOrCapitol
     end
-    if name:find("town hall", 1, true) then
+    if isTownHallBuilding(option) then
         score = score + Score.build.townHall
     end
-    if name:find("castle", 1, true) or name:find("citadel", 1, true) then
+    if isFortificationBuilding(option) then
         score = score + Score.build.castleOrCitadel
     end
-    if name:find("dwelling", 1, true) or name:find("portal", 1, true) then
+    if isDwellingBuilding(option)
+        or isCreatureGrowthBuilding(option)
+        or isStrategicSpecialBuilding(option)
+    then
         score = score + Score.build.dwellingOrPortal
     end
     -- Under pressure, defensive buildings and creature production beat pure
     -- income because surviving the next enemy move matters more than payback.
     if pressure >= Pressure.high then
-        if name:find("castle", 1, true) or name:find("citadel", 1, true) then
+        if isFortificationBuilding(option) then
             score = score + Score.build.pressuredCastleOrCitadel
-        elseif name:find("dwelling", 1, true) then
+        elseif isDwellingBuilding(option) or isCreatureGrowthBuilding(option) then
             score = score + Score.build.pressuredDwelling
         elseif incomeGold > 0 then
             score = score - Score.build.pressuredIncomePenalty
         end
     end
-    if gold < Threshold.buildLowGold and incomeGold <= 0 then
+    if gold < Threshold.buildLowGold
+        and incomeGold <= 0
+        and not isFortificationBuilding(option)
+        and not isDwellingBuilding(option)
+        and not isCreatureGrowthBuilding(option)
+    then
         score = score - Score.build.lowGoldNonIncomePenalty
     end
     score = score - costGold * Score.build.goldCost
@@ -422,10 +644,57 @@ local function chooseRecruit(input)
     return best, bestScore
 end
 
+local function inferredObjectKindFromTypeId(typeId)
+    if not typeId then
+        return ObjectKind.unknown
+    end
+    if typeId == Obj.artifact or typeId == Obj.spellScroll
+        or (typeId >= Obj.randomArtifact and typeId <= Obj.randomRelicArtifact)
+    then
+        return ObjectKind.artifact
+    end
+    if typeId == Obj.creatureBank then
+        return ObjectKind.creatureBank
+    end
+    if typeId == Obj.mine or typeId == Obj.abandonedMine then
+        return ObjectKind.mine
+    end
+    if typeId == Obj.resource or typeId == Obj.randomResource then
+        return ObjectKind.resource
+    end
+    if typeId == Obj.seaChest or typeId == Obj.treasureChest then
+        return ObjectKind.treasure
+    end
+    if typeId == Obj.town or typeId == Obj.randomTown then
+        return ObjectKind.town
+    end
+    if typeId == Obj.monster
+        or (typeId >= Obj.randomMonster and typeId <= Obj.randomMonsterLevel4)
+        or (typeId >= Obj.randomMonsterLevel5 and typeId <= Obj.randomMonsterLevel7)
+    then
+        return ObjectKind.monster
+    end
+    if typeId >= Obj.shrineOfMagicIncantation and typeId <= Obj.shrineOfMagicThought then
+        return ObjectKind.shrine
+    end
+    if typeId >= Obj.randomDwelling and typeId <= Obj.randomDwellingFaction then
+        return ObjectKind.dwelling
+    end
+    return ObjectKind.unknown
+end
+
+local function objectKindId(object)
+    local kind = tonumber(object and (object.kindId or object.objectKindId or object.kind_id) or nil)
+    if kind then
+        return kind
+    end
+    return inferredObjectKindFromTypeId(tonumber(object and object.typeId or nil))
+end
+
 local function scoreObject(target, memory, input)
     local object = target.object or {}
     local path = target.path or {}
-    local name = text((object.name or "") .. " " .. (object.type or "") .. " " .. (object.hoverText or ""))
+    local kind = objectKindId(object)
     local score = Score.object.base
     local role = roleForHero(memory, target.hero_id)
     local objectKey = tostring(object.id or "")
@@ -456,19 +725,25 @@ local function scoreObject(target, memory, input)
         score = score - dangerRatio * (role == "main" and Score.object.riskyMainDangerPenalty or Score.object.riskyScoutDangerPenalty)
     end
 
-    -- Name-based bonuses are deliberately simple and visible. The C++ host still
-    -- decides what is reachable and legal; these terms express strategic taste.
-    if name:find("gold", 1, true) or name:find("treasure", 1, true) or name:find("chest", 1, true) then
+    -- Object preferences use stable host kind IDs. Localized names and hover
+    -- text may appear in traces, but they are not strategy inputs.
+    if kind == ObjectKind.artifact then
         score = score + Score.object.treasureBonus
     end
-    if name:find("mine", 1, true) or name:find("sawmill", 1, true) or name:find("ore pit", 1, true) then
-        score = score + Score.object.mineBonus
+    if kind == ObjectKind.town and role == "main" and target.safe ~= false then
+        score = score + Score.object.mineBonus + Score.object.treasureBonus
     end
-    if name:find("resource", 1, true) or name:find("wood", 1, true) or name:find("ore", 1, true) then
+    if kind == ObjectKind.creatureBank and role == "main" and target.safe ~= false then
+        score = score + Score.object.treasureBonus
+    end
+    if kind == ObjectKind.treasure then
+        score = score + Score.object.treasureBonus
+    end
+    if kind == ObjectKind.resource then
         score = score + Score.object.resourceBonus
     end
-    if name:find("mine", 1, true) then
-        score = score + Score.object.repeatedMineWordBonus
+    if kind == ObjectKind.mine then
+        score = score + Score.object.mineBonus + Score.object.repeatedMineWordBonus
     end
     if path.pathAction == "battle" or path.pathAction == "teleport_battle" then
         if role == "main" then
@@ -578,12 +853,12 @@ function Script.planDay(input)
         recruit = chooseRecruit(input)
         if recruit then
             actions[#actions + 1] = copyAction(recruit.planAction)
-            intents[#intents + 1] = "recruit under pressure " .. tostring(recruit.creature or recruit.creature_id)
+            intents[#intents + 1] = "recruit under pressure creature " .. tostring(recruit.creature_id)
         else
             build = chooseBuild(input)
             if build then
                 actions[#actions + 1] = copyAction(build.planAction)
-                intents[#intents + 1] = "build under pressure " .. tostring(build.building or build.building_id)
+                intents[#intents + 1] = "build under pressure building " .. tostring(build.building_id)
             end
         end
     else
@@ -592,7 +867,7 @@ function Script.planDay(input)
         build = chooseBuild(input)
         if build then
             actions[#actions + 1] = copyAction(build.planAction)
-            intents[#intents + 1] = "build " .. tostring(build.building or build.building_id)
+            intents[#intents + 1] = "build building " .. tostring(build.building_id)
         end
     end
 
@@ -600,7 +875,7 @@ function Script.planDay(input)
         recruit = chooseRecruit(input)
         if recruit then
             actions[#actions + 1] = copyAction(recruit.planAction)
-            intents[#intents + 1] = "recruit " .. tostring(recruit.creature or recruit.creature_id)
+            intents[#intents + 1] = "recruit creature " .. tostring(recruit.creature_id)
         end
     end
 
@@ -609,13 +884,13 @@ function Script.planDay(input)
     local escapeMove = chooseEscapeMove(input)
     if escapeMove then
         actions[#actions + 1] = copyAction(escapeMove.planAction)
-        intents[#intents + 1] = "move threatened hero " .. tostring(escapeMove.hero or escapeMove.hero_id)
+        intents[#intents + 1] = "move threatened hero " .. tostring(escapeMove.hero_id)
     end
 
     local target = chooseObject(input, memory)
     if target and not escapeMove then
         actions[#actions + 1] = copyAction(target.planAction)
-        intents[#intents + 1] = "visit " .. tostring((target.object or {}).name or (target.object or {}).id)
+        intents[#intents + 1] = "visit object " .. tostring((target.object or {}).id)
     end
 
     if #actions > 0 then
@@ -631,15 +906,16 @@ function Script.planDay(input)
         }
     end
 
-    -- No useful candidate remains. Ending the turn is an explicit action so the
-    -- host does not keep asking the script to produce an empty plan forever.
+    -- No high-confidence scripted action remains. The current script interface
+    -- cannot yet express important Nullkiller operations such as recruiting
+    -- extra heroes, concentrating armies, or chaining heroes. Delegating the
+    -- remainder of the turn preserves those capabilities instead of ending the
+    -- day with useful but unsupported work still possible.
     return {
-        status = "end_turn",
+        status = "fallback",
         memory = memory,
-        actions = {
-            { type = "end_turn" }
-        },
-        intent = "No useful scripted candidate remains.",
+        actions = {},
+        intent = "No high-confidence scripted candidate remains; delegate remaining turn to Nullkiller.",
         confidence = Confidence.idle
     }
 end

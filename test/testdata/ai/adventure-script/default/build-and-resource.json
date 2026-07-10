@@ -15,7 +15,9 @@
 			"buildOptions": [
 				{
 					"building": "City Hall",
-					"building_id": 11,
+					"building_id": 12,
+					"buildingKindId": 5,
+					"buildingLevel": 3,
 					"town_id": 42,
 					"cost": {
 						"gold": 2500
@@ -26,7 +28,7 @@
 					"planAction": {
 						"type": "build",
 						"town_id": 42,
-						"building_id": 11
+						"building_id": 12
 					}
 				}
 			],
@@ -34,6 +36,8 @@
 				{
 					"object": {
 						"id": 77,
+						"typeId": 79,
+						"kindId": 2,
 						"name": "Gold pile",
 						"type": "Resource"
 					},
@@ -64,7 +68,7 @@
 				"object_id": 77
 			}
 		],
-		"intentContains": "City Hall",
+		"intentContains": "building 12",
 		"memoryContains": {
 			"version": 1
 		}

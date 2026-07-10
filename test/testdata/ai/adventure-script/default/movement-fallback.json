@@ -1,0 +1,84 @@
+{
+	"name": "movement-delegates-to-nullkiller",
+	"script": "scripts/ai/defaultAdventure.lua",
+	"input": {
+		"state": {
+			"day": 3,
+			"resources": {
+				"gold": 1200
+			},
+			"heroes": [
+				{
+					"id": 5,
+					"name": "Main",
+					"level": 5,
+					"army": [
+						{
+							"count": 30
+						}
+					]
+				},
+				{
+					"id": 9,
+					"name": "Scout",
+					"level": 1,
+					"army": [
+						{
+							"count": 3
+						}
+					]
+				}
+			]
+		},
+		"memory": {
+			"version": 1
+		},
+		"actionSpace": {
+			"movementOptions": [
+				{
+					"hero_id": 5,
+					"hero": "Main",
+					"safe": true,
+					"value": 1000,
+					"path": {
+						"cost": 1,
+						"pathAction": "normal",
+						"isTeleportAction": false
+					},
+					"planAction": {
+						"type": "move_hero",
+						"hero_id": 5,
+						"x": 10,
+						"y": 10,
+						"z": 0,
+						"route_id": "main-move"
+					}
+				},
+				{
+					"hero_id": 9,
+					"hero": "Scout",
+					"safe": true,
+					"value": 950,
+					"path": {
+						"cost": 1,
+						"pathAction": "normal",
+						"isTeleportAction": false
+					},
+					"planAction": {
+						"type": "move_hero",
+						"hero_id": 9,
+						"x": 20,
+						"y": 20,
+						"z": 0,
+						"route_id": "scout-move"
+					}
+				}
+			]
+		}
+	},
+	"expect": {
+		"status": "fallback",
+		"actionsExact": [],
+		"intentContains": "delegate remaining turn to Nullkiller"
+	}
+}

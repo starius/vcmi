@@ -23,7 +23,9 @@
 			"buildOptions": [
 				{
 					"building": "City Hall",
-					"building_id": 11,
+					"building_id": 12,
+					"buildingKindId": 5,
+					"buildingLevel": 3,
 					"town_id": 42,
 					"cost": {
 						"gold": 2500
@@ -34,7 +36,7 @@
 					"planAction": {
 						"type": "build",
 						"town_id": 42,
-						"building_id": 11
+						"building_id": 12
 					}
 				}
 			],
@@ -64,7 +66,7 @@
 		"actionsDoNotContain": [
 			{
 				"type": "build",
-				"building_id": 11
+				"building_id": 12
 			}
 		],
 		"intentContains": "recruit under pressure"

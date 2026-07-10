@@ -16,6 +16,8 @@
 				{
 					"object": {
 						"id": 77,
+						"typeId": 79,
+						"kindId": 2,
 						"name": "Gold pile",
 						"type": "Resource"
 					},
@@ -37,6 +39,8 @@
 				{
 					"object": {
 						"id": 88,
+						"typeId": 79,
+						"kindId": 2,
 						"name": "Wood pile",
 						"type": "Resource"
 					},

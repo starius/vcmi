@@ -138,6 +138,25 @@ Output:
 The script output is a request, not an order. C++ validates ownership, visibility, route freshness, resource
 availability, pending queries, battle state, and server request results before anything changes.
 
+## Stable Identifiers
+
+The script interface must not make strategic decisions from user-visible text. Localized fields such as town
+names, building names, creature names, object names, subtype names, and hover text may appear in traces for
+debugging, but they are labels only.
+
+Planner input should expose stable machine fields for every meaningful concept:
+
+- object instance ids, hero ids, town ids, building ids, creature ids, resource ids, artifact ids, and spell ids
+  as integers
+- map object `typeId`/`subtypeId` plus host-provided `kindId` categories such as resource, mine, artifact,
+  town, creature bank, dwelling, monster, teleport, shrine, market, and quest
+- town building `building_id` plus host-provided `buildingKindId`, `buildingLevel`, and `buildingUpgrade`
+- optional stable ASCII identifiers such as object JSON keys for traces and external tooling
+
+Lua policies should prefer the integer kind/id fields. Stable ASCII identifiers are acceptable for tools and
+debugging, but they should not replace numeric ids in hot scoring paths. User-visible strings are never a
+contract and may change with language packs, mods, or translation fixes.
+
 ## Memory Model
 
 Script memory is a JSON-like value owned by the script and persisted by the AI wrapper.
@@ -721,6 +740,10 @@ Regression harness:
   under `scriptedAdventureAI`. This avoids adding AI-private strategy memory to authoritative game-rule objects.
 - Candidate actions now carry read-only explanation fields: `reason`, `value`, `risk`, `safe`, `danger`,
   `dangerRatio`, `estimatedLoss`, and `blockedBy`. Scripts can score these fields and traces can summarize them.
+- Candidate actions expose stable machine identifiers for policy decisions. Map objects provide numeric
+  `typeId`/`subtypeId` plus `kindId`; town build options provide `building_id`, `buildingKindId`,
+  `buildingLevel`, and `buildingUpgrade`. Localized display strings remain useful in traces but are not part of
+  the strategic contract.
 - `analysis.heroThreatAlerts` complements `analysis.defenseAlerts`, so scripts can respond to threatened roaming
   heroes as well as threatened towns.
 - Trace tooling now supports single-run summaries, baseline-vs-candidate comparisons, final visible-state quality
@@ -740,6 +763,12 @@ Regression harness:
 - First seeded smoke-loop iteration tested a scout-only exploration fallback candidate. The ladder completed
   deterministically with fixed `gameSeed` values and rejected the candidate because it was safe but did not improve
   the training bucket. The default champion script was left unchanged.
+- The first full 10-game random-map corpus on small no-water two-level maps showed the default scripted policy
+  still lost all games to regular Nullkiller2. The baseline average loss day was 44.3; stable build/object IDs,
+  Nullkiller delegation for unsupported remainder work, and localized-string removal improved the average to 47.6
+  but did not produce wins. Trace mining now points at capability gaps rather than string drift: scripted fallback
+  dependence, defense pressure without response, hero threat escape gaps, and missing high-level Nullkiller actions
+  such as recruiting extra heroes, army concentration, and hero chaining.
 - Debugging `Emerald Isles` smoke runs showed the scripted host must not use Nullkiller helper methods that perform
   hidden side effects such as army exchange after movement. Scripted movement is now a direct, tracked `MoveHero`
   request over a route-id-validated path, and garrison/hero-exchange/recruitment dialogs are conservatively answered
