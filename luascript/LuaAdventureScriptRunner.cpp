@@ -57,6 +57,12 @@ function ai:state()
 	return self.input.state
 end
 
+function ai:pendingQueries()
+	local state = self:state() or {}
+	local turn = state.turn or {}
+	return turn.queries or {}
+end
+
 function ai:updates()
 	return self.input.updates
 end

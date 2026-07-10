@@ -1561,13 +1561,12 @@ void CScriptedAdventureAI::answerQueryWithoutGameStateLock(const std::string & d
 	});
 }
 
-void CScriptedAdventureAI::answerScriptActionDialog(const std::string & queryDescription, const std::string & asyncDescription, QueryID queryID, int selection)
+void CScriptedAdventureAI::pauseForScriptActionQuery(const std::string & queryDescription, QueryID queryID)
 {
 	status.addQuery(queryID, queryDescription);
-	answerQueryWithoutGameStateLock(asyncDescription, queryID, selection);
 }
 
-void CScriptedAdventureAI::answerPendingAutoQueries()
+size_t CScriptedAdventureAI::answerPendingAutoQueries()
 {
 	std::vector<std::pair<QueryID, int>> answers;
 	{
@@ -1577,7 +1576,12 @@ void CScriptedAdventureAI::answerPendingAutoQueries()
 	}
 
 	for(const auto & answer : answers)
+	{
+		removeScriptQuery(answer.first);
 		answerQuery(answer.first, answer.second);
+	}
+
+	return answers.size();
 }
 
 void CScriptedAdventureAI::setScriptActionAutoAnswerMode(bool active)
@@ -1637,6 +1641,11 @@ void CScriptedAdventureAI::heroGotLevel(const CGHeroInstance * hero, PrimarySkil
 		data["skill_options"].Vector().push_back(option);
 	}
 	recordScriptQuery(queryID, "hero_level_up", data);
+	if(isScriptActionAutoAnswerMode())
+	{
+		pauseForScriptActionQuery("ScriptedAdventureAI hero level-up dialog", queryID);
+		return;
+	}
 	AIGateway::heroGotLevel(hero, pskill, skills, queryID);
 }
 
@@ -1652,6 +1661,11 @@ void CScriptedAdventureAI::commanderGotLevel(const CCommanderInstance * commande
 		data["skill_options"].Vector().push_back(option);
 	}
 	recordScriptQuery(queryID, "commander_level_up", data);
+	if(isScriptActionAutoAnswerMode())
+	{
+		pauseForScriptActionQuery("ScriptedAdventureAI commander level-up dialog", queryID);
+		return;
+	}
 	AIGateway::commanderGotLevel(commander, skills, queryID);
 }
 
@@ -1670,15 +1684,7 @@ void CScriptedAdventureAI::showBlockingDialog(const std::string & text, const st
 
 	if(isScriptActionAutoAnswerMode())
 	{
-		// Scripted actions are declarative. Keep required modal replies narrow here;
-		// richer policies should become explicit AdventurePlan choices.
-		int answer = 0;
-		if(selection && !components.empty())
-			answer = static_cast<int>(components.size());
-		else if(!selection && cancel)
-			answer = 1;
-
-		answerScriptActionDialog("ScriptedAdventureAI blocking dialog", "scriptedShowBlockingDialog", askID, answer);
+		pauseForScriptActionQuery("ScriptedAdventureAI blocking dialog", askID);
 		return;
 	}
 
@@ -1709,10 +1715,7 @@ void CScriptedAdventureAI::showTeleportDialog(const CGHeroInstance * hero, Telep
 		return;
 	}
 
-	(void)hero;
-	(void)channel;
-	const int answer = (!impassable && !exits.empty()) ? 0 : -1;
-	answerScriptActionDialog("ScriptedAdventureAI teleport dialog", "scriptedShowTeleportDialog", askID, answer);
+	pauseForScriptActionQuery("ScriptedAdventureAI teleport dialog", askID);
 }
 
 void CScriptedAdventureAI::showMapObjectSelectDialog(QueryID askID, const Component & icon, const MetaString & title, const MetaString & description, const std::vector<ObjectInstanceID> & objects)
@@ -1737,11 +1740,7 @@ void CScriptedAdventureAI::showMapObjectSelectDialog(QueryID askID, const Compon
 		return;
 	}
 
-	(void)icon;
-	(void)title;
-	(void)description;
-	const int answer = objects.empty() ? 0 : objects.front().getNum();
-	answerScriptActionDialog("ScriptedAdventureAI map object select dialog", "scriptedShowMapObjectSelectDialog", askID, answer);
+	pauseForScriptActionQuery("ScriptedAdventureAI map object select dialog", askID);
 }
 
 void CScriptedAdventureAI::buildChanged(const CGTownInstance * town, BuildingID buildingID, int what)
@@ -1817,6 +1816,11 @@ void CScriptedAdventureAI::showTavernWindow(const CGObjectInstance * object, con
 	if(visitor)
 		data["visitor_hero_id"] = JsonNode(visitor->id.getNum());
 	recordScriptQuery(queryID, "tavern_window", data);
+	if(isScriptActionAutoAnswerMode())
+	{
+		pauseForScriptActionQuery("ScriptedAdventureAI tavern window", queryID);
+		return;
+	}
 	AIGateway::showTavernWindow(object, visitor, queryID);
 }
 
@@ -1829,12 +1833,7 @@ void CScriptedAdventureAI::heroExchangeStarted(ObjectInstanceID hero1, ObjectIns
 
 	if(isScriptActionAutoAnswerMode())
 	{
-		// Native exchange handling may rearrange artifacts/army as a side effect.
-		// That is valid fallback behavior, but scripted actions need an explicit
-		// transfer/preparation plan action before such changes are made.
-		(void)hero1;
-		(void)hero2;
-		answerScriptActionDialog("ScriptedAdventureAI hero exchange dialog", "scriptedHeroExchangeStarted", query, 0);
+		pauseForScriptActionQuery("ScriptedAdventureAI hero exchange dialog", query);
 		return;
 	}
 
@@ -1854,11 +1853,7 @@ void CScriptedAdventureAI::showGarrisonDialog(const CArmedInstance * up, const C
 
 	if(isScriptActionAutoAnswerMode())
 	{
-		(void)up;
-		(void)down;
-		(void)removableUnits;
-		(void)customTitle;
-		answerScriptActionDialog("ScriptedAdventureAI garrison dialog", "scriptedShowGarrisonDialog", queryID, 0);
+		pauseForScriptActionQuery("ScriptedAdventureAI garrison dialog", queryID);
 		return;
 	}
 
@@ -1877,10 +1872,7 @@ void CScriptedAdventureAI::showRecruitmentDialog(const CGDwelling * dwelling, co
 
 	if(isScriptActionAutoAnswerMode())
 	{
-		(void)dwelling;
-		(void)dst;
-		(void)level;
-		answerScriptActionDialog("ScriptedAdventureAI recruitment dialog", "scriptedShowRecruitmentDialog", queryID, 0);
+		pauseForScriptActionQuery("ScriptedAdventureAI recruitment dialog", queryID);
 		return;
 	}
 
@@ -1895,6 +1887,11 @@ void CScriptedAdventureAI::showUniversityWindow(const IMarket * market, const CG
 	if(visitor)
 		data["visitor_hero_id"] = JsonNode(visitor->id.getNum());
 	recordScriptQuery(queryID, "university_window", data);
+	if(isScriptActionAutoAnswerMode())
+	{
+		pauseForScriptActionQuery("ScriptedAdventureAI university window", queryID);
+		return;
+	}
 	AIGateway::showUniversityWindow(market, visitor, queryID);
 }
 
@@ -1906,6 +1903,11 @@ void CScriptedAdventureAI::showMarketWindow(const IMarket * market, const CGHero
 	if(visitor)
 		data["visitor_hero_id"] = JsonNode(visitor->id.getNum());
 	recordScriptQuery(queryID, "market_window", data);
+	if(isScriptActionAutoAnswerMode())
+	{
+		pauseForScriptActionQuery("ScriptedAdventureAI market window", queryID);
+		return;
+	}
 	AIGateway::showMarketWindow(market, visitor, queryID);
 }
 
@@ -2106,7 +2108,20 @@ bool CScriptedAdventureAI::waitTillFreeForScriptAction(JsonNode & actionResult, 
 		if(status.waitTillFreeFor(SCRIPT_ACTION_STATUS_POLL))
 			return true;
 		if(status.getQueriesCount() > 0)
-			answerPendingAutoQueries();
+		{
+			if(answerPendingAutoQueries() > 0)
+				continue;
+
+			JsonNode queries = makeScriptQueries();
+			if(!queries.Vector().empty())
+			{
+				actionResult["ok"] = JsonNode(true);
+				actionResult["pending_query"] = JsonNode(true);
+				actionResult["queries"] = queries;
+				actionResult["message"] = JsonNode("Action paused for script query");
+				return false;
+			}
+		}
 	}
 
 	const std::string blockers = status.describeBlockers();

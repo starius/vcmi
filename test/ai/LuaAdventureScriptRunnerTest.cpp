@@ -635,6 +635,55 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanRefreshVisibleInput)
 	EXPECT_EQ(output.memory["refreshedDay"].Integer(), 2);
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanReadAndAnswerPendingQueries)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				local queries = ai:pendingQueries()
+				ai:answerQuery(queries[1].query_id, queries[1].components[1].answer)
+				return {
+					status = "end_turn",
+					memory = { version = 1, queryType = queries[1].type },
+					actions = {}
+				}
+			end
+		}
+	)lua";
+
+	AI::AdventureScriptInput input = makeInput();
+	input.state["turn"]["queries"].Vector();
+	JsonNode query;
+	query["query_id"] = JsonNode(77);
+	query["type"] = JsonNode("blocking_dialog");
+	query["components"].Vector();
+	JsonNode component;
+	component["answer"] = JsonNode(2);
+	query["components"].Vector().push_back(component);
+	input.state["turn"]["queries"].Vector().push_back(query);
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-pending-queries", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 1);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "answer_query");
+	EXPECT_EQ(commands[0]["payload"]["query_id"].Integer(), 77);
+	EXPECT_EQ(commands[0]["payload"]["answer"].Integer(), 2);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_EQ(output.memory["queryType"].String(), "blocking_dialog");
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeHostErrorsAreCatchable)
 {
 	const std::string source = R"lua(

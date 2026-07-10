@@ -1046,6 +1046,49 @@ local function chooseObject(input, memory)
     return best, bestScore
 end
 
+local function firstPendingQuery(input)
+    local turn = (((input or {}).state or {}).turn or {})
+    local queries = turn.queries or {}
+    return queries[1]
+end
+
+local function defaultQueryAnswer(query)
+    if not query then
+        return 0
+    end
+
+    if query.type == "hero_level_up" or query.type == "commander_level_up" then
+        local options = query.skill_options or {}
+        return (options[1] or {}).answer or 0
+    end
+
+    if query.type == "blocking_dialog" then
+        local components = query.components or {}
+        if query.selection and #components > 0 then
+            return components[#components].answer or #components
+        end
+        if query.cancel then
+            return 1
+        end
+        return 0
+    end
+
+    if query.type == "teleport_dialog" then
+        local exits = query.exits or {}
+        if query.impassable or #exits == 0 then
+            return -1
+        end
+        return exits[1].answer or 0
+    end
+
+    if query.type == "map_object_select" then
+        local objects = query.objects or {}
+        return (objects[1] or {}).answer or 0
+    end
+
+    return 0
+end
+
 function Script.planDay(input)
     -- The host calls exactly this method. Keep all game-state mutation out of
     -- Lua: read input, update memory, return a declarative plan.
@@ -1182,46 +1225,54 @@ function Script.runDay(ai, input)
     end
 
     for _ = 1, callLimit do
-        local output = Script.planDay(current)
-        ai:setMemory(output.memory or ai:memory())
-
-        if output.status == "fallback" then
-            return ai:nullkiller(output.intent)
-        end
-
-        local shouldReplan = false
-        for _, action in ipairs(output.actions or {}) do
-            if not isSupportAction(action) then
-                return ai:nullkiller("delegate map movement and object routing to Nullkiller")
-            end
-
-            local ok, result = pcall(function()
-                return ai:execute(action)
-            end)
-
+        local query = firstPendingQuery(current)
+        if query then
+            ai:answerQuery(query.query_id, defaultQueryAnswer(query))
             scriptedActions = scriptedActions + 1
             current = ai:refresh()
-            if not ok or (type(result) == "table" and result.stop) then
-                shouldReplan = true
-                break
+            current.memory = ai:memory()
+        else
+            local output = Script.planDay(current)
+            ai:setMemory(output.memory or ai:memory())
+
+            if output.status == "fallback" then
+                return ai:nullkiller(output.intent)
             end
 
-            if scriptedActions >= 1 then
-                return ai:nullkiller(output.intent or "delegate after one scripted support action")
+            local shouldReplan = false
+            for _, action in ipairs(output.actions or {}) do
+                if not isSupportAction(action) then
+                    return ai:nullkiller("delegate map movement and object routing to Nullkiller")
+                end
+
+                local ok, result = pcall(function()
+                    return ai:execute(action)
+                end)
+
+                scriptedActions = scriptedActions + 1
+                current = ai:refresh()
+                if not ok or (type(result) == "table" and result.stop) then
+                    shouldReplan = true
+                    break
+                end
+
+                if scriptedActions >= 1 then
+                    return ai:nullkiller(output.intent or "delegate after one scripted support action")
+                end
             end
-        end
 
-        if output.status == "end_turn" then
-            ai:endTurn()
-            return ai:output("end_turn", output.intent, output.confidence)
-        end
+            if output.status == "end_turn" then
+                ai:endTurn()
+                return ai:output("end_turn", output.intent, output.confidence)
+            end
 
-        if output.status ~= "need_replan" and not shouldReplan then
-            return ai:nullkiller(output.intent or "script completed its imperative actions")
-        end
+            if output.status ~= "need_replan" and not shouldReplan then
+                return ai:nullkiller(output.intent or "script completed its imperative actions")
+            end
 
-        current = current or ai:refresh()
-        current.memory = ai:memory()
+            current = current or ai:refresh()
+            current.memory = ai:memory()
+        end
     end
 
     return ai:nullkiller("imperative compatibility wrapper reached replan limit")

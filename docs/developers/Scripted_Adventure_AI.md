@@ -147,6 +147,7 @@ The `ai` facade:
 
 - `ai:state()`, `ai:updates()`, `ai:opponentUpdates()`, `ai:progress()`, `ai:actionSpace()`, `ai:analysis()`,
   `ai:limits()`: read current visible input sections.
+- `ai:pendingQueries()`: return `state.turn.queries` for dialog/window decisions.
 - `ai:memory()` and `ai:setMemory(memory)`: read/replace script-owned memory for this day.
 - `ai:refresh()`: yield to C++ and receive a new visible input snapshot after side effects.
 - `ai:build`, `ai:recruit`, `ai:hireHero`, `ai:transferArmy`, `ai:moveHero`, `ai:visitObject`,
@@ -878,9 +879,9 @@ Regression harness:
   `EMarketMode`. Visible market objects expose their supported market modes; richer market-rate inspection is
   still a separate read-side improvement.
 - Script input now includes typed `state.turn.queries` records for level-up, blocking, teleport, object-selection,
-  tavern, hero-exchange, garrison, recruitment, university, and market dialogs. The current behavior still
-  auto-answers dialogs raised during direct script actions; changing selected dialogs to yield back to Lua is a
-  separate control-flow step.
+  tavern, hero-exchange, garrison, recruitment, university, and market dialogs. Dialogs raised during direct Lua
+  actions now pause the action with `pending_query = true`; Lua can `refresh()`, inspect `state.turn.queries`, and
+  answer through `ai:answerQuery(queryId, answer)`.
 - Lua can now request checked primitive adventure actions for dismissing heroes, building boats, digging, and
   casting adventure spells. C++ validates ownership and visible target tiles before forwarding to the server.
 - `analysis.heroThreatAlerts` complements `analysis.defenseAlerts`, so scripts can respond to threatened roaming
@@ -1067,9 +1068,9 @@ Regression harness:
   helpers.
 - Done: exact army stack management, creature upgrades, formation/tactics changes, and town garrison-hero swaps
   are exposed through checked Lua facade methods.
-- Partial: pending dialog/window queries are exposed as typed read-side data under `state.turn.queries`. Scripts
-  can answer queries by id, but direct script actions still auto-answer dialogs until the control-flow handoff is
-  changed per dialog type.
+- Done: pending dialog/window queries are exposed as typed read-side data under `state.turn.queries`, and direct
+  Lua actions that open these dialogs now pause for a script answer instead of auto-answering. The bundled default
+  script includes a conservative fallback answer policy; richer per-dialog strategy remains Lua policy work.
 - Done: market operations are exposed through a coarse `nullkillerTrade` helper, an exact resource-resource
   helper, and a generic `marketTrade` action with wrappers for resource transfer, creature/resource sale,
   artifact purchase/sale/sacrifice, creature sacrifice, undead transformation, and university skill purchase.
@@ -1154,8 +1155,9 @@ The next high-value implementation steps are:
 
 - Run fixed-map `--testdays N` batches comparing default, aggressive, economy, explorer, Nullkiller, and older
   script versions, then feed trace deltas and mined JSON fixtures back into the Lua policy.
-- Add typed Lua decision surfaces for dialogs and missing player actions: remaining market modes, adventure
-  spell candidates, boats/shipyards, quests/gates, level-up choices, university choices, and object selection.
+- Add richer Lua decision policies and read-side candidate data for dialogs and remaining player choices:
+  adventure spell candidates, boats/shipyards, quests/gates, level-up choices, university choices, and object
+  selection.
 - Expand the default Lua policy to rank and compose bounded Nullkiller candidates before trying to outperform
   native Nullkiller on the random-map corpus.
 - Expose richer Nullkiller analyzer data, especially danger-map and blocker/cluster details, as read-only
