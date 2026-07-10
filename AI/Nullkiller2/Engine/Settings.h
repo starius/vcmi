@@ -14,6 +14,12 @@ class ResourcePath;
 
 namespace NK2AI
 {
+	enum class BattlePredictionModel
+	{
+		LEGACY,
+		RATIO
+	};
+
 	class Settings
 	{
 		int maxRoamingHeroes;
@@ -29,7 +35,9 @@ namespace NK2AI
 		float retreatThresholdRelative;
 		float retreatThresholdAbsolute;
 		float safeAttackRatio;
+		float battlePredictionSafeProbability;
 		float maxArmyLossTarget;
+		BattlePredictionModel battlePredictionModel;
 		bool allowObjectGraph;
 		bool useTroopsFromGarrisons;
 		bool useOneWayMonoliths;
@@ -44,8 +52,11 @@ namespace NK2AI
 		float getMaxGoldPressure() const { return maxGoldPressure; }
 		float getRetreatThresholdRelative() const { return retreatThresholdRelative; }
 		float getRetreatThresholdAbsolute() const { return retreatThresholdAbsolute; }
-		float getSafeAttackRatio() const { return safeAttackRatio; }
+		float getSafeAttackRatio() const;
+		float getBattlePredictionSafeProbability() const { return battlePredictionSafeProbability; }
 		float getMaxArmyLossTarget() const { return maxArmyLossTarget; }
+		BattlePredictionModel getBattlePredictionModel() const { return battlePredictionModel; }
+		void setBattlePredictionModel(BattlePredictionModel value) { battlePredictionModel = value; }
 		int getMaxRoamingHeroes() const { return maxRoamingHeroes; }
 		int getMaxRoamingHeroesPerTown() const { return maxRoamingHeroesPerTown; }
 		int getMainHeroTurnDistanceLimit() const { return mainHeroTurnDistanceLimit; }

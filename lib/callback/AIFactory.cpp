@@ -41,6 +41,17 @@ std::shared_ptr<CGlobalAI> AIFactory::createAdventureAI(const std::string & name
 #endif
 	}
 
+	if(name == "Nullkiller2Ratio")
+	{
+#ifdef ENABLE_NULLKILLER2_AI
+		auto ret = std::make_shared<NK2AI::AIGateway>(NK2AI::BattlePredictionModel::RATIO);
+		ret->dllName = name;
+		return ret;
+#else
+		throw std::runtime_error("Nullkiller2 is not available in this build!");
+#endif
+	}
+
 	auto ret = std::make_shared<CEmptyAI>();
 	ret->dllName = name;
 	return ret;
@@ -80,6 +91,8 @@ bool AIFactory::isAvailableAdventureAI(const std::string & name)
 		return true;
 #ifdef ENABLE_NULLKILLER2_AI
 	if(name == "Nullkiller2")
+		return true;
+	if(name == "Nullkiller2Ratio")
 		return true;
 #endif
 	return false;

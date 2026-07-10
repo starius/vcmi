@@ -23,6 +23,8 @@
 
 #include "../../../lib/ConditionalWait.h"
 
+#include <optional>
+
 class PathfinderCache;
 
 namespace NK2AI
@@ -92,6 +94,7 @@ private:
 	bool openMap;
 	bool useObjectGraph;
 	bool pathfinderInvalidated;
+	std::optional<BattlePredictionModel> battlePredictionModelOverride;
 
 public:
 	static std::unique_ptr<ObjectGraph> baseGraph;
@@ -118,7 +121,7 @@ public:
 	std::mutex aiStateMutex;
 	mutable ThreadInterruption makingTurnInterruption;
 
-	Nullkiller();
+	explicit Nullkiller(std::optional<BattlePredictionModel> battlePredictionModelOverride = std::nullopt);
 	virtual ~Nullkiller();
 	void init(const std::shared_ptr<CCallback> & cbInput, AIGateway * aiGwInput);
 	virtual void makeTurn();

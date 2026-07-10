@@ -161,6 +161,7 @@ int main(int argc, char * argv[])
 		("nointro,i", "skips intro movies")
 		("donotstartserver,d","do not attempt to start server and just connect to it instead server")
 		("serverport", po::value<si64>(), "override port specified in config file")
+		("seed", po::value<si64>(), "override random seed for deterministic test runs")
 		("savefrequency", po::value<si64>(), "limit auto save creation to each N days");
 
 	if(argc > 1)
@@ -277,6 +278,16 @@ int main(int argc, char * argv[])
 	// Init special testing settings
 	setSettingInteger("session/serverport", "serverport", 0);
 	setSettingInteger("general/saveFrequency", "savefrequency", 1);
+	if(vm.count("serverport"))
+	{
+		Settings serverSettings = settings.write["server"];
+		serverSettings["localPort"].Integer() = vm["serverport"].as<si64>();
+	}
+	if(vm.count("seed"))
+	{
+		Settings serverSettings = settings.write["server"];
+		serverSettings["seed"].Integer() = vm["seed"].as<si64>();
+	}
 
 	// Initialize logging based on settings
 	logConfigurator.configure();
@@ -355,6 +366,14 @@ int main(int argc, char * argv[])
 	session["autoSkip"].Bool()  = vm.count("autoSkip");
 	session["oneGoodAI"].Bool() = vm.count("oneGoodAI");
 	session["aiSolo"].Bool() = false;
+
+	std::vector<std::string> aiPlayerNames;
+	if(vm.count("ai"))
+		aiPlayerNames = vm["ai"].as<std::vector<std::string>>();
+
+	session["ai"].Vector().clear();
+	for(const auto & aiName : aiPlayerNames)
+		session["ai"].Vector().push_back(JsonNode(aiName));
 	
 	if(vm.count("testmap"))
 	{

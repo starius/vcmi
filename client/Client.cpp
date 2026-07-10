@@ -284,6 +284,18 @@ std::optional<PlayerColor> CClient::findPlayerColorForSpectatorInterface() const
 
 std::string CClient::aiNameForPlayer(const PlayerSettings & ps, bool battleAI, bool alliedToHuman) const
 {
+	if(!battleAI && settings["session"]["ai"].isVector())
+	{
+		const auto & aiOverrides = settings["session"]["ai"].Vector();
+		const int playerIndex = ps.color.getNum();
+		if(playerIndex >= 0 && playerIndex < static_cast<int>(aiOverrides.size()))
+		{
+			const auto & aiOverride = aiOverrides[playerIndex];
+			if(aiOverride.isString() && AIFactory::isAvailableAdventureAI(aiOverride.String()))
+				return aiOverride.String();
+		}
+	}
+
 	if(ps.name.size() && AIFactory::isAvailableAdventureAI(ps.name))
 		return ps.name;
 

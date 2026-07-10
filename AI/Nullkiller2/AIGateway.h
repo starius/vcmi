@@ -20,6 +20,8 @@
 #include "Pathfinding/AIPathfinder.h"
 #include "Engine/Nullkiller.h"
 
+#include <optional>
+
 class AsyncRunner;
 
 namespace NK2AI
@@ -79,7 +81,7 @@ public:
 
 	std::unique_ptr<Nullkiller> nullkiller;
 
-	AIGateway();
+	explicit AIGateway(std::optional<BattlePredictionModel> battlePredictionModelOverride = std::nullopt);
 	~AIGateway();
 
 	//TODO: extract to appropriate goals

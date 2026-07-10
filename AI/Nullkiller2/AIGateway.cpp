@@ -39,13 +39,13 @@
 namespace NK2AI
 {
 
-AIGateway::AIGateway()
+AIGateway::AIGateway(std::optional<BattlePredictionModel> battlePredictionModelOverride)
 	:status(this)
 {
 	LOG_TRACE(logAi);
 	destinationTeleport = ObjectInstanceID();
 	destinationTeleportPos = int3(-1);
-	nullkiller.reset(new Nullkiller());
+	nullkiller.reset(new Nullkiller(battlePredictionModelOverride));
 	asyncTasks = std::make_unique<AsyncRunner>();
 }
 

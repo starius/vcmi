@@ -37,10 +37,11 @@ using namespace Goals;
 // while we play vcmieagles graph can be shared
 std::unique_ptr<ObjectGraph> Nullkiller::baseGraph;
 
-Nullkiller::Nullkiller()
+Nullkiller::Nullkiller(std::optional<BattlePredictionModel> battlePredictionModelOverride)
 	: activeHero(nullptr)
 	, scanDepth(ScanDepth::MAIN_FULL)
 	, useHeroChain(true)
+	, battlePredictionModelOverride(battlePredictionModelOverride)
 	, memory(std::make_unique<AIMemory>())
 {
 
@@ -83,6 +84,8 @@ void Nullkiller::init(const std::shared_ptr<CCallback> & cbInput, AIGateway * ai
 	playerID = aiGwInput->playerID;
 
 	settings = std::make_unique<Settings>(cc->getStartInfo()->difficulty);
+	if(battlePredictionModelOverride)
+		settings->setBattlePredictionModel(*battlePredictionModelOverride);
 
 	PathfinderOptions pathfinderOptions(*cc);
 	pathfinderOptions.useTeleportTwoWay = true;

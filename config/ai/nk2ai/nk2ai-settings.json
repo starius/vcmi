@@ -33,6 +33,8 @@
 	// retreatThresholdAbsolute: how close to death (strength of army) to be before AI considers retreating
 	// safeAttackRatio: extra ratio added on top of hero's strength to determine if it's stronger than the enemy (danger)
 	// - general formula: heroStrength > dangerStrength * safeAttackRatio
+	// battlePredictionModel: "legacy" uses safeAttackRatio directly, "ratio" derives safeAttackRatio from a fitted strength-ratio model
+	// battlePredictionSafeProbability: minimum model probability used by the "ratio" battlePredictionModel
 	// maxArmyLossTarget: how much (% of army) the AI is willing to lose before it considers getting into a battle
 	// - this is an approximation and doesn't guarantee winning the battle due to many army particularities and battle styles
 	// - this becomes 100% if AI player loses all towns, it's willing to risk it all
@@ -58,6 +60,8 @@
 		"retreatThresholdRelative" : 0.1,
 		"retreatThresholdAbsolute" : 2000,
 		"safeAttackRatio" : 1.1,
+		"battlePredictionModel" : "legacy",
+		"battlePredictionSafeProbability" : 0.65,
 		"maxArmyLossTarget" : 0.65
 	},
 
@@ -80,6 +84,8 @@
 		"retreatThresholdRelative" : 0.1,
 		"retreatThresholdAbsolute" : 5000,
 		"safeAttackRatio" : 1.1,
+		"battlePredictionModel" : "legacy",
+		"battlePredictionSafeProbability" : 0.65,
 		"maxArmyLossTarget" : 0.50
 	},
 
@@ -102,6 +108,8 @@
 		"retreatThresholdRelative" : 0.3,
 		"retreatThresholdAbsolute" : 10000,
 		"safeAttackRatio" : 1.1,
+		"battlePredictionModel" : "legacy",
+		"battlePredictionSafeProbability" : 0.65,
 		"maxArmyLossTarget" : 0.35
 	},
 
@@ -124,6 +132,8 @@
 		"retreatThresholdRelative" : 0.3,
 		"retreatThresholdAbsolute" : 10000,
 		"safeAttackRatio" : 1.1,
+		"battlePredictionModel" : "legacy",
+		"battlePredictionSafeProbability" : 0.65,
 		"maxArmyLossTarget" : 0.35
 	},
 
@@ -146,6 +156,8 @@
 		"retreatThresholdRelative" : 0.3,
 		"retreatThresholdAbsolute" : 10000,
 		"safeAttackRatio" : 1.1,
+		"battlePredictionModel" : "legacy",
+		"battlePredictionSafeProbability" : 0.65,
 		"maxArmyLossTarget" : 0.35
 	}
 }
