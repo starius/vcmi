@@ -41,6 +41,10 @@ namespace AIPathfinding
 		bool canAct(const Nullkiller * aiNk, const AIPathNode * source) const override;
 
 		std::string toString() const override;
+
+		SpellID getSpellToCast() const { return spellToCast; }
+		int getManaCost() const { return manaCost; }
+		DayFlags getFlagsToAdd() const { return flagsToAdd; }
 	};
 
 	class WaterWalkingAction : public AdventureCastAction

@@ -37,6 +37,8 @@ namespace AIPathfinding
 		void execute(AIGateway * aiGw, const CGHeroInstance * hero) const override;
 
 		std::string toString() const override;
+
+		const QuestInfo & getQuestInfo() const { return questInfo; }
 	};
 }
 

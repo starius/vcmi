@@ -1717,6 +1717,81 @@ JsonNode jsonSpecialAction(
 		}
 	}
 
+	if(const auto * dimensionDoor = dynamic_cast<const NK2AI::AIPathfinding::DimensionDoorAction *>(&action))
+	{
+		node["spell_id"] = JsonNode(dimensionDoor->getUsedSpell().getNum());
+		node["manaCost"] = JsonNode(dimensionDoor->getManaCost());
+		node["movementPointsRequired"] = JsonNode(dimensionDoor->getMovementPointsRequired());
+		node["movementPointsTaken"] = JsonNode(dimensionDoor->getMovementPointsTaken());
+		node["plannedSourceTurn"] = JsonNode(dimensionDoor->getPlannedSourceTurn());
+		node["plannedSourceMoveRemains"] = JsonNode(dimensionDoor->getPlannedSourceMoveRemains());
+		node["plannedSourceMoveLimit"] = JsonNode(dimensionDoor->getPlannedSourceMoveLimit());
+		node["plannedDimensionDoorCasts"] = JsonNode(dimensionDoor->getPlannedDimensionDoorCasts());
+		node["guardedLandingDanger"] = JsonNode(static_cast<int64_t>(dimensionDoor->getGuardedLandingDanger()));
+		node["guardedLandingArmyLoss"] = JsonNode(static_cast<int64_t>(dimensionDoor->getGuardedLandingArmyLoss()));
+		if(dimensionDoor->getDestination().isValid())
+			node["spellDestination"] = jsonPosition(dimensionDoor->getDestination());
+	}
+	else if(const auto * townPortal = dynamic_cast<const NK2AI::AIPathfinding::TownPortalAction *>(&action))
+	{
+		node["spell_id"] = JsonNode(townPortal->getUsedSpell().getNum());
+		if(const CGTownInstance * town = townPortal->getTargetTown())
+		{
+			if(!cc || cc->isVisibleFor(town, player) || town->tempOwner == player)
+			{
+				node["targetTownId"] = JsonNode(town->id.getNum());
+				node["targetTownPosition"] = jsonPosition(town->visitablePos());
+			}
+		}
+	}
+	else if(const auto * summonBoat = dynamic_cast<const NK2AI::AIPathfinding::SummonBoatAction *>(&action))
+	{
+		node["spell_id"] = JsonNode(summonBoat->getUsedSpell().getNum());
+	}
+	else if(const auto * buildBoat = dynamic_cast<const NK2AI::AIPathfinding::BuildBoatAction *>(&action))
+	{
+		if(const IShipyard * shipyard = buildBoat->getShipyard())
+		{
+			if(const CGObjectInstance * shipyardObject = buildBoat->targetObject())
+			{
+				if(!cc || cc->isVisibleFor(shipyardObject, player))
+				{
+					ResourceSet cost;
+					shipyard->getBoatCost(cost);
+					node["shipyard_id"] = JsonNode(shipyardObject->id.getNum());
+					node["shipyardPosition"] = jsonPosition(shipyardObject->visitablePos());
+					node["shipyardStatusId"] = JsonNode(static_cast<int32_t>(shipyard->shipyardStatus()));
+					node["boatTypeId"] = JsonNode(shipyard->getBoatType().getNum());
+					node["boatLayerId"] = JsonNode(static_cast<int32_t>(shipyard->getBoatLayer()));
+					node["bestBoatLocation"] = jsonPosition(shipyard->bestLocation());
+					node["boatCost"] = jsonResources(cost);
+				}
+			}
+		}
+	}
+	else if(const auto * adventureCast = dynamic_cast<const NK2AI::AIPathfinding::AdventureCastAction *>(&action))
+	{
+		node["spell_id"] = JsonNode(adventureCast->getSpellToCast().getNum());
+		node["manaCost"] = JsonNode(adventureCast->getManaCost());
+		node["dayFlagsId"] = JsonNode(static_cast<int32_t>(adventureCast->getFlagsToAdd()));
+	}
+	else if(const auto * questAction = dynamic_cast<const NK2AI::AIPathfinding::QuestAction *>(&action))
+	{
+		const QuestInfo & questInfo = questAction->getQuestInfo();
+		if(cc)
+		{
+			if(const CGObjectInstance * questObject = questInfo.getObject(cc.get()))
+			{
+				if(cc->isVisibleFor(questObject, player))
+				{
+					node["questObjectId"] = JsonNode(questObject->id.getNum());
+					node["questObjectTypeId"] = JsonNode(questObject->ID.getNum());
+					node["questPosition"] = jsonPosition(questObject->visitablePos());
+				}
+			}
+		}
+	}
+
 	const auto parts = action.getParts();
 	node["partCount"] = JsonNode(static_cast<int32_t>(parts.size()));
 	node["partsTruncated"] = JsonNode(false);
@@ -1794,8 +1869,11 @@ JsonNode jsonNullkillerPath(
 			pathNodeJson["specialAction"] = jsonSpecialAction(*pathNode.specialAction, cc, player, pathNode.coord, 1);
 			if(const CGObjectInstance * target = pathNode.specialAction->targetObject())
 			{
-				pathNodeJson["specialActionTargetObjectId"] = JsonNode(target->id.getNum());
-				pathNodeJson["specialActionTargetPosition"] = jsonPosition(target->visitablePos());
+				if(!cc || cc->isVisibleFor(target, player))
+				{
+					pathNodeJson["specialActionTargetObjectId"] = JsonNode(target->id.getNum());
+					pathNodeJson["specialActionTargetPosition"] = jsonPosition(target->visitablePos());
+				}
 			}
 		}
 		node["nodes"].Vector().push_back(pathNodeJson);

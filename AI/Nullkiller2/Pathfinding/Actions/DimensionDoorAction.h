@@ -76,5 +76,17 @@ namespace NK2AI::AIPathfinding
 			const AIPathNode * srcNode) const override;
 		const ChainActor * getActor(const ChainActor * sourceActor) const override;
 		std::string toString() const override;
+
+		SpellID getUsedSpell() const { return usedSpell; }
+		const int3 & getDestination() const { return destination; }
+		int getManaCost() const { return manaCost; }
+		int getMovementPointsRequired() const { return movementPointsRequired; }
+		int getMovementPointsTaken() const { return movementPointsTaken; }
+		int getPlannedSourceTurn() const { return plannedSourceTurn; }
+		int getPlannedSourceMoveRemains() const { return plannedSourceMoveRemains; }
+		int getPlannedSourceMoveLimit() const { return plannedSourceMoveLimit; }
+		int getPlannedDimensionDoorCasts() const { return plannedDimensionDoorCasts; }
+		uint64_t getGuardedLandingDanger() const { return guardedLandingDanger; }
+		uint64_t getGuardedLandingArmyLoss() const { return guardedLandingArmyLoss; }
 	};
 }

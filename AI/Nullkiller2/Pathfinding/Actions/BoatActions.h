@@ -46,6 +46,8 @@ namespace AIPathfinding
 
 		std::string toString() const override;
 
+		SpellID getUsedSpell() const { return usedSpell; }
+
 	private:
 		int32_t getManaCost(const CGHeroInstance * hero) const;
 	};
@@ -75,6 +77,7 @@ namespace AIPathfinding
 		std::string toString() const override;
 
 		const CGObjectInstance * targetObject() const override;
+		const IShipyard * getShipyard() const { return shipyard; }
 	};
 
 	class BuildBoatActionFactory : public ISpecialActionFactory

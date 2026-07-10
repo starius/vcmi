@@ -466,7 +466,11 @@ Current bounded subroutine surface:
   `nullkiller_step`.
 - Native path nodes include a typed `specialAction` object for special movement/planning actions, with stable
   `kindId`/`kind` values for composite, Dimension Door, Town Portal, boat, whirlpool, quest, and adventure-cast
-  actions. Scripts should branch on these fields rather than parsing native debug text.
+  actions. Scripts should branch on these fields rather than parsing native debug text. Typed parameters are
+  exposed as ids and numbers, not localized display strings: Dimension Door and adventure-cast actions include
+  `spell_id`, mana and movement accounting, planned cast counts, and guarded landing risk; Town Portal includes
+  `spell_id` plus the visible/owned target town id; boat actions include summon `spell_id` or visible shipyard,
+  boat type, boat layer, build status, build position, and cost; quest actions include visible quest object ids.
 - Modal query records expose stable `query_id`, type ids/names, and answer ids. Level-up, blocking, teleport,
   map-object-select, artifact assembly, tavern, garrison, recruitment, university, and market dialogs include
   typed context where available. Tavern, recruitment, university, and market dialogs reuse the same hire,
@@ -1165,9 +1169,10 @@ Regression harness:
   buildings, boats, and adventure spells. Single-query Nullkiller dialog handling is also exposed through
   `ai:nullkillerAnswerQuery`. This is still not full parity: scripts need richer direct access to remaining
   player choices before serious script optimization should be treated as meaningful.
-- Done: Nullkiller path-node special actions are serialized with stable typed metadata, so Lua can identify
-  native Dimension Door, Town Portal, boat, whirlpool, quest, adventure-cast, and composite path actions without
-  relying on debug strings.
+- Done: Nullkiller path-node special actions are serialized with stable typed metadata, so Lua can identify and
+  inspect native Dimension Door, Town Portal, boat, whirlpool, quest, adventure-cast, and composite path actions
+  without relying on debug strings. The exposed action parameters use ids/numeric fields where possible and keep
+  target object details behind visibility checks.
 - Done: owned hero/town snapshots expose richer inspectable state for script decisions: stable hero type/class,
   faction, creature, secondary-skill, building, spell, and artifact identifiers; hero progression and secondary
   skills; town hall/fort/mage-guild/town levels; built/destroyed counts; building detail records; owned mage-guild
