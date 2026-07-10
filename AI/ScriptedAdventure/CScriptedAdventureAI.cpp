@@ -7986,6 +7986,14 @@ JsonNode CScriptedAdventureAI::makeScriptInputState()
 			state["towns"].Vector().push_back(jsonTown(town, resources, true));
 	}
 
+	state["ownedObjects"].Vector();
+	for(const CGObjectInstance * object : cc->getMyObjects())
+	{
+		if(object && object->tempOwner == playerID)
+			state["ownedObjects"].Vector().push_back(jsonMapObject(object, playerID, nullptr));
+	}
+	state["ownedObjectCount"] = JsonNode(static_cast<int32_t>(state["ownedObjects"].Vector().size()));
+
 	state["quests"].Vector();
 	for(const QuestInfo & questInfo : cc->getMyQuests())
 		state["quests"].Vector().push_back(jsonQuestInfo(questInfo, cc.get(), playerID));

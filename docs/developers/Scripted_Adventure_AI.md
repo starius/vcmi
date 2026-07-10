@@ -130,6 +130,9 @@ Input:
 - `state`: complete visible player state or selected state sections.
 - `state.map`: map dimensions, visible tile count, a capped sample of visible terrain tiles, and a capped list
   of visible objects gathered through player-specific fog-of-war checks.
+- `state.ownedObjects`: the full player-specific list of currently owned/flagged map objects, using public
+  object fields and stable ids. This is intentionally separate from capped visible-object samples, because a
+  normal player can inspect owned mines, dwellings, and other flagged assets even when they are not near a hero.
 - `state.quests`: current player quest-log entries in the same stable shape as the mirrored quest-log window
   update. Visible quest object details are attached only when they are visible to the player.
 - Visible quest objects include a `quest` block. Requirement details are exposed only when the quest is already
@@ -1059,10 +1062,10 @@ Regression harness:
   `typeId`/`subtypeId` plus `kindId`; town build options provide `building_id`, `buildingKindId`,
   `buildingLevel`, and `buildingUpgrade`; paths provide `pathActionId`; visible threat alerts provide `levelId`.
   Localized display strings remain useful in traces but are not part of the strategic contract.
-- Script input now includes `state.map.visibleTilesCount`, capped `state.map.visibleTiles` terrain samples, and
-  capped `state.map.visibleObjects`. These are produced through player-specific visibility checks. The caps keep
-  traces bounded; scripts should use counts and object ids, and request richer host candidates when a full-map
-  operation would be too large for direct Lua input.
+- Script input now includes `state.map.visibleTilesCount`, capped `state.map.visibleTiles` terrain samples,
+  capped `state.map.visibleObjects`, and full `state.ownedObjects` from the player-specific owned-object
+  callback. Visible samples are produced through fog-of-war checks and capped to keep traces bounded; owned objects
+  are not capped because they are already player-owned strategic assets.
 - Visible quest objects now expose known requirements as stable ids after they become active for the player:
   mission id, last day, required resources, artifacts, creatures, skills, heroes/classes, players, spells, nested
   limiter counts, kill targets, and `canCompleteWithContextHero` for reachable-object context.
@@ -1323,6 +1326,8 @@ Regression harness:
   skills; town hall/fort/mage-guild/town levels; built/destroyed counts; building detail records; owned mage-guild
   spells; dwelling pools/growth; horde structures; and blacksmith war-machine availability. Owned-only details
   stay out of visible enemy town/hero analysis to avoid turning the script bridge into a hidden-information path.
+- Done: script input exposes `state.ownedObjects` from the normal player-specific owned-object callback, so Lua can
+  reason over flagged mines/dwellings/assets without relying on capped visible tile/object samples.
 - Done: known quest requirements are exposed on visible quest objects and current quest-log entries using stable
   ids without revealing inactive quest internals. Lua can reason about known blockers, while still using movement
   actions or bounded Nullkiller tasks for actual unlock-chain execution.
