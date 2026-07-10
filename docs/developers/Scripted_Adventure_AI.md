@@ -194,6 +194,12 @@ The `ai` facade:
   and Nullkiller's normal task machinery, then return control to Lua.
 - `ai:nullkillerStep(mode, maxCandidates)`: ask for candidates and execute the best one as a single bounded
   Nullkiller subroutine. Unlike `ai:nullkiller()`, this does not intentionally give away the rest of the day.
+- Named wrappers are available for every bounded Nullkiller task mode:
+  `ai:nullkillerAllTasks/Step`, `ai:nullkillerPriorityTasks/Step`, `ai:nullkillerAdventureTasks/Step`,
+  `ai:nullkillerRecruitHeroTasks/Step`, `ai:nullkillerBuyArmyTasks/Step`, `ai:nullkillerBuildingTasks/Step`,
+  `ai:nullkillerCaptureTasks/Step`, `ai:nullkillerClusterTasks/Step`, `ai:nullkillerDefenseTasks/Step`,
+  `ai:nullkillerEscapeTasks/Step`, `ai:nullkillerGatherArmyTasks/Step`, and
+  `ai:nullkillerExplorationTasks/Step`. These wrappers pass stable numeric mode ids.
 - `ai:nullkillerAnswerQuery(queryOrId, defaultAnswer?)`: ask Nullkiller to handle one pending query through its
   native dialog heuristic, then return control to Lua. This is bounded to that one query and does not delegate the
   rest of the day.
@@ -1173,6 +1179,8 @@ Regression harness:
 - Done: Lua can invoke Nullkiller's local object-interaction helper for one owned hero at one visible current
   object, then regain control. This exposes native post-visit handling for towns and hill forts as a bounded
   subroutine instead of requiring full-day delegation.
+- Done: Lua has named wrappers for every bounded Nullkiller task mode, using stable numeric mode ids while keeping
+  scripts readable.
 - Done: market operations are exposed through a coarse `nullkillerTrade` helper, an exact resource-resource
   helper, and a generic `marketTrade` action with wrappers for resource transfer, creature/resource sale,
   artifact purchase/sale/sacrifice, creature sacrifice, undead transformation, and university skill purchase.

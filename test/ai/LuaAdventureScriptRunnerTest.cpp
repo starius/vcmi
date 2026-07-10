@@ -543,6 +543,52 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 	EXPECT_EQ(output.memory["defenseMode"].Integer(), 8);
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallNamedNullkillerModeHelpers)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				ai:nullkillerDefenseTasks(9)
+				ai:nullkillerEscapeStep(4, 2)
+				ai:nullkillerBuildingStep(3, 1)
+				return ai:output("end_turn", "named bounded helpers")
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:named-nullkiller-mode-helpers", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		if(command["payload"]["type"].String() == "nullkiller_tasks")
+			response["result"]["nullkiller"]["tasks"].Vector();
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 3);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_tasks");
+	EXPECT_EQ(commands[0]["payload"]["mode"].Integer(), 8);
+	EXPECT_EQ(commands[0]["payload"]["max_candidates"].Integer(), 9);
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "nullkiller_step");
+	EXPECT_EQ(commands[1]["payload"]["mode"].Integer(), 9);
+	EXPECT_EQ(commands[1]["payload"]["max_candidates"].Integer(), 4);
+	EXPECT_EQ(commands[1]["payload"]["max_attempts"].Integer(), 2);
+	EXPECT_EQ(commands[2]["payload"]["type"].String(), "nullkiller_step");
+	EXPECT_EQ(commands[2]["payload"]["mode"].Integer(), 5);
+	EXPECT_EQ(commands[2]["payload"]["max_candidates"].Integer(), 3);
+	EXPECT_EQ(commands[2]["payload"]["max_attempts"].Integer(), 1);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "named bounded helpers");
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallMarketTradeHelpers)
 {
 	const std::string source = R"lua(

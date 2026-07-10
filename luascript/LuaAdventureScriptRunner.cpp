@@ -231,6 +231,36 @@ function ai:nullkillerStep(mode, maxCandidates, maxAttempts)
 	return self:execute(action)
 end
 
+local function defineNullkillerModeHelpers(name, mode)
+	ai["nullkiller" .. name .. "Tasks"] = function(self, maxCandidates)
+		return self:nullkillerTasks({
+			mode = mode,
+			max_candidates = maxCandidates
+		})
+	end
+
+	ai["nullkiller" .. name .. "Step"] = function(self, maxCandidates, maxAttempts)
+		return self:nullkillerStep({
+			mode = mode,
+			max_candidates = maxCandidates,
+			max_attempts = maxAttempts
+		})
+	end
+end
+
+defineNullkillerModeHelpers("All", ai.nullkillerTaskModes.all)
+defineNullkillerModeHelpers("Priority", ai.nullkillerTaskModes.priority)
+defineNullkillerModeHelpers("Adventure", ai.nullkillerTaskModes.adventure)
+defineNullkillerModeHelpers("RecruitHero", ai.nullkillerTaskModes.recruitHero)
+defineNullkillerModeHelpers("BuyArmy", ai.nullkillerTaskModes.buyArmy)
+defineNullkillerModeHelpers("Building", ai.nullkillerTaskModes.building)
+defineNullkillerModeHelpers("Capture", ai.nullkillerTaskModes.capture)
+defineNullkillerModeHelpers("Cluster", ai.nullkillerTaskModes.cluster)
+defineNullkillerModeHelpers("Defense", ai.nullkillerTaskModes.defense)
+defineNullkillerModeHelpers("Escape", ai.nullkillerTaskModes.escape)
+defineNullkillerModeHelpers("GatherArmy", ai.nullkillerTaskModes.gatherArmy)
+defineNullkillerModeHelpers("Exploration", ai.nullkillerTaskModes.exploration)
+
 function ai:nullkillerAnswerQuery(query, defaultAnswer)
 	local action = copyFields(query)
 	if type(query) ~= "table" then
