@@ -149,6 +149,20 @@ private:
 	bool scriptTaskStateHadSuccess;
 
 public:
+	class ScriptVisibleOnlyScope
+	{
+		Nullkiller & owner;
+		bool previousOpenMap;
+		bool previousUseObjectGraph;
+
+	public:
+		explicit ScriptVisibleOnlyScope(Nullkiller & owner);
+		~ScriptVisibleOnlyScope();
+
+		ScriptVisibleOnlyScope(const ScriptVisibleOnlyScope &) = delete;
+		ScriptVisibleOnlyScope & operator=(const ScriptVisibleOnlyScope &) = delete;
+	};
+
 	static std::unique_ptr<ObjectGraph> baseGraph;
 
 	std::unique_ptr<DangerHitMapAnalyzer> dangerHitMap;

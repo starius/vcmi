@@ -50,6 +50,21 @@ Nullkiller::Nullkiller()
 
 Nullkiller::~Nullkiller() = default;
 
+Nullkiller::ScriptVisibleOnlyScope::ScriptVisibleOnlyScope(Nullkiller & owner_)
+	: owner(owner_)
+	, previousOpenMap(owner.openMap)
+	, previousUseObjectGraph(owner.useObjectGraph)
+{
+	owner.openMap = false;
+	owner.useObjectGraph = false;
+}
+
+Nullkiller::ScriptVisibleOnlyScope::~ScriptVisibleOnlyScope()
+{
+	owner.openMap = previousOpenMap;
+	owner.useObjectGraph = previousUseObjectGraph;
+}
+
 bool canUseOpenMap(const std::shared_ptr<CCallback>& cb, const PlayerColor playerID)
 {
 	if(!cb->getStartInfo()->extraOptionsInfo.cheatsAllowed)

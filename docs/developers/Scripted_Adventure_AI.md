@@ -589,6 +589,9 @@ Current bounded subroutine surface:
   task handles may still be opaque native planner handles, but the JSON surface only exposes target object ids,
   affected object ids, goal tiles, and detailed path nodes when the referenced objects/tiles are visible or owned
   by the scripted player.
+- Script-facing bounded Nullkiller candidate generation and execution also force native `openMap` and object-graph
+  planning off for the duration of the helper call. This prevents Lua from using an opaque native task handle to
+  act on hidden-map knowledge even when native Nullkiller would be allowed to use AI-only open-map mode elsewhere.
 - `actionSpace.nullkillerSubroutineOptions` exposes the bounded task families as first-class candidate actions.
   Each option contains `tasksAction`, `stepAction`, and `passAction` payloads using numeric `mode` values, so Lua
   can discover and compose native subroutines the same way it discovers movement, build, recruitment, and

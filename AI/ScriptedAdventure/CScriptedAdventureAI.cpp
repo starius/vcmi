@@ -5282,6 +5282,7 @@ JsonNode CScriptedAdventureAI::makeNullkillerTaskCandidates(const JsonNode & act
 	{
 		std::shared_lock gameStateLock(CGameState::mutex);
 		std::lock_guard sharedStorageLock(NK2AI::AISharedStorage::locker);
+		NK2AI::Nullkiller::ScriptVisibleOnlyScope visibleOnly(*nullkiller);
 		AIGateway::memorizeVisitableObjs(nullkiller->memory, nullkiller->dangerHitMap, playerID, cc);
 		AIGateway::memorizeRevisitableObjs(nullkiller->memory, playerID, cc);
 
@@ -5317,6 +5318,7 @@ bool CScriptedAdventureAI::executeNullkillerTaskAction(const JsonNode & action, 
 	{
 		std::shared_lock gameStateLock(CGameState::mutex);
 		std::lock_guard sharedStorageLock(NK2AI::AISharedStorage::locker);
+		NK2AI::Nullkiller::ScriptVisibleOnlyScope visibleOnly(*nullkiller);
 		executed = nullkiller->executeScriptTask(task);
 	}
 
@@ -5578,6 +5580,7 @@ bool CScriptedAdventureAI::executeNullkillerStepAction(const JsonNode & action, 
 	{
 		std::shared_lock gameStateLock(CGameState::mutex);
 		std::lock_guard sharedStorageLock(NK2AI::AISharedStorage::locker);
+		NK2AI::Nullkiller::ScriptVisibleOnlyScope visibleOnly(*nullkiller);
 		result = nullkiller->executeScriptTaskSequence(nativeTasks, maxAttempts);
 	}
 
@@ -5696,6 +5699,7 @@ bool CScriptedAdventureAI::executeNullkillerPassAction(const JsonNode & action, 
 		{
 			std::shared_lock gameStateLock(CGameState::mutex);
 			std::lock_guard sharedStorageLock(NK2AI::AISharedStorage::locker);
+			NK2AI::Nullkiller::ScriptVisibleOnlyScope visibleOnly(*nullkiller);
 			traded = nullkiller->executeScriptResourceTrade();
 		}
 		if(!waitTillFreeForScriptAction(actionResult, "nullkiller_pass"))
@@ -5834,6 +5838,7 @@ bool CScriptedAdventureAI::executeNullkillerTurnSliceAction(const JsonNode & act
 			{
 				std::shared_lock gameStateLock(CGameState::mutex);
 				std::lock_guard sharedStorageLock(NK2AI::AISharedStorage::locker);
+				NK2AI::Nullkiller::ScriptVisibleOnlyScope visibleOnly(*nullkiller);
 				traded = nullkiller->executeScriptResourceTrade();
 			}
 			if(!waitTillFreeForScriptAction(actionResult, "nullkiller_turn_slice"))
@@ -6259,6 +6264,7 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		{
 			std::shared_lock gameStateLock(CGameState::mutex);
 			std::lock_guard sharedStorageLock(NK2AI::AISharedStorage::locker);
+			NK2AI::Nullkiller::ScriptVisibleOnlyScope visibleOnly(*nullkiller);
 			traded = nullkiller->executeScriptResourceTrade();
 		}
 		actionResult["ok"] = JsonNode(true);
@@ -6275,6 +6281,7 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		{
 			std::shared_lock gameStateLock(CGameState::mutex);
 			std::lock_guard sharedStorageLock(NK2AI::AISharedStorage::locker);
+			NK2AI::Nullkiller::ScriptVisibleOnlyScope visibleOnly(*nullkiller);
 			result = nullkiller->executeScriptPriorityPass(passIndex);
 		}
 
