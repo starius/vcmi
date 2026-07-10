@@ -24,6 +24,10 @@ from summarizeAdventureTrace import iter_trace_files, summarize  # noqa: E402
 DEFAULT_SCENARIO_GROUP = "training"
 DEFAULT_SCENARIO_KIND = "handcrafted"
 DEFAULT_SCENARIO_STAGE = "smoke"
+TERMINAL_OUTCOME_MARKERS = (
+    "Red player won. Ending game.",
+    "Red player lost. Ending game.",
+)
 
 
 def as_list(value: Any) -> list[Any]:
@@ -51,6 +55,13 @@ def script_override_value(script: str | None) -> str | None:
     if path.is_file():
         return f"file:{path.resolve()}"
     return script
+
+
+def stdout_has_terminal_outcome(stdout_path: Path) -> bool:
+    if not stdout_path.exists():
+        return False
+    text = stdout_path.read_text(encoding="utf-8", errors="replace")
+    return any(marker in text for marker in TERMINAL_OUTCOME_MARKERS)
 
 
 def scenario_source(scenario: dict[str, Any]) -> tuple[str, str]:
@@ -234,6 +245,7 @@ def args_for_scenario(args: argparse.Namespace, scenario: dict[str, Any]) -> arg
         runs=scenario["runs"],
         testdays=scenario["testdays"],
         timeout=scenario["timeout"],
+        exit_grace_after_outcome=args.exit_grace_after_outcome,
         output=args.output / safe_name(str(scenario["name"])),
         cwd=args.cwd,
         clean=args.clean,
@@ -299,26 +311,39 @@ def run_one(args: argparse.Namespace, scenario_or_map: dict[str, Any] | str, run
         env["VCMI_SCRIPTED_ADVENTURE_TRACE"] = "1"
     started = time.monotonic()
     timed_out = False
+    terminated_after_outcome = False
     return_code: int | None
     stdout_path = run_dir / "stdout.log"
 
     with stdout_path.open("w", encoding="utf-8") as stdout:
         stdout.write("$ " + " ".join(command) + "\n")
         stdout.flush()
-        try:
-            completed = subprocess.run(
-                command,
-                cwd=args.cwd,
-                env=env,
-                stdout=stdout,
-                stderr=subprocess.STDOUT,
-                timeout=args.timeout,
-                check=False,
-            )
-            return_code = completed.returncode
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            return_code = None
+        process = subprocess.Popen(command, cwd=args.cwd, env=env, stdout=stdout, stderr=subprocess.STDOUT)
+        outcome_seen_at: float | None = None
+        while True:
+            return_code = process.poll()
+            if return_code is not None:
+                break
+
+            now = time.monotonic()
+            if outcome_seen_at is None and stdout_has_terminal_outcome(stdout_path):
+                outcome_seen_at = now
+            if outcome_seen_at is not None and now - outcome_seen_at >= args.exit_grace_after_outcome:
+                terminated_after_outcome = True
+                process.terminate()
+                try:
+                    return_code = process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    return_code = process.wait()
+                break
+            if now - started >= args.timeout:
+                timed_out = True
+                process.kill()
+                process.wait()
+                return_code = None
+                break
+            time.sleep(0.5)
 
     trace_dir = trace_dir_for_run(run_dir)
     trace_summary = summarize(iter_trace_files([str(trace_dir)])) if trace_dir.exists() else summarize([])
@@ -345,6 +370,7 @@ def run_one(args: argparse.Namespace, scenario_or_map: dict[str, Any] | str, run
         "command": command,
         "timeoutSeconds": args.timeout,
         "timedOut": timed_out,
+        "terminatedAfterOutcome": terminated_after_outcome,
         "returnCode": return_code,
         "elapsedSeconds": round(time.monotonic() - started, 3),
         "ai": list(args.ai),
@@ -379,6 +405,7 @@ def compact_result(result: dict[str, Any]) -> dict[str, Any]:
         "outcome": outcome.get("result"),
         "completedDays": outcome.get("completedDays"),
         "timedOut": result.get("timedOut"),
+        "terminatedAfterOutcome": result.get("terminatedAfterOutcome"),
         "returnCode": result.get("returnCode"),
         "elapsedSeconds": result.get("elapsedSeconds"),
         "sourceType": result.get("sourceType"),
@@ -415,6 +442,7 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         "winners": winners,
         "outcomes": outcomes,
         "timeouts": sum(1 for result in results if result.get("timedOut")),
+        "terminatedAfterOutcome": sum(1 for result in results if result.get("terminatedAfterOutcome")),
         "nonzeroExit": sum(1 for result in results if not result.get("timedOut") and result.get("returnCode") != 0),
         "completedDayMin": min(completed_days) if completed_days else None,
         "completedDayMax": max(completed_days) if completed_days else None,
@@ -448,6 +476,7 @@ def main() -> int:
     parser.add_argument("--runs", type=int, default=1, help="Runs per map.")
     parser.add_argument("--testdays", type=int, default=0, help="Completed adventure days before the client exits.")
     parser.add_argument("--timeout", type=int, default=300, help="Seconds before stopping one run.")
+    parser.add_argument("--exit-grace-after-outcome", type=float, default=10.0, help="Seconds to wait for clean client exit after a terminal game outcome appears in stdout.")
     parser.add_argument("--output", type=Path, default=Path("scripted-ai-runs"), help="Directory for run outputs.")
     parser.add_argument("--cwd", default=None, help="Working directory for vcmiclient.")
     parser.add_argument("--clean", action="store_true", help="Delete existing run directories before reuse.")

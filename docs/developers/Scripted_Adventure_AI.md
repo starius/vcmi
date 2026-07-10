@@ -769,6 +769,9 @@ Regression harness:
   but did not produce wins. Trace mining now points at capability gaps rather than string drift: scripted fallback
   dependence, defense pressure without response, hero threat escape gaps, and missing high-level Nullkiller actions
   such as recruiting extra heroes, army concentration, and hero chaining.
+- `scripts/ai/runAdventureAIBatch.py` terminates a stale client process after a terminal game outcome has appeared
+  in stdout and a short grace period has elapsed. This keeps unattended evaluation batches from hanging while still
+  recording the completed outcome and traces.
 - Debugging `Emerald Isles` smoke runs showed the scripted host must not use Nullkiller helper methods that perform
   hidden side effects such as army exchange after movement. Scripted movement is now a direct, tracked `MoveHero`
   request over a route-id-validated path, and garrison/hero-exchange/recruitment dialogs are conservatively answered
