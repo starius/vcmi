@@ -1329,11 +1329,21 @@ void AIGateway::endTurn()
 		return;
 	}
 
+	bool shouldRetryEndTurn = false;
 	do
 	{
 		cc->endTurn();
+		{
+			auto unlock = vstd::makeUnlockSharedGuard(CGameState::mutex);
+			shouldRetryEndTurn = status.waitForTurnEnd(std::chrono::milliseconds(100));
+		}
+		if(shouldRetryEndTurn && !cc->isPlayerMakingTurn(playerID))
+		{
+			status.madeTurn();
+			shouldRetryEndTurn = false;
+		}
 	}
-	while(status.waitForTurnEnd(std::chrono::milliseconds(100))); //for some reasons, our request may fail -> stop requesting end of turn only after we've received a confirmation that it's over
+	while(shouldRetryEndTurn); //for some reasons, our request may fail -> stop requesting end of turn only after we've received a confirmation that it's over
 
 	logGlobal->info("Player %d (%s) ended turn", playerID, playerID.toString());
 }
