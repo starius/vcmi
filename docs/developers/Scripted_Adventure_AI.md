@@ -324,6 +324,25 @@ The `ai` facade:
   `ai.nullkillerHeroLockReasons`; the default is `defense`.
 - `ai:output(status, intent, confidence)`: return final status plus current memory.
 
+Current API coverage boundary:
+
+- Covered player actions: every adventure-relevant `IGameActionCallback` operation is available through a checked
+  Lua action or facade helper: hero movement, hero dismissal, digging, adventure spell casting, hero recruitment,
+  town building/visits, creature recruitment/upgrades, spell research, garrison swaps, all market modes, query
+  replies/cancel replies, creature stack operations, artifact swaps/sorts/assembly/costumes/altar staging, creature
+  dismissal, end turn, artifact purchase, formation/tactics/town naming, boat building, statistics requests, and
+  army/artifact bulk operations.
+- Intentionally not exposed as game actions: `saveLocalState` is represented by script memory, while `save`,
+  `sendMessage`, and `gamePause` are meta-client operations rather than adventure strategy controls. Raw
+  `selectionMade` is covered by typed query records plus `answer_query` / `nullkiller_answer_query`.
+- Covered Nullkiller integration: Lua can inspect the native Nullkiller snapshot, constrain resources/heroes,
+  list task candidates, execute a selected task, run one step, run capped passes/slices, run the priority loop once,
+  run native trade, answer one or several queries, run post-object interaction, and run the exposed army/artifact
+  preparation helpers. These all return control to Lua instead of intentionally letting Nullkiller finish the day.
+- Remaining parity test: if a future script needs a strategy decision that cannot be represented by visible input,
+  `analysis.nullkiller.*`, checked actions, or bounded task/helper calls, that is an API gap to add before tuning
+  policy logic.
+
 Output from `runDay`:
 
 - `memory`: replacement script-owned memory to persist.
