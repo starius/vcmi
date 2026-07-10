@@ -4599,6 +4599,31 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 	if(type == "nullkiller_answer_query")
 		return executeNullkillerQueryAction(action, actionResult);
 
+	if(type == "nullkiller_object_interaction")
+	{
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+		if(!hero || hero->tempOwner != playerID)
+			throw std::invalid_argument("Unknown hero or hero is not owned by scripted AI");
+
+		const CGObjectInstance * object = cc->getObj(ObjectInstanceID(readInteger(action, "object_id")), false);
+		if(!object || !cc->isVisibleFor(object, playerID))
+			throw std::invalid_argument("Unknown object or object is not visible to scripted AI");
+
+		const auto * town = dynamic_cast<const CGTownInstance *>(object);
+		const bool heroVisitsTown = town && hero->getVisitedTown() == town;
+		const bool heroAtObject = object->visitablePos().isValid() && hero->visitablePos() == object->visitablePos();
+		if(!heroVisitsTown && !heroAtObject)
+			throw std::invalid_argument("Hero must be visiting or standing at the object for Nullkiller object interaction");
+
+		performObjectInteraction(object, NK2AI::HeroPtr(hero, cc.get()));
+		actionResult["hero_id"] = JsonNode(hero->id.getNum());
+		actionResult["object_id"] = JsonNode(object->id.getNum());
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(true);
+		return true;
+	}
+
 	if(type == "nullkiller_step")
 	{
 		const JsonNode candidates = makeNullkillerTaskCandidates(action);
@@ -5636,7 +5661,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "swap_creatures", "merge_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "market_trade", "dismiss_hero", "build_boat", "dig", "cast_spell", "buy_artifact", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_answer_query" })
+	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "swap_creatures", "merge_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "market_trade", "dismiss_hero", "build_boat", "dig", "cast_spell", "buy_artifact", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_answer_query", "nullkiller_object_interaction" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();

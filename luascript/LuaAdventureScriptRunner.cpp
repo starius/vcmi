@@ -245,6 +245,18 @@ function ai:nullkillerAnswerQuery(query, defaultAnswer)
 	return self:execute(action)
 end
 
+function ai:nullkillerObjectInteraction(heroId, objectId)
+	local action = copyFields(heroId)
+	if type(heroId) ~= "table" then
+		action.hero_id = heroId
+		action.object_id = objectId
+	end
+	action.type = "nullkiller_object_interaction"
+	return self:execute(action)
+end
+
+ai.nullkillerInteract = ai.nullkillerObjectInteraction
+
 function ai:output(status, intent, confidence)
 	return {
 		status = status or "continue",

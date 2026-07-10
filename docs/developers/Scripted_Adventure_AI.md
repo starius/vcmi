@@ -197,6 +197,10 @@ The `ai` facade:
 - `ai:nullkillerAnswerQuery(queryOrId, defaultAnswer?)`: ask Nullkiller to handle one pending query through its
   native dialog heuristic, then return control to Lua. This is bounded to that one query and does not delegate the
   rest of the day.
+- `ai:nullkillerObjectInteraction(heroId, objectId)`: run Nullkiller's local post-visit helper for one owned hero
+  currently visiting or standing at a visible object, then return control to Lua. This covers bounded native
+  handling such as owned-town creature pickup, opportunistic spellbook purchase for a main hero, and hill-fort
+  upgrades without delegating the rest of the day.
 - `ai:output(status, intent, confidence)`: return final status plus current memory.
 
 Output from `runDay`:
@@ -1166,6 +1170,9 @@ Regression harness:
   hero stat/mana/skill/bonus changes, garrison changes, artifact movement, available creature/artifact changes,
   tile hiding, resource receipts, and adventure spell casts. Hidden bonuses are not exposed, and non-owned visible
   hero/object records use public fields only.
+- Done: Lua can invoke Nullkiller's local object-interaction helper for one owned hero at one visible current
+  object, then regain control. This exposes native post-visit handling for towns and hill forts as a bounded
+  subroutine instead of requiring full-day delegation.
 - Done: market operations are exposed through a coarse `nullkillerTrade` helper, an exact resource-resource
   helper, and a generic `marketTrade` action with wrappers for resource transfer, creature/resource sale,
   artifact purchase/sale/sacrifice, creature sacrifice, undead transformation, and university skill purchase.
