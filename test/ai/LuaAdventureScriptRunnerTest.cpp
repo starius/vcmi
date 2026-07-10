@@ -489,6 +489,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 						executedOutcome = ai.nullkillerStepOutcomes.executed,
 						defenseMode = ai.nullkillerTaskModes.defense,
 						defendTier = ai.nullkillerPriorityTiers.defend,
+						mainHeroRole = ai.nullkillerHeroRoles.main,
 						mineKind = ai.objectKinds.mine,
 						dwellingBuildingKind = ai.buildingKinds.dwelling,
 						gatherTransferKind = ai.armyTransferKinds.gatherToHero,
@@ -705,6 +706,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 	EXPECT_EQ(output.memory["executedOutcome"].Integer(), 1);
 	EXPECT_EQ(output.memory["defenseMode"].Integer(), 8);
 	EXPECT_EQ(output.memory["defendTier"].Integer(), 6);
+	EXPECT_EQ(output.memory["mainHeroRole"].Integer(), 1);
 	EXPECT_EQ(output.memory["mineKind"].Integer(), 3);
 	EXPECT_EQ(output.memory["dwellingBuildingKind"].Integer(), 11);
 	EXPECT_EQ(output.memory["gatherTransferKind"].Integer(), 1);

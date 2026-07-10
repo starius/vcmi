@@ -637,7 +637,8 @@ Current bounded subroutine surface:
 - Lua exposes numeric constants for stable host ids used by the strategic contract:
   `ai.buildingKinds`, `ai.objectKinds`, `ai.armyTransferKinds`, `ai.queryTypes`, `ai.pathActions`, `ai.threatLevels`,
   `ai.riskLevels`, `ai.specialActionKinds`, `ai.adventureSpellKinds`, `ai.nullkillerStepOutcomes`,
-  `ai.nullkillerFailureActions`, `ai.nullkillerTaskModes`, and `ai.nullkillerPriorityTiers`. Scripts should
+  `ai.nullkillerFailureActions`, `ai.nullkillerTaskModes`, `ai.nullkillerPriorityTiers`,
+  `ai.nullkillerHeroLockReasons`, and `ai.nullkillerHeroRoles`. Scripts should
   branch on these constants rather than trace strings or raw magic numbers.
 - `analysis.nullkiller.settings` exposes Nullkiller's read-only operational thresholds, including max pass counts,
   safe attack ratio, retreat thresholds, army-loss target, hero roaming limits, pathfinder limits, and enabled
@@ -712,7 +713,7 @@ The script engine should reuse these Nullkiller systems where possible:
 Current read-only Nullkiller analyzer exposure:
 
 - Owned hero records include `nullkillerRoleId` / `nullkillerRole`, using the same main/scout labels as
-  `HeroManager`.
+  `HeroManager`. Lua mirrors the stable numeric values through `ai.nullkillerHeroRoles`.
 - Owned hero records include `nullkillerFightingScore` and `nullkillerMagicScore`, which mirror Nullkiller's
   hero evaluator outputs for script ranking. These are advisory scores, not game rules.
 

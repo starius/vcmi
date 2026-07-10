@@ -341,6 +341,11 @@ ai.nullkillerHeroLockReasons = {
 	heroChain = 3
 }
 
+ai.nullkillerHeroRoles = {
+	scout = 0,
+	main = 1
+}
+
 ai.adventureSpellKinds = {
 	unknown = 0,
 	generic = 1,
