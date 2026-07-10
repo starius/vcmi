@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import shutil
 import sys
@@ -92,21 +93,39 @@ def run_side(args: argparse.Namespace, label: str, script: str, scenarios: list[
     side_output.mkdir(parents=True, exist_ok=True)
 
     results: list[dict[str, Any]] = []
+    tasks: list[tuple[argparse.Namespace, dict[str, Any], int]] = []
     for scenario in scenarios:
         scenario_output = side_output / safe_name(str(scenario["name"]))
         scenario_args = make_side_args(args, scenario_output, script, scenario)
         for run_index in range(1, scenario["runs"] + 1):
-            result = run_one(scenario_args, scenario, run_index)
-            result["side"] = label
-            results.append(result)
-            status = "timeout" if result["timedOut"] else f"exit {result['returnCode']}"
-            parsed = result["traceSummary"]["parsed"]
-            source_type, source = scenario_source(scenario)
-            trace_status = f"traces parsed={parsed}" if args.trace else "traces disabled"
-            print(
-                f"{label} {scenario['name']} {source_type}:{source} run {run_index}: "
-                f"{status}, outcome={result['outcome']['result']}, {trace_status}, dir={result['runDir']}"
-            )
+            tasks.append((scenario_args, scenario, run_index))
+
+    def finish_result(scenario: dict[str, Any], result: dict[str, Any]) -> None:
+        result["side"] = label
+        results.append(result)
+        status = "timeout" if result["timedOut"] else f"exit {result['returnCode']}"
+        parsed = result["traceSummary"]["parsed"]
+        source_type, source = scenario_source(scenario)
+        trace_status = f"traces parsed={parsed}" if args.trace else "traces disabled"
+        print(
+            f"{label} {scenario['name']} {source_type}:{source} run {result['run']}: "
+            f"{status}, outcome={result['outcome']['result']}, {trace_status}, dir={result['runDir']}"
+        )
+
+    jobs = max(1, int(args.jobs))
+    if jobs == 1:
+        for scenario_args, scenario, run_index in tasks:
+            finish_result(scenario, run_one(scenario_args, scenario, run_index))
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as executor:
+            future_to_scenario = {
+                executor.submit(run_one, scenario_args, scenario, run_index): scenario
+                for scenario_args, scenario, run_index in tasks
+            }
+            for future in concurrent.futures.as_completed(future_to_scenario):
+                finish_result(future_to_scenario[future], future.result())
+
+    results.sort(key=lambda item: (str(item.get("scenario")), int(item.get("run", 0))))
 
     (side_output / "manifest.json").write_text(json.dumps({"runs": results}, indent=2, sort_keys=True), encoding="utf-8")
     return results
@@ -359,6 +378,7 @@ def main() -> int:
     parser.add_argument("--cwd", default=None, help="Working directory for vcmiclient.")
     parser.add_argument("--clean", action="store_true", help="Delete existing side/run directories before reuse.")
     parser.add_argument("--extra-arg", action="append", default=[], help="Extra argument passed to vcmiclient.")
+    parser.add_argument("--jobs", type=int, default=1, help="Number of runs per evaluation side to execute in parallel.")
     parser.add_argument("--trace", dest="trace", action="store_true", default=True, help="Enable ScriptedAdventureAI trace collection for trace-local metrics.")
     parser.add_argument("--no-trace", dest="trace", action="store_false", help="Disable trace collection for outcome-focused promotion runs.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable evaluation JSON.")

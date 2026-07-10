@@ -653,6 +653,7 @@ scripts/ai/evaluateAdventureAIScripts.py \
   --baseline-script scripts/ai/defaultAdventure.lua \
   --candidate-script /tmp/candidateAdventure.lua \
   --no-trace \
+  --jobs 8 \
   --output scripted-ai-eval \
   --clean
 ```
