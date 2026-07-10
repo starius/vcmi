@@ -57,6 +57,8 @@ class GameTask:
 	direction: str
 	red_ai: str
 	blue_ai: str
+	red_model: str
+	blue_model: str
 	server_port: int
 	run_dir: Path
 
@@ -84,7 +86,14 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument("--map", dest="maps", action="append", required=True, help="Map path accepted by --testmap. Repeat to cycle maps.")
 	parser.add_argument("--legacy-ai", default="Nullkiller2", help="AI name for the baseline player.")
 	parser.add_argument("--candidate-ai", default="Nullkiller2Ratio", help="AI name for the adjusted predictor player.")
-	parser.add_argument("--samples", type=int, default=30, help="Number of color-swapped samples to run.")
+	parser.add_argument("--opponent-ai", default="Nullkiller2", help="Fixed Blue opponent for --comparison-mode red-role.")
+	parser.add_argument(
+		"--comparison-mode",
+		choices=("color-swap", "red-role"),
+		default="color-swap",
+		help="color-swap compares two competitive players; red-role compares both variants in the same Red role.",
+	)
+	parser.add_argument("--samples", type=int, default=30, help="Number of paired samples to run.")
 	parser.add_argument("--seed-start", type=int, default=100000, help="First deterministic server seed.")
 	parser.add_argument("--seed-step", type=int, default=1, help="Increment between sample seeds.")
 	parser.add_argument("--timeout", type=float, default=300.0, help="Seconds before terminating one game run.")
@@ -133,16 +142,10 @@ def opposite_two_player_color(color: str | None) -> str | None:
 
 def model_for_color(task: GameTask, color: str | None) -> str | None:
 	if color == "Red":
-		return "legacy" if task.red_ai == task_legacy_ai(task) else "candidate"
+		return task.red_model
 	if color == "Blue":
-		return "legacy" if task.blue_ai == task_legacy_ai(task) else "candidate"
+		return task.blue_model
 	return None
-
-
-def task_legacy_ai(task: GameTask) -> str:
-	if task.direction == "legacy-red":
-		return task.red_ai
-	return task.blue_ai
 
 
 def build_tasks(args: argparse.Namespace, output_dir: Path) -> list[GameTask]:
@@ -154,12 +157,26 @@ def build_tasks(args: argparse.Namespace, output_dir: Path) -> list[GameTask]:
 		map_path = args.maps[(sample - 1) % len(args.maps)]
 
 		for run, direction in enumerate(("legacy-red", "candidate-red"), start=1):
-			if direction == "legacy-red":
-				red_ai = args.legacy_ai
-				blue_ai = args.candidate_ai
+			if args.comparison_mode == "red-role":
+				if direction == "legacy-red":
+					red_ai = args.legacy_ai
+					red_model = "legacy"
+				else:
+					red_ai = args.candidate_ai
+					red_model = "candidate"
+				blue_ai = args.opponent_ai
+				blue_model = "opponent"
 			else:
-				red_ai = args.candidate_ai
-				blue_ai = args.legacy_ai
+				if direction == "legacy-red":
+					red_ai = args.legacy_ai
+					blue_ai = args.candidate_ai
+					red_model = "legacy"
+					blue_model = "candidate"
+				else:
+					red_ai = args.candidate_ai
+					blue_ai = args.legacy_ai
+					red_model = "candidate"
+					blue_model = "legacy"
 
 			task_index += 1
 			run_dir = output_dir / f"sample-{sample:04d}" / direction
@@ -172,6 +189,8 @@ def build_tasks(args: argparse.Namespace, output_dir: Path) -> list[GameTask]:
 					direction=direction,
 					red_ai=red_ai,
 					blue_ai=blue_ai,
+					red_model=red_model,
+					blue_model=blue_model,
 					server_port=args.base_server_port + task_index,
 					run_dir=run_dir,
 				)
@@ -329,6 +348,8 @@ def result_to_dict(result: GameResult) -> dict:
 		"direction": result.task.direction,
 		"redAI": result.task.red_ai,
 		"blueAI": result.task.blue_ai,
+		"redModel": result.task.red_model,
+		"blueModel": result.task.blue_model,
 		"serverPort": result.task.server_port,
 		"runDir": str(result.task.run_dir),
 		"command": result.command,
@@ -352,11 +373,18 @@ def write_run_summary(result: GameResult) -> None:
 
 
 def is_valid_result(args: argparse.Namespace, result: GameResult) -> bool:
-	if result.timed_out or not result.map_loaded or result.winner_model not in {"legacy", "candidate"}:
+	valid_models = {"legacy", "candidate"}
+	if args.comparison_mode == "red-role":
+		valid_models.add("opponent")
+	if result.timed_out or not result.map_loaded or result.winner_model not in valid_models:
 		return False
 	if args.require_clean_exit and result.exit_code != 0:
 		return False
 	return True
+
+
+def active_model_won(result: GameResult) -> bool:
+	return result.winner_model == result.task.red_model
 
 
 def wilson_interval(successes: int, total: int, z: float = 1.959963984540054) -> tuple[float | None, float | None]:
@@ -390,13 +418,19 @@ def analyze_results(args: argparse.Namespace, results: list[GameResult]) -> dict
 		results_by_sample.setdefault(result.task.sample, []).append(result)
 
 	valid_games = [result for result in results if is_valid_result(args, result)]
-	candidate_game_wins = sum(1 for result in valid_games if result.winner_model == "candidate")
-	legacy_game_wins = sum(1 for result in valid_games if result.winner_model == "legacy")
+	if args.comparison_mode == "red-role":
+		candidate_game_wins = sum(1 for result in valid_games if result.task.red_model == "candidate" and active_model_won(result))
+		legacy_game_wins = sum(1 for result in valid_games if result.task.red_model == "legacy" and active_model_won(result))
+	else:
+		candidate_game_wins = sum(1 for result in valid_games if result.winner_model == "candidate")
+		legacy_game_wins = sum(1 for result in valid_games if result.winner_model == "legacy")
 	win_low, win_high = wilson_interval(candidate_game_wins, len(valid_games))
 
 	candidate_sweeps = 0
 	legacy_sweeps = 0
 	splits = 0
+	both_win = 0
+	both_lose = 0
 	invalid_samples = 0
 	sample_rows: list[dict] = []
 
@@ -405,6 +439,23 @@ def analyze_results(args: argparse.Namespace, results: list[GameResult]) -> dict
 		if len(sample_results) != 2 or any(not is_valid_result(args, result) for result in sample_results):
 			invalid_samples += 1
 			outcome = "invalid"
+		elif args.comparison_mode == "red-role":
+			legacy_result = next(result for result in sample_results if result.task.red_model == "legacy")
+			candidate_result = next(result for result in sample_results if result.task.red_model == "candidate")
+			legacy_win = active_model_won(legacy_result)
+			candidate_win = active_model_won(candidate_result)
+			if candidate_win and legacy_win:
+				both_win += 1
+				outcome = "both-win"
+			elif not candidate_win and not legacy_win:
+				both_lose += 1
+				outcome = "both-lose"
+			elif candidate_win:
+				candidate_sweeps += 1
+				outcome = "candidate-only"
+			else:
+				legacy_sweeps += 1
+				outcome = "legacy-only"
 		else:
 			candidate_wins = sum(1 for result in sample_results if result.winner_model == "candidate")
 			if candidate_wins == 2:
@@ -424,6 +475,7 @@ def analyze_results(args: argparse.Namespace, results: list[GameResult]) -> dict
 				"map": sample_results[0].task.map_path if sample_results else None,
 				"outcome": outcome,
 				"winners": [result.winner_model for result in sample_results],
+				"redRoleWins": [active_model_won(result) for result in sample_results] if args.comparison_mode == "red-role" else None,
 			}
 		)
 
@@ -435,6 +487,8 @@ def analyze_results(args: argparse.Namespace, results: list[GameResult]) -> dict
 		"configuration": {
 			"legacyAI": args.legacy_ai,
 			"candidateAI": args.candidate_ai,
+			"opponentAI": args.opponent_ai,
+			"comparisonMode": args.comparison_mode,
 			"samplesRequested": args.samples,
 			"maps": args.maps,
 			"seedStart": args.seed_start,
@@ -454,6 +508,8 @@ def analyze_results(args: argparse.Namespace, results: list[GameResult]) -> dict
 			"candidateSweeps": candidate_sweeps,
 			"legacySweeps": legacy_sweeps,
 			"splits": splits,
+			"bothWin": both_win,
+			"bothLose": both_lose,
 			"invalid": invalid_samples,
 			"decisive": decisive,
 			"oneSidedCandidateBetterP": one_sided_p,
@@ -472,6 +528,8 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 		"direction",
 		"redAI",
 		"blueAI",
+		"redModel",
+		"blueModel",
 		"winnerColor",
 		"winnerModel",
 		"timedOut",
@@ -500,13 +558,22 @@ def print_summary(analysis: dict, output_dir: Path) -> None:
 		f"candidate={games['candidateWins']} legacy={games['legacyWins']} "
 		f"candidateRate={games['candidateWinRate']}"
 	)
-	print(
-		"paired samples: "
-		f"candidateSweeps={paired['candidateSweeps']} "
-		f"legacySweeps={paired['legacySweeps']} "
-		f"splits={paired['splits']} invalid={paired['invalid']} "
-		f"decisive={paired['decisive']}"
-	)
+	if analysis["configuration"]["comparisonMode"] == "red-role":
+		print(
+			"paired samples: "
+			f"candidateOnly={paired['candidateSweeps']} "
+			f"legacyOnly={paired['legacySweeps']} "
+			f"bothWin={paired['bothWin']} bothLose={paired['bothLose']} "
+			f"invalid={paired['invalid']} decisive={paired['decisive']}"
+		)
+	else:
+		print(
+			"paired samples: "
+			f"candidateSweeps={paired['candidateSweeps']} "
+			f"legacySweeps={paired['legacySweeps']} "
+			f"splits={paired['splits']} invalid={paired['invalid']} "
+			f"decisive={paired['decisive']}"
+		)
 	print(
 		"sign test: "
 		f"oneSidedCandidateBetterP={paired['oneSidedCandidateBetterP']} "

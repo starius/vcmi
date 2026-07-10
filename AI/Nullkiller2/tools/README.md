@@ -76,3 +76,14 @@ Additional checks:
 - `--require-winner` fails if no winner or loser ending line is found.
 - `--expect-winner Red` fails if the parsed winner is not Red.
 - `--require-clean-exit` fails if the client process exit code is nonzero.
+
+## Battle Predictor A/B
+
+`compare_battle_predictors.py` compares `Nullkiller2` with `Nullkiller2Ratio`.
+The default `--comparison-mode color-swap` is for true competitive maps: it
+runs each sample twice and swaps Red/Blue to control for color advantage.
+
+For scripted AI-test maps where Red is the tested role, use
+`--comparison-mode red-role`. That mode runs legacy-as-Red and candidate-as-Red
+against the same Blue opponent and sign-tests only samples where one Red player
+wins and the other does not.
