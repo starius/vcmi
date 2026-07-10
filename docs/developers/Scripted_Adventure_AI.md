@@ -776,6 +776,11 @@ Regression harness:
   dependence, defense pressure without response, hero threat escape gaps, and missing high-level Nullkiller actions.
   The first follow-up target is now implemented for tavern hero hiring and army transfer; remaining gaps include
   richer defense planning, hero chaining, and deeper blocker plans.
+- A 10-game opt-in run with `experimentalSupportActions=true` requested `hire_hero` 63 times and `transfer_army`
+  160 times. It still lost 10/10 against Nullkiller2, but the average loss day rose from 36.7 with support
+  candidates gated to 44.9 with them enabled on the same seed corpus. This is useful but not yet promotable because
+  `defense_pressure_without_response` and `hero_threat_without_escape` increased, so the next script iteration
+  should make support actions threat-aware instead of enabling them by default.
 - `scripts/ai/runAdventureAIBatch.py` terminates a stale client process after a terminal game outcome has appeared
   in stdout and a short grace period has elapsed. This keeps unattended evaluation batches from hanging while still
   recording the completed outcome and traces.
