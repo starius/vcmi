@@ -9,6 +9,8 @@
  */
 #include "StdInc.h"
 #include "BattleResultProcessor.h"
+#include "BattleProcessor.h"
+#include "BattleSimulationBatch.h"
 #include "battle/BattleInfo.h"
 
 #include "../CGameHandler.h"
@@ -21,6 +23,7 @@
 #include "../../lib/CStack.h"
 #include "../../lib/CPlayerState.h"
 #include "../../lib/IGameSettings.h"
+#include "../../lib/battle/BattleLayout.h"
 #include "../../lib/battle/SideInBattle.h"
 #include "../../lib/entities/artifact/ArtifactUtils.h"
 #include "../../lib/entities/artifact/CArtifact.h"
@@ -309,6 +312,12 @@ void BattleResultProcessor::endBattle(const CBattleInfoCallback & battle)
 		endBattleConfirm(battle);
 }
 
+void BattleResultProcessor::discardBattleResult(const BattleID & battleID)
+{
+	finishingBattles.erase(battleID);
+	battleResults.erase(battleID);
+}
+
 void BattleResultProcessor::endBattleConfirm(const CBattleInfoCallback & battle)
 {
 	auto attackerQuery = gameHandler->queries->topQuery(battle.sideToPlayer(BattleSide::ATTACKER));
@@ -333,6 +342,21 @@ void BattleResultProcessor::endBattleConfirm(const CBattleInfoCallback & battle)
 
 	const auto * battleResult = battleResults.at(battle.getBattle()->getBattleID()).get();
 	const auto * finishingBattle = finishingBattles.at(battle.getBattle()->getBattleID()).get();
+
+	if(BattleSimulationBatch::recordResultAndShouldReplay(*gameHandler, battle, *battleResult))
+	{
+		gameHandler->battles->restartBattle(
+			battle.getBattle()->getBattleID(),
+			battle.getBattle()->getSideArmy(BattleSide::ATTACKER),
+			battle.getBattle()->getSideArmy(BattleSide::DEFENDER),
+			battle.getBattle()->getLocation(),
+			battle.getBattle()->getSideHero(BattleSide::ATTACKER),
+			battle.getBattle()->getSideHero(BattleSide::DEFENDER),
+			battle.getBattle()->getLayout(),
+			battle.getBattle()->getDefendedTown()
+		);
+		return;
+	}
 
 	//calculate casualties before deleting battle
 	CasualtiesAfterBattle cab1(battle, BattleSide::ATTACKER);

@@ -100,6 +100,7 @@ void BattleProcessor::restartBattle(const BattleID & battleID, const CArmedInsta
 	BattleCancelled bc;
 	bc.battleID = battleID;
 	gameHandler->sendAndApply(bc);
+	resultProcessor->discardBattleResult(battleID);
 
 	startBattle(army1, army2, tile, hero1, hero2, layout, town);
 }

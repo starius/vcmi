@@ -19,6 +19,7 @@
 #include "../../lib/CPlayerState.h"
 #include "../../lib/mapping/CMap.h"
 #include "../../lib/mapObjects/CGObjectInstance.h"
+#include "../../lib/mapObjects/CGCreature.h"
 #include "../../lib/mapObjects/CGHeroInstance.h"
 #include "../../lib/mapObjects/CGTownInstance.h"
 #include "../../lib/gameState/CGameState.h"
@@ -373,11 +374,14 @@ void TurnOrderProcessor::onGameStarted()
 	{
 		auto towns = gameHandler->gameState().getMap().getObjects<CGTownInstance>();
 		auto heroes = gameHandler->gameState().getMap().getObjects<CGHeroInstance>();
+		auto creatures = gameHandler->gameState().getMap().getObjects<CGCreature>();
 		for (auto hero : heroes)
 			if (auto cmd = hero->getCommander())
 				const_cast<CCommanderInstance*>(cmd)->setAlive(false); // TODO: support commanders in battle mode setup
 		if(!towns.size() && heroes.size() == 2)
 			gameHandler->startBattle(heroes.at(0), heroes.at(1));
+		else if(!towns.size() && heroes.size() == 1 && creatures.size() == 1)
+			gameHandler->startBattle(heroes.at(0), creatures.at(0));
 		else
 			towns.at(0)->onHeroVisit(*gameHandler, heroes.at(0));
 

@@ -29,12 +29,27 @@
 #include "../client/windows/InfoWindows.h"
 
 #include "../lib/AsyncRunner.h"
+#include "../lib/CCreatureHandler.h"
 #include "../lib/CConsoleHandler.h"
 #include "../lib/CConfigHandler.h"
+#include "../lib/CRandomGenerator.h"
 #include "../lib/CThreadHelper.h"
 #include "../lib/ExceptionsCommon.h"
+#include "../lib/filesystem/CFilesystemLoader.h"
 #include "../lib/filesystem/Filesystem.h"
+#include "../lib/callback/EditorCallback.h"
+#include "../lib/entities/hero/CHero.h"
+#include "../lib/entities/hero/CHeroClass.h"
+#include "../lib/entities/hero/CHeroHandler.h"
 #include "../lib/logging/CBasicLogConfigurator.h"
+#include "../lib/mapObjectConstructors/AObjectTypeHandler.h"
+#include "../lib/mapObjectConstructors/CObjectClassesHandler.h"
+#include "../lib/mapObjects/CGCreature.h"
+#include "../lib/mapObjects/CGHeroInstance.h"
+#include "../lib/mapping/CMap.h"
+#include "../lib/mapping/CMapEditManager.h"
+#include "../lib/mapping/MapFormat.h"
+#include "../lib/mapping/CMapService.h"
 #include "../lib/modding/IdentifierStorage.h"
 #include "../lib/modding/CModHandler.h"
 #include "../lib/modding/ModDescription.h"
@@ -53,6 +68,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <random>
 
 #include <SDL_main.h>
 #include <SDL.h>
@@ -70,6 +86,148 @@ namespace po = boost::program_options;
 namespace po_style = boost::program_options::command_line_style;
 
 static std::optional<std::string> criticalInitializationError;
+
+static int64_t randomInt(std::mt19937_64 & rng, int64_t min, int64_t max)
+{
+	return std::uniform_int_distribution<int64_t>(min, max)(rng);
+}
+
+template<typename Identifier>
+static Identifier randomElement(std::mt19937_64 & rng, const std::vector<Identifier> & values)
+{
+	return values.at(static_cast<size_t>(randomInt(rng, 0, static_cast<int64_t>(values.size() - 1))));
+}
+
+static void fillBattleSimulationArmy(CArmedInstance & army, std::mt19937_64 & rng, const std::vector<CreatureID> & creatures, int64_t budget)
+{
+	army.clearSlots();
+
+	const int stacks = static_cast<int>(randomInt(rng, 1, GameConstants::ARMY_SIZE));
+	for(int slot = 0; slot < stacks; ++slot)
+	{
+		const auto creatureId = randomElement(rng, creatures);
+		const auto * creature = creatureId.toCreature();
+		const int64_t stackBudget = std::max<int64_t>(100, budget / stacks * randomInt(rng, 60, 160) / 100);
+		const auto count = static_cast<TQuantity>(std::clamp<int64_t>(stackBudget / std::max<int32_t>(1, creature->getAIValue()), 1, 100000));
+		army.setCreature(SlotID(slot), creatureId, count);
+	}
+}
+
+static std::shared_ptr<CGHeroInstance> createBattleSimulationHero(
+	EditorCallback & callback,
+	CMap & map,
+	std::mt19937_64 & rng,
+	const std::vector<HeroTypeID> & heroes,
+	const std::vector<CreatureID> & creatures,
+	PlayerColor owner,
+	int3 position,
+	int64_t armyBudget)
+{
+	const auto heroId = randomElement(rng, heroes);
+	auto factory = LIBRARY->objtypeh->getHandlerFor(Obj::HERO, heroId.toHeroType()->heroClass->getId());
+	auto obj = std::dynamic_pointer_cast<CGHeroInstance>(factory->create(&callback, factory->getTemplates().front()));
+	obj->setHeroType(heroId);
+	obj->setOwner(owner);
+	obj->pos = position;
+
+	for(size_t i = 0; i < GameConstants::PRIMARY_SKILLS; ++i)
+		obj->pushPrimSkill(PrimarySkill(i), static_cast<int>(randomInt(rng, 0, 20)));
+
+	fillBattleSimulationArmy(*obj, rng, creatures, armyBudget);
+	map.getEditManager()->insertObject(obj);
+	return obj;
+}
+
+static std::shared_ptr<CGCreature> createBattleSimulationMonster(
+	EditorCallback & callback,
+	CMap & map,
+	std::mt19937_64 & rng,
+	const std::vector<CreatureID> & creatures,
+	int3 position,
+	int64_t armyBudget)
+{
+	const auto creatureId = randomElement(rng, creatures);
+	auto factory = LIBRARY->objtypeh->getHandlerFor(Obj::MONSTER, creatureId);
+	auto obj = std::dynamic_pointer_cast<CGCreature>(factory->create(&callback, factory->getTemplates().front()));
+	obj->setOwner(PlayerColor::NEUTRAL);
+	obj->pos = position;
+	obj->initialCharacter = CGCreature::Character::HOSTILE;
+	obj->neverFlees = true;
+	obj->notGrowingTeam = true;
+	obj->clearSlots();
+	const auto * creature = creatureId.toCreature();
+	const auto count = static_cast<TQuantity>(std::clamp<int64_t>(armyBudget / std::max<int32_t>(1, creature->getAIValue()), 1, 100000));
+	obj->setCreature(SlotID(0), creatureId, count);
+	map.getEditManager()->insertObject(obj);
+	return obj;
+}
+
+static std::string createBattleSimulationMap(int64_t seed, const std::string & mode)
+{
+	std::mt19937_64 rng(static_cast<uint64_t>(seed));
+
+	auto map = std::make_unique<CMap>(nullptr);
+	map->version = EMapFormat::VCMI;
+	map->creationDateTime = std::time(nullptr);
+	map->width = 10;
+	map->height = 10;
+	map->mapLayers = {MapLayerId::SURFACE};
+	map->battleOnly = true;
+	map->name = MetaString::createFromRawString("Battle simulation");
+
+	EditorCallback callback(map.get());
+	map->cb = &callback;
+	map->initTerrain();
+	map->getEditManager()->clearTerrain(&CRandomGenerator::getDefault());
+	map->getEditManager()->getTerrainSelection().selectAll();
+	map->getEditManager()->drawTerrain(TerrainId(static_cast<int>(randomInt(rng, 0, 8))), 0, &CRandomGenerator::getDefault());
+
+	auto allowedHeroes = LIBRARY->heroh->getDefaultAllowed();
+	std::vector<HeroTypeID> heroes(allowedHeroes.begin(), allowedHeroes.end());
+	auto allowedCreatures = LIBRARY->creh->getDefaultAllowed();
+	std::vector<CreatureID> creatures(allowedCreatures.begin(), allowedCreatures.end());
+	if(heroes.empty() || creatures.empty())
+		throw std::runtime_error("Unable to create battle simulation map without allowed heroes and creatures");
+
+	const bool monsterBattle = mode == "monster" || (mode != "hero" && randomInt(rng, 0, 1) == 1);
+	map->players[0].canComputerPlay = true;
+	map->players[0].canHumanPlay = true;
+	if(!monsterBattle)
+		map->players[1] = map->players[0];
+
+	const int64_t baseBudget = randomInt(rng, 2000, 50000);
+	const int64_t attackerBudget = baseBudget * randomInt(rng, 70, 140) / 100;
+	const int64_t defenderBudget = baseBudget * randomInt(rng, 70, 140) / 100;
+
+	createBattleSimulationHero(callback, *map, rng, heroes, creatures, PlayerColor(0), int3(5, 6, 0), attackerBudget);
+	if(monsterBattle)
+		createBattleSimulationMonster(callback, *map, rng, creatures, int3(5, 5, 0), defenderBudget);
+	else
+		createBattleSimulationHero(callback, *map, rng, heroes, creatures, PlayerColor(1), int3(5, 5, 0), defenderBudget);
+
+	auto path = VCMIDirs::get().userDataPath() / "Maps";
+	if(boost::filesystem::exists(path))
+	{
+		if(!boost::filesystem::is_directory(path))
+			throw std::runtime_error("Battle simulation maps path is not a directory: " + path.string());
+	}
+	else
+	{
+		const auto status = boost::filesystem::symlink_status(path);
+		if(boost::filesystem::is_symlink(status))
+			boost::filesystem::remove(path);
+		boost::filesystem::create_directories(path);
+	}
+	const std::string fileName = "BattleSimulation-" + std::to_string(seed) + ".vmap";
+	CMapService().saveMap(map, path / fileName);
+	CResourceHandler::get()->updateFilteredFiles([](const std::string & mount) { return boost::iequals(mount, "MAPS/"); });
+	CResourceHandler::addFilesystem(
+		"data",
+		"battleSimulationMaps-" + std::to_string(seed),
+		std::make_unique<CFilesystemLoader>("MAPS/", path, 0, false));
+
+	return "Maps/" + fileName.substr(0, fileName.size() - 5);
+}
 
 static void init()
 {
@@ -318,6 +476,15 @@ int main(int argc, char * argv[])
 		("headless", "runs without GUI, implies --onlyAI")
 		("ai", po::value<std::vector<std::string>>(), "AI to be used for the player, can be specified several times for the consecutive players")
 		("oneGoodAI", "puts one default AI and the rest will be EmptyAI")
+		("battle-sim-output", po::value<std::string>(), "write battle simulation JSONL rows to this file")
+		("battle-sim-max-battles", po::value<si64>(), "run and record this many battle results before finishing")
+		("battle-sim-shard-index", po::value<si64>(), "battle simulation shard index for output metadata")
+		("battle-sim-shard-count", po::value<si64>(), "battle simulation shard count for output metadata")
+		("battle-sim-seed", po::value<si64>(), "battle simulation deterministic seed")
+		("battle-sim-global-seed", po::value<si64>(), "battle simulation global seed for output metadata")
+		("battle-sim-combat-ai", po::value<std::string>(), "battle AI used by simulated AI players")
+		("battle-sim-generate-map", "generate a deterministic battle-only map for battle simulation")
+		("battle-sim-generated-mode", po::value<std::string>(), "generated battle mode: mixed, hero, or monster")
 		("autoSkip", "automatically skip turns in GUI")
 		("disable-video", "disable video player")
 		("nointro,i", "skips intro movies")
@@ -461,6 +628,41 @@ int main(int argc, char * argv[])
 		serverSettings["seed"].Integer() = vm["seed"].as<si64>();
 	}
 
+	if(vm.count("battle-sim-output") || vm.count("battle-sim-max-battles"))
+	{
+		if(!vm.count("battle-sim-output") || !vm.count("battle-sim-max-battles"))
+			handleFatalError("Battle simulation requires both --battle-sim-output and --battle-sim-max-battles", true);
+
+		session["headless"].Bool() = true;
+		session["onlyai"].Bool() = true;
+		session["disableVideo"].Bool() = true;
+		session["oneGoodAI"].Bool() = false;
+
+		Settings battleSimulation = settings.write["server"]["battleSimulation"];
+		battleSimulation["enabled"].Bool() = true;
+		battleSimulation["output"].String() = vm["battle-sim-output"].as<std::string>();
+		battleSimulation["maxBattles"].Integer() = vm["battle-sim-max-battles"].as<si64>();
+		battleSimulation["shardIndex"].Integer() = vm.count("battle-sim-shard-index") ? vm["battle-sim-shard-index"].as<si64>() : 0;
+		battleSimulation["shardCount"].Integer() = vm.count("battle-sim-shard-count") ? vm["battle-sim-shard-count"].as<si64>() : 1;
+		battleSimulation["shardSeed"].Integer() = vm.count("battle-sim-seed") ? vm["battle-sim-seed"].as<si64>() : 0;
+		battleSimulation["globalSeed"].Integer() = vm.count("battle-sim-global-seed") ? vm["battle-sim-global-seed"].as<si64>() : battleSimulation["shardSeed"].Integer();
+
+		if(vm.count("battle-sim-seed"))
+		{
+			Settings serverSeed = settings.write["server"]["seed"];
+			serverSeed->Integer() = vm["battle-sim-seed"].as<si64>();
+		}
+
+		if(vm.count("battle-sim-combat-ai"))
+		{
+			const auto combatAI = vm["battle-sim-combat-ai"].as<std::string>();
+			Settings aiSettings = settings.write["ai"];
+			aiSettings["combatEnemyAI"].String() = combatAI;
+			aiSettings["combatNeutralAI"].String() = combatAI;
+			aiSettings["combatAlliedAI"].String() = combatAI;
+		}
+	}
+
 	// Initialize logging based on settings
 	logConfigurator.configure();
 	logGlobal->debug("settings = %s", settings.toJsonNode().toString());
@@ -547,7 +749,15 @@ int main(int argc, char * argv[])
 	for(const auto & aiName : aiPlayerNames)
 		session["ai"].Vector().push_back(JsonNode(aiName));
 	
-	if(vm.count("testmap"))
+	if(vm.count("battle-sim-generate-map"))
+	{
+		const auto seed = vm.count("battle-sim-seed") ? vm["battle-sim-seed"].as<si64>() : 0;
+		const auto mode = vm.count("battle-sim-generated-mode") ? vm["battle-sim-generated-mode"].as<std::string>() : "mixed";
+		session["testmap"].String() = createBattleSimulationMap(seed, mode);
+		session["onlyai"].Bool() = true;
+		GAME->server().debugStartTest(session["testmap"].String(), false);
+	}
+	else if(vm.count("testmap"))
 	{
 		session["testmap"].String() = vm["testmap"].as<std::string>();
 		session["onlyai"].Bool() = true;

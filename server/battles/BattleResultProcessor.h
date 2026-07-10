@@ -76,6 +76,7 @@ public:
 	bool battleIsEnding(const CBattleInfoCallback & battle) const;
 
 	void setBattleResult(const CBattleInfoCallback & battle, EBattleResult resultType, BattleSide victoriusSide);
+	void discardBattleResult(const BattleID & battleID);
 	void endBattle(const CBattleInfoCallback & battle); //ends battle
 	void endBattleConfirm(const CBattleInfoCallback & battle);
 	void battleFinalize(const BattleID & battleID, const BattleResult & result);
