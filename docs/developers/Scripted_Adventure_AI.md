@@ -184,9 +184,9 @@ The `ai` facade:
 - `ai:marketTrade({...})` and wrappers `ai:sendResources`, `ai:sellCreatures`, `ai:buyMarketArtifact`,
   `ai:sellArtifact`, `ai:sacrificeArtifact`, `ai:sacrificeCreatures`, `ai:transformToUndead`, and `ai:buySkill`:
   request every native market mode through stable numeric mode/resource/player/slot/artifact/skill ids.
-- `ai:dismissHero`, `ai:buildBoat`, `ai:dig`, `ai:castSpell`, `ai:buyArtifact`, `ai:spellResearch`, and
-  `ai:visitTownBuilding`: request checked primitive adventure/town actions through the normal callback/server
-  path.
+- `ai:dismissHero`, `ai:buildBoat`, `ai:castleTeleport`, `ai:dig`, `ai:castSpell`, `ai:buyArtifact`,
+  `ai:spellResearch`, and `ai:visitTownBuilding`: request checked primitive adventure/town actions through the
+  normal callback/server path.
 - `ai:nullkiller()` / `ai:nullkillerForRestOfDay()`: stop script control and let Nullkiller finish the turn.
 - `ai:nullkillerTasks(mode, maxCandidates)`: ask Nullkiller for a bounded snapshot of native task candidates.
   `mode` is `priority`, `adventure`, or `all`. Returned `task_id` values are opaque handles that expire on
@@ -1191,15 +1191,18 @@ Regression harness:
   candidate.
 - Done: built town structures with immediate/manual visit effects are exposed through checked
   `ai:visitTownBuilding` and read-side `visitTownBuildingOptions`.
+- Done: Castle Gate teleport is exposed through checked `ai:castleTeleport` and read-side
+  `castleTeleportOptions`, matching normal player restrictions for source/destination towns and visiting heroes.
 - Done: market operations are exposed through a coarse `nullkillerTrade` helper, an exact resource-resource
   helper, and a generic `marketTrade` action with wrappers for resource transfer, creature/resource sale,
   artifact purchase/sale/sacrifice, creature sacrifice, undead transformation, and university skill purchase.
 - Done: visible owned/neutral market objects expose read-side mode details, available items, available unit
   counts, efficiency, and resource-resource exchange rates. Enemy market details remain hidden beyond public
   visible-object mode metadata.
-- Partial: primitive adventure spells, digging, boat building, hero dismissal, and spellbook/war-machine purchases
-  are exposed. Owned hero records now include spellbook ids, and action space includes read-side `digOptions`,
-  `shipyardOptions`, `adventureSpellOptions`, and `buyArtifactOptions` with checked `planAction` payloads. Deeper
+- Partial: primitive adventure spells, digging, boat building, Castle Gate teleport, hero dismissal, and
+  spellbook/war-machine purchases are exposed. Owned hero records now include spellbook ids, and action space
+  includes read-side `digOptions`, `shipyardOptions`, `castleTeleportOptions`, `adventureSpellOptions`, and
+  `buyArtifactOptions` with checked `planAction` payloads. Deeper
   adventure-spell routing remains partial: Lua gets default casts, owned-town targets, and nearby visible tile
   samples, while complex Dimension Door, Town Portal, boat, and unlock-chain planning should still use bounded
   Nullkiller tasks until richer analyzer exports exist.
@@ -1282,6 +1285,9 @@ Regression harness:
 
 The next high-value implementation steps are:
 
+- Treat Lua API parity as the gate for script optimization. A script that cannot express the same meaningful
+  choices as Nullkiller should use bounded Nullkiller subroutines and checked facades first; tuning before this
+  point mostly optimizes around missing host capabilities.
 - Add richer Lua decision policies and read-side candidate data for remaining player choices: quests/gates,
   university choices, object selection, and deeper adventure-spell target ranking beyond the current sampled
   candidate surface.

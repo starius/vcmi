@@ -697,6 +697,16 @@ function ai:buildBoat(shipyardId)
 	return self:execute(action)
 end
 
+function ai:castleTeleport(heroId, destinationTownId)
+	local action = copyFields(heroId)
+	if type(heroId) ~= "table" then
+		action.hero_id = heroId
+		action.destination_town_id = destinationTownId
+	end
+	action.type = "castle_teleport"
+	return self:execute(action)
+end
+
 function ai:dig(heroId)
 	local action = copyFields(heroId)
 	if type(heroId) ~= "table" then

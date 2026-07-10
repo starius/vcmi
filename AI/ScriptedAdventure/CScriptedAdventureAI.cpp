@@ -4836,6 +4836,47 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		return true;
 	}
 
+	if(type == "castle_teleport")
+	{
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+		if(!hero || hero->tempOwner != playerID)
+			throw std::invalid_argument("Unknown hero or hero is not owned by scripted AI");
+
+		const int32_t destinationTownID = hasField(action, "destination_town_id") ? readInteger(action, "destination_town_id") : readInteger(action, "town_id");
+		const CGTownInstance * destination = cc->getTown(ObjectInstanceID(destinationTownID));
+		if(!destination || destination->tempOwner != playerID)
+			throw std::invalid_argument("Unknown destination town or town is not owned by scripted AI");
+
+		const CGTownInstance * source = hero->getVisitedTown();
+		if(!source || source->tempOwner != playerID)
+			throw std::invalid_argument("Hero must be visiting an owned source town for Castle Gate teleport");
+		if(source == destination)
+			throw std::invalid_argument("Castle Gate destination must be a different town");
+		if(source->getFactionID() != destination->getFactionID())
+			throw std::invalid_argument("Castle Gate destination must have the same faction as source town");
+		if(!source->hasBuilt(BuildingSubID::CASTLE_GATE))
+			throw std::invalid_argument("Source town does not have a Castle Gate");
+		if(!destination->hasBuilt(BuildingSubID::CASTLE_GATE))
+			throw std::invalid_argument("Destination town does not have a Castle Gate");
+		if(destination->getVisitingHero())
+			throw std::invalid_argument("Castle Gate destination town already has a visiting hero");
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(CastleTeleportHero), CTypeList::getInstance().getTypeID<CastleTeleportHero>(nullptr), [&]
+		{
+			cc->teleportHero(hero, destination);
+		});
+		actionResult["hero_id"] = JsonNode(hero->id.getNum());
+		actionResult["source_town_id"] = JsonNode(source->id.getNum());
+		actionResult["destination_town_id"] = JsonNode(destination->id.getNum());
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Castle Gate teleport request was rejected by server" : "Castle Gate teleport request was not realized by server");
+		return true;
+	}
+
 	if(type == "dig")
 	{
 		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
@@ -5834,7 +5875,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "swap_creatures", "merge_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "market_trade", "dismiss_hero", "build_boat", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_answer_query", "nullkiller_object_interaction" })
+	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "swap_creatures", "merge_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "market_trade", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_answer_query", "nullkiller_object_interaction" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();
@@ -5845,6 +5886,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["reachableObjects"].Vector();
 	actionSpace["movementOptions"].Vector();
 	actionSpace["shipyardOptions"].Vector();
+	actionSpace["castleTeleportOptions"].Vector();
 	actionSpace["digOptions"].Vector();
 	actionSpace["adventureSpellOptions"].Vector();
 	actionSpace["buyArtifactOptions"].Vector();
@@ -6011,6 +6053,29 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		{
 			if(visitingHero->tempOwner == playerID)
 			{
+				if(town->hasBuilt(BuildingSubID::CASTLE_GATE))
+				{
+					for(const CGTownInstance * destination : cc->getTownsInfo(true))
+					{
+						if(!destination || destination == town || destination->tempOwner != playerID)
+							continue;
+						if(destination->getVisitingHero() || destination->getFactionID() != town->getFactionID() || !destination->hasBuilt(BuildingSubID::CASTLE_GATE))
+							continue;
+
+						JsonNode option;
+						option["hero_id"] = JsonNode(visitingHero->id.getNum());
+						option["source_town_id"] = JsonNode(town->id.getNum());
+						option["destination_town_id"] = JsonNode(destination->id.getNum());
+						option["sourceTown"] = jsonTown(town, resources, true);
+						option["destinationTown"] = jsonTown(destination, resources, true);
+						option["planAction"]["type"] = JsonNode("castle_teleport");
+						option["planAction"]["hero_id"] = option["hero_id"];
+						option["planAction"]["destination_town_id"] = option["destination_town_id"];
+						actionSpace["castleTeleportOptions"].Vector().push_back(option);
+						actionSpace["recommendedActions"].Vector().push_back(option["planAction"]);
+					}
+				}
+
 				if(town->hasBuilt(BuildingID::MAGES_GUILD_1) && !visitingHero->hasSpellbook())
 				{
 					JsonNode option = jsonBuyArtifactOption(visitingHero, ArtifactID::SPELLBOOK, resources);
