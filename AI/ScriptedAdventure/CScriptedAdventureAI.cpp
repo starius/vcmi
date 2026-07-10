@@ -1284,6 +1284,20 @@ JsonNode jsonGrailInfo(const std::shared_ptr<CCallback> & callback)
 	return node;
 }
 
+JsonNode jsonCalendar(const Calendar & calendar)
+{
+	JsonNode node;
+	node["currentDay"] = JsonNode(calendar.getCurrentDay());
+	node["dayOfWeek"] = JsonNode(calendar.getDayOfWeek());
+	node["dayOfMonth"] = JsonNode(calendar.getDayOfMonth());
+	node["week"] = JsonNode(calendar.getWeek());
+	node["month"] = JsonNode(calendar.getMonth());
+	node["daysInWeek"] = JsonNode(calendar.getDaysInWeek());
+	node["weeksInMonth"] = JsonNode(calendar.getWeeksInMonth());
+	node["daysInMonth"] = JsonNode(calendar.getDaysInMonth());
+	return node;
+}
+
 JsonNode jsonObjectPosInfo(const ObjectPosInfo & info)
 {
 	JsonNode node;
@@ -8811,7 +8825,12 @@ JsonNode CScriptedAdventureAI::makeScriptInputState()
 	JsonNode state;
 	std::shared_lock gameStateLock(CGameState::mutex);
 
-	state["day"] = JsonNode(cc->getCalendar().getCurrentDay());
+	const Calendar calendar = cc->getCalendar();
+	state["day"] = JsonNode(calendar.getCurrentDay());
+	state["dayOfWeek"] = JsonNode(calendar.getDayOfWeek());
+	state["week"] = JsonNode(calendar.getWeek());
+	state["month"] = JsonNode(calendar.getMonth());
+	state["calendar"] = jsonCalendar(calendar);
 	state["player"]["id"] = JsonNode(playerID.getNum());
 	state["player"]["color"] = JsonNode(playerID.toString());
 	state["turn"]["active"] = JsonNode(status.haveTurn());

@@ -161,7 +161,9 @@ Input:
 - `opponentUpdates`: the same journal filtered to visible opponent-related changes.
 - `progress`: result of the previous plan execution, including executed, failed, and remaining actions.
 - `memory`: script-owned long-term context from previous calls/days.
-- current day/week/month and active player color under `state`.
+- current day/week/month and active player color under `state`. `state.calendar` also includes stable numeric
+  `currentDay`, `dayOfWeek`, `dayOfMonth`, `week`, `month`, `daysInWeek`, `weeksInMonth`, and `daysInMonth`
+  fields for scripts that reason about growth, timed quests, or build timing.
 - `state.grail`: player-specific puzzle-map knowledge. `knownRatio` is visible to Lua, but the exact `position`
   is included only when the puzzle is fully revealed; partially revealed puzzle maps intentionally do not expose
   the hidden grail tile even though the client internally needs it for rendering.
@@ -1815,6 +1817,8 @@ Regression harness:
 - Done: Lua can inspect player-specific puzzle-map progress through `state.grail` and `ai:getGrail()`. This exposes
   the revealed ratio but gates the exact grail tile until the puzzle is fully revealed, avoiding accidental hidden
   map leakage from the client-side `getGrailPos` callback.
+- Done: `state.calendar` now exposes the normal player-visible calendar breakdown in addition to the legacy
+  absolute day, so scripts can reason about weeks/months without recomputing settings-dependent calendar math.
 - Done: after adding explicit `nullkiller_reset`, a 16-map, 1-day traced integration smoke completed all scenarios
   at the day limit with 16 `end_turn` outputs, 20 bounded `nullkiller_turn_slice` calls, 145 checked `visit_object`
   actions, 18 bounded query answers, zero failed checked actions, and zero fallback outputs.
