@@ -793,6 +793,20 @@ Regression harness:
   corpus. A fresh run on that corpus still lost 10/10 to Nullkiller2, with average loss day 49.3, min 21, max 108.
   The result improves the previous default-script average, but still trails the all-fallback control; the next
   behavioral target is reducing oversteering rather than more identifier cleanup.
+- A later Nullkiller2-vs-Nullkiller2 mirror check showed red wins 7/10 on the same fixed-seed corpus, while
+  ScriptedAdventureAI with the all-fallback Lua control initially won only 1/10. The root cause was not Lua policy:
+  fallback still ran through `CScriptedAdventureAI` dialog overrides, so Nullkiller inherited simplified scripted
+  answers for level-ups, blocking dialogs, garrisons, recruitment, markets, and hero exchange. Native Nullkiller
+  dialog handling is now preserved for fallback and for most script-triggered modal dialogs; custom scripted answers
+  remain only where Nullkiller's native handler depends on its own selected target, such as teleport and map-object
+  selection. After the fix, all-fallback ScriptedAdventureAI also won 7/10 on the corpus, matching the mirror by
+  win count.
+- The same debugging pass found that Lua-owned `visit_object` actions could leave clients asleep on a stale modal
+  query, for example a garrison dialog opened by movement. Scripted query replies are now always sent
+  asynchronously, and rich modal dialogs are delegated to Nullkiller's native handlers. A targeted day-35 rerun of
+  the two formerly stuck seeds completed with exit 0: one reached the day limit and one ended normally. This
+  separates integration correctness from policy quality; the default Lua policy still needs a fresh full-corpus run
+  and should not be promoted over the fixed all-fallback control until it wins or does not regress.
 - `scripts/ai/runAdventureAIBatch.py` terminates a stale client process after a terminal game outcome has appeared
   in stdout and a short grace period has elapsed. This keeps unattended evaluation batches from hanging while still
   recording the completed outcome and traces.
