@@ -53,6 +53,9 @@ public:
 	void showRecruitmentDialog(const CGDwelling * dwelling, const CArmedInstance * dst, int level, QueryID queryID) override;
 	void showUniversityWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID) override;
 	void showMarketWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID) override;
+	void askToAssembleArtifact(const ArtifactLocation & destination) override;
+	void artifactAssembled(const ArtifactLocation & location) override;
+	void artifactDisassembled(const ArtifactLocation & location) override;
 	void tileRevealed(const FowTilesType & pos) override;
 	void newObject(const CGObjectInstance * obj) override;
 	void objectRemoved(const CGObjectInstance * obj, const PlayerColor & initiator) override;
@@ -130,6 +133,7 @@ private:
 	std::map<QueryID, JsonNode> scriptQueries;
 	std::vector<std::pair<int32_t, NK2AI::Goals::TTask>> nullkillerTaskHandles;
 	int32_t nextNullkillerTaskHandle = 1;
+	int32_t nextScriptDecisionID = -1000;
 
 	void makeScriptedTurn();
 	bool tryMakeScriptedTurn();
@@ -147,6 +151,7 @@ private:
 	bool isScriptActionAutoAnswerMode();
 	void recordScriptQuery(QueryID queryID, const std::string & type, JsonNode data);
 	void removeScriptQuery(QueryID queryID);
+	void removeArtifactAssemblyPrompts(ObjectInstanceID heroID, ArtifactPosition slot);
 	JsonNode makeScriptQueries() const;
 	JsonNode makeScriptInputState();
 	AI::AdventureScriptInput makeAdventureScriptInput(const JsonNode & progress);

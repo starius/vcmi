@@ -1257,7 +1257,14 @@ function Script.runDay(ai, input)
     while commands < commandLimit do
         local query = firstPendingQuery(current)
         if query then
-            ai:answerQuery(query.query_id, defaultQueryAnswer(query))
+            -- Artifact assembly prompts are local script decisions, not server
+            -- QueryReply dialogs. The conservative default preserves current
+            -- artifact layout and lets the normal helper path rearrange later.
+            if query.type == "artifact_assembly_prompt" then
+                ai:ignoreScriptDecision(query.query_id)
+            else
+                ai:answerQuery(query.query_id, defaultQueryAnswer(query))
+            end
             commands = commands + 1
             refreshAfterCommand()
         else

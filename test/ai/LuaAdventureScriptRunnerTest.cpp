@@ -377,6 +377,9 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 				ai:buildBoat(18)
 				ai:dig(19)
 				ai:castSpell(20, 21, 3, 4, 0)
+				ai:assembleArtifacts(5, 3, 141)
+				ai:disassembleArtifact(5, 4)
+				ai:ignoreScriptDecision(-1000)
 				return {
 					status = "end_turn",
 					memory = {
@@ -419,7 +422,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 		return response;
 	});
 
-	ASSERT_EQ(commands.size(), 26);
+	ASSERT_EQ(commands.size(), 29);
 	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_tasks");
 	EXPECT_EQ(commands[0]["payload"]["mode"].String(), "adventure");
 	EXPECT_EQ(commands[0]["payload"]["max_candidates"].Integer(), 7);
@@ -506,6 +509,17 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 	EXPECT_EQ(commands[25]["payload"]["x"].Integer(), 3);
 	EXPECT_EQ(commands[25]["payload"]["y"].Integer(), 4);
 	EXPECT_EQ(commands[25]["payload"]["z"].Integer(), 0);
+	EXPECT_EQ(commands[26]["payload"]["type"].String(), "assemble_artifacts");
+	EXPECT_EQ(commands[26]["payload"]["hero_id"].Integer(), 5);
+	EXPECT_EQ(commands[26]["payload"]["slot"].Integer(), 3);
+	EXPECT_TRUE(commands[26]["payload"]["assemble"].Bool());
+	EXPECT_EQ(commands[26]["payload"]["artifact_id"].Integer(), 141);
+	EXPECT_EQ(commands[27]["payload"]["type"].String(), "assemble_artifacts");
+	EXPECT_EQ(commands[27]["payload"]["hero_id"].Integer(), 5);
+	EXPECT_EQ(commands[27]["payload"]["slot"].Integer(), 4);
+	EXPECT_FALSE(commands[27]["payload"]["assemble"].Bool());
+	EXPECT_EQ(commands[28]["payload"]["type"].String(), "ignore_script_query");
+	EXPECT_EQ(commands[28]["payload"]["query_id"].Integer(), -1000);
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	EXPECT_EQ(output.memory["firstTask"].Integer(), 41);
 	EXPECT_EQ(output.memory["stepTask"].Integer(), 42);

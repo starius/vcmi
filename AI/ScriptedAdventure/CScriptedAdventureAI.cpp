@@ -937,6 +937,17 @@ JsonNode jsonArtifactPosition(ArtifactPosition position)
 	return node;
 }
 
+JsonNode jsonArtifactLocation(const ArtifactLocation & location)
+{
+	JsonNode node;
+	node["holder_id"] = JsonNode(location.artHolder.getNum());
+	node["slot"] = JsonNode(location.slot.getNum());
+	node["slotInfo"] = jsonArtifactPosition(location.slot);
+	if(location.creature)
+		node["creature_slot"] = JsonNode(location.creature->getNum());
+	return node;
+}
+
 JsonNode jsonArtifactSlot(ObjectInstanceID holderID, ArtifactPosition position, const ArtSlotInfo & slotInfo, bool backpack)
 {
 	JsonNode node;
@@ -966,6 +977,52 @@ JsonNode jsonArtifactSlot(ObjectInstanceID holderID, ArtifactPosition position, 
 	}
 
 	return node;
+}
+
+JsonNode jsonArtifactAssemblyPrompt(QueryID decisionID, const CGHeroInstance * hero, const ArtifactLocation & destination)
+{
+	JsonNode data;
+	data["scriptDecision"] = JsonNode(true);
+	data["answerableByQueryReply"] = JsonNode(false);
+	data["location"] = jsonArtifactLocation(destination);
+	data["holder_id"] = JsonNode(destination.artHolder.getNum());
+	data["hero_id"] = JsonNode(hero->id.getNum());
+	data["slot"] = JsonNode(destination.slot.getNum());
+	data["assemblyOptions"].Vector();
+	data["ignoreAction"]["type"] = JsonNode("ignore_script_query");
+	data["ignoreAction"]["query_id"] = JsonNode(decisionID.getNum());
+
+	const CArtifactInstance * artifact = hero->getArt(destination.slot);
+	if(artifact)
+	{
+		data["artifactInstanceId"] = JsonNode(artifact->getId().getNum());
+		data["artifactTypeId"] = JsonNode(artifact->getTypeId().getNum());
+		if(const CArtifact * artifactType = artifact->getType())
+		{
+			data["artifactIdentifier"] = JsonNode(artifactType->getJsonKey());
+			data["artifactName"] = JsonNode(jsonText(artifactType->getNameTranslated()));
+		}
+
+		for(const CArtifact * combinedArtifact : ArtifactUtils::assemblyPossibilities(hero, artifact->getTypeId()))
+		{
+			if(!combinedArtifact)
+				continue;
+
+			JsonNode option;
+			option["artifact_id"] = JsonNode(combinedArtifact->getId().getNum());
+			option["artifactIdentifier"] = JsonNode(combinedArtifact->getJsonKey());
+			option["artifactName"] = JsonNode(jsonText(combinedArtifact->getNameTranslated()));
+			option["fused"] = JsonNode(combinedArtifact->isFused());
+			option["planAction"]["type"] = JsonNode("assemble_artifacts");
+			option["planAction"]["hero_id"] = data["hero_id"];
+			option["planAction"]["slot"] = data["slot"];
+			option["planAction"]["assemble"] = JsonNode(true);
+			option["planAction"]["artifact_id"] = option["artifact_id"];
+			data["assemblyOptions"].Vector().push_back(option);
+		}
+	}
+
+	return data;
 }
 
 JsonNode jsonArtifacts(const CGHeroInstance * hero)
@@ -1921,6 +1978,28 @@ void CScriptedAdventureAI::recordScriptQuery(QueryID queryID, const std::string 
 	scriptQueries[queryID] = data;
 }
 
+void CScriptedAdventureAI::removeArtifactAssemblyPrompts(ObjectInstanceID heroID, ArtifactPosition slot)
+{
+	std::lock_guard guard(scriptQueryMutex);
+	for(auto iter = scriptQueries.begin(); iter != scriptQueries.end();)
+	{
+		const JsonNode & query = iter->second;
+		if(hasField(query, "type")
+			&& query["type"].String() == "artifact_assembly_prompt"
+			&& hasField(query, "hero_id")
+			&& hasField(query, "slot")
+			&& query["hero_id"].Integer() == heroID.getNum()
+			&& query["slot"].Integer() == slot.getNum())
+		{
+			iter = scriptQueries.erase(iter);
+		}
+		else
+		{
+			++iter;
+		}
+	}
+}
+
 void CScriptedAdventureAI::removeScriptQuery(QueryID queryID)
 {
 	std::lock_guard guard(scriptQueryMutex);
@@ -2222,6 +2301,44 @@ void CScriptedAdventureAI::showMarketWindow(const IMarket * market, const CGHero
 		return;
 	}
 	AIGateway::showMarketWindow(market, visitor, queryID);
+}
+
+void CScriptedAdventureAI::askToAssembleArtifact(const ArtifactLocation & destination)
+{
+	const CGHeroInstance * hero = cc ? cc->getHero(destination.artHolder) : nullptr;
+	if(hero && hero->tempOwner == playerID)
+	{
+		const QueryID decisionID(nextScriptDecisionID--);
+		recordScriptQuery(decisionID, "artifact_assembly_prompt", jsonArtifactAssemblyPrompt(decisionID, hero, destination));
+	}
+
+	AIGateway::askToAssembleArtifact(destination);
+}
+
+void CScriptedAdventureAI::artifactAssembled(const ArtifactLocation & location)
+{
+	removeArtifactAssemblyPrompts(location.artHolder, location.slot);
+
+	JsonNode data;
+	data["location"] = jsonArtifactLocation(location);
+	data["holder_id"] = JsonNode(location.artHolder.getNum());
+	data["slot"] = JsonNode(location.slot.getNum());
+	appendScriptUpdate("artifact_assembled", data, false);
+
+	AIGateway::artifactAssembled(location);
+}
+
+void CScriptedAdventureAI::artifactDisassembled(const ArtifactLocation & location)
+{
+	removeArtifactAssemblyPrompts(location.artHolder, location.slot);
+
+	JsonNode data;
+	data["location"] = jsonArtifactLocation(location);
+	data["holder_id"] = JsonNode(location.artHolder.getNum());
+	data["slot"] = JsonNode(location.slot.getNum());
+	appendScriptUpdate("artifact_disassembled", data, false);
+
+	AIGateway::artifactDisassembled(location);
 }
 
 void CScriptedAdventureAI::tileRevealed(const FowTilesType & pos)
@@ -3593,6 +3710,67 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		return true;
 	}
 
+	if(type == "ignore_script_query")
+	{
+		const QueryID queryID(readInteger(action, "query_id"));
+		removeScriptQuery(queryID);
+		actionResult["query_id"] = JsonNode(queryID.getNum());
+		actionResult["ok"] = JsonNode(true);
+		return true;
+	}
+
+	if(type == "assemble_artifacts")
+	{
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+		if(!hero || hero->tempOwner != playerID)
+			throw std::invalid_argument("Unknown hero or hero is not owned by scripted AI");
+
+		const ArtifactPosition slot(readInteger(action, "slot"));
+		const CArtifactInstance * artifact = hero->getArt(slot);
+		if(!artifact)
+			throw std::invalid_argument("No artifact in requested assembly slot");
+
+		const bool assemble = readBool(action, "assemble", true);
+		ArtifactID artifactID = ArtifactID::NONE;
+		if(assemble)
+		{
+			artifactID = ArtifactID(hasField(action, "artifact_id") ? readInteger(action, "artifact_id") : readInteger(action, "assemble_to_artifact_id"));
+			const CArtifact * combinedArtifact = artifactID.toArtifact();
+			if(!combinedArtifact || !combinedArtifact->isCombined())
+				throw std::invalid_argument("assemble_artifacts requires a combined artifact_id");
+			if(!vstd::contains(ArtifactUtils::assemblyPossibilities(hero, artifact->getTypeId()), combinedArtifact))
+				throw std::invalid_argument("Requested combined artifact cannot be assembled from this hero's visible artifacts");
+		}
+		else
+		{
+			if(!artifact->isCombined())
+				throw std::invalid_argument("Requested artifact is not a combined artifact");
+			if(!artifact->hasParts())
+				throw std::invalid_argument("Requested combined artifact is fused and cannot be disassembled");
+			if(ArtifactUtils::isSlotBackpack(slot)
+				&& !ArtifactUtils::isBackpackFreeSlots(hero, artifact->getType()->getConstituents().size() - 1))
+				throw std::invalid_argument("Not enough backpack space to disassemble artifact");
+		}
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(AssembleArtifacts), CTypeList::getInstance().getTypeID<AssembleArtifacts>(nullptr), [&]
+		{
+			cc->assembleArtifacts(hero->id, slot, assemble, artifactID);
+		});
+		actionResult["hero_id"] = JsonNode(hero->id.getNum());
+		actionResult["slot"] = JsonNode(slot.getNum());
+		actionResult["assemble"] = JsonNode(assemble);
+		actionResult["artifact_id"] = JsonNode(artifactID.getNum());
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(request.applied)
+			removeArtifactAssemblyPrompts(hero->id, slot);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Artifact assembly request was rejected by server" : "Artifact assembly request was not realized by server");
+		return true;
+	}
+
 	if(type == "swap_artifacts")
 	{
 		const ArtifactLocation src = readArtifactLocation(action, "src");
@@ -3956,7 +4134,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "swap_creatures", "merge_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "market_trade", "dismiss_hero", "build_boat", "dig", "cast_spell", "nullkiller_tasks", "nullkiller_task", "nullkiller_step" })
+	for(const char * type : { "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "swap_creatures", "merge_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "market_trade", "dismiss_hero", "build_boat", "dig", "cast_spell", "nullkiller_tasks", "nullkiller_task", "nullkiller_step" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();

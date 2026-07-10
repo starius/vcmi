@@ -432,6 +432,29 @@ function ai:manageHeroCostume(heroId, costumeIndex, saveCostume)
 	return self:execute(action)
 end
 
+function ai:assembleArtifacts(heroId, slot, artifactId)
+	local action = copyFields(heroId)
+	if type(heroId) ~= "table" then
+		action.hero_id = heroId
+		action.slot = slot
+		action.assemble = true
+		action.artifact_id = artifactId
+	end
+	action.type = "assemble_artifacts"
+	return self:execute(action)
+end
+
+function ai:disassembleArtifact(heroId, slot)
+	local action = copyFields(heroId)
+	if type(heroId) ~= "table" then
+		action.hero_id = heroId
+		action.slot = slot
+		action.assemble = false
+	end
+	action.type = "assemble_artifacts"
+	return self:execute(action)
+end
+
 function ai:nullkillerTrade()
 	return self:execute({ type = "nullkiller_trade" })
 end
@@ -623,6 +646,17 @@ function ai:answerQuery(queryId, answer)
 	action.type = "answer_query"
 	return self:execute(action)
 end
+
+function ai:ignoreScriptDecision(queryId)
+	local action = copyFields(queryId)
+	if type(queryId) ~= "table" then
+		action.query_id = queryId
+	end
+	action.type = "ignore_script_query"
+	return self:execute(action)
+end
+
+ai.ignoreScriptQuery = ai.ignoreScriptDecision
 
 function ai:endTurn()
 	return self:execute({ type = "end_turn" })

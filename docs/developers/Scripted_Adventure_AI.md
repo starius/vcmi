@@ -159,8 +159,11 @@ The `ai` facade:
 - `ai:pickBestArtifacts(heroId, otherHeroId?)`: ask the host to run Nullkiller's artifact-preparation helper for
   one owned hero, or two co-located owned heroes, through the normal artifact swap callback path.
 - `ai:swapArtifacts(src, dst)`, `ai:bulkMoveArtifacts`, `ai:sortBackpackArtifacts`,
-  `ai:scrollBackpackArtifacts`, `ai:manageHeroCostume`: request exact artifact management operations through
-  the normal callback/server path. Artifact locations use `{ holder_id, slot, creature_slot? }`.
+  `ai:scrollBackpackArtifacts`, `ai:manageHeroCostume`, `ai:assembleArtifacts`,
+  `ai:disassembleArtifact`: request exact artifact management operations through the normal callback/server
+  path. Artifact locations use `{ holder_id, slot, creature_slot? }`.
+- `ai:ignoreScriptDecision(queryId)`: clear a script-local decision prompt such as an artifact assembly prompt
+  without sending a server `QueryReply`.
 - `ai:nullkillerTrade()`: ask the host to run Nullkiller's resource-trading helper once, returning whether it
   traded anything.
 - `ai:tradeResources(marketId, sellResourceId, buyResourceId, amount, heroId?)`: request an exact
@@ -888,7 +891,9 @@ Regression harness:
   for one owned hero or two co-located owned heroes. This is a coarse helper, not yet a full artifact-slot API.
 - Hero input now includes artifact state: worn slots and backpack entries expose stable slot ids, artifact type ids,
   artifact instance ids, lock state, and possible slot ids. Lua can request exact artifact swaps, bulk transfers,
-  backpack sorting/scrolling, and hero costume operations through checked host calls.
+  backpack sorting/scrolling, hero costume operations, artifact assembly, and artifact disassembly through checked
+  host calls. Assembly prompts are exposed as typed script-local decisions with stable artifact ids; Lua may choose
+  an offered assembly action or explicitly ignore the prompt without sending a normal server query reply.
 - Hero input now exposes `formationId` and `tacticsEnabled`, and Lua can request exact creature stack
   rearrangement, stack splitting, stack merging, creature dismissal, creature upgrades, formation/tactics changes,
   and town garrison-hero swaps through the same checked callback/server packet path used by native clients and AI.
@@ -898,9 +903,10 @@ Regression harness:
   `EMarketMode`. Visible market objects expose their supported market modes; richer market-rate inspection is
   still a separate read-side improvement.
 - Script input now includes typed `state.turn.queries` records for level-up, blocking, teleport, object-selection,
-  tavern, hero-exchange, garrison, recruitment, university, and market dialogs. Dialogs raised during direct Lua
-  actions now pause the action with `pending_query = true`; Lua can `refresh()`, inspect `state.turn.queries`, and
-  answer through `ai:answerQuery(queryId, answer)`.
+  tavern, hero-exchange, garrison, recruitment, university, market dialogs, and script-local artifact assembly
+  prompts. Dialogs raised during direct Lua actions now pause the action with `pending_query = true`; Lua can
+  `refresh()`, inspect `state.turn.queries`, answer server dialogs through `ai:answerQuery(queryId, answer)`, and
+  clear script-local prompts through `ai:ignoreScriptDecision(queryId)`.
 - Lua can now request checked primitive adventure actions for dismissing heroes, building boats, digging, and
   casting adventure spells. C++ validates ownership and visible target tiles before forwarding to the server.
 - `analysis.heroThreatAlerts` complements `analysis.defenseAlerts`, so scripts can respond to threatened roaming
@@ -1087,9 +1093,9 @@ Regression harness:
   gather-army, exploration, building, recruitment, or capture. This is still not full parity: scripts need richer
   direct access to typed dialogs, quest decisions, and deeper analyzer details before serious script optimization
   should be treated as meaningful.
-- Done: owned hero artifact state and exact artifact management calls are exposed through checked Lua facade
-  methods. Remaining artifact work is typed handling of assemble/disassemble prompts and richer artifact scoring
-  helpers.
+- Done: owned hero artifact state, exact artifact management calls, typed artifact assembly prompts, and checked
+  assemble/disassemble actions are exposed through Lua facade methods. Remaining artifact work is richer artifact
+  scoring helpers.
 - Done: exact army stack management, creature upgrades, formation/tactics changes, and town garrison-hero swaps
   are exposed through checked Lua facade methods.
 - Done: pending dialog/window queries are exposed as typed read-side data under `state.turn.queries`, and direct
