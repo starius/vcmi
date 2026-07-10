@@ -2162,6 +2162,20 @@ std::string nullkillerHeroRoleName(NK2AI::HeroRole role)
 	return "unknown";
 }
 
+std::string nullkillerScanDepthName(NK2AI::ScanDepth scanDepth)
+{
+	switch(scanDepth)
+	{
+	case NK2AI::ScanDepth::MAIN_FULL:
+		return "main_full";
+	case NK2AI::ScanDepth::SMALL:
+		return "small";
+	case NK2AI::ScanDepth::ALL_FULL:
+		return "all_full";
+	}
+	return "unknown";
+}
+
 std::string nullkillerGoalName(NK2AI::Goals::EGoals goal)
 {
 	switch(goal)
@@ -8556,6 +8570,40 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 	const ResourceSet resources = cc->getResourceAmount();
 	const std::vector<int3> visibleTiles = visibleMapTiles(cc, playerID);
 	std::vector<const CGHeroInstance *> enemyHeroes;
+
+	if(nullkiller && nullkiller->settings)
+	{
+		const auto & settings = *nullkiller->settings;
+		analysis["nullkiller"]["settings"]["maxPass"] = JsonNode(settings.getMaxPass());
+		analysis["nullkiller"]["settings"]["maxPriorityPass"] = JsonNode(settings.getMaxPriorityPass());
+		analysis["nullkiller"]["settings"]["maxGoldPressure"].Float() = settings.getMaxGoldPressure();
+		analysis["nullkiller"]["settings"]["retreatThresholdRelative"].Float() = settings.getRetreatThresholdRelative();
+		analysis["nullkiller"]["settings"]["retreatThresholdAbsolute"].Float() = settings.getRetreatThresholdAbsolute();
+		analysis["nullkiller"]["settings"]["safeAttackRatio"].Float() = settings.getSafeAttackRatio();
+		analysis["nullkiller"]["settings"]["maxArmyLossTarget"].Float() = settings.getMaxArmyLossTarget();
+		analysis["nullkiller"]["settings"]["maxRoamingHeroes"] = JsonNode(settings.getMaxRoamingHeroes());
+		analysis["nullkiller"]["settings"]["maxRoamingHeroesPerTown"] = JsonNode(settings.getMaxRoamingHeroesPerTown());
+		analysis["nullkiller"]["settings"]["mainHeroTurnDistanceLimit"] = JsonNode(settings.getMainHeroTurnDistanceLimit());
+		analysis["nullkiller"]["settings"]["scoutHeroTurnDistanceLimit"] = JsonNode(settings.getScoutHeroTurnDistanceLimit());
+		analysis["nullkiller"]["settings"]["threatTurnDistanceLimit"] = JsonNode(settings.getThreatTurnDistanceLimit());
+		analysis["nullkiller"]["settings"]["pathfinderBucketsCount"] = JsonNode(settings.getPathfinderBucketsCount());
+		analysis["nullkiller"]["settings"]["pathfinderBucketSize"] = JsonNode(settings.getPathfinderBucketSize());
+		analysis["nullkiller"]["settings"]["objectGraphAllowed"] = JsonNode(settings.isObjectGraphAllowed());
+		analysis["nullkiller"]["settings"]["garrisonTroopsUsageAllowed"] = JsonNode(settings.isGarrisonTroopsUsageAllowed());
+		analysis["nullkiller"]["settings"]["oneWayMonolithUsageAllowed"] = JsonNode(settings.isOneWayMonolithUsageAllowed());
+		analysis["nullkiller"]["settings"]["updateHitmapOnTileReveal"] = JsonNode(settings.isUpdateHitmapOnTileReveal());
+		analysis["nullkiller"]["settings"]["openMap"] = JsonNode(settings.isOpenMap());
+
+		std::unique_lock aiLock(nullkiller->aiStateMutex);
+		const NK2AI::ScanDepth scanDepth = nullkiller->getScanDepth();
+		analysis["nullkiller"]["state"]["scanDepthId"] = JsonNode(static_cast<int32_t>(scanDepth));
+		analysis["nullkiller"]["state"]["scanDepth"] = JsonNode(nullkillerScanDepthName(scanDepth));
+		analysis["nullkiller"]["state"]["openMap"] = JsonNode(nullkiller->isOpenMap());
+		analysis["nullkiller"]["state"]["objectGraphAllowed"] = JsonNode(nullkiller->isObjectGraphAllowed());
+		analysis["nullkiller"]["state"]["pathfinderTurnStorageMisses"] = JsonNode(nullkiller->pathfinderTurnStorageMisses.load());
+		analysis["nullkiller"]["state"]["lockedResources"] = jsonResources(nullkiller->getLockedResources());
+		analysis["nullkiller"]["state"]["freeResources"] = jsonResources(nullkiller->getFreeResources());
+	}
 
 	for(const CGObjectInstance * object : cc->getAllVisitableObjs())
 	{

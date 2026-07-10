@@ -573,6 +573,11 @@ Current bounded subroutine surface:
   `paused`, and `shouldStopTurn`.
 - Lua exposes `ai.nullkillerStepOutcomes`, `ai.nullkillerFailureActions`, and `ai.nullkillerTaskModes` numeric
   constants. Scripts should branch on these constants rather than trace strings.
+- `analysis.nullkiller.settings` exposes Nullkiller's read-only operational thresholds, including max pass counts,
+  safe attack ratio, retreat thresholds, army-loss target, hero roaming limits, pathfinder limits, and enabled
+  native features. `analysis.nullkiller.state` exposes current bounded-planner state such as scan depth,
+  open-map/object-graph flags, pathfinder storage misses, locked resources, and free resources. Scripts can use
+  these fields to align policy with native Nullkiller without hard-coding engine constants.
 - `actionSpace.nullkillerSubroutineOptions` exposes the bounded task families as first-class candidate actions.
   Each option contains `tasksAction`, `stepAction`, and `passAction` payloads using numeric `mode` values, so Lua
   can discover and compose native subroutines the same way it discovers movement, build, recruitment, and
@@ -1274,6 +1279,9 @@ Regression harness:
   inspect native Dimension Door, Town Portal, boat, whirlpool, quest, adventure-cast, and composite path actions
   without relying on debug strings. The exposed action parameters use ids/numeric fields where possible and keep
   target object details behind visibility checks.
+- Done: Nullkiller settings and current bounded-planner state are exposed under `analysis.nullkiller` as read-only
+  numeric/boolean data, so Lua policy can use native pass limits, risk thresholds, scan depth, and resource locks
+  without copying constants from C++.
 - Done: Nullkiller task candidates include visible structured hero/object/town context in addition to stable ids,
   so Lua can rank native fragments by typed object data instead of relying on native debug descriptions.
 - Done: owned hero/town snapshots expose richer inspectable state for script decisions: stable hero type/class,
