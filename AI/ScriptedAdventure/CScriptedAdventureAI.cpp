@@ -2092,6 +2092,17 @@ JsonNode jsonNullkillerResourceTradeOption()
 	return option;
 }
 
+JsonNode jsonNullkillerOptimizeArtifactsOption()
+{
+	JsonNode option;
+	option["helperKindId"] = JsonNode(3);
+	option["helperKind"] = JsonNode("artifact_optimization");
+	option["bounded"] = JsonNode(true);
+	option["delegatesRestOfDay"] = JsonNode(false);
+	option["planAction"]["type"] = JsonNode("nullkiller_optimize_artifacts");
+	return option;
+}
+
 JsonNode jsonNullkillerTurnSliceOption()
 {
 	JsonNode option;
@@ -6493,6 +6504,38 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		return true;
 	}
 
+	if(type == "nullkiller_optimize_artifacts")
+	{
+		int32_t optimizedHeroes = 0;
+		if(hasField(action, "hero_id"))
+		{
+			const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+			if(!hero || hero->tempOwner != playerID || !cc->isVisibleFor(hero, playerID))
+				throw std::invalid_argument("Unknown hero, hero is not visible, or hero is not owned by scripted AI");
+
+			AIGateway::pickBestArtifacts(cc, hero);
+			actionResult["hero_id"] = JsonNode(hero->id.getNum());
+			optimizedHeroes = 1;
+		}
+		else
+		{
+			for(const auto * heroInfo : cc->getHeroesInfo())
+			{
+				if(heroInfo && heroInfo->tempOwner == playerID && cc->isVisibleFor(heroInfo, playerID))
+				{
+					AIGateway::pickBestArtifacts(cc, heroInfo);
+					++optimizedHeroes;
+				}
+			}
+		}
+
+		actionResult["optimizedHeroes"] = JsonNode(optimizedHeroes);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(true);
+		return true;
+	}
+
 	if(type == "nullkiller_add_single_creature_stacks" || type == "nullkiller_rearrange_for_whirlpool")
 	{
 		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
@@ -8137,7 +8180,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "prepare_hero", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "erase_transition_artifact", "swap_creatures", "merge_stacks", "merge_or_swap_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "set_town_name", "swap_garrison_hero", "nullkiller_trade", "nullkiller_priority_pass", "nullkiller_turn_slice", "nullkiller_build_army", "nullkiller_upgrade_army", "nullkiller_recruit_creatures", "nullkiller_move_creatures_to_hero", "nullkiller_dismiss_weak_hero", "nullkiller_add_single_creature_stacks", "nullkiller_rearrange_for_whirlpool", "nullkiller_rearrange_for_siege", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_pass", "nullkiller_answer_query", "nullkiller_object_interaction" })
+	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "prepare_hero", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "erase_transition_artifact", "swap_creatures", "merge_stacks", "merge_or_swap_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "set_town_name", "swap_garrison_hero", "nullkiller_trade", "nullkiller_priority_pass", "nullkiller_turn_slice", "nullkiller_build_army", "nullkiller_upgrade_army", "nullkiller_recruit_creatures", "nullkiller_move_creatures_to_hero", "nullkiller_dismiss_weak_hero", "nullkiller_optimize_artifacts", "nullkiller_add_single_creature_stacks", "nullkiller_rearrange_for_whirlpool", "nullkiller_rearrange_for_siege", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_pass", "nullkiller_answer_query", "nullkiller_object_interaction" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();
@@ -8180,6 +8223,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 
 	actionSpace["nullkillerHelperOptions"].Vector().push_back(jsonNullkillerPriorityPassOption());
 	actionSpace["nullkillerHelperOptions"].Vector().push_back(jsonNullkillerResourceTradeOption());
+	actionSpace["nullkillerHelperOptions"].Vector().push_back(jsonNullkillerOptimizeArtifactsOption());
 	actionSpace["nullkillerHelperOptions"].Vector().push_back(jsonNullkillerTurnSliceOption());
 
 	std::shared_lock gameStateLock(CGameState::mutex);

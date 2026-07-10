@@ -786,6 +786,15 @@ function ai:nullkillerDismissWeakHero(options)
 	return self:execute(action)
 end
 
+function ai:nullkillerOptimizeArtifacts(heroId)
+	local action = copyFields(heroId)
+	if type(heroId) ~= "table" and heroId ~= nil then
+		action.hero_id = heroId
+	end
+	action.type = "nullkiller_optimize_artifacts"
+	return self:execute(action)
+end
+
 function ai:nullkillerAddSingleCreatureStacks(heroId)
 	local action = copyFields(heroId)
 	if type(heroId) ~= "table" then

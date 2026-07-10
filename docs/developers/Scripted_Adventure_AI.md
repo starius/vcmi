@@ -241,6 +241,9 @@ The `ai` facade:
   checked dismiss request for the selected owned hero. By default this only acts when Nullkiller's hero cap is
   reached; scripts can pass `{ require_cap_reached = false }` for explicit advanced use, plus optional
   `army_limit` and `town_to_spare_id` numeric fields.
+- `ai:nullkillerOptimizeArtifacts(heroId?)`: ask the host to run Nullkiller's bounded artifact cleanup for one owned
+  visible hero, or all currently owned visible heroes when `heroId` is omitted. This mirrors the native post-pass
+  cleanup step without delegating the rest of the day.
 - `ai:nullkillerAddSingleCreatureStacks(heroId)`, `ai:nullkillerRearrangeForWhirlpool(heroId)`, and
   `ai:nullkillerRearrangeForSiege(heroId, townId)`: ask the host to run Nullkiller's bounded army-formation
   helpers for one visible owned hero, with the siege helper additionally requiring a visible enemy town. These
@@ -602,6 +605,9 @@ Current bounded subroutine surface:
 - `nullkiller_priority_pass` runs Nullkiller's native priority loop once and then returns to Lua. This exposes the
   build/recruit/hire pre-adventure subroutine that native Nullkiller normally performs before adventure task
   planning, without handing over the rest of the day.
+- `nullkiller_optimize_artifacts` runs Nullkiller's native artifact cleanup step for one visible owned hero or all
+  visible owned heroes, then returns to Lua. This is the standalone form of the artifact phase that native
+  `Nullkiller::makeTurn` runs after a successful pass.
 - `nullkiller_turn_slice` composes the native priority loop, one bounded adventure step, the resource trader, and
   artifact cleanup into a capped pass-shaped helper. This is the preferred bridge when a Lua policy wants parity
   with the shape of `Nullkiller::makeTurn` but must keep control after one or a few passes. It returns a `passes`
@@ -648,7 +654,7 @@ Bounded Nullkiller helpers cover native subroutines that are expensive or brittl
 candidate generation and execution by mode, one-step/pass/slice execution, priority passes, resource trading, town
 army preparation, creature recruitment, army upgrading, town-garrison pickup, weak-hero dismissal, single-creature
 stack setup, whirlpool formation, siege formation, query answering, object interaction callbacks, artifact
-preparation, creature preparation, and combined hero preparation.
+preparation, all-hero artifact optimization, creature preparation, and combined hero preparation.
 
 The intentionally excluded `IGameActionCallback` methods are meta/client operations rather than adventure strategy:
 save, pause, chat/message sending, and raw local-state writes. Script-owned memory replaces raw local-state writes,
@@ -1406,6 +1412,10 @@ Regression harness:
 - Done: Lua can call `ai:nullkillerDismissWeakHero(options?)` to reuse Nullkiller's weak-hero selector for one
   checked dismissal attempt without handing over the remaining day. The helper is also discoverable through
   `actionSpace.nullkillerHelperOptions` when Nullkiller currently sees a cap-driven weak-hero dismissal candidate.
+- Done: Lua can call `ai:nullkillerOptimizeArtifacts(heroId?)` to reuse Nullkiller's native post-pass artifact
+  cleanup for one visible owned hero or all visible owned heroes. The all-hero helper is also discoverable through
+  `actionSpace.nullkillerHelperOptions`, so scripts can explicitly compose artifact cleanup around custom actions or
+  bounded task calls without running a full turn slice.
 - Done: Lua can call `ai:prepareHero` for semantic hero preparation without full-day delegation. The checked host
   call combines Nullkiller's legal best-creature transfer and artifact optimization for an owned target hero, an
   optional co-located source army, visited owned town, and optional co-located other hero. `actionSpace` exposes
