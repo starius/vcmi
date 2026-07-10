@@ -166,6 +166,8 @@ The `ai` facade:
   path. Artifact locations use `{ holder_id, slot, creature_slot? }`.
 - `ai:ignoreScriptDecision(queryId)`: clear a script-local decision prompt such as an artifact assembly prompt
   without sending a server `QueryReply`.
+- `ai:chooseChestReward(query, preference?)`: answer a chest-style blocking dialog by stable component ids.
+  `preference` may be `experience` or `gold`; the default is experience.
 - `ai:nullkillerTrade()`: ask the host to run Nullkiller's resource-trading helper once, returning whether it
   traded anything.
 - `ai:tradeResources(marketId, sellResourceId, buyResourceId, amount, heroId?)`: request an exact
@@ -924,6 +926,9 @@ Regression harness:
   prompts. Dialogs raised during direct Lua actions now pause the action with `pending_query = true`; Lua can
   `refresh()`, inspect `state.turn.queries`, answer server dialogs through `ai:answerQuery(queryId, answer)`, and
   clear script-local prompts through `ai:ignoreScriptDecision(queryId)`.
+- Treasure chests and sea chests are eligible `visit_object` candidates again. Their gold/experience choice is
+  handled as a normal blocking dialog; Lua can answer it directly or use `ai:chooseChestReward`, and the default
+  script prefers experience when both stable reward components are present.
 - Lua can now request checked primitive adventure actions for dismissing heroes, building boats, digging, and
   casting adventure spells. C++ validates ownership and visible target tiles before forwarding to the server.
 - Lua can now request exact spellbook and blacksmith war-machine purchases through `ai:buyArtifact(heroId,
@@ -1038,9 +1043,8 @@ Regression harness:
   without implicit stack management.
 - Scripted build, recruit, move, end-turn, memory-save, and blocking-dialog query replies tolerate
   `requestSent`/`requestRealized` callback ordering differences. This prevents trace I/O from masking timing bugs.
-- Generic `visit_object` candidates currently exclude treasure chests and sea chests because they open blocking
-  choice dialogs during movement. Add explicit query-aware chest handling before re-enabling them as scripted
-  targets.
+- Generic `visit_object` candidates include treasure chests and sea chests again; scripted movement pauses on the
+  reward dialog and resumes after Lua answers it by stable component ids.
 - Invalid or rejected actions are passed back to the script as `progress.failed` for bounded replanning. Nullkiller
   fallback remains for script failures, script-requested fallback, repeated failures, or exhausted script-call budget.
 - Remaining C++ expansion should focus on additional read-only candidates, especially Nullkiller task fragments,

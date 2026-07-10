@@ -2630,8 +2630,6 @@ bool isScriptObjectTarget(const CGObjectInstance * object, PlayerColor player)
 	const auto * hero = dynamic_cast<const CGHeroInstance *>(object);
 	if(hero && hero->tempOwner == player)
 		return false;
-	if(object->ID == Obj::TREASURE_CHEST || object->ID == Obj::SEA_CHEST)
-		return false;
 
 	return true;
 }

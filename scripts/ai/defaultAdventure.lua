@@ -186,6 +186,15 @@ local PathAction = {
     teleportBattle = 9
 }
 
+local ComponentType = {
+    resource = 2,
+    experience = 8
+}
+
+local ResourceID = {
+    gold = 6
+}
+
 -- Raw engine IDs are kept as compatibility fallbacks for older traces/tests
 -- that do not yet include host-provided kind IDs.
 local Building = {
@@ -1064,6 +1073,18 @@ local function defaultQueryAnswer(query)
 
     if query.type == "blocking_dialog" then
         local components = query.components or {}
+        local experienceAnswer
+        local goldAnswer
+        for _, component in ipairs(components) do
+            if component.typeId == ComponentType.experience then
+                experienceAnswer = component.answer
+            elseif component.typeId == ComponentType.resource and component.subtypeId == ResourceID.gold then
+                goldAnswer = component.answer
+            end
+        end
+        if experienceAnswer and goldAnswer then
+            return experienceAnswer
+        end
         if query.selection and #components > 0 then
             return components[#components].answer or #components
         end

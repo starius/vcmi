@@ -707,6 +707,63 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanReadAndAnswerPendingQueries)
 	EXPECT_EQ(output.memory["queryType"].String(), "blocking_dialog");
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanChooseChestRewardByComponentIds)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				local queries = ai:pendingQueries()
+				ai:chooseChestReward(queries[1], "experience")
+				return ai:output("end_turn", "picked chest experience")
+			end
+		}
+	)lua";
+
+	AI::AdventureScriptInput input = makeInput();
+	input.state["turn"]["queries"].Vector();
+	JsonNode query;
+	query["query_id"] = JsonNode(88);
+	query["type"] = JsonNode("blocking_dialog");
+	query["selection"] = JsonNode(true);
+	query["components"].Vector();
+	JsonNode gold;
+	gold["typeId"] = JsonNode(2);
+	gold["type"] = JsonNode("resource");
+	gold["subtypeId"] = JsonNode(6);
+	gold["value"] = JsonNode(1000);
+	gold["answer"] = JsonNode(1);
+	query["components"].Vector().push_back(gold);
+	JsonNode experience;
+	experience["typeId"] = JsonNode(8);
+	experience["type"] = JsonNode("experience");
+	experience["value"] = JsonNode(500);
+	experience["answer"] = JsonNode(2);
+	query["components"].Vector().push_back(experience);
+	input.state["turn"]["queries"].Vector().push_back(query);
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-chest-query", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 1);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "answer_query");
+	EXPECT_EQ(commands[0]["payload"]["query_id"].Integer(), 88);
+	EXPECT_EQ(commands[0]["payload"]["answer"].Integer(), 2);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "picked chest experience");
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeHostErrorsAreCatchable)
 {
 	const std::string source = R"lua(

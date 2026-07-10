@@ -141,6 +141,36 @@ ai.formations = {
 	tight = 1
 }
 
+ai.componentTypes = {
+	none = -1,
+	primarySkill = 0,
+	secondarySkill = 1,
+	resource = 2,
+	resourcePerDay = 3,
+	creature = 4,
+	artifact = 5,
+	spellScroll = 6,
+	mana = 7,
+	experience = 8,
+	level = 9,
+	spell = 10,
+	morale = 11,
+	luck = 12,
+	building = 13,
+	heroPortrait = 14,
+	flag = 15
+}
+
+ai.resourceIds = {
+	wood = 0,
+	mercury = 1,
+	ore = 2,
+	sulfur = 3,
+	crystal = 4,
+	gems = 5,
+	gold = 6
+}
+
 ai.nullkillerStepOutcomes = {
 	failed = 0,
 	executed = 1,
@@ -655,6 +685,35 @@ function ai:answerQuery(queryId, answer)
 	end
 	action.type = "answer_query"
 	return self:execute(action)
+end
+
+function ai:chooseChestReward(query, preference)
+	local preferred = preference or "experience"
+	local components = (query and query.components) or {}
+	local fallback
+	local preferredAnswer
+
+	for _, component in ipairs(components) do
+		local answer = component.answer
+		if answer ~= nil and fallback == nil then
+			fallback = answer
+		end
+
+		local typeId = component.typeId
+		local subtypeId = component.subtypeId
+		local wantsExperience = preferred == "experience" or preferred == self.componentTypes.experience
+		local wantsGold = preferred == "gold" or preferred == "resource" or preferred == self.componentTypes.resource
+		if wantsExperience and typeId == self.componentTypes.experience then
+			preferredAnswer = answer
+		elseif wantsGold and typeId == self.componentTypes.resource and subtypeId == self.resourceIds.gold then
+			preferredAnswer = answer
+		end
+	end
+
+	if not query or query.query_id == nil then
+		error("Chest reward query is missing query_id", 2)
+	end
+	return self:answerQuery(query.query_id, preferredAnswer or fallback or 0)
 end
 
 function ai:ignoreScriptDecision(queryId)
