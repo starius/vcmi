@@ -635,7 +635,7 @@ Current bounded subroutine surface:
   more slices, because repeated small resource trades can otherwise dominate the command budget without adding
   new adventure decisions.
 - Lua exposes numeric constants for stable host ids used by the strategic contract:
-  `ai.buildingKinds`, `ai.objectKinds`, `ai.armyTransferKinds`, `ai.queryTypes`, `ai.threatLevels`,
+  `ai.buildingKinds`, `ai.objectKinds`, `ai.armyTransferKinds`, `ai.queryTypes`, `ai.pathActions`, `ai.threatLevels`,
   `ai.riskLevels`, `ai.specialActionKinds`, `ai.adventureSpellKinds`, `ai.nullkillerStepOutcomes`,
   `ai.nullkillerFailureActions`, `ai.nullkillerTaskModes`, and `ai.nullkillerPriorityTiers`. Scripts should
   branch on these constants rather than trace strings or raw magic numbers.

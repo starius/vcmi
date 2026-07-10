@@ -493,6 +493,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 						dwellingBuildingKind = ai.buildingKinds.dwelling,
 						gatherTransferKind = ai.armyTransferKinds.gatherToHero,
 						blockingQueryType = ai.queryTypes.blockingDialog,
+						teleportBattlePathAction = ai.pathActions.teleportBattle,
 						criticalThreat = ai.threatLevels.critical,
 						riskyRisk = ai.riskLevels.risky,
 						townPortalSpecialAction = ai.specialActionKinds.townPortal,
@@ -708,6 +709,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 	EXPECT_EQ(output.memory["dwellingBuildingKind"].Integer(), 11);
 	EXPECT_EQ(output.memory["gatherTransferKind"].Integer(), 1);
 	EXPECT_EQ(output.memory["blockingQueryType"].Integer(), 3);
+	EXPECT_EQ(output.memory["teleportBattlePathAction"].Integer(), 9);
 	EXPECT_EQ(output.memory["criticalThreat"].Integer(), 3);
 	EXPECT_EQ(output.memory["riskyRisk"].Integer(), 2);
 	EXPECT_EQ(output.memory["townPortalSpecialAction"].Integer(), 3);

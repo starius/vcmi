@@ -254,6 +254,19 @@ ai.queryTypes = {
 	artifactAssemblyPrompt = 12
 }
 
+ai.pathActions = {
+	unknown = 0,
+	embark = 1,
+	disembark = 2,
+	normal = 3,
+	battle = 4,
+	visit = 5,
+	blockingVisit = 6,
+	teleportNormal = 7,
+	teleportBlockingVisit = 8,
+	teleportBattle = 9
+}
+
 ai.threatLevels = {
 	unknown = 0,
 	watch = 1,

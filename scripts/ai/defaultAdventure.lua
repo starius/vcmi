@@ -213,6 +213,39 @@ local ResourceID = {
     gold = 6
 }
 
+-- Prefer host-owned constants in the live imperative API. The local tables
+-- above remain compatibility fallbacks for older planDay fixtures.
+local function adoptHostConstants(ai)
+    if type(ai) ~= "table" then
+        return
+    end
+
+    if type(ai.buildingKinds) == "table" then
+        BuildingKind = ai.buildingKinds
+    end
+    if type(ai.objectKinds) == "table" then
+        ObjectKind = ai.objectKinds
+    end
+    if type(ai.armyTransferKinds) == "table" then
+        TransferKind = ai.armyTransferKinds
+    end
+    if type(ai.queryTypes) == "table" then
+        QueryType = ai.queryTypes
+    end
+    if type(ai.threatLevels) == "table" then
+        ThreatLevel = ai.threatLevels
+    end
+    if type(ai.pathActions) == "table" then
+        PathAction = ai.pathActions
+    end
+    if type(ai.componentTypes) == "table" then
+        ComponentType = ai.componentTypes
+    end
+    if type(ai.resourceIds) == "table" then
+        ResourceID = ai.resourceIds
+    end
+end
+
 -- Raw engine IDs are kept as compatibility fallbacks for older traces/tests
 -- that do not yet include host-provided kind IDs.
 local Building = {
@@ -1260,6 +1293,8 @@ function Script.runDay(ai, input)
     -- state, executes checked host calls, refreshes after side effects, answers
     -- dialogs, and uses bounded Nullkiller subroutines before delegating the
     -- rest of the day.
+    adoptHostConstants(ai)
+
     local current = input
     local callLimit = (((current or {}).limits or {}).maxScriptCallsPerTurn) or 8
     local actionLimit = (((current or {}).limits or {}).maxActions) or callLimit
