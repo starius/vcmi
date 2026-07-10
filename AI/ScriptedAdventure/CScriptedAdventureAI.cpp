@@ -2170,6 +2170,42 @@ JsonNode jsonAvailableHeroOption(const CGTownInstance * town, const CGHeroInstan
 	return node;
 }
 
+JsonNode jsonOwnedArmySnapshot(const CArmedInstance * army)
+{
+	JsonNode node;
+	if(!army)
+		return node;
+
+	node["id"] = JsonNode(army->id.getNum());
+	node["armyStrength"] = JsonNode(static_cast<int64_t>(army->getArmyStrength()));
+	node["army"] = jsonArmy(*army);
+	return node;
+}
+
+JsonNode jsonRecruitOptions(const CGDwelling * dwelling, const CArmedInstance * destination, int32_t selectedLevel, const ResourceSet & resources)
+{
+	JsonNode node;
+	node.Vector();
+	if(!dwelling || !destination)
+		return node;
+
+	auto appendLevel = [&](int32_t level)
+	{
+		JsonNode option = jsonRecruitOption(dwelling, destination, level, resources);
+		if(option.isStruct())
+			node.Vector().push_back(option);
+	};
+
+	if(selectedLevel >= 0)
+		appendLevel(selectedLevel);
+	else
+	{
+		for(int32_t level = 0; level < static_cast<int32_t>(dwelling->creatures.size()); ++level)
+			appendLevel(level);
+	}
+	return node;
+}
+
 JsonNode jsonArmyTransferOption(
 	const CArmedInstance * source,
 	const CArmedInstance * destination,
@@ -2730,9 +2766,24 @@ void CScriptedAdventureAI::showTavernWindow(const CGObjectInstance * object, con
 {
 	JsonNode data;
 	if(object)
+	{
 		data["object_id"] = JsonNode(object->id.getNum());
+		data["object"] = jsonMapObject(object, playerID, visitor);
+	}
 	if(visitor)
 		data["visitor_hero_id"] = JsonNode(visitor->id.getNum());
+	data["hireHeroOptions"].Vector();
+	const CGTownInstance * town = dynamic_cast<const CGTownInstance *>(object);
+	if(!town && visitor)
+		town = visitor->getVisitedTown();
+	if(town && town->tempOwner == playerID && !town->getVisitingHero())
+	{
+		for(const CGHeroInstance * hero : cc->getAvailableHeroes(town))
+		{
+			if(hero)
+				data["hireHeroOptions"].Vector().push_back(jsonAvailableHeroOption(town, hero));
+		}
+	}
 	recordScriptQuery(queryID, "tavern_window", data);
 	if(isScriptActionAutoAnswerMode())
 	{
@@ -2747,6 +2798,10 @@ void CScriptedAdventureAI::heroExchangeStarted(ObjectInstanceID hero1, ObjectIns
 	JsonNode data;
 	data["hero1_id"] = JsonNode(hero1.getNum());
 	data["hero2_id"] = JsonNode(hero2.getNum());
+	if(const CGHeroInstance * firstHero = cc->getHero(hero1))
+		data["hero1"] = jsonHero(firstHero);
+	if(const CGHeroInstance * secondHero = cc->getHero(hero2))
+		data["hero2"] = jsonHero(secondHero);
 	recordScriptQuery(query, "hero_exchange", data);
 
 	if(isScriptActionAutoAnswerMode())
@@ -2762,9 +2817,15 @@ void CScriptedAdventureAI::showGarrisonDialog(const CArmedInstance * up, const C
 {
 	JsonNode data;
 	if(up)
+	{
 		data["upper_army_id"] = JsonNode(up->id.getNum());
+		data["upperArmy"] = jsonOwnedArmySnapshot(up);
+	}
 	if(down)
+	{
 		data["lower_hero_id"] = JsonNode(down->id.getNum());
+		data["lowerHero"] = jsonHero(down);
+	}
 	data["removable_units"] = JsonNode(removableUnits);
 	data["custom_title"] = JsonNode(customTitle.toString());
 	recordScriptQuery(queryID, "garrison_dialog", data);
@@ -2782,10 +2843,17 @@ void CScriptedAdventureAI::showRecruitmentDialog(const CGDwelling * dwelling, co
 {
 	JsonNode data;
 	if(dwelling)
+	{
 		data["dwelling_id"] = JsonNode(dwelling->id.getNum());
+		data["dwelling"] = jsonMapObject(dwelling, playerID, nullptr);
+	}
 	if(dst)
+	{
 		data["destination_id"] = JsonNode(dst->id.getNum());
+		data["destinationArmy"] = jsonOwnedArmySnapshot(dst);
+	}
 	data["level"] = JsonNode(level);
+	data["recruitOptions"] = jsonRecruitOptions(dwelling, dst, level, cc->getResourceAmount());
 	recordScriptQuery(queryID, "recruitment_dialog", data);
 
 	if(isScriptActionAutoAnswerMode())
@@ -2801,9 +2869,19 @@ void CScriptedAdventureAI::showUniversityWindow(const IMarket * market, const CG
 {
 	JsonNode data;
 	if(market)
+	{
 		data["market_id"] = JsonNode(market->getObjInstanceID().getNum());
+		if(const CGObjectInstance * object = cc->getObj(market->getObjInstanceID(), false))
+		{
+			if(cc->isVisibleFor(object, playerID))
+				data["market"] = jsonMapObject(object, playerID, visitor);
+		}
+	}
 	if(visitor)
+	{
 		data["visitor_hero_id"] = JsonNode(visitor->id.getNum());
+		data["visitorHero"] = jsonHero(visitor);
+	}
 	recordScriptQuery(queryID, "university_window", data);
 	if(isScriptActionAutoAnswerMode())
 	{
@@ -2817,9 +2895,19 @@ void CScriptedAdventureAI::showMarketWindow(const IMarket * market, const CGHero
 {
 	JsonNode data;
 	if(market)
+	{
 		data["market_id"] = JsonNode(market->getObjInstanceID().getNum());
+		if(const CGObjectInstance * object = cc->getObj(market->getObjInstanceID(), false))
+		{
+			if(cc->isVisibleFor(object, playerID))
+				data["market"] = jsonMapObject(object, playerID, visitor);
+		}
+	}
 	if(visitor)
+	{
 		data["visitor_hero_id"] = JsonNode(visitor->id.getNum());
+		data["visitorHero"] = jsonHero(visitor);
+	}
 	recordScriptQuery(queryID, "market_window", data);
 	if(isScriptActionAutoAnswerMode())
 	{

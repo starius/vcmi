@@ -430,6 +430,10 @@ Current bounded subroutine surface:
   defense threats, unlock-cluster blockers, army-upgrade value, building costs, boat locations, and adventure
   spell ids. This is read-only planner state; executing still goes through `nullkiller_task` or
   `nullkiller_step`.
+- Modal query records expose stable `query_id`, type ids/names, and answer ids. Level-up, blocking, teleport,
+  map-object-select, artifact assembly, tavern, garrison, recruitment, university, and market dialogs include
+  typed context where available. Tavern, recruitment, university, and market dialogs reuse the same hire,
+  recruit, army, and market-detail payloads exposed in normal action-space snapshots.
 - `nullkiller_task` executes exactly one stored candidate snapshot through `Nullkiller::executeScriptTask`.
   Native Nullkiller dialog handlers stay active for this path, so the subroutine behaves like Nullkiller rather
   than simplified script auto-answer logic.
@@ -1113,7 +1117,7 @@ Regression harness:
   gather-army, exploration, building, recruitment, or capture. Candidate snapshots now include bounded
   structured goal details for composition plans, hero-chain paths, cluster blockers, defense threats, upgrades,
   buildings, boats, and adventure spells. This is still not full parity: scripts need richer direct access to
-  typed dialogs and remaining player choices before serious script optimization should be treated as meaningful.
+  remaining player choices before serious script optimization should be treated as meaningful.
 - Done: known quest requirements are exposed on visible quest objects using stable ids without revealing inactive
   quest internals. Lua can reason about known blockers, while still using movement actions or bounded Nullkiller
   tasks for actual unlock-chain execution.
