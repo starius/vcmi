@@ -185,6 +185,9 @@ The `ai` facade:
   and Nullkiller's normal task machinery, then return control to Lua.
 - `ai:nullkillerStep(mode, maxCandidates)`: ask for candidates and execute the best one as a single bounded
   Nullkiller subroutine. Unlike `ai:nullkiller()`, this does not intentionally give away the rest of the day.
+- `ai:nullkillerAnswerQuery(queryOrId, defaultAnswer?)`: ask Nullkiller to handle one pending query through its
+  native dialog heuristic, then return control to Lua. This is bounded to that one query and does not delegate the
+  rest of the day.
 - `ai:output(status, intent, confidence)`: return final status plus current memory.
 
 Output from `runDay`:
@@ -1009,9 +1012,11 @@ Regression harness:
   actions now answer garrison, hero-exchange, recruitment, teleport, map-object-selection, and blocking dialogs
   through the scripted executor boundary. This is a containment fix, not the final strategy interface.
 - Dialogs should become typed facade decision points instead of raw UI automation. Lua should receive visible
-  dialog/query data and call helpers such as `ai:chooseChestReward`, `ai:chooseTeleportExit`, or
-  `ai:answerQuery` with stable ids. If an unplanned query appears, the executor should return structured progress
-  such as `needs_choice` with the visible dialog state so Lua can refresh and decide.
+  dialog/query data and call helpers such as `ai:chooseChestReward`, `ai:nullkillerAnswerQuery`, or
+  `ai:answerQuery` with stable ids. `ai:nullkillerAnswerQuery` is the explicit bounded escape hatch for reusing
+  Nullkiller's native dialog handling without restoring hidden callback side effects for every scripted action.
+  If an unplanned query appears, the executor should return structured progress such as `needs_choice` with the
+  visible dialog state so Lua can refresh and decide.
 - Artifact and army rearrangement should be added back as explicit strategy capabilities, not hidden callback
   behavior. Facade methods should stay semantic, for example `ai:prepareHero`, `ai:transferArmy`, and
   `ai:rearrangeArtifacts`, with intent fields such as `combat`, `mobility`, `scout`, `defend_town`, or
@@ -1120,8 +1125,9 @@ Regression harness:
   returns structured execution outcomes, and can be restricted to granular behavior families such as defense,
   gather-army, exploration, building, recruitment, or capture. Candidate snapshots now include bounded
   structured goal details for composition plans, hero-chain paths, cluster blockers, defense threats, upgrades,
-  buildings, boats, and adventure spells. This is still not full parity: scripts need richer direct access to
-  remaining player choices before serious script optimization should be treated as meaningful.
+  buildings, boats, and adventure spells. Single-query Nullkiller dialog handling is also exposed through
+  `ai:nullkillerAnswerQuery`. This is still not full parity: scripts need richer direct access to remaining
+  player choices before serious script optimization should be treated as meaningful.
 - Done: owned hero/town snapshots expose richer inspectable state for script decisions: stable hero type/class,
   faction, creature, secondary-skill, building, spell, and artifact identifiers; hero progression and secondary
   skills; town hall/fort/mage-guild/town levels; built/destroyed counts; building detail records; owned mage-guild
@@ -1138,6 +1144,10 @@ Regression harness:
 - Done: pending dialog/window queries are exposed as typed read-side data under `state.turn.queries`, and direct
   Lua actions that open these dialogs now pause for a script answer instead of auto-answering. The bundled default
   script includes a conservative fallback answer policy; richer per-dialog strategy remains Lua policy work.
+- Done: Lua can ask Nullkiller to answer a single pending query through `ai:nullkillerAnswerQuery`, preserving
+  native bounded handling for level-up skills, cautious yes/no prompts, teleport and map-object choices, hero
+  exchanges, garrison pickup, dwelling recruitment, and simple window-closing dialogs without surrendering the
+  rest of the day.
 - Done: market operations are exposed through a coarse `nullkillerTrade` helper, an exact resource-resource
   helper, and a generic `marketTrade` action with wrappers for resource transfer, creature/resource sale,
   artifact purchase/sale/sacrifice, creature sacrifice, undead transformation, and university skill purchase.
@@ -1229,9 +1239,9 @@ Regression harness:
 
 The next high-value implementation steps are:
 
-- Add richer Lua decision policies and read-side candidate data for dialogs and remaining player choices:
-  quests/gates, level-up choices, university choices, object selection, and deeper adventure-spell target
-  ranking beyond the current sampled candidate surface.
+- Add richer Lua decision policies and read-side candidate data for remaining player choices: quests/gates,
+  university choices, object selection, and deeper adventure-spell target ranking beyond the current sampled
+  candidate surface.
 - Close remaining Lua API parity gaps before tuning scripts: expose bounded Nullkiller helpers or checked facade
   calls for any player-visible action/subroutine that still requires full-day `ai:nullkiller()` delegation.
 - Expose any remaining Nullkiller analyzer data as read-only candidate fields only when a concrete script policy

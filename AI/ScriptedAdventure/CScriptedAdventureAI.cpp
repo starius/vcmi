@@ -14,6 +14,7 @@
 #include "../../lib/CCreatureHandler.h"
 #include "../../lib/CPlayerState.h"
 #include "../../lib/ResourceSet.h"
+#include "../../lib/StartInfo.h"
 #include "../../lib/UnlockGuard.h"
 #include "../../lib/VCMIDirs.h"
 #include "../../lib/filesystem/Filesystem.h"
@@ -2739,6 +2740,15 @@ void CScriptedAdventureAI::recordScriptQuery(QueryID queryID, const std::string 
 	scriptQueries[queryID] = data;
 }
 
+std::optional<JsonNode> CScriptedAdventureAI::getScriptQuery(QueryID queryID) const
+{
+	std::lock_guard guard(scriptQueryMutex);
+	const auto iter = scriptQueries.find(queryID);
+	if(iter == scriptQueries.end())
+		return std::nullopt;
+	return iter->second;
+}
+
 void CScriptedAdventureAI::removeArtifactAssemblyPrompts(ObjectInstanceID heroID, ArtifactPosition slot)
 {
 	std::lock_guard guard(scriptQueryMutex);
@@ -3439,6 +3449,221 @@ bool CScriptedAdventureAI::executeNullkillerTaskAction(const JsonNode & action, 
 	return executed;
 }
 
+bool CScriptedAdventureAI::executeNullkillerQueryAction(const JsonNode & action, JsonNode & actionResult)
+{
+	const QueryID queryID(readInteger(action, "query_id"));
+	const std::optional<JsonNode> query = getScriptQuery(queryID);
+	if(!query)
+		throw std::invalid_argument("Unknown or expired pending query");
+
+	const std::string queryType = readString(*query, "type");
+	actionResult["query_id"] = JsonNode(queryID.getNum());
+	actionResult["queryType"] = JsonNode(queryType);
+	actionResult["handledByNullkiller"] = JsonNode(true);
+
+	auto answerAndWait = [&](int answer) -> bool
+	{
+		answerQuery(queryID, answer);
+		actionResult["answer"] = JsonNode(answer);
+		if(!waitTillFreeForScriptAction(actionResult, "nullkiller_answer_query"))
+			return false;
+		actionResult["ok"] = JsonNode(true);
+		return true;
+	};
+
+	if(queryType == "hero_level_up")
+	{
+		const CGHeroInstance * hero = nullptr;
+		if(hasField(*query, "hero_id"))
+			hero = cc->getHero(ObjectInstanceID(readInteger(*query, "hero_id")));
+
+		int answer = 0;
+		if(hero && hero->tempOwner == playerID && hasField(*query, "skill_options") && (*query)["skill_options"].isVector())
+		{
+			const auto & options = (*query)["skill_options"].Vector();
+			std::vector<SecondarySkill> skills;
+			skills.reserve(options.size());
+			for(const JsonNode & option : options)
+				skills.emplace_back(readInteger(option, "skill_id"));
+
+			if(!skills.empty())
+			{
+				std::unique_lock aiLock(nullkiller->aiStateMutex);
+				nullkiller->heroManager->update();
+				const int selectedIndex = nullkiller->heroManager->selectBestSkillIndex(NK2AI::HeroPtr(hero, cc.get()), skills);
+				if(selectedIndex >= 0 && selectedIndex < static_cast<int>(options.size()))
+					answer = readInteger(options[selectedIndex], "answer", selectedIndex);
+			}
+		}
+
+		return answerAndWait(answer);
+	}
+
+	if(queryType == "commander_level_up")
+		return answerAndWait(0);
+
+	if(queryType == "blocking_dialog")
+	{
+		const bool selection = readBool(*query, "selection", false);
+		const bool cancel = readBool(*query, "cancel", false);
+		int answer = 0;
+
+		if(!selection && cancel)
+		{
+			bool accept = true;
+			const NK2AI::HeroPtr heroPtr = nullkiller->getActiveHero();
+			const int3 target = nullkiller->getTargetTile();
+			const auto objects = target.isValid() ? cc->getVisitableObjs(target) : std::vector<const CGObjectInstance *>();
+
+			if(heroPtr.isVerified() && target.isValid() && !objects.empty())
+			{
+				const CGObjectInstance * topObj = objects.front()->id == heroPtr->id ? objects.back() : objects.front();
+				const MapObjectID objectType = topObj->ID;
+				const ObjectInstanceID goalObjectID = nullkiller->getTargetObject();
+				const uint64_t danger = nullkiller->dangerEvaluator->evaluateDanger(target, heroPtr.get());
+				const float ratio = static_cast<float>(danger) / static_cast<float>(heroPtr->getTotalStrength());
+
+				if(topObj->id != goalObjectID && nullkiller->dangerEvaluator->evaluateDanger(topObj) > 0)
+					accept = false;
+
+				if(objectType == Obj::BORDERGUARD || objectType == Obj::QUEST_GUARD)
+				{
+					accept = true;
+				}
+				else if(objectType == Obj::ARTIFACT || objectType == Obj::RESOURCE)
+				{
+					const bool dangerUnknown = danger == 0;
+					const bool dangerTooHigh = ratio * nullkiller->settings->getSafeAttackRatio() > 1;
+					accept = !dangerUnknown && !dangerTooHigh;
+				}
+			}
+
+			answer = accept ? 1 : 0;
+			return answerAndWait(answer);
+		}
+
+		if(selection && hasField(*query, "components") && (*query)["components"].isVector())
+		{
+			const auto & components = (*query)["components"].Vector();
+			if(!components.empty())
+			{
+				size_t selectedIndex = components.size() - 1;
+				const NK2AI::HeroPtr heroPtr = nullkiller->getActiveHero();
+				if(heroPtr.isVerified()
+					&& components.size() == 2
+					&& hasField(components.front(), "typeId")
+					&& readInteger(components.front(), "typeId") == static_cast<int32_t>(ComponentType::RESOURCE))
+				{
+					std::unique_lock aiLock(nullkiller->aiStateMutex);
+					if(nullkiller->heroManager->getHeroRoleOrDefault(heroPtr) != NK2AI::HeroRole::MAIN
+						|| nullkiller->buildAnalyzer->isGoldPressureOverMax())
+					{
+						selectedIndex = 0;
+					}
+				}
+
+				answer = readInteger(components[selectedIndex], "answer", static_cast<int32_t>(selectedIndex + 1));
+			}
+		}
+
+		return answerAndWait(answer);
+	}
+
+	if(queryType == "teleport_dialog")
+	{
+		int answer = -1;
+		const bool impassable = readBool(*query, "impassable", false);
+		if(!impassable && hasField(*query, "exits") && (*query)["exits"].isVector())
+		{
+			const auto & exits = (*query)["exits"].Vector();
+			for(size_t index = 0; index < exits.size(); ++index)
+			{
+				const ObjectInstanceID objectID(readInteger(exits[index], "object_id"));
+				if(destinationTeleport != ObjectInstanceID() && objectID == destinationTeleport)
+				{
+					answer = readInteger(exits[index], "answer", static_cast<int32_t>(index));
+					break;
+				}
+			}
+
+			if(answer == -1 && status.channelProbing())
+			{
+				for(size_t index = 0; index < exits.size(); ++index)
+				{
+					const ObjectInstanceID objectID(readInteger(exits[index], "object_id"));
+					if(objectID == destinationTeleport)
+					{
+						answer = readInteger(exits[index], "answer", static_cast<int32_t>(index));
+						break;
+					}
+				}
+			}
+
+			if(answer == -1 && !exits.empty())
+				answer = readInteger(exits.front(), "answer", 0);
+		}
+		return answerAndWait(answer);
+	}
+
+	if(queryType == "map_object_select")
+	{
+		int answer = selectedObject.getNum();
+		if(answer == ObjectInstanceID().getNum() && hasField(*query, "objects") && (*query)["objects"].isVector() && !(*query)["objects"].Vector().empty())
+			answer = readInteger((*query)["objects"].Vector().front(), "answer", 0);
+		return answerAndWait(answer);
+	}
+
+	if(queryType == "hero_exchange")
+	{
+		const CGHeroInstance * firstHero = cc->getHero(ObjectInstanceID(readInteger(*query, "hero1_id")));
+		const CGHeroInstance * secondHero = cc->getHero(ObjectInstanceID(readInteger(*query, "hero2_id")));
+		if(firstHero && secondHero && firstHero->tempOwner == secondHero->tempOwner)
+		{
+			auto transferFromSecondToFirst = [this](const CGHeroInstance * first, const CGHeroInstance * second)
+			{
+				pickBestCreatures(first, second);
+				AIGateway::pickBestArtifacts(cc, first, second);
+			};
+
+			if(nullkiller->isActive(firstHero))
+				transferFromSecondToFirst(firstHero, secondHero);
+			else
+				transferFromSecondToFirst(secondHero, firstHero);
+		}
+		return answerAndWait(0);
+	}
+
+	if(queryType == "garrison_dialog")
+	{
+		const auto * upper = dynamic_cast<const CArmedInstance *>(cc->getObj(ObjectInstanceID(readInteger(*query, "upper_army_id")), false));
+		const CGHeroInstance * lower = cc->getHero(ObjectInstanceID(readInteger(*query, "lower_hero_id")));
+		if(upper && lower
+			&& readBool(*query, "removable_units", false)
+			&& upper->tempOwner == lower->tempOwner
+			&& nullkiller->settings->isGarrisonTroopsUsageAllowed()
+			&& !cc->getStartInfo()->restrictedGarrisonsForAI())
+		{
+			pickBestCreatures(lower, upper);
+		}
+		return answerAndWait(0);
+	}
+
+	if(queryType == "recruitment_dialog")
+	{
+		const auto * dwelling = dynamic_cast<const CGDwelling *>(cc->getObj(ObjectInstanceID(readInteger(*query, "dwelling_id")), false));
+		const auto * destination = dynamic_cast<const CArmedInstance *>(cc->getObj(ObjectInstanceID(readInteger(*query, "destination_id")), false));
+		if(dwelling && destination && destination->tempOwner == playerID)
+			recruitCreatures(dwelling, destination);
+		return answerAndWait(0);
+	}
+
+	if(queryType == "tavern_window" || queryType == "university_window" || queryType == "market_window")
+		return answerAndWait(0);
+
+	actionResult["handledByNullkiller"] = JsonNode(false);
+	return answerAndWait(readInteger(action, "default_answer", 0));
+}
+
 void CScriptedAdventureAI::makeScriptedTurn()
 {
 	try
@@ -3752,7 +3977,7 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 	};
 
 	std::optional<AutoAnswerModeGuard> autoAnswerModeGuard;
-	if(type != "nullkiller_trade" && type != "nullkiller_tasks" && type != "nullkiller_task" && type != "nullkiller_step")
+	if(type != "nullkiller_trade" && type != "nullkiller_tasks" && type != "nullkiller_task" && type != "nullkiller_step" && type != "nullkiller_answer_query")
 		autoAnswerModeGuard.emplace(*this);
 
 	auto readOwnedArmy = [&](const std::string & field, const std::string & label) -> const CArmedInstance *
@@ -3974,6 +4199,9 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 
 	if(type == "nullkiller_task")
 		return executeNullkillerTaskAction(action, actionResult);
+
+	if(type == "nullkiller_answer_query")
+		return executeNullkillerQueryAction(action, actionResult);
 
 	if(type == "nullkiller_step")
 	{
@@ -4994,7 +5222,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "swap_creatures", "merge_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "market_trade", "dismiss_hero", "build_boat", "dig", "cast_spell", "buy_artifact", "nullkiller_tasks", "nullkiller_task", "nullkiller_step" })
+	for(const char * type : { "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "swap_creatures", "merge_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "market_trade", "dismiss_hero", "build_boat", "dig", "cast_spell", "buy_artifact", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_answer_query" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();

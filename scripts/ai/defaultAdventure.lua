@@ -1284,7 +1284,12 @@ function Script.runDay(ai, input)
             if query.type == "artifact_assembly_prompt" then
                 ai:ignoreScriptDecision(query.query_id)
             else
-                ai:answerQuery(query.query_id, defaultQueryAnswer(query))
+                -- For real server queries, prefer a bounded native Nullkiller
+                -- answer. This keeps level-up skill selection, garrison army
+                -- pickup, hero-exchange artifact/army transfer, recruitment,
+                -- teleport choices, and cautious yes/no object prompts aligned
+                -- with the baseline AI without delegating the rest of the day.
+                ai:nullkillerAnswerQuery(query, defaultQueryAnswer(query))
             end
             commands = commands + 1
             refreshAfterCommand()

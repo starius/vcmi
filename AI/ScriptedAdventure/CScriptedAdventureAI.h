@@ -141,6 +141,7 @@ private:
 	bool executeScriptAction(const JsonNode & action, JsonNode & actionResult);
 	JsonNode makeNullkillerTaskCandidates(const JsonNode & action);
 	bool executeNullkillerTaskAction(const JsonNode & action, JsonNode & actionResult);
+	bool executeNullkillerQueryAction(const JsonNode & action, JsonNode & actionResult);
 	RequestWaitResult submitAndWaitForRequest(const std::type_info & requestType, uint16_t expectedPackType, const std::function<void()> & submit);
 	JsonNode jsonRequestWaitResult(const RequestWaitResult & request) const;
 	bool waitTillFreeForScriptAction(JsonNode & actionResult, const std::string & actionType);
@@ -150,6 +151,7 @@ private:
 	void setScriptActionAutoAnswerMode(bool active);
 	bool isScriptActionAutoAnswerMode();
 	void recordScriptQuery(QueryID queryID, const std::string & type, JsonNode data);
+	std::optional<JsonNode> getScriptQuery(QueryID queryID) const;
 	void removeScriptQuery(QueryID queryID);
 	void removeArtifactAssemblyPrompts(ObjectInstanceID heroID, ArtifactPosition slot);
 	JsonNode makeScriptQueries() const;

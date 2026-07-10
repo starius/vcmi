@@ -231,6 +231,20 @@ function ai:nullkillerStep(mode, maxCandidates, maxAttempts)
 	return self:execute(action)
 end
 
+function ai:nullkillerAnswerQuery(query, defaultAnswer)
+	local action = copyFields(query)
+	if type(query) ~= "table" then
+		action.query_id = query
+	elseif query.query_id ~= nil then
+		action.query_id = query.query_id
+	end
+	if defaultAnswer ~= nil then
+		action.default_answer = defaultAnswer
+	end
+	action.type = "nullkiller_answer_query"
+	return self:execute(action)
+end
+
 function ai:output(status, intent, confidence)
 	return {
 		status = status or "continue",
