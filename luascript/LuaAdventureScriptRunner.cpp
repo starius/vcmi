@@ -241,6 +241,47 @@ function ai:getReachable(heroId, options)
 	return self:inspect(request)
 end
 
+function ai:getDanger(heroId, target, y, z, options)
+	local request = { what = "danger", hero_id = heroId }
+	if type(target) == "table" then
+		for key, value in pairs(target) do
+			request[key] = value
+		end
+		options = y
+	else
+		request.x = target
+		request.y = y
+		request.z = z
+	end
+	if type(options) == "table" then
+		if options.check_guards ~= nil then
+			request.check_guards = options.check_guards
+		elseif options.checkGuards ~= nil then
+			request.check_guards = options.checkGuards
+		end
+	end
+	return self:inspect(request)
+end
+
+function ai:getTileDanger(heroId, x, y, z, options)
+	if type(z) == "table" and options == nil then
+		options = z
+		z = nil
+	end
+	return self:getDanger(heroId, { x = x, y = y, z = z }, options)
+end
+
+function ai:getObjectDanger(heroId, objectId, options)
+	local request = { object_id = objectId }
+	if type(options) == "table" then
+		request.check_guards = options.check_guards
+		if request.check_guards == nil then
+			request.check_guards = options.checkGuards
+		end
+	end
+	return self:getDanger(heroId, request)
+end
+
 function ai:getNullkillerTaskCandidates(mode, maxCandidates)
 	local request = copyFields(mode)
 	if type(mode) ~= "table" then

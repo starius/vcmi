@@ -1460,6 +1460,8 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectVisibleState)
 					maxMovementOptions = 5,
 					maxObjectTargets = 6
 				})
+				local tileDanger = ai:getTileDanger(7, 3, 4, 0)
+				local objectDanger = ai:getObjectDanger(7, 42, { checkGuards = false })
 				local state = ai:getState()
 				local actionSpace = ai:getActionSpace()
 				local analysis = ai:getAnalysis()
@@ -1481,6 +1483,8 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectVisibleState)
 						objectPathObjectId = objectPath.object_id,
 						reachableRadius = reachable.radius,
 						reachableMoves = #reachable.movementOptions,
+						tileRiskId = tileDanger.riskId,
+						objectTargetKindId = objectDanger.targetKindId,
 						day = state.day,
 						hasEndTurn = actionSpace.endTurnAction ~= nil,
 						hasExecution = analysis.execution ~= nil,
@@ -1551,6 +1555,26 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectVisibleState)
 			response["result"]["movementOptions"].Vector().push_back(option);
 			response["result"]["reachableObjects"].Vector();
 		}
+		else if(what == "danger")
+		{
+			response["result"]["hero_id"] = command["payload"]["hero_id"];
+			response["result"]["riskId"] = JsonNode(2);
+			response["result"]["risk"] = JsonNode("risky");
+			response["result"]["danger"] = JsonNode(100);
+			response["result"]["safe"] = JsonNode(false);
+			if(hasField(command["payload"], "object_id"))
+			{
+				response["result"]["targetKindId"] = JsonNode(2);
+				response["result"]["object_id"] = command["payload"]["object_id"];
+			}
+			else
+			{
+				response["result"]["targetKindId"] = JsonNode(1);
+				response["result"]["position"]["x"] = command["payload"]["x"];
+				response["result"]["position"]["y"] = command["payload"]["y"];
+				response["result"]["position"]["z"] = command["payload"]["z"];
+			}
+		}
 		else if(what == "state")
 		{
 			response["result"]["day"] = JsonNode(3);
@@ -1578,7 +1602,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectVisibleState)
 		return response;
 	});
 
-	ASSERT_EQ(commands.size(), 15);
+	ASSERT_EQ(commands.size(), 17);
 	for(const JsonNode & command : commands)
 		EXPECT_EQ(command["kind"].String(), "inspect");
 	EXPECT_EQ(commands[0]["payload"]["what"].String(), "object");
@@ -1599,6 +1623,14 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectVisibleState)
 	EXPECT_EQ(commands[8]["payload"]["radius"].Integer(), 8);
 	EXPECT_EQ(commands[8]["payload"]["max_movement_options"].Integer(), 5);
 	EXPECT_EQ(commands[8]["payload"]["max_object_targets"].Integer(), 6);
+	EXPECT_EQ(commands[9]["payload"]["what"].String(), "danger");
+	EXPECT_EQ(commands[9]["payload"]["hero_id"].Integer(), 7);
+	EXPECT_EQ(commands[9]["payload"]["x"].Integer(), 3);
+	EXPECT_EQ(commands[9]["payload"]["y"].Integer(), 4);
+	EXPECT_EQ(commands[9]["payload"]["z"].Integer(), 0);
+	EXPECT_EQ(commands[10]["payload"]["what"].String(), "danger");
+	EXPECT_EQ(commands[10]["payload"]["object_id"].Integer(), 42);
+	EXPECT_FALSE(commands[10]["payload"]["check_guards"].Bool());
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	EXPECT_EQ(output.memory["objectId"].Integer(), 42);
 	EXPECT_EQ(output.memory["heroId"].Integer(), 7);
@@ -1611,6 +1643,8 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectVisibleState)
 	EXPECT_EQ(output.memory["objectPathObjectId"].Integer(), 42);
 	EXPECT_EQ(output.memory["reachableRadius"].Integer(), 8);
 	EXPECT_EQ(output.memory["reachableMoves"].Integer(), 1);
+	EXPECT_EQ(output.memory["tileRiskId"].Integer(), 2);
+	EXPECT_EQ(output.memory["objectTargetKindId"].Integer(), 2);
 	EXPECT_EQ(output.memory["day"].Integer(), 3);
 	EXPECT_TRUE(output.memory["hasEndTurn"].Bool());
 	EXPECT_TRUE(output.memory["hasExecution"].Bool());

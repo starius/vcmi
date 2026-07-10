@@ -203,6 +203,10 @@ The `ai` facade:
   `ai:getAvailableHeroes(sourceId)`. Movement-specific wrappers include `ai:getPath(heroId, x, y, z?)`,
   `ai:getPathToObject(heroId, objectId)`, and `ai:getReachable(heroId, options?)`; they return current route ids
   and executable `planAction` records, but movement execution still recalculates the route and rejects stale ids.
+  Risk wrappers include `ai:getDanger(heroId, target, ...)`, `ai:getTileDanger(heroId, x, y, z?, options?)`, and
+  `ai:getObjectDanger(heroId, objectId, options?)`; these ask the native Nullkiller danger evaluator for a visible
+  tile or object using an owned visible hero and return stable numeric risk fields (`danger`, `dangerRatio`,
+  `riskId`, `targetKindId`, `safe`, and related detail fields).
   Nullkiller-specific read wrappers include `ai:getNullkillerTaskCandidates(mode?, maxCandidates?)`, also exposed as
   `ai:getNullkillerTasks`, `ai:nullkillerTaskCandidates`, and `ai:nullkillerCandidates`; these return native task
   handles and summaries without executing a game action. A script can then pass a selected `task_id` to

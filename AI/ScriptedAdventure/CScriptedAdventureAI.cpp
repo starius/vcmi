@@ -6621,6 +6621,64 @@ JsonNode CScriptedAdventureAI::executeScriptInspect(const JsonNode & request)
 			action["mode"] = action["mode_id"];
 		return makeNullkillerTaskCandidates(action);
 	}
+	if(what == "danger" || what == "risk")
+	{
+		if(!nullkiller || !nullkiller->dangerEvaluator || !nullkiller->settings)
+			throw std::invalid_argument("Nullkiller danger evaluator is not available");
+
+		std::shared_lock gameStateLock(CGameState::mutex);
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(request, "hero_id")));
+		if(!hero || hero->tempOwner != playerID || !cc->isVisibleFor(hero, playerID))
+			throw std::invalid_argument("Unknown hero, hero is not visible, or hero is not owned by scripted AI");
+
+		const bool checkGuards = readBool(request, "check_guards", true);
+		JsonNode node;
+		node["hero_id"] = JsonNode(hero->id.getNum());
+		node["checkGuards"] = JsonNode(checkGuards);
+
+		uint64_t danger = 0;
+		if(hasField(request, "object_id"))
+		{
+			const CGObjectInstance * object = cc->getObj(ObjectInstanceID(readInteger(request, "object_id")), false);
+			if(!object || !cc->isVisibleFor(object, playerID))
+				throw std::invalid_argument("Unknown object or object is not visible to scripted AI");
+
+			const uint64_t objectDanger = nullkiller->dangerEvaluator->evaluateDanger(object);
+			danger = objectDanger;
+			node["targetKindId"] = JsonNode(2);
+			node["targetKind"] = JsonNode("object");
+			node["object_id"] = JsonNode(object->id.getNum());
+			node["object"] = jsonMapObject(object, playerID, hero);
+			node["objectDanger"] = JsonNode(static_cast<int64_t>(objectDanger));
+
+			const int3 position = object->visitablePos();
+			if(position.isValid() && cc->isInTheMap(position) && cc->isVisibleFor(position, playerID))
+			{
+				const uint64_t tileDanger = nullkiller->dangerEvaluator->evaluateDanger(position, hero, checkGuards);
+				danger = tileDanger;
+				node["position"] = jsonPosition(position);
+				node["tileDanger"] = JsonNode(static_cast<int64_t>(tileDanger));
+			}
+		}
+		else
+		{
+			const int3 position(readInteger(request, "x"), readInteger(request, "y"), readInteger(request, "z", hero->visitablePos().z));
+			if(!cc->isInTheMap(position) || !cc->isVisibleFor(position, playerID))
+				throw std::invalid_argument("Danger target tile is outside the map or is not visible to scripted AI");
+
+			danger = nullkiller->dangerEvaluator->evaluateDanger(position, hero, checkGuards);
+			node["targetKindId"] = JsonNode(1);
+			node["targetKind"] = JsonNode("tile");
+			node["position"] = jsonPosition(position);
+			node["tileDanger"] = JsonNode(static_cast<int64_t>(danger));
+		}
+
+		const bool safe = !danger || NK2AI::isSafeToVisit(hero, danger, nullkiller->settings->getSafeAttackRatio());
+		JsonNode risk = jsonRisk(hero, danger, safe);
+		for(const auto & [key, value] : risk.Struct())
+			node[key] = value;
+		return node;
+	}
 
 	if(what == "object")
 	{
