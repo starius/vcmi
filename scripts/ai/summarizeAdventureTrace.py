@@ -206,6 +206,43 @@ def has_relevant_candidates(action_space: Any) -> bool:
     )
 
 
+def is_reinforce_transfer_candidate(candidate: Any) -> bool:
+    data = as_dict(candidate)
+    kind = as_int(data.get("transferKindId", data.get("transfer_kind_id")))
+    return kind == 2 or str(data.get("transferKind")) == "reinforce_town"
+
+
+def has_defensive_response_candidate(action_space: Any) -> bool:
+    data = as_dict(action_space)
+    if as_list(data.get("buildOptions")) or as_list(data.get("recruitOptions")):
+        return True
+    return any(is_reinforce_transfer_candidate(candidate) for candidate in as_list(data.get("armyTransferOptions")))
+
+
+def output_has_defensive_response(actions: Any, action_space: Any) -> bool:
+    action_counts = action_type_counts(actions)
+    if action_counts["build"] or action_counts["recruit"]:
+        return True
+
+    transfer_candidates = candidate_by_action(as_dict(action_space).get("armyTransferOptions"))
+    for action in as_list(actions):
+        action_data = as_dict(action)
+        if action_data.get("type") != "transfer_army":
+            continue
+        if is_reinforce_transfer_candidate(transfer_candidates.get(plan_action_key(action_data))):
+            return True
+    return False
+
+
+def hero_has_safe_move_candidate(action_space: Any, hero_id: Any) -> bool:
+    for option in as_list(as_dict(action_space).get("movementOptions")):
+        data = as_dict(option)
+        action = candidate_action(data)
+        if data.get("hero_id") == hero_id and data.get("safe") is not False and action.get("type") == "move_hero":
+            return True
+    return False
+
+
 def compact_action(action: Any) -> dict[str, Any]:
     data = as_dict(action)
     result: dict[str, Any] = {"type": data.get("type", "<missing>")}
@@ -250,8 +287,13 @@ def fixture_for_mistake(kind: str, script: str, script_input: dict[str, Any], de
         if "hero_id" in details:
             fixture["expect"]["actionsContain"] = [{"type": "move_hero", "hero_id": details["hero_id"]}]
     elif kind == "defense_pressure_without_response":
-        fixture["expect"]["actionsContain"] = [{"type": "recruit"}]
-        fixture["notes"] = f"{fixture['notes']} If recruitment is impossible, change this fixture to expect a defensive build."
+        action_space = as_dict(script_input.get("actionSpace"))
+        if as_list(action_space.get("recruitOptions")):
+            fixture["expect"]["actionsContain"] = [{"type": "recruit"}]
+        elif as_list(action_space.get("buildOptions")):
+            fixture["expect"]["actionsContain"] = [{"type": "build"}]
+        else:
+            fixture["expect"]["actionsContain"] = [{"type": "transfer_army"}]
     elif kind == "failed_action":
         if action := details.get("action"):
             fixture["expect"]["actionsDoNotContain"] = [compact_action(action)]
@@ -498,24 +540,38 @@ def analyze_mistakes(
             for alert in as_list(analysis.get("heroThreatAlerts"))
             if str(as_dict(alert).get("level")) in {"high", "critical"}
         ]
-        for alert in high_threats:
+        actionable_threats = [
+            alert
+            for alert in high_threats
+            if alert.get("hero_id") is not None and hero_has_safe_move_candidate(action_space, alert.get("hero_id"))
+        ]
+        moved_heroes = {
+            as_dict(action).get("hero_id")
+            for action in actions
+            if as_dict(action).get("type") == "move_hero"
+        }
+        if actionable_threats and not any(alert.get("hero_id") in moved_heroes for alert in actionable_threats):
+            alert = actionable_threats[0]
             hero_id = alert.get("hero_id")
-            if hero_id is not None and not any(action_matches(action, "move_hero", "hero_id", hero_id) for action in actions):
-                details = {
-                    "name": f"threatened-hero-{hero_id}",
-                    "description": "A hero had a high/critical threat alert but the script did not move that hero.",
-                    "hero_id": hero_id,
-                    "alert": alert,
-                }
-                fixture = fixture_for_mistake("hero_threat_without_escape", script, script_input, details)
-                mistakes.append(make_mistake("hero_threat_without_escape", 4, output_record, details["description"], details, fixture))
+            details = {
+                "name": f"threatened-hero-{hero_id}",
+                "description": "A hero had a high/critical threat alert with a safe movement candidate, but the script did not move any threatened hero.",
+                "hero_id": hero_id,
+                "alert": alert,
+            }
+            fixture = fixture_for_mistake("hero_threat_without_escape", script, script_input, details)
+            mistakes.append(make_mistake("hero_threat_without_escape", 4, output_record, details["description"], details, fixture))
 
         high_defense = [
             as_dict(alert)
             for alert in as_list(analysis.get("defenseAlerts"))
             if str(as_dict(alert).get("level")) in {"high", "critical"}
         ]
-        if high_defense and not (action_counts["recruit"] or action_counts["build"]):
+        if (
+            high_defense
+            and has_defensive_response_candidate(action_space)
+            and not output_has_defensive_response(actions, action_space)
+        ):
             details = {
                 "name": "defense-pressure-without-response",
                 "description": "A town had a high/critical defense alert but the script did not recruit or build.",
