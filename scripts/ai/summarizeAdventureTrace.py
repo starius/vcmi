@@ -184,12 +184,21 @@ def candidate_by_action(candidates: Any) -> dict[tuple[Any, ...], dict[str, Any]
     return result
 
 
-def best_safe_object(objects: Any) -> dict[str, Any] | None:
+def target_was_visited(target: Any, memory: Any) -> bool:
+    object_id = as_dict(as_dict(target).get("object")).get("id")
+    if object_id is None:
+        return False
+    return str(object_id) in as_dict(as_dict(memory).get("visitedTargets"))
+
+
+def best_safe_object(objects: Any, memory: Any = None) -> dict[str, Any] | None:
     best: dict[str, Any] | None = None
     best_value = float("-inf")
     for target in as_list(objects):
         target_dict = as_dict(target)
         if target_dict.get("safe") is False:
+            continue
+        if memory is not None and target_was_visited(target_dict, memory):
             continue
         value = as_float(target_dict.get("value"))
         if value > best_value:
@@ -524,7 +533,7 @@ def analyze_mistakes(
                     fixture = fixture_for_mistake("unsafe_object_action", script, script_input, details)
                     mistakes.append(make_mistake("unsafe_object_action", 4, output_record, details["description"], details, fixture))
 
-                best = best_safe_object(action_space.get("reachableObjects"))
+                best = best_safe_object(action_space.get("reachableObjects"), script_input.get("memory"))
                 if candidate and best and as_dict(best.get("object")).get("id") != action_data.get("object_id"):
                     chosen_value = as_float(candidate.get("value"))
                     best_value = as_float(best.get("value"))

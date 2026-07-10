@@ -296,5 +296,60 @@ class HeroThreatMistakeTest(unittest.TestCase):
         self.assertNotIn("hero_threat_without_escape", {item["type"] for item in mistakes})
 
 
+class IgnoredBetterObjectMistakeTest(unittest.TestCase):
+    def mistakes_for(self, memory: dict | None = None) -> list[dict]:
+        key = ("red", 1, 0)
+        chosen_action = {
+            "type": "visit_object",
+            "hero_id": 5,
+            "object_id": 1,
+            "route_id": "chosen",
+        }
+        script_input = {
+            "memory": memory or {},
+            "analysis": {},
+            "actionSpace": {
+                "reachableObjects": [
+                    {
+                        "hero_id": 5,
+                        "safe": True,
+                        "value": 100,
+                        "object": {
+                            "id": 1,
+                        },
+                        "planAction": chosen_action,
+                    },
+                    {
+                        "hero_id": 5,
+                        "safe": True,
+                        "value": 1000,
+                        "object": {
+                            "id": 2,
+                        },
+                        "planAction": {
+                            "type": "visit_object",
+                            "hero_id": 5,
+                            "object_id": 2,
+                            "route_id": "better",
+                        },
+                    },
+                ]
+            },
+        }
+        return analyze_mistakes(
+            {key: input_record(script_input)},
+            {key: output_record([chosen_action])},
+            {},
+        )
+
+    def test_unvisited_better_object_is_reported(self) -> None:
+        mistakes = self.mistakes_for()
+        self.assertIn("ignored_better_object", {item["type"] for item in mistakes})
+
+    def test_visited_better_object_is_not_reported(self) -> None:
+        mistakes = self.mistakes_for({"visitedTargets": {"2": True}})
+        self.assertNotIn("ignored_better_object", {item["type"] for item in mistakes})
+
+
 if __name__ == "__main__":
     unittest.main()
