@@ -300,6 +300,9 @@ The `ai` facade:
 - `ai:nullkillerAnswerQuery(queryOrId, defaultAnswer?)`: ask Nullkiller to handle one pending query through its
   native dialog heuristic, then return control to Lua. This is bounded to that one query and does not delegate the
   rest of the day.
+- `ai:nullkillerAnswerPendingQueries(defaultAnswer?, maxQueries?)`: repeatedly apply `ai:nullkillerAnswerQuery` to
+  currently pending typed query records, refreshing visible input between answers, then return control to Lua. This
+  is a Lua convenience wrapper around the bounded one-query helper, not full-day delegation.
 - `ai:nullkillerObjectInteraction(heroId, objectId)`: run Nullkiller's local post-visit helper for one owned hero
   currently visiting or standing at a visible object, then return control to Lua. This covers bounded native
   handling such as owned-town creature pickup, opportunistic spellbook purchase for a main hero, and hill-fort
@@ -653,7 +656,7 @@ refresh/replan, and end turn.
 Bounded Nullkiller helpers cover native subroutines that are expensive or brittle to reimplement in Lua: task
 candidate generation and execution by mode, one-step/pass/slice execution, priority passes, resource trading, town
 army preparation, creature recruitment, army upgrading, town-garrison pickup, weak-hero dismissal, single-creature
-stack setup, whirlpool formation, siege formation, query answering, object interaction callbacks, artifact
+stack setup, whirlpool formation, siege formation, one-query and pending-query answering, object interaction callbacks, artifact
 preparation, all-hero artifact optimization, creature preparation, and combined hero preparation.
 
 The intentionally excluded `IGameActionCallback` methods are meta/client operations rather than adventure strategy:

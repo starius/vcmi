@@ -1264,6 +1264,75 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanReadAndAnswerPendingQueries)
 	EXPECT_EQ(output.memory["queryType"].String(), "blocking_dialog");
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanLetNullkillerAnswerPendingQueries)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				local result = ai:nullkillerAnswerPendingQueries(1, 4)
+				return {
+					status = "end_turn",
+					memory = {
+						version = 1,
+						count = result.count,
+						truncated = result.truncated
+					},
+					actions = {}
+				}
+			end
+		}
+	)lua";
+
+	auto makeInputWithRemainingQueries = [](int firstRemainingIndex)
+	{
+		AI::AdventureScriptInput input = makeInput();
+		input.state["turn"]["queries"].Vector();
+		for(int index = firstRemainingIndex; index < 2; ++index)
+		{
+			JsonNode query;
+			query["query_id"] = JsonNode(77 + index);
+			query["type"] = JsonNode(index == 0 ? "hero_level_up" : "blocking_dialog");
+			input.state["turn"]["queries"].Vector().push_back(query);
+		}
+		return input;
+	};
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-nullkiller-pending-queries", source);
+	std::vector<JsonNode> commands;
+	int answeredQueries = 0;
+	int refreshes = 0;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInputWithRemainingQueries(0), [&](const JsonNode & command)
+	{
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+
+		if(command["kind"].String() == "refresh")
+		{
+			++refreshes;
+			response["input"] = makeInputWithRemainingQueries(answeredQueries).toJson();
+			return response;
+		}
+
+		commands.push_back(command);
+		++answeredQueries;
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 2);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_answer_query");
+	EXPECT_EQ(commands[0]["payload"]["query_id"].Integer(), 77);
+	EXPECT_EQ(commands[0]["payload"]["default_answer"].Integer(), 1);
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "nullkiller_answer_query");
+	EXPECT_EQ(commands[1]["payload"]["query_id"].Integer(), 78);
+	EXPECT_EQ(refreshes, 2);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_EQ(output.memory["count"].Integer(), 2);
+	EXPECT_FALSE(output.memory["truncated"].Bool());
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCancelOptionalQueryReply)
 {
 	const std::string source = R"lua(

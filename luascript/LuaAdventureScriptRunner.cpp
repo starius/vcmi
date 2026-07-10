@@ -357,6 +357,30 @@ function ai:nullkillerAnswerQuery(query, defaultAnswer)
 	return self:execute(action)
 end
 
+function ai:nullkillerAnswerPendingQueries(defaultAnswer, maxQueries)
+	local handled = {}
+	local limit = maxQueries or 16
+	for _ = 1, limit do
+		local queries = self:pendingQueries()
+		if #queries == 0 then
+			return {
+				count = #handled,
+				handled = handled,
+				truncated = false
+			}
+		end
+
+		handled[#handled + 1] = self:nullkillerAnswerQuery(queries[1], defaultAnswer)
+		self:refresh()
+	end
+
+	return {
+		count = #handled,
+		handled = handled,
+		truncated = #self:pendingQueries() > 0
+	}
+end
+
 function ai:nullkillerObjectInteraction(heroId, objectId)
 	local action = copyFields(heroId)
 	if type(heroId) ~= "table" then
