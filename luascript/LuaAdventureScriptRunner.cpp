@@ -596,6 +596,15 @@ function ai:nullkillerTrade()
 	return self:execute({ type = "nullkiller_trade" })
 end
 
+function ai:nullkillerPriorityPass(passIndex)
+	local action = copyFields(passIndex)
+	if type(passIndex) ~= "table" then
+		action.pass_index = passIndex
+	end
+	action.type = "nullkiller_priority_pass"
+	return self:execute(action)
+end
+
 function ai:nullkillerBuildArmy(townId)
 	local action = copyFields(townId)
 	if type(townId) ~= "table" then

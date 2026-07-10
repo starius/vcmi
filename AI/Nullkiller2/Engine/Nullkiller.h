@@ -119,6 +119,18 @@ struct ScriptTaskExecutionResult
 	std::string error;
 };
 
+struct ScriptPriorityPassResult
+{
+	bool completed = true;
+	bool maxPriorityPassReached = false;
+	int passIndex = 1;
+	int attempts = 0;
+	int executed = 0;
+	float lastPriority = 0.0f;
+	std::string lastTaskDescription;
+	std::string error;
+};
+
 class Nullkiller
 {
 private:
@@ -169,6 +181,7 @@ public:
 	bool executeScriptTask(const Goals::TTask & task);
 	ScriptTaskExecutionResult executeScriptTaskSequence(const Goals::TTaskVec & tasks, size_t maxAttempts);
 	bool executeScriptResourceTrade();
+	ScriptPriorityPassResult executeScriptPriorityPass(int passIndex);
 	bool updateStateAndExecutePriorityPass(Goals::TGoalVec& tempResults, int passIndex);
 	bool isActive(const CGHeroInstance * hero) const { return activeHero == hero; }
 	bool isHeroLocked(const CGHeroInstance * hero) const;

@@ -4706,7 +4706,7 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 	};
 
 	std::optional<AutoAnswerModeGuard> autoAnswerModeGuard;
-	if(type != "nullkiller_trade" && type != "nullkiller_tasks" && type != "nullkiller_task" && type != "nullkiller_step" && type != "nullkiller_answer_query")
+	if(type != "nullkiller_trade" && type != "nullkiller_priority_pass" && type != "nullkiller_tasks" && type != "nullkiller_task" && type != "nullkiller_step" && type != "nullkiller_answer_query")
 		autoAnswerModeGuard.emplace(*this);
 
 	auto readOwnedArmy = [&](const std::string & field, const std::string & label) -> const CArmedInstance *
@@ -4738,6 +4738,31 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		}
 		actionResult["ok"] = JsonNode(true);
 		actionResult["didTrade"] = JsonNode(traded);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		return true;
+	}
+
+	if(type == "nullkiller_priority_pass")
+	{
+		const int32_t passIndex = std::max(1, readInteger(action, "pass_index", 1));
+		NK2AI::ScriptPriorityPassResult result;
+		{
+			std::shared_lock gameStateLock(CGameState::mutex);
+			result = nullkiller->executeScriptPriorityPass(passIndex);
+		}
+
+		actionResult["ok"] = JsonNode(true);
+		actionResult["completed"] = JsonNode(result.completed);
+		actionResult["maxPriorityPassReached"] = JsonNode(result.maxPriorityPassReached);
+		actionResult["passIndex"] = JsonNode(result.passIndex);
+		actionResult["attempts"] = JsonNode(result.attempts);
+		actionResult["executed"] = JsonNode(result.executed);
+		actionResult["lastPriority"].Float() = result.lastPriority;
+		if(!result.lastTaskDescription.empty())
+			actionResult["lastTaskDescription"] = JsonNode(jsonText(result.lastTaskDescription));
+		if(!result.error.empty())
+			actionResult["error"] = JsonNode(result.error);
 		if(!waitTillFreeForScriptAction(actionResult, type))
 			return false;
 		return true;
@@ -6217,7 +6242,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "erase_transition_artifact", "swap_creatures", "merge_stacks", "merge_or_swap_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "set_town_name", "swap_garrison_hero", "nullkiller_trade", "nullkiller_build_army", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_answer_query", "nullkiller_object_interaction" })
+	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "erase_transition_artifact", "swap_creatures", "merge_stacks", "merge_or_swap_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "set_town_name", "swap_garrison_hero", "nullkiller_trade", "nullkiller_priority_pass", "nullkiller_build_army", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_answer_query", "nullkiller_object_interaction" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();

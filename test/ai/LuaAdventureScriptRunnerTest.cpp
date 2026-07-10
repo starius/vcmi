@@ -396,6 +396,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 				ai:eraseTransitionArtifact(5)
 				ai:pickBestCreatures(31, 30)
 				ai:nullkillerBuildArmy(16)
+				ai:nullkillerPriorityPass(2)
 				return {
 					status = "end_turn",
 					memory = {
@@ -438,7 +439,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 		return response;
 	});
 
-	ASSERT_EQ(commands.size(), 40);
+	ASSERT_EQ(commands.size(), 41);
 	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_tasks");
 	EXPECT_EQ(commands[0]["payload"]["mode"].String(), "adventure");
 	EXPECT_EQ(commands[0]["payload"]["max_candidates"].Integer(), 7);
@@ -568,6 +569,8 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 	EXPECT_EQ(commands[38]["payload"]["source_id"].Integer(), 30);
 	EXPECT_EQ(commands[39]["payload"]["type"].String(), "nullkiller_build_army");
 	EXPECT_EQ(commands[39]["payload"]["town_id"].Integer(), 16);
+	EXPECT_EQ(commands[40]["payload"]["type"].String(), "nullkiller_priority_pass");
+	EXPECT_EQ(commands[40]["payload"]["pass_index"].Integer(), 2);
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	EXPECT_EQ(output.memory["firstTask"].Integer(), 41);
 	EXPECT_EQ(output.memory["stepTask"].Integer(), 42);

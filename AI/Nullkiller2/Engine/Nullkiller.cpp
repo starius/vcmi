@@ -817,10 +817,14 @@ void Nullkiller::makeTurn()
 	}
 }
 
-bool Nullkiller::updateStateAndExecutePriorityPass(Goals::TGoalVec & tempResults, const int passIndex)
+ScriptPriorityPassResult Nullkiller::executeScriptPriorityPass(const int passIndex)
 {
+	ScriptPriorityPassResult result;
+	result.passIndex = passIndex;
+
 	updateState();
 
+	Goals::TGoalVec tempResults;
 	Goals::TTask bestPrioPassTask = taskptr(Goals::Invalid());
 	for(int i = 1; i <= settings->getMaxPriorityPass() && cc->getPlayerStatus(playerID) == EPlayerStatus::INGAME; i++)
 	{
@@ -836,18 +840,27 @@ bool Nullkiller::updateStateAndExecutePriorityPass(Goals::TGoalVec & tempResults
 
 		if(bestPrioPassTask->priority > 0)
 		{
+			result.attempts += 1;
+			result.lastPriority = bestPrioPassTask->priority;
+			result.lastTaskDescription = bestPrioPassTask->toString();
 			logAi->info("Pass %d: priorityPass %d: Performing task %s with prio: %d", passIndex, i, bestPrioPassTask->toString(), bestPrioPassTask->priority);
 
 			const bool isRecruitHeroGoal = dynamic_cast<RecruitHero*>(bestPrioPassTask.get()) != nullptr;
 			HeroPtr heroPtr(bestPrioPassTask->getHero(), cc.get());
 			if(!isRecruitHeroGoal && bestPrioPassTask->getHero() && !heroPtr.isVerified(false))
 			{
-				logAi->error("Nullkiller::updateStateAndExecutePriorityPass Skipping priorityPass due to unverified hero: %s", heroPtr.nameOrDefault());
+				result.error = "Skipping priority pass task due to unverified hero";
+				logAi->error("Nullkiller::executeScriptPriorityPass Skipping priorityPass due to unverified hero: %s", heroPtr.nameOrDefault());
 			}
 			else if(!executeTask(bestPrioPassTask))
 			{
+				result.error = "Task failed to execute during priority pass";
 				logAi->warn("Task failed to execute during priority pass. Continuing with regular turn planning.");
 				break;
+			}
+			else
+			{
+				result.executed += 1;
 			}
 
 			updateState();
@@ -859,10 +872,18 @@ bool Nullkiller::updateStateAndExecutePriorityPass(Goals::TGoalVec & tempResults
 
 		if(i == settings->getMaxPriorityPass())
 		{
+			result.maxPriorityPassReached = true;
 			logAi->warn("MaxPriorityPass reached. Terminating priorityPass loop.");
 		}
 	}
-	return true;
+	result.completed = cc->getPlayerStatus(playerID) == EPlayerStatus::INGAME;
+	return result;
+}
+
+bool Nullkiller::updateStateAndExecutePriorityPass(Goals::TGoalVec & tempResults, const int passIndex)
+{
+	tempResults.clear();
+	return executeScriptPriorityPass(passIndex).completed;
 }
 
 bool Nullkiller::areAffectedObjectsPresent(const Goals::TTask & task) const

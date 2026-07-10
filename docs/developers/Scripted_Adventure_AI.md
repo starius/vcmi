@@ -182,6 +182,9 @@ The `ai` facade:
   `preference` may be `experience` or `gold`; the default is experience.
 - `ai:nullkillerTrade()`: ask the host to run Nullkiller's resource-trading helper once, returning whether it
   traded anything.
+- `ai:nullkillerPriorityPass(passIndex?)`: ask the host to run Nullkiller's bounded native priority pass once.
+  This can execute several build/recruit/hire tasks from the priority loop, returns metrics, and then gives
+  control back to Lua.
 - `ai:nullkillerBuildArmy(townId)`: ask the host to run Nullkiller's bounded town-army helper once for one
   visible owned town. It may upgrade, recruit, and move creatures to the visiting hero, then returns control to
   Lua.
@@ -491,6 +494,9 @@ Current bounded subroutine surface:
   candidates using Nullkiller's own failure policy, then returns to Lua for refresh, more decisions, or end-turn.
   It accepts `max_attempts` and returns stable fields including `outcomeId`, `failureActionId`, `didExecute`,
   `shouldReplan`, `shouldStopTurn`, `exhaustedCandidates`, `selectedTaskIndex`, and `attempts`.
+- `nullkiller_priority_pass` runs Nullkiller's native priority loop once and then returns to Lua. This exposes the
+  build/recruit/hire pre-adventure subroutine that native Nullkiller normally performs before adventure task
+  planning, without handing over the rest of the day.
 - Lua exposes `ai.nullkillerStepOutcomes`, `ai.nullkillerFailureActions`, and `ai.nullkillerTaskModes` numeric
   constants. Scripts should branch on these constants rather than trace strings.
 
@@ -1173,8 +1179,9 @@ Regression harness:
   gather-army, exploration, building, recruitment, or capture. Candidate snapshots now include bounded
   structured goal details for composition plans, hero-chain paths, cluster blockers, defense threats, upgrades,
   buildings, boats, and adventure spells. Single-query Nullkiller dialog handling is also exposed through
-  `ai:nullkillerAnswerQuery`. This is still not full parity: scripts need richer direct access to remaining
-  player choices before serious script optimization should be treated as meaningful.
+  `ai:nullkillerAnswerQuery`. The native priority-pass loop is exposed through `ai:nullkillerPriorityPass`.
+  This is still not full parity: scripts need richer direct access to remaining player choices before serious
+  script optimization should be treated as meaningful.
 - Done: Nullkiller path-node special actions are serialized with stable typed metadata, so Lua can identify and
   inspect native Dimension Door, Town Portal, boat, whirlpool, quest, adventure-cast, and composite path actions
   without relying on debug strings. The exposed action parameters use ids/numeric fields where possible and keep
