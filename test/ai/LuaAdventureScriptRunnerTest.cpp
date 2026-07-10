@@ -974,6 +974,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanConstrainNullkillerPlanner)
 				ai:nullkillerLockHero(17)
 				ai:nullkillerLockHero({ hero_id = 18, reason_id = ai.nullkillerHeroLockReasons.heroChain })
 				ai:nullkillerUnlockHero(17)
+				ai:nullkillerReset()
 				return ai:output("end_turn", "constrained native planner")
 			end
 		}
@@ -993,7 +994,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanConstrainNullkillerPlanner)
 		return response;
 	});
 
-	ASSERT_EQ(commands.size(), 5);
+	ASSERT_EQ(commands.size(), 6);
 	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_lock_resources");
 	ASSERT_TRUE(commands[0]["payload"]["resources"].isVector());
 	ASSERT_EQ(commands[0]["payload"]["resources"].Vector().size(), 7);
@@ -1010,6 +1011,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanConstrainNullkillerPlanner)
 	EXPECT_EQ(commands[3]["payload"]["reason_id"].Integer(), 3);
 	EXPECT_EQ(commands[4]["payload"]["type"].String(), "nullkiller_unlock_hero");
 	EXPECT_EQ(commands[4]["payload"]["hero_id"].Integer(), 17);
+	EXPECT_EQ(commands[5]["payload"]["type"].String(), "nullkiller_reset");
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 }
 

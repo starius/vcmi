@@ -276,6 +276,8 @@ The `ai` facade:
   `ai:spellResearch`, and `ai:visitTownBuilding`: request checked primitive adventure/town actions through the
   normal callback/server path.
 - `ai:nullkiller()` / `ai:nullkillerForRestOfDay()`: stop script control and let Nullkiller finish the turn.
+- `ai:nullkillerReset()`: reset bounded Nullkiller planner-local state, including resource locks, hero locks,
+  scan-depth escalation, and opaque candidate handles, without changing game state or delegating the rest of the day.
 - `ai:nullkillerTasks(mode, maxCandidates)`: ask Nullkiller for a bounded snapshot of native task candidates.
   `mode` is `priority`, `adventure`, `startup`, or `all`. Returned `task_id` values are opaque handles that
   expire on `ai:refresh()` or the next candidate snapshot.
@@ -631,7 +633,8 @@ Current bounded subroutine surface:
   than simplified script auto-answer logic.
 - Nullkiller script-task state is reset once at the beginning of the scripted turn, not before every candidate
   query. This preserves native state such as locked heroes, scan-depth changes, previous task success, and
-  hero-chain decisions across bounded Lua subroutine calls.
+  hero-chain decisions across bounded Lua subroutine calls. Lua can explicitly call `nullkiller_reset` when it wants
+  to discard these planner-local constraints and opaque task handles while keeping the actual game state unchanged.
 - `nullkiller_step` is a convenience call that selects the current best bounded candidate, can try later
   candidates using Nullkiller's own failure policy, then returns to Lua for refresh, more decisions, or end-turn.
   It accepts `max_attempts` and returns stable fields including `outcomeId`, `failureActionId`, `didExecute`,
@@ -655,9 +658,8 @@ Current bounded subroutine surface:
   `paused`, and `shouldStopTurn`. A full priority+adventure+trade slice runs the native resource trader even if
   priority/adventure produced no task, and reports `shouldStopTurn` when no phase made progress, matching
   Nullkiller's normal "nothing was done this turn pass" stop condition without delegating the rest of the day.
-  The bundled default Lua policy treats a trade-only slice as end-of-day cleanup rather than a reason to request
-  more slices, because repeated small resource trades can otherwise dominate the command budget without adding
-  new adventure decisions.
+  The bundled default Lua policy now treats productive trade-only slices as real work, refreshes state, and asks the
+  script to decide again instead of delegating the rest of the day.
 - Bounded native helper loops run their internal server requests in synchronous-realization mode. Lua still
   regains control after the helper returns or pauses for a query, but native helper loops do not queue follow-up
   build, movement, trade, or artifact requests before the previous request has been accepted or rejected by the
@@ -725,11 +727,12 @@ town rename, boat building, statistics requests, and bulk army/artifact manageme
 callback is represented through checked route ids and submitted paths derived from the shared pathfinder, not by
 letting scripts push arbitrary hidden path vectors.
 
-Bounded Nullkiller helpers cover native subroutines that are expensive or brittle to reimplement in Lua: task
-candidate generation and execution by mode, one-step/pass/slice execution, priority passes, resource trading, town
-army preparation, creature recruitment, army upgrading, town-garrison pickup, weak-hero dismissal, single-creature
-stack setup, whirlpool formation, siege formation, one-query and pending-query answering, object interaction callbacks, artifact
-preparation, all-hero artifact optimization, creature preparation, and combined hero preparation.
+Bounded Nullkiller helpers cover native subroutines that are expensive or brittle to reimplement in Lua: planner
+reset, task candidate generation and execution by mode, one-step/pass/slice execution, priority passes, resource
+trading, town army preparation, creature recruitment, army upgrading, town-garrison pickup, weak-hero dismissal,
+single-creature stack setup, whirlpool formation, siege formation, one-query and pending-query answering, object
+interaction callbacks, artifact preparation, all-hero artifact optimization, creature preparation, and combined hero
+preparation.
 
 The intentionally excluded `IGameActionCallback` methods are meta/client operations rather than adventure strategy:
 save, pause, chat/message sending, and raw local-state writes. Script-owned memory replaces raw local-state writes,
@@ -1282,9 +1285,9 @@ Regression harness:
   Nullkiller when it is missing.
 - The script API parity target is practical rather than “bind every C++ private method”: Lua should see all
   relevant visible/derived strategy data, execute every useful player action through existing server-checked
-  callback paths, and invoke Nullkiller logic only through bounded helpers such as task candidate listing, one
-  selected task, one step, one pass, one priority pass, resource trade, army/artifact preparation, query answers,
-  and object interaction.
+  callback paths, and invoke Nullkiller logic only through bounded helpers such as planner reset, task candidate
+  listing, one selected task, one step, one pass, one turn slice, one priority pass, resource trade, army/artifact
+  preparation, query answers, and object interaction.
 - Bounded Nullkiller helpers now run with a visible-only script memory view. `ScriptVisibleOnlyScope` temporarily
   filters Nullkiller's remembered objects, teleport channels, and subterranean-gate links to objects visible to
   the scripted player, while preserving hidden native Nullkiller memory outside the scoped script helper. Task
@@ -1556,6 +1559,9 @@ Regression harness:
   `nullkillerHelperOptions`. Scripts can execute the advertised `planAction`, `tasksAction`, `stepAction`, or
   `passAction` through `ai:runOption`, keeping native helper use discoverable and numeric-id based without
   delegating the rest of the day.
+- Done: Lua can call `ai:nullkillerReset()` and discover `nullkiller_reset` in `nullkillerHelperOptions` to clear
+  bounded planner-local state and candidate handles mid-script. This is useful after experimental resource/hero
+  constraints or scan-depth escalation when Lua wants a fresh native planning pass without changing game state.
 - Done: `nullkillerHelperOptions` also includes concrete visible owned-object helpers for
   `nullkiller_build_army`, `nullkiller_upgrade_army`, `nullkiller_recruit_creatures`, and
   `nullkiller_move_creatures_to_hero`, plus the cap-driven `nullkiller_dismiss_weak_hero` helper when available,
@@ -1739,6 +1745,9 @@ Regression harness:
   smoke completed all scenarios at the day limit with 48 `end_turn` outputs, 391 checked `visit_object` actions,
   74 bounded query answers, 58 bounded `nullkiller_turn_slice` calls, zero failed checked actions, and zero fallback
   outputs.
+- Done: after adding explicit `nullkiller_reset`, a 16-map, 1-day traced integration smoke completed all scenarios
+  at the day limit with 16 `end_turn` outputs, 20 bounded `nullkiller_turn_slice` calls, 145 checked `visit_object`
+  actions, 18 bounded query answers, zero failed checked actions, and zero fallback outputs.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus, then add
   engine-level explored-area and map-control deltas.
 

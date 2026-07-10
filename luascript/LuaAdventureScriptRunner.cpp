@@ -384,6 +384,10 @@ ai.adventureSpellKinds = {
 	fly = 9
 }
 
+function ai:nullkillerReset()
+	return self:execute({ type = "nullkiller_reset" })
+end
+
 function ai:nullkillerTasks(mode, maxCandidates)
 	local action = copyFields(mode)
 	if type(mode) ~= "table" then
