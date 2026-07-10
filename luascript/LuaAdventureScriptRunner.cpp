@@ -195,6 +195,10 @@ function ai:getLimits()
 	return self:inspect({ what = "limits" })
 end
 
+function ai:getGrail()
+	return self:inspect({ what = "grail" })
+end
+
 function ai:getObject(objectId, heroId)
 	local request = { what = "object", object_id = objectId }
 	if heroId ~= nil then

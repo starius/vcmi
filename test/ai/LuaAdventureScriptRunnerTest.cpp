@@ -1565,6 +1565,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectVisibleState)
 				local queries = ai:getQueries()
 				local updates = ai:getUpdates(true)
 				local limits = ai:getLimits()
+				local grail = ai:getGrail()
 				return {
 					status = "end_turn",
 					memory = {
@@ -1587,7 +1588,9 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectVisibleState)
 						hasExecution = analysis.execution ~= nil,
 						queryCount = #queries,
 						opponentOnly = updates.opponentOnly,
-						maxActions = limits.maxActions
+						maxActions = limits.maxActions,
+						grailKnownRatio = grail.knownRatio,
+						grailPositionKnown = grail.positionKnown
 					},
 					actions = {}
 				}
@@ -1696,10 +1699,16 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectVisibleState)
 		{
 			response["result"]["maxActions"] = JsonNode(64);
 		}
+		else if(what == "grail")
+		{
+			response["result"]["knownRatio"].Float() = 0.5;
+			response["result"]["fullyRevealed"] = JsonNode(false);
+			response["result"]["positionKnown"] = JsonNode(false);
+		}
 		return response;
 	});
 
-	ASSERT_EQ(commands.size(), 17);
+	ASSERT_EQ(commands.size(), 18);
 	for(const JsonNode & command : commands)
 		EXPECT_EQ(command["kind"].String(), "inspect");
 	EXPECT_EQ(commands[0]["payload"]["what"].String(), "object");
@@ -1728,6 +1737,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectVisibleState)
 	EXPECT_EQ(commands[10]["payload"]["what"].String(), "danger");
 	EXPECT_EQ(commands[10]["payload"]["object_id"].Integer(), 42);
 	EXPECT_FALSE(commands[10]["payload"]["check_guards"].Bool());
+	EXPECT_EQ(commands[17]["payload"]["what"].String(), "grail");
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	EXPECT_EQ(output.memory["objectId"].Integer(), 42);
 	EXPECT_EQ(output.memory["heroId"].Integer(), 7);
@@ -1748,6 +1758,8 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectVisibleState)
 	EXPECT_EQ(output.memory["queryCount"].Integer(), 0);
 	EXPECT_TRUE(output.memory["opponentOnly"].Bool());
 	EXPECT_EQ(output.memory["maxActions"].Integer(), 64);
+	EXPECT_NEAR(output.memory["grailKnownRatio"].Float(), 0.5, 1e-8);
+	EXPECT_FALSE(output.memory["grailPositionKnown"].Bool());
 }
 
 TEST(LuaAdventureScriptRunnerTest, ImperativeInspectHostErrorsAreCatchable)

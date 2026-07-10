@@ -1259,6 +1259,31 @@ JsonNode jsonPosition(const int3 & position)
 	return node;
 }
 
+JsonNode jsonGrailInfo(const std::shared_ptr<CCallback> & callback)
+{
+	JsonNode node;
+	node["knownRatio"].Float() = 0.0;
+	node["fullyRevealed"] = JsonNode(false);
+	node["positionKnown"] = JsonNode(false);
+
+	if(!callback)
+		return node;
+
+	double knownRatio = 0.0;
+	const int3 position = callback->getGrailPos(&knownRatio);
+	knownRatio = std::clamp(knownRatio, 0.0, 1.0);
+	node["knownRatio"].Float() = knownRatio;
+	node["fullyRevealed"] = JsonNode(knownRatio >= 1.0);
+
+	if(knownRatio >= 1.0 && position.isValid())
+	{
+		node["positionKnown"] = JsonNode(true);
+		node["position"] = jsonPosition(position);
+	}
+
+	return node;
+}
+
 JsonNode jsonObjectPosInfo(const ObjectPosInfo & info)
 {
 	JsonNode node;
@@ -4928,8 +4953,8 @@ void CScriptedAdventureAI::garrisonsChanged(ObjectInstanceID id1, ObjectInstance
 
 void CScriptedAdventureAI::showPuzzleMap()
 {
-	JsonNode data;
-	data["grailPositionHidden"] = JsonNode(true);
+	JsonNode data = jsonGrailInfo(cc);
+	data["grailPositionHidden"] = JsonNode(!readBool(data, "positionKnown", false));
 	appendScriptUpdate("puzzle_map_shown", data, false);
 
 	AIGateway::showPuzzleMap();
@@ -6614,6 +6639,11 @@ JsonNode CScriptedAdventureAI::executeScriptInspect(const JsonNode & request)
 		return makeScriptUpdates(readBool(request, "opponent_only", false));
 	if(what == "limits")
 		return makeScriptInputLimits();
+	if(what == "grail")
+	{
+		std::shared_lock gameStateLock(CGameState::mutex);
+		return jsonGrailInfo(cc);
+	}
 	if(what == "nullkiller_tasks" || what == "nullkiller_task_candidates")
 	{
 		JsonNode action = request;
@@ -8792,6 +8822,7 @@ JsonNode CScriptedAdventureAI::makeScriptInputState()
 	state["map"]["width"] = JsonNode(mapSize.x);
 	state["map"]["height"] = JsonNode(mapSize.y);
 	state["map"]["levels"] = JsonNode(mapSize.z);
+	state["grail"] = jsonGrailInfo(cc);
 
 	if(const PlayerState * playerState = cc->getPlayerState(playerID, false))
 	{

@@ -162,6 +162,9 @@ Input:
 - `progress`: result of the previous plan execution, including executed, failed, and remaining actions.
 - `memory`: script-owned long-term context from previous calls/days.
 - current day/week/month and active player color under `state`.
+- `state.grail`: player-specific puzzle-map knowledge. `knownRatio` is visible to Lua, but the exact `position`
+  is included only when the puzzle is fully revealed; partially revealed puzzle maps intentionally do not expose
+  the hidden grail tile even though the client internally needs it for rendering.
 - `state.turn.queries`: typed pending dialog/window queries with query ids, stable `typeId` values, trace-friendly
   type labels, answer ids, and mode-specific numeric fields. Real server queries include `answerAction`,
   `nullkillerAnswerAction`, and
@@ -198,8 +201,8 @@ The `ai` facade:
 - `ai:memory()` and `ai:setMemory(memory)`: read/replace script-owned memory for this day.
 - `ai:inspect(request)`: yield to C++ for a checked read-only binding call against current visible game state.
   Convenience wrappers include `ai:getState()`, `ai:getActionSpace()`, `ai:getAnalysis()`, `ai:getQueries()`,
-  `ai:getUpdates(opponentOnly?)`, `ai:getLimits()`, `ai:getObject(objectId, heroId?)`, `ai:getHero(heroId)`,
-  `ai:getTown(townId)`, `ai:getTile(x, y, z?)`, `ai:getObjectsAt(x, y, z?)`, and
+  `ai:getUpdates(opponentOnly?)`, `ai:getLimits()`, `ai:getGrail()`, `ai:getObject(objectId, heroId?)`,
+  `ai:getHero(heroId)`, `ai:getTown(townId)`, `ai:getTile(x, y, z?)`, `ai:getObjectsAt(x, y, z?)`, and
   `ai:getAvailableHeroes(sourceId)`. Movement-specific wrappers include `ai:getPath(heroId, x, y, z?)`,
   `ai:getPathToObject(heroId, objectId)`, and `ai:getReachable(heroId, options?)`; they return current route ids
   and executable `planAction` records, but movement execution still recalculates the route and rejects stale ids.
@@ -1809,6 +1812,9 @@ Regression harness:
 - Done: the bundled aggressive, economy, and explorer profile scripts now follow the same active-entrypoint shape
   as the default script: `runDay(ai, input)` calls a local policy scorer directly, while `Script.planDay` remains a
   compatibility wrapper for tests and older hosts.
+- Done: Lua can inspect player-specific puzzle-map progress through `state.grail` and `ai:getGrail()`. This exposes
+  the revealed ratio but gates the exact grail tile until the puzzle is fully revealed, avoiding accidental hidden
+  map leakage from the client-side `getGrailPos` callback.
 - Done: after adding explicit `nullkiller_reset`, a 16-map, 1-day traced integration smoke completed all scenarios
   at the day limit with 16 `end_turn` outputs, 20 bounded `nullkiller_turn_slice` calls, 145 checked `visit_object`
   actions, 18 bounded query answers, zero failed checked actions, and zero fallback outputs.
