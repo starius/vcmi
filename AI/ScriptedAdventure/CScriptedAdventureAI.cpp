@@ -25,6 +25,7 @@
 #include "../../lib/mapObjects/CGHeroInstance.h"
 #include "../../lib/mapObjects/CGObjectInstance.h"
 #include "../../lib/mapObjects/CGTownInstance.h"
+#include "../../lib/mapObjects/IMarket.h"
 #include "../../lib/mapObjects/army/CArmedInstance.h"
 #include "../../lib/mapObjects/army/CStackInstance.h"
 #include "../../lib/entities/artifact/ArtifactUtils.h"
@@ -891,6 +892,34 @@ std::string movementResultName(TryMoveHero::EResult result)
 	return "unknown";
 }
 
+std::string marketModeName(EMarketMode mode)
+{
+	switch(mode)
+	{
+	case EMarketMode::RESOURCE_RESOURCE:
+		return "resource_resource";
+	case EMarketMode::RESOURCE_PLAYER:
+		return "resource_player";
+	case EMarketMode::CREATURE_RESOURCE:
+		return "creature_resource";
+	case EMarketMode::RESOURCE_ARTIFACT:
+		return "resource_artifact";
+	case EMarketMode::ARTIFACT_RESOURCE:
+		return "artifact_resource";
+	case EMarketMode::ARTIFACT_EXP:
+		return "artifact_experience";
+	case EMarketMode::CREATURE_EXP:
+		return "creature_experience";
+	case EMarketMode::CREATURE_UNDEAD:
+		return "creature_undead";
+	case EMarketMode::RESOURCE_SKILL:
+		return "resource_skill";
+	case EMarketMode::MARKET_AFTER_LAST_PLACEHOLDER:
+		break;
+	}
+	return "unknown";
+}
+
 std::string nullkillerTaskSearchModeName(NK2AI::ScriptTaskSearchMode mode)
 {
 	switch(mode)
@@ -1114,6 +1143,17 @@ JsonNode jsonMapObject(const CGObjectInstance * object, PlayerColor player, cons
 	node["owner"] = JsonNode(jsonPlayerColor(object->tempOwner));
 	node["position"] = jsonPosition(object->visitablePos());
 	node["passableForPlayer"] = JsonNode(object->passableFor(player));
+	if(const auto * market = dynamic_cast<const IMarket *>(object))
+	{
+		node["market"]["modes"].Vector();
+		for(EMarketMode mode : market->availableModes())
+		{
+			JsonNode modeNode;
+			modeNode["modeId"] = JsonNode(static_cast<int32_t>(mode));
+			modeNode["mode"] = JsonNode(marketModeName(mode));
+			node["market"]["modes"].Vector().push_back(modeNode);
+		}
+	}
 	return node;
 }
 
@@ -2248,6 +2288,54 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		return true;
 	}
 
+	if(type == "trade_resources")
+	{
+		const CGObjectInstance * object = cc->getObj(ObjectInstanceID(readInteger(action, "market_id")), false);
+		const IMarket * market = dynamic_cast<const IMarket *>(object);
+		if(!object || !market)
+			throw std::invalid_argument("Unknown visible market object");
+		if(!market->allowsTrade(EMarketMode::RESOURCE_RESOURCE))
+			throw std::invalid_argument("Market does not allow resource-resource trading");
+
+		const int32_t sellResource = readInteger(action, "sell_resource_id");
+		const int32_t buyResource = readInteger(action, "buy_resource_id");
+		if(sellResource < 0 || sellResource >= static_cast<int32_t>(GameConstants::RESOURCE_QUANTITY)
+			|| buyResource < 0 || buyResource >= static_cast<int32_t>(GameConstants::RESOURCE_QUANTITY))
+			throw std::invalid_argument("Resource trade ids must be valid resource ids");
+		if(sellResource == buyResource)
+			throw std::invalid_argument("Resource trade must buy a different resource than it sells");
+
+		const int32_t amount = readInteger(action, "amount");
+		if(amount <= 0)
+			throw std::invalid_argument("Resource trade amount must be positive");
+
+		const CGHeroInstance * hero = nullptr;
+		if(hasField(action, "hero_id"))
+		{
+			hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+			if(!hero || hero->tempOwner != playerID)
+				throw std::invalid_argument("Unknown trade hero or hero is not owned by scripted AI");
+		}
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(TradeOnMarketplace), CTypeList::getInstance().getTypeID<TradeOnMarketplace>(nullptr), [&]
+		{
+			cc->trade(object->id, EMarketMode::RESOURCE_RESOURCE, GameResID(sellResource), GameResID(buyResource), static_cast<ui32>(amount), hero);
+		});
+		actionResult["market_id"] = JsonNode(object->id.getNum());
+		if(hero)
+			actionResult["hero_id"] = JsonNode(hero->id.getNum());
+		actionResult["sell_resource_id"] = JsonNode(sellResource);
+		actionResult["buy_resource_id"] = JsonNode(buyResource);
+		actionResult["amount"] = JsonNode(amount);
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Resource trade request was rejected by server" : "Resource trade request was not realized by server");
+		return true;
+	}
+
 	if(type == "nullkiller_tasks")
 	{
 		const JsonNode candidates = makeNullkillerTaskCandidates(action);
@@ -2897,7 +2985,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "nullkiller_trade", "dismiss_hero", "build_boat", "dig", "cast_spell", "nullkiller_tasks", "nullkiller_task", "nullkiller_step" })
+	for(const char * type : { "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "nullkiller_trade", "trade_resources", "dismiss_hero", "build_boat", "dig", "cast_spell", "nullkiller_tasks", "nullkiller_task", "nullkiller_step" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();

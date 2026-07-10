@@ -265,6 +265,19 @@ function ai:nullkillerTrade()
 	return self:execute({ type = "nullkiller_trade" })
 end
 
+function ai:tradeResources(marketId, sellResourceId, buyResourceId, amount, heroId)
+	local action = copyFields(marketId)
+	if type(marketId) ~= "table" then
+		action.market_id = marketId
+		action.sell_resource_id = sellResourceId
+		action.buy_resource_id = buyResourceId
+		action.amount = amount
+		action.hero_id = heroId
+	end
+	action.type = "trade_resources"
+	return self:execute(action)
+end
+
 function ai:dismissHero(heroId)
 	local action = copyFields(heroId)
 	if type(heroId) ~= "table" then

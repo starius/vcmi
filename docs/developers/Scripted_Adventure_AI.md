@@ -156,6 +156,8 @@ The `ai` facade:
   the normal callback/server path. Artifact locations use `{ holder_id, slot, creature_slot? }`.
 - `ai:nullkillerTrade()`: ask the host to run Nullkiller's resource-trading helper once, returning whether it
   traded anything.
+- `ai:tradeResources(marketId, sellResourceId, buyResourceId, amount, heroId?)`: request an exact
+  resource-to-resource market trade using stable numeric resource ids and a visible market object id.
 - `ai:dismissHero`, `ai:buildBoat`, `ai:dig`, `ai:castSpell`: request checked primitive adventure actions through
   the normal callback/server path.
 - `ai:nullkiller()` / `ai:nullkillerForRestOfDay()`: stop script control and let Nullkiller finish the turn.
@@ -858,8 +860,10 @@ Regression harness:
 - Hero input now includes artifact state: worn slots and backpack entries expose stable slot ids, artifact type ids,
   artifact instance ids, lock state, and possible slot ids. Lua can request exact artifact swaps, bulk transfers,
   backpack sorting/scrolling, and hero costume operations through checked host calls.
-- Lua can now call `ai:nullkillerTrade()` to run Nullkiller's build-driven resource trader once. This covers the
-  native support routine, but not exact script-selected market transactions yet.
+- Lua can now call `ai:nullkillerTrade()` to run Nullkiller's build-driven resource trader once, or
+  `ai:tradeResources(marketId, sellResourceId, buyResourceId, amount, heroId?)` to request an exact
+  resource-to-resource market transaction. Visible market objects expose their supported market modes, but the
+  remaining non-resource market modes still need typed Lua helpers.
 - Lua can now request checked primitive adventure actions for dismissing heroes, building boats, digging, and
   casting adventure spells. C++ validates ownership and visible target tiles before forwarding to the server.
 - `analysis.heroThreatAlerts` complements `analysis.defenseAlerts`, so scripts can respond to threatened roaming
@@ -1040,13 +1044,13 @@ Regression harness:
 - Done: nearby visible enemy pressure against owned heroes is exposed as `analysis.heroThreatAlerts`.
 - Partial: first bounded Nullkiller task fragments are exposed through `ai:nullkillerTasks`,
   `ai:runNullkillerTask`, and `ai:nullkillerStep`. This is not full parity yet: scripts still need richer direct
-  access to typed dialogs, exact artifact-slot operations, market/trading choices, adventure spells, boats, quest
-  decisions, and deeper analyzer details.
+  access to typed dialogs, remaining market/trading choices, quest decisions, and deeper analyzer details.
 - Done: owned hero artifact state and exact artifact management calls are exposed through checked Lua facade
   methods. Remaining artifact work is typed handling of assemble/disassemble prompts and richer artifact scoring
   helpers.
-- Partial: resource trading is exposed through a coarse `nullkillerTrade` helper, but scripts cannot yet inspect
-  every market rate or request exact resource conversions.
+- Partial: resource trading is exposed through a coarse `nullkillerTrade` helper and an exact
+  `tradeResources` resource-to-resource call. Scripts still cannot inspect every market rate or operate the
+  artifact, creature, experience, skill, or player-resource market modes directly.
 - Partial: primitive adventure spells, digging, boat building, and hero dismissal are exposed, but scripts still
   need richer spell/shipyard/dig candidate data to choose these actions well.
 - Partial: full danger-map estimates are not exposed yet.
@@ -1127,8 +1131,8 @@ The next high-value implementation steps are:
 
 - Run fixed-map `--testdays N` batches comparing default, aggressive, economy, explorer, Nullkiller, and older
   script versions, then feed trace deltas and mined JSON fixtures back into the Lua policy.
-- Add typed Lua decision surfaces for dialogs and missing player actions: artifact rearrangement, markets,
-  adventure spells, boats/shipyards, quests/gates, level-up choices, university choices, and object selection.
+- Add typed Lua decision surfaces for dialogs and missing player actions: remaining market modes, adventure
+  spell candidates, boats/shipyards, quests/gates, level-up choices, university choices, and object selection.
 - Expand the default Lua policy to rank and compose bounded Nullkiller candidates before trying to outperform
   native Nullkiller on the random-map corpus.
 - Expose richer Nullkiller analyzer data, especially danger-map and blocker/cluster details, as read-only
