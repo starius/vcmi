@@ -6228,116 +6228,13 @@ bool CScriptedAdventureAI::tryMakeScriptedTurn()
 		nullkiller->resetScriptTaskState();
 	}
 
-	if(runner->hasRunDay())
-		return tryMakeImperativeScriptedTurn(*runner);
-
-	JsonNode progress;
-
-	for(size_t callIndex = 0; callIndex < maxScriptCallsPerTurn && status.haveTurn(); ++callIndex)
+	if(!runner->hasRunDay())
 	{
-		AI::AdventureScriptInput input = makeAdventureScriptInput(progress);
-
-		if(scriptConfig.trace)
-		{
-			JsonNode trace;
-			trace["callIndex"] = JsonNode(static_cast<int32_t>(callIndex));
-			trace["input"] = input.toJson();
-			writeTraceEvent("input", trace);
-		}
-
-		const AI::AdventureScriptOutput output = runner->planDay(input);
-		scriptMemory = output.memory;
-		saveScriptMemoryToLocalState();
-		if(scriptConfig.trace)
-		{
-			JsonNode trace;
-			trace["callIndex"] = JsonNode(static_cast<int32_t>(callIndex));
-			trace["output"] = AI::makeAdventureScriptOutputJson(output);
-			writeTraceEvent("output", trace);
-		}
-
-		if(output.status == AI::AdventureScriptStatus::FALLBACK)
-		{
-			fallbackToNullkiller("script requested fallback", false);
-			return false;
-		}
-
-		JsonNode executed;
-		JsonNode failed;
-		JsonNode remaining;
-		executed.Vector();
-		failed.Vector();
-		remaining.Vector();
-
-		bool stopped = false;
-		for(size_t actionIndex = 0; actionIndex < output.actions.size(); ++actionIndex)
-		{
-			const JsonNode & action = output.actions[actionIndex];
-			JsonNode actionResult;
-			actionResult["index"] = JsonNode(static_cast<int32_t>(actionIndex));
-			if(hasField(action, "id"))
-				actionResult["id"] = action["id"];
-
-			try
-			{
-				if(!executeScriptAction(action, actionResult))
-					stopped = true;
-			}
-			catch(const std::exception & e)
-			{
-				actionResult["ok"] = JsonNode(false);
-				actionResult["error"] = JsonNode(e.what());
-				failed.Vector().push_back(actionResult);
-				for(size_t remainingIndex = actionIndex + 1; remainingIndex < output.actions.size(); ++remainingIndex)
-					remaining.Vector().push_back(output.actions[remainingIndex]);
-				stopped = true;
-				break;
-			}
-
-			if(actionResult["ok"].isBool() && !actionResult["ok"].Bool())
-			{
-				failed.Vector().push_back(actionResult);
-				for(size_t remainingIndex = actionIndex + 1; remainingIndex < output.actions.size(); ++remainingIndex)
-					remaining.Vector().push_back(output.actions[remainingIndex]);
-				stopped = true;
-				break;
-			}
-
-			executed.Vector().push_back(actionResult);
-			if(stopped || !status.haveTurn())
-				break;
-		}
-
-		progress = makeProgressJson(executed, failed, remaining);
-		if(scriptConfig.trace)
-		{
-			JsonNode trace;
-			trace["callIndex"] = JsonNode(static_cast<int32_t>(callIndex));
-			trace["stopped"] = JsonNode(stopped);
-			trace["progress"] = progress;
-			writeTraceEvent("progress", trace);
-		}
-
-		if(!status.haveTurn())
-			return true;
-		if(stopped)
-			continue;
-		if(output.status == AI::AdventureScriptStatus::END_TURN)
-		{
-			endTurn();
-			return true;
-		}
-		if(output.status == AI::AdventureScriptStatus::NEED_REPLAN)
-			continue;
-		if(output.actions.empty())
-		{
-			fallbackToNullkiller("script returned no actions");
-			return false;
-		}
+		fallbackToNullkiller("script does not define imperative runDay");
+		return false;
 	}
 
-	fallbackToNullkiller("script call limit reached");
-	return false;
+	return tryMakeImperativeScriptedTurn(*runner);
 }
 
 bool CScriptedAdventureAI::tryMakeImperativeScriptedTurn(scripting::LuaAdventureScriptRunner & runner)

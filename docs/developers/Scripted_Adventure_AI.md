@@ -1215,8 +1215,10 @@ Regression harness:
 - `ScriptedAdventureAI` supports environment overrides for trace enablement and script path, including external
   `file:/...` Lua scripts. This makes script edits and candidate snapshots testable without rebuilding or editing
   packaged config.
-- The imperative Lua path is now present as `runDay(ai, input)`. The runner executes it as a coroutine, handles
-  yielded `execute`/`refresh`/`fallback` commands, and keeps the legacy `planDay(input)` path for old scripts.
+- The imperative Lua path is now present as `runDay(ai, input)`. The runner executes it as a coroutine and handles
+  yielded `execute`/`refresh`/`fallback` commands. The legacy `planDay(input)` path remains only as a direct
+  runner/testing compatibility API; active `ScriptedAdventureAI` turns require `runDay` and fall back to
+  Nullkiller when it is missing.
   A smoke run on `Dwarven Gold` and `Ready or Not` reached the one-day limit cleanly and wrote
   `imperative-input`/`imperative-output` traces with fallback status through the configured fallback script.
 - Explicit script delegation through `fallback`/`ai:nullkiller()` is not counted as a script failure; syntax,
@@ -1345,7 +1347,7 @@ Regression harness:
 
 ### Milestone 3: Lua Runner Prototype
 
-- Done: load a restricted Lua runner and call legacy `planDay(input)`.
+- Done: load a restricted Lua runner and call legacy `planDay(input)` for tests/tooling compatibility.
 - Done: convert returned Lua tables to JSON/contract structs.
 - Done: validate output status, memory size, action count, and normalized `AdventurePlan` actions.
 - Done: cover the Lua runner and default script with unit tests.
@@ -1358,8 +1360,8 @@ Regression harness:
 ### Milestone 4: Scripted AI Wrapper
 
 - Done: `ScriptedAdventureAI` is an adventure AI option built on top of Nullkiller's gateway.
-- Done: on turn start, it calls the script runner and executes returned `AdventurePlan` actions.
-- Done: scripts that define `runDay` take the imperative coroutine path before the legacy `planDay` path.
+- Done: on turn start, it calls imperative `runDay(ai, input)` as a coroutine and executes yielded checked
+  actions. Scripts without `runDay` fall back to Nullkiller instead of running legacy plan batches.
 - Done: build, recruit, move, visit-object, answer-query, and end-turn actions are validated through existing
   callback paths.
 - Done: script failures, invalid actions, missing scripts, and repeated failures fall back to Nullkiller.
@@ -1577,7 +1579,7 @@ Regression harness:
 - Done: its active `runDay(ai, input)` path is imperative: Lua owns the day loop, executes checked `ai:*`
   calls directly, refreshes visible state after side effects, answers pending queries, and uses capped bounded
   Nullkiller turn slices before delegating the remaining turn. The older `planDay(input)` path remains only as a
-  compatibility shim for fixtures and legacy callers.
+  compatibility shim for fixtures, tests, and the script's internal scoring reuse.
 - Done: opt-in personality profiles `aggressiveAdventure.lua`, `economyAdventure.lua`, and `explorerAdventure.lua`
   now expose imperative `runDay(ai, input)` wrappers. Their legacy `planDay(input)` scorers remain as readable
   policy cores, but active execution goes through checked host calls with refresh/query yield points.
