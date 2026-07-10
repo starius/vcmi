@@ -3282,11 +3282,24 @@ bool bulkTransferWouldMoveAnything(const CArmedInstance * source, const CArmedIn
 	return false;
 }
 
-JsonNode jsonAvailableHeroOption(const CGTownInstance * town, const CGHeroInstance * hero)
+JsonNode jsonAvailableHeroOption(const CGObjectInstance * source, const CGHeroInstance * hero, PlayerColor player)
 {
 	JsonNode node;
-	node["town_id"] = JsonNode(town->id.getNum());
-	node["town"] = JsonNode(jsonText(town->getNameTranslated()));
+	node["source_id"] = JsonNode(source->id.getNum());
+	node["sourceObject"] = jsonMapObject(source, player, nullptr);
+	if(const auto * town = dynamic_cast<const CGTownInstance *>(source))
+	{
+		node["town_id"] = JsonNode(town->id.getNum());
+		node["town"] = JsonNode(jsonText(town->getNameTranslated()));
+		node["sourceKindId"] = JsonNode(1);
+		node["sourceKind"] = JsonNode("town_tavern");
+	}
+	else
+	{
+		node["tavern_id"] = node["source_id"];
+		node["sourceKindId"] = JsonNode(2);
+		node["sourceKind"] = JsonNode("adventure_tavern");
+	}
 	node["hero_type_id"] = JsonNode(hero->getHeroTypeID().getNum());
 	node["hero"] = JsonNode(jsonText(hero->getNameTranslated()));
 	node["heroStrength"] = JsonNode(static_cast<int64_t>(hero->getHeroStrength()));
@@ -3295,7 +3308,11 @@ JsonNode jsonAvailableHeroOption(const CGTownInstance * town, const CGHeroInstan
 	node["cost"]["gold"] = JsonNode(GameConstants::HERO_GOLD_COST);
 	node["army"] = jsonArmy(*hero);
 	node["planAction"]["type"] = JsonNode("hire_hero");
-	node["planAction"]["town_id"] = node["town_id"];
+	node["planAction"]["source_id"] = node["source_id"];
+	if(node.Struct().contains("town_id"))
+		node["planAction"]["town_id"] = node["town_id"];
+	if(node.Struct().contains("tavern_id"))
+		node["planAction"]["tavern_id"] = node["tavern_id"];
 	node["planAction"]["hero_type_id"] = node["hero_type_id"];
 	return node;
 }
@@ -4521,12 +4538,21 @@ void CScriptedAdventureAI::showTavernWindow(const CGObjectInstance * object, con
 	const CGTownInstance * town = dynamic_cast<const CGTownInstance *>(object);
 	if(!town && visitor)
 		town = visitor->getVisitedTown();
+	const CGObjectInstance * hireSource = town ? static_cast<const CGObjectInstance *>(town) : object;
 	if(town && town->tempOwner == playerID && !town->getVisitingHero())
 	{
 		for(const CGHeroInstance * hero : cc->getAvailableHeroes(town))
 		{
 			if(hero)
-				data["hireHeroOptions"].Vector().push_back(jsonAvailableHeroOption(town, hero));
+				data["hireHeroOptions"].Vector().push_back(jsonAvailableHeroOption(town, hero, playerID));
+		}
+	}
+	else if(hireSource && hireSource->ID == Obj::TAVERN && visitor && visitor->tempOwner == playerID && cc->isVisibleFor(hireSource, playerID))
+	{
+		for(const CGHeroInstance * hero : cc->getAvailableHeroes(hireSource))
+		{
+			if(hero)
+				data["hireHeroOptions"].Vector().push_back(jsonAvailableHeroOption(hireSource, hero, playerID));
 		}
 	}
 	recordScriptQuery(queryID, "tavern_window", data);
@@ -7005,11 +7031,30 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 
 	if(type == "hire_hero")
 	{
-		const CGTownInstance * town = cc->getTown(ObjectInstanceID(readInteger(action, "town_id")));
-		if(!town || town->tempOwner != playerID)
-			throw std::invalid_argument("Unknown town or town is not owned by scripted AI");
-		if(town->getVisitingHero())
-			throw std::invalid_argument("Town has a visiting hero and cannot hire another hero");
+		const int32_t sourceID = hasField(action, "source_id")
+			? readInteger(action, "source_id")
+			: (hasField(action, "tavern_id") ? readInteger(action, "tavern_id") : readInteger(action, "town_id"));
+		const CGObjectInstance * source = cc->getObj(ObjectInstanceID(sourceID), false);
+		if(!source)
+			throw std::invalid_argument("Unknown hero hiring source");
+
+		const CGTownInstance * town = dynamic_cast<const CGTownInstance *>(source);
+		if(town)
+		{
+			if(town->tempOwner != playerID)
+				throw std::invalid_argument("Hero hiring town is not owned by scripted AI");
+			if(town->getVisitingHero())
+				throw std::invalid_argument("Town has a visiting hero and cannot hire another hero");
+		}
+		else if(source->ID == Obj::TAVERN)
+		{
+			if(!cc->isVisibleFor(source, playerID))
+				throw std::invalid_argument("Adventure tavern is not visible to scripted AI");
+		}
+		else
+		{
+			throw std::invalid_argument("Hero hiring source must be an owned town or visible adventure tavern");
+		}
 		if(cc->getResourceAmount()[EGameResID::GOLD] < GameConstants::HERO_GOLD_COST)
 			throw std::invalid_argument("Not enough gold to hire a hero");
 
@@ -7018,7 +7063,7 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 			? HeroTypeID(readInteger(action, "next_hero_type_id"))
 			: HeroTypeID::NONE;
 		const CGHeroInstance * heroToHire = nullptr;
-		for(const CGHeroInstance * availableHero : cc->getAvailableHeroes(town))
+		for(const CGHeroInstance * availableHero : cc->getAvailableHeroes(source))
 		{
 			if(availableHero && availableHero->getHeroTypeID() == heroTypeID)
 			{
@@ -7031,9 +7076,13 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 
 		const RequestWaitResult request = submitAndWaitForRequest(typeid(HireHero), CTypeList::getInstance().getTypeID<HireHero>(nullptr), [&]
 		{
-			cc->recruitHero(town, heroToHire, nextHeroTypeID);
+			cc->recruitHero(source, heroToHire, nextHeroTypeID);
 		});
-		actionResult["town_id"] = JsonNode(town->id.getNum());
+		actionResult["source_id"] = JsonNode(source->id.getNum());
+		if(town)
+			actionResult["town_id"] = JsonNode(town->id.getNum());
+		else
+			actionResult["tavern_id"] = JsonNode(source->id.getNum());
 		actionResult["hero_type_id"] = JsonNode(heroTypeID.getNum());
 		actionResult["request"] = jsonRequestWaitResult(request);
 		if(!waitTillFreeForScriptAction(actionResult, type))
@@ -8215,7 +8264,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 				if(!hero)
 					continue;
 
-				JsonNode option = jsonAvailableHeroOption(town, hero);
+				JsonNode option = jsonAvailableHeroOption(town, hero, playerID);
 				actionSpace["hireHeroOptions"].Vector().push_back(option);
 				actionSpace["recommendedActions"].Vector().push_back(option["planAction"]);
 			}

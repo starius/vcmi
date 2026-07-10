@@ -351,6 +351,46 @@ TEST(LuaAdventureScriptRunnerTest, RunsImperativeDayAndExecutesHostCommand)
 	EXPECT_DOUBLE_EQ(*output.confidence, 0.75);
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanHireHeroFromGenericSource)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				ai:hireHero(7, 101, 102)
+				ai:hireHero({ tavern_id = 55, hero_type_id = 201 })
+				return ai:output("end_turn", "hired from town and tavern sources")
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-hire-source", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 2);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "hire_hero");
+	EXPECT_EQ(commands[0]["payload"]["source_id"].Integer(), 7);
+	EXPECT_EQ(commands[0]["payload"]["town_id"].Integer(), 7);
+	EXPECT_EQ(commands[0]["payload"]["hero_type_id"].Integer(), 101);
+	EXPECT_EQ(commands[0]["payload"]["next_hero_type_id"].Integer(), 102);
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "hire_hero");
+	EXPECT_EQ(commands[1]["payload"]["tavern_id"].Integer(), 55);
+	EXPECT_EQ(commands[1]["payload"]["hero_type_id"].Integer(), 201);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "hired from town and tavern sources");
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeRunnerKeepsLuaStateBetweenDays)
 {
 	const std::string source = R"lua(

@@ -181,6 +181,8 @@ The `ai` facade:
 - `ai:refresh()`: yield to C++ and receive a new visible input snapshot after side effects.
 - `ai:build`, `ai:recruit`, `ai:hireHero`, `ai:transferArmy`, `ai:moveHero`, `ai:visitObject`,
   `ai:answerQuery`, `ai:endTurn`: request checked host actions.
+  `ai:hireHero(sourceId, heroTypeId, nextHeroTypeId?)` accepts the generic tavern source id; town sources keep
+  `town_id` compatibility, and adventure-map tavern sources use the same server-validated `HireHero` request.
 - `ai:swapCreatures`, `ai:mergeStacks`, `ai:mergeOrSwapStacks`, `ai:splitStack`, `ai:bulkSplitStack`, `ai:bulkMergeStacks`,
   `ai:bulkSplitAndRebalanceStack`, `ai:dismissCreature`, `ai:upgradeCreature`, `ai:setFormation`,
   `ai:setTactics`, `ai:setTownName`, and `ai:swapGarrisonHero`: request exact army stack, upgrade, formation,
@@ -1060,7 +1062,9 @@ Regression harness:
 - Candidate actions now include `hire_hero` and `transfer_army` for two previously missing Nullkiller-level
   capabilities: adding tavern heroes and concentrating or reinforcing armies through the normal server-validated
   request path. Their candidate generation is controlled by `experimentalSupportActions` in
-  `config/ai/scriptedAdventure.json`, so the loop can disable them for bisection without rebuilding.
+  `config/ai/scriptedAdventure.json`, so the loop can disable them for bisection without rebuilding. `hire_hero`
+  uses `source_id` as the canonical tavern source field while keeping `town_id` compatibility; pending
+  adventure-map tavern windows can expose the same checked hire action through `hireHeroOptions`.
 - Lua can now call `ai:pickBestArtifacts(heroId, otherHeroId?)` to reuse Nullkiller's artifact-preparation helper
   for one owned hero or two co-located owned heroes. This is a coarse helper, not yet a full artifact-slot API.
 - Hero input now includes artifact state: worn slots and backpack entries expose stable slot ids, artifact type ids,

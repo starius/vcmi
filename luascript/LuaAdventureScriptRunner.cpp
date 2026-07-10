@@ -412,10 +412,11 @@ function ai:recruit(sourceId, level, amount, creatureId, destinationId)
 	return self:execute(action)
 end
 
-function ai:hireHero(townId, heroTypeId, nextHeroTypeId)
-	local action = copyFields(townId)
-	if type(townId) ~= "table" then
-		action.town_id = townId
+function ai:hireHero(sourceId, heroTypeId, nextHeroTypeId)
+	local action = copyFields(sourceId)
+	if type(sourceId) ~= "table" then
+		action.source_id = sourceId
+		action.town_id = sourceId
 		action.hero_type_id = heroTypeId
 		action.next_hero_type_id = nextHeroTypeId
 	end
