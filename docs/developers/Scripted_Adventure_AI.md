@@ -137,6 +137,10 @@ Input:
 - `updates` also includes player-visible non-query windows such as generic info dialogs, shipyard dialogs,
   hill-fort windows, and thieves-guild windows. Localized text is trace context only; stable component/object ids
   are the script-facing data.
+- The update journal mirrors visible adventure state changes: hero movement/stat/mana/skill/bonus changes,
+  garrison changes, artifact movement, available creature/artifact changes, resource receipts, adventure spell
+  casts, revealed tiles, and hidden tiles. Owned objects include detailed snapshots; visible non-owned objects stay
+  on public object fields.
 - `opponentUpdates`: the same journal filtered to visible opponent-related changes.
 - `progress`: result of the previous plan execution, including executed, failed, and remaining actions.
 - `memory`: script-owned long-term context from previous calls/days.
@@ -1158,6 +1162,10 @@ Regression harness:
 - Done: player-visible non-query adventure windows are mirrored into the script update journal. This covers
   generic info dialogs, shipyard dialogs, hill-fort windows, and thieves-guild windows, with stable component,
   object, hero, and shipyard fields where available.
+- Done: additional player-visible adventure callbacks are mirrored into the script update journal, including
+  hero stat/mana/skill/bonus changes, garrison changes, artifact movement, available creature/artifact changes,
+  tile hiding, resource receipts, and adventure spell casts. Hidden bonuses are not exposed, and non-owned visible
+  hero/object records use public fields only.
 - Done: market operations are exposed through a coarse `nullkillerTrade` helper, an exact resource-resource
   helper, and a generic `marketTrade` action with wrappers for resource transfer, creature/resource sale,
   artifact purchase/sale/sacrifice, creature sacrifice, undead transformation, and university skill purchase.

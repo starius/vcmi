@@ -17,6 +17,7 @@
 #include "../../lib/StartInfo.h"
 #include "../../lib/UnlockGuard.h"
 #include "../../lib/VCMIDirs.h"
+#include "../../lib/bonuses/Bonus.h"
 #include "../../lib/filesystem/Filesystem.h"
 #include "../../lib/entities/building/CBuilding.h"
 #include "../../lib/entities/faction/CTown.h"
@@ -2277,6 +2278,66 @@ JsonNode jsonOwnedArmySnapshot(const CArmedInstance * army)
 	return node;
 }
 
+JsonNode jsonBonusChange(const Bonus & bonus, bool gain)
+{
+	JsonNode node;
+	node["gain"] = JsonNode(gain);
+	node["typeId"] = JsonNode(static_cast<int32_t>(bonus.type));
+	node["sourceId"] = JsonNode(static_cast<int32_t>(bonus.source));
+	node["value"] = JsonNode(bonus.val);
+	node["valueTypeId"] = JsonNode(static_cast<int32_t>(bonus.valType));
+	node["duration"] = JsonNode(static_cast<int32_t>(bonus.duration));
+	node["turnsRemain"] = JsonNode(static_cast<int32_t>(bonus.turnsRemain));
+	node["subtypeId"] = JsonNode(bonus.subtype.getNum());
+	node["sourceObjectId"] = JsonNode(bonus.sid.getNum());
+	node["effectRangeId"] = JsonNode(static_cast<int32_t>(bonus.effectRange));
+	node["targetSourceTypeId"] = JsonNode(static_cast<int32_t>(bonus.targetSourceType));
+	if(!bonus.stacking.empty())
+		node["stacking"] = JsonNode(bonus.stacking);
+	if(!bonus.description.empty())
+		node["description"] = JsonNode(jsonText(bonus.description.toString()));
+	return node;
+}
+
+JsonNode jsonDwellingPools(const CGDwelling * dwelling)
+{
+	JsonNode node;
+	node.Vector();
+	if(!dwelling)
+		return node;
+
+	for(int32_t level = 0; level < static_cast<int32_t>(dwelling->creatures.size()); ++level)
+	{
+		JsonNode pool;
+		pool["level"] = JsonNode(level);
+		pool["available"] = JsonNode(static_cast<int32_t>(dwelling->creatures[level].first));
+		pool["creature_ids"].Vector();
+		pool["creatureIdentifiers"].Vector();
+		for(const CreatureID & creatureID : dwelling->creatures[level].second)
+		{
+			pool["creature_ids"].Vector().push_back(JsonNode(creatureID.getNum()));
+			pool["creatureIdentifiers"].Vector().push_back(JsonNode(stableIdentifier(creatureID)));
+		}
+		node.Vector().push_back(pool);
+	}
+	return node;
+}
+
+JsonNode jsonVisibleArmyHolder(const CGObjectInstance * object, PlayerColor player, const std::shared_ptr<CCallback> & callback)
+{
+	JsonNode node;
+	if(!object || !callback || !callback->isVisibleFor(object, player))
+		return node;
+
+	node["object"] = jsonMapObject(object, player, nullptr);
+	if(object->tempOwner == player)
+	{
+		if(const auto * army = dynamic_cast<const CArmedInstance *>(object))
+			node["ownedArmy"] = jsonOwnedArmySnapshot(army);
+	}
+	return node;
+}
+
 JsonNode jsonRecruitOptions(const CGDwelling * dwelling, const CArmedInstance * destination, int32_t selectedLevel, const ResourceSet & resources)
 {
 	JsonNode node;
@@ -2684,6 +2745,21 @@ void CScriptedAdventureAI::yourTurn(QueryID queryID)
 	});
 }
 
+void CScriptedAdventureAI::availableCreaturesChanged(const CGDwelling * dwelling)
+{
+	if(dwelling && cc && cc->isVisibleFor(dwelling, playerID))
+	{
+		JsonNode data;
+		data["dwelling_id"] = JsonNode(dwelling->id.getNum());
+		data["dwelling"] = jsonMapObject(dwelling, playerID, nullptr);
+		if(dwelling->tempOwner == playerID)
+			data["creaturePools"] = jsonDwellingPools(dwelling);
+		appendScriptUpdate("available_creatures_changed", data, isOpponent(dwelling->tempOwner));
+	}
+
+	AIGateway::availableCreaturesChanged(dwelling);
+}
+
 void CScriptedAdventureAI::answerQueryWithoutGameStateLock(const std::string & description, QueryID queryID, int selection)
 {
 	{
@@ -2954,11 +3030,83 @@ void CScriptedAdventureAI::heroMoved(const TryMoveHero & details, bool verbose)
 		data["revealedTilesCount"] = JsonNode(static_cast<int32_t>(details.fowRevealed.size()));
 		data["revealedTiles"] = jsonPositions(details.fowRevealed, 16);
 		if(hero && cc->isVisibleFor(hero, playerID))
-			data["hero"] = jsonHero(hero);
+			data["hero"] = jsonHero(hero, hero->tempOwner == playerID);
 
 		appendScriptUpdate("hero_moved", data, hero ? isOpponent(hero->tempOwner) : true);
 	}
 	AIGateway::heroMoved(details, verbose);
+}
+
+void CScriptedAdventureAI::heroInGarrisonChange(const CGTownInstance * town)
+{
+	if(town && cc && cc->isVisibleFor(town, playerID))
+	{
+		JsonNode data;
+		data["town_id"] = JsonNode(town->id.getNum());
+		data["town"] = jsonTown(town, cc->getResourceAmount(), town->tempOwner == playerID);
+		appendScriptUpdate("hero_in_garrison_changed", data, isOpponent(town->tempOwner));
+	}
+
+	AIGateway::heroInGarrisonChange(town);
+}
+
+void CScriptedAdventureAI::tileHidden(const FowTilesType & pos)
+{
+	JsonNode data;
+	data["count"] = JsonNode(static_cast<int32_t>(pos.size()));
+	data["tiles"] = jsonPositions(pos, 32);
+	appendScriptUpdate("tile_hidden", data, false);
+
+	AIGateway::tileHidden(pos);
+}
+
+void CScriptedAdventureAI::artifactMoved(const ArtifactLocation & src, const ArtifactLocation & dst)
+{
+	const CGObjectInstance * srcHolder = cc ? cc->getObj(src.artHolder, false) : nullptr;
+	const CGObjectInstance * dstHolder = cc ? cc->getObj(dst.artHolder, false) : nullptr;
+	const bool srcVisibleOwned = srcHolder && srcHolder->tempOwner == playerID && cc->isVisibleFor(srcHolder, playerID);
+	const bool dstVisibleOwned = dstHolder && dstHolder->tempOwner == playerID && cc->isVisibleFor(dstHolder, playerID);
+	if(srcVisibleOwned || dstVisibleOwned)
+	{
+		JsonNode data;
+		data["src"] = jsonArtifactLocation(src);
+		data["dst"] = jsonArtifactLocation(dst);
+		if(srcVisibleOwned)
+			data["srcHolder"] = jsonVisibleArmyHolder(srcHolder, playerID, cc);
+		if(dstVisibleOwned)
+			data["dstHolder"] = jsonVisibleArmyHolder(dstHolder, playerID, cc);
+		appendScriptUpdate("artifact_moved", data, false);
+	}
+
+	AIGateway::artifactMoved(src, dst);
+}
+
+void CScriptedAdventureAI::artifactPut(const ArtifactLocation & location)
+{
+	const CGObjectInstance * holder = cc ? cc->getObj(location.artHolder, false) : nullptr;
+	if(holder && holder->tempOwner == playerID && cc->isVisibleFor(holder, playerID))
+	{
+		JsonNode data;
+		data["location"] = jsonArtifactLocation(location);
+		data["holder"] = jsonVisibleArmyHolder(holder, playerID, cc);
+		appendScriptUpdate("artifact_put", data, false);
+	}
+
+	AIGateway::artifactPut(location);
+}
+
+void CScriptedAdventureAI::artifactRemoved(const ArtifactLocation & location)
+{
+	const CGObjectInstance * holder = cc ? cc->getObj(location.artHolder, false) : nullptr;
+	if(holder && holder->tempOwner == playerID && cc->isVisibleFor(holder, playerID))
+	{
+		JsonNode data;
+		data["location"] = jsonArtifactLocation(location);
+		data["holder"] = jsonVisibleArmyHolder(holder, playerID, cc);
+		appendScriptUpdate("artifact_removed", data, false);
+	}
+
+	AIGateway::artifactRemoved(location);
 }
 
 void CScriptedAdventureAI::heroCreated(const CGHeroInstance * hero)
@@ -2966,7 +3114,7 @@ void CScriptedAdventureAI::heroCreated(const CGHeroInstance * hero)
 	if(hero && cc && cc->isVisibleFor(hero, playerID))
 	{
 		JsonNode data;
-		data["hero"] = jsonHero(hero);
+		data["hero"] = jsonHero(hero, hero->tempOwner == playerID);
 		appendScriptUpdate("hero_created", data, isOpponent(hero->tempOwner));
 	}
 
@@ -2978,12 +3126,77 @@ void CScriptedAdventureAI::heroVisitsTown(const CGHeroInstance * hero, const CGT
 	if(hero && town && cc && (cc->isVisibleFor(hero, playerID) || cc->isVisibleFor(town, playerID)))
 	{
 		JsonNode data;
-		data["hero"] = jsonHero(hero);
+		data["hero"] = jsonHero(hero, hero->tempOwner == playerID);
 		data["town"] = jsonMapObject(town, playerID, hero);
 		appendScriptUpdate("hero_visits_town", data, isOpponent(hero->tempOwner) || isOpponent(town->tempOwner));
 	}
 
 	AIGateway::heroVisitsTown(hero, town);
+}
+
+void CScriptedAdventureAI::heroExperienceChanged(const CGHeroInstance * hero, si64 val)
+{
+	if(hero && cc && cc->isVisibleFor(hero, playerID))
+	{
+		JsonNode data;
+		data["hero_id"] = JsonNode(hero->id.getNum());
+		data["delta"] = JsonNode(static_cast<int64_t>(val));
+		data["hero"] = jsonHero(hero, hero->tempOwner == playerID);
+		appendScriptUpdate("hero_experience_changed", data, isOpponent(hero->tempOwner));
+	}
+
+	AIGateway::heroExperienceChanged(hero, val);
+}
+
+void CScriptedAdventureAI::heroPrimarySkillChanged(const CGHeroInstance * hero, PrimarySkill which, si64 val)
+{
+	if(hero && cc && cc->isVisibleFor(hero, playerID))
+	{
+		JsonNode data;
+		data["hero_id"] = JsonNode(hero->id.getNum());
+		data["primary_skill_id"] = JsonNode(which.getNum());
+		data["delta"] = JsonNode(static_cast<int64_t>(val));
+		data["hero"] = jsonHero(hero, hero->tempOwner == playerID);
+		appendScriptUpdate("hero_primary_skill_changed", data, isOpponent(hero->tempOwner));
+	}
+
+	AIGateway::heroPrimarySkillChanged(hero, which, val);
+}
+
+void CScriptedAdventureAI::heroMovePointsChanged(const CGHeroInstance * hero)
+{
+	if(hero && cc && cc->isVisibleFor(hero, playerID))
+	{
+		JsonNode data;
+		data["hero_id"] = JsonNode(hero->id.getNum());
+		data["movement"] = JsonNode(hero->movementPointsRemaining());
+		data["movementLimit"] = JsonNode(hero->movementPointsLimit());
+		data["hero"] = jsonHero(hero, hero->tempOwner == playerID);
+		appendScriptUpdate("hero_move_points_changed", data, isOpponent(hero->tempOwner));
+	}
+
+	AIGateway::heroMovePointsChanged(hero);
+}
+
+void CScriptedAdventureAI::garrisonsChanged(ObjectInstanceID id1, ObjectInstanceID id2)
+{
+	const CGObjectInstance * first = cc ? cc->getObj(id1, false) : nullptr;
+	const CGObjectInstance * second = cc ? cc->getObj(id2, false) : nullptr;
+	const bool firstVisible = first && cc->isVisibleFor(first, playerID);
+	const bool secondVisible = second && cc->isVisibleFor(second, playerID);
+	if(firstVisible || secondVisible)
+	{
+		JsonNode data;
+		data["id1"] = JsonNode(id1.getNum());
+		data["id2"] = JsonNode(id2.getNum());
+		if(firstVisible)
+			data["first"] = jsonVisibleArmyHolder(first, playerID, cc);
+		if(secondVisible)
+			data["second"] = jsonVisibleArmyHolder(second, playerID, cc);
+		appendScriptUpdate("garrisons_changed", data, (first && isOpponent(first->tempOwner)) || (second && isOpponent(second->tempOwner)));
+	}
+
+	AIGateway::garrisonsChanged(id1, id2);
 }
 
 void CScriptedAdventureAI::showTavernWindow(const CGObjectInstance * object, const CGHeroInstance * visitor, QueryID queryID)
@@ -3049,6 +3262,34 @@ void CScriptedAdventureAI::showShipyardDialog(const IShipyard * shipyard)
 	appendScriptUpdate("shipyard_dialog", data, object ? isOpponent(object->tempOwner) : false);
 
 	AIGateway::showShipyardDialog(shipyard);
+}
+
+void CScriptedAdventureAI::playerBonusChanged(const Bonus & bonus, bool gain)
+{
+	if(!bonus.hidden)
+	{
+		JsonNode data;
+		data["bonus"] = jsonBonusChange(bonus, gain);
+		appendScriptUpdate("player_bonus_changed", data, false);
+	}
+
+	AIGateway::playerBonusChanged(bonus, gain);
+}
+
+void CScriptedAdventureAI::advmapSpellCast(const CGHeroInstance * caster, SpellID spellID)
+{
+	if(caster && cc && cc->isVisibleFor(caster, playerID))
+	{
+		JsonNode data;
+		data["hero_id"] = JsonNode(caster->id.getNum());
+		data["hero"] = jsonHero(caster, caster->tempOwner == playerID);
+		data["spell_id"] = JsonNode(spellID.getNum());
+		if(const CSpell * spell = spellID.toSpell())
+			data["spellIdentifier"] = JsonNode(spell->getJsonKey());
+		appendScriptUpdate("adventure_spell_cast", data, isOpponent(caster->tempOwner));
+	}
+
+	AIGateway::advmapSpellCast(caster, spellID);
 }
 
 void CScriptedAdventureAI::heroExchangeStarted(ObjectInstanceID hero1, ObjectInstanceID hero2, QueryID query)
@@ -3156,6 +3397,16 @@ void CScriptedAdventureAI::showInfoDialog(EInfoWindowMode type, const std::strin
 	AIGateway::showInfoDialog(type, text, components, soundID);
 }
 
+void CScriptedAdventureAI::receivedResource()
+{
+	JsonNode data;
+	if(cc)
+		data["resources"] = jsonResources(cc->getResourceAmount());
+	appendScriptUpdate("received_resource", data, false);
+
+	AIGateway::receivedResource();
+}
+
 void CScriptedAdventureAI::showUniversityWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID)
 {
 	JsonNode data;
@@ -3182,6 +3433,50 @@ void CScriptedAdventureAI::showUniversityWindow(const IMarket * market, const CG
 	AIGateway::showUniversityWindow(market, visitor, queryID);
 }
 
+void CScriptedAdventureAI::heroManaPointsChanged(const CGHeroInstance * hero)
+{
+	if(hero && cc && cc->isVisibleFor(hero, playerID))
+	{
+		JsonNode data;
+		data["hero_id"] = JsonNode(hero->id.getNum());
+		data["mana"] = JsonNode(hero->mana);
+		data["manaLimit"] = JsonNode(hero->manaLimit());
+		data["hero"] = jsonHero(hero, hero->tempOwner == playerID);
+		appendScriptUpdate("hero_mana_points_changed", data, isOpponent(hero->tempOwner));
+	}
+
+	AIGateway::heroManaPointsChanged(hero);
+}
+
+void CScriptedAdventureAI::heroSecondarySkillChanged(const CGHeroInstance * hero, int which, int val)
+{
+	if(hero && cc && cc->isVisibleFor(hero, playerID))
+	{
+		JsonNode data;
+		data["hero_id"] = JsonNode(hero->id.getNum());
+		data["skill_id"] = JsonNode(which);
+		data["level"] = JsonNode(val);
+		data["hero"] = jsonHero(hero, hero->tempOwner == playerID);
+		appendScriptUpdate("hero_secondary_skill_changed", data, isOpponent(hero->tempOwner));
+	}
+
+	AIGateway::heroSecondarySkillChanged(hero, which, val);
+}
+
+void CScriptedAdventureAI::heroBonusChanged(const CGHeroInstance * hero, const Bonus & bonus, bool gain)
+{
+	if(hero && cc && cc->isVisibleFor(hero, playerID) && !bonus.hidden)
+	{
+		JsonNode data;
+		data["hero_id"] = JsonNode(hero->id.getNum());
+		data["hero"] = jsonHero(hero, hero->tempOwner == playerID);
+		data["bonus"] = jsonBonusChange(bonus, gain);
+		appendScriptUpdate("hero_bonus_changed", data, isOpponent(hero->tempOwner));
+	}
+
+	AIGateway::heroBonusChanged(hero, bonus, gain);
+}
+
 void CScriptedAdventureAI::showMarketWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID)
 {
 	JsonNode data;
@@ -3206,6 +3501,25 @@ void CScriptedAdventureAI::showMarketWindow(const IMarket * market, const CGHero
 		return;
 	}
 	AIGateway::showMarketWindow(market, visitor, queryID);
+}
+
+void CScriptedAdventureAI::availableArtifactsChanged(const CGBlackMarket * blackMarket)
+{
+	JsonNode data;
+	if(blackMarket)
+	{
+		data["black_market_id"] = JsonNode(blackMarket->id.getNum());
+		if(cc && cc->isVisibleFor(blackMarket, playerID))
+			data["blackMarket"] = jsonMapObject(blackMarket, playerID, nullptr);
+		appendScriptUpdate("available_artifacts_changed", data, blackMarket && isOpponent(blackMarket->tempOwner));
+	}
+	else
+	{
+		data["global"] = JsonNode(true);
+		appendScriptUpdate("available_artifacts_changed", data, false);
+	}
+
+	AIGateway::availableArtifactsChanged(blackMarket);
 }
 
 void CScriptedAdventureAI::askToAssembleArtifact(const ArtifactLocation & destination)
