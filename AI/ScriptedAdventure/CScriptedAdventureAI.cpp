@@ -47,6 +47,7 @@
 #include "../../lib/pathfinder/CGPathNode.h"
 #include "../../lib/pathfinder/PathfinderOptions.h"
 #include "../../lib/serializer/CTypeList.h"
+#include "../../lib/serializer/JsonSerializer.h"
 #include "../../lib/spells/CSpell.h"
 #include "../../lib/spells/CSpellHandler.h"
 #include "../../lib/spells/Problem.h"
@@ -820,6 +821,14 @@ JsonNode jsonComponents(const std::vector<Component> & components)
 	node.Vector();
 	for(const Component & component : components)
 		node.Vector().push_back(jsonComponent(component));
+	return node;
+}
+
+JsonNode jsonStatisticDataSet(StatisticDataSet & statistic)
+{
+	JsonNode node;
+	JsonSerializer serializer(nullptr, node);
+	statistic.serializeJson(serializer);
 	return node;
 }
 
@@ -3636,6 +3645,13 @@ void CScriptedAdventureAI::artifactDisassembled(const ArtifactLocation & locatio
 	AIGateway::artifactDisassembled(location);
 }
 
+void CScriptedAdventureAI::responseStatistic(StatisticDataSet & statistic)
+{
+	JsonNode data;
+	data["statistic"] = jsonStatisticDataSet(statistic);
+	appendScriptUpdate("statistics_response", data, false);
+}
+
 void CScriptedAdventureAI::tileRevealed(const FowTilesType & pos)
 {
 	JsonNode data;
@@ -4795,6 +4811,21 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		return !result.stopTurn;
 	}
 
+	if(type == "request_statistic")
+	{
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(RequestStatistic), CTypeList::getInstance().getTypeID<RequestStatistic>(nullptr), [&]
+		{
+			cc->requestStatistic();
+		});
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Statistic request was rejected by server" : "Statistic request was not realized by server");
+		return true;
+	}
+
 	if(type == "dismiss_hero")
 	{
 		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
@@ -5875,7 +5906,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "swap_creatures", "merge_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "market_trade", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_answer_query", "nullkiller_object_interaction" })
+	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "swap_creatures", "merge_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_answer_query", "nullkiller_object_interaction" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();

@@ -565,6 +565,10 @@ function ai:nullkillerTrade()
 	return self:execute({ type = "nullkiller_trade" })
 end
 
+function ai:requestStatistic()
+	return self:execute({ type = "request_statistic" })
+end
+
 function ai:tradeResources(marketId, sellResourceId, buyResourceId, amount, heroId)
 	local action = copyFields(marketId)
 	if type(marketId) ~= "table" then

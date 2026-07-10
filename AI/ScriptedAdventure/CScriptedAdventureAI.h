@@ -77,6 +77,7 @@ public:
 	void askToAssembleArtifact(const ArtifactLocation & destination) override;
 	void artifactAssembled(const ArtifactLocation & location) override;
 	void artifactDisassembled(const ArtifactLocation & location) override;
+	void responseStatistic(StatisticDataSet & statistic) override;
 	void tileRevealed(const FowTilesType & pos) override;
 	void newObject(const CGObjectInstance * obj) override;
 	void objectRemoved(const CGObjectInstance * obj, const PlayerColor & initiator) override;

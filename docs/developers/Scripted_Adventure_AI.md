@@ -179,6 +179,8 @@ The `ai` facade:
   `preference` may be `experience` or `gold`; the default is experience.
 - `ai:nullkillerTrade()`: ask the host to run Nullkiller's resource-trading helper once, returning whether it
   traded anything.
+- `ai:requestStatistic()`: request the normal player statistics dataset; the server response is mirrored into
+  `updates` as `statistics_response`.
 - `ai:tradeResources(marketId, sellResourceId, buyResourceId, amount, heroId?)`: request an exact
   resource-to-resource market trade using stable numeric resource ids and a visible market object id.
 - `ai:marketTrade({...})` and wrappers `ai:sendResources`, `ai:sellCreatures`, `ai:buyMarketArtifact`,
@@ -585,6 +587,7 @@ Configuration:
 config/ai/scriptedAdventure.json
 scripts/ai/defaultAdventure.lua
 scripts/ai/candidates/fallbackAdventure.lua
+scripts/ai/candidates/statisticsProbeAdventure.lua
 ```
 
 Example configuration fields:
@@ -865,6 +868,10 @@ It delegates the whole turn to native Nullkiller through the scripted wrapper. `
 is still the readable experimental policy and fixture target, but recent no-trace full-game runs show it
 oversteers Nullkiller and should not be promoted over the fallback control until it wins repeated training runs
 and does not regress held-out runs.
+
+`scripts/ai/candidates/statisticsProbeAdventure.lua` is an API smoke script, not a promotion candidate. It
+requests the normal statistics dataset, refreshes to observe `statistics_response`, records a small memory flag,
+and delegates the rest of the day to Nullkiller.
 
 This enables the intended loop:
 
@@ -1193,6 +1200,9 @@ Regression harness:
   `ai:visitTownBuilding` and read-side `visitTownBuildingOptions`.
 - Done: Castle Gate teleport is exposed through checked `ai:castleTeleport` and read-side
   `castleTeleportOptions`, matching normal player restrictions for source/destination towns and visiting heroes.
+- Done: the normal player statistics request is exposed through checked `ai:requestStatistic`; responses are
+  mirrored into the visible script update journal as `statistics_response` using the existing statistics JSON
+  serializer.
 - Done: market operations are exposed through a coarse `nullkillerTrade` helper, an exact resource-resource
   helper, and a generic `marketTrade` action with wrappers for resource transfer, creature/resource sale,
   artifact purchase/sale/sacrifice, creature sacrifice, undead transformation, and university skill purchase.
