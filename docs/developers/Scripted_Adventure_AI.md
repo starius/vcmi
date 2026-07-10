@@ -736,6 +736,25 @@ and chat/message sending is not exposed because it can trigger cheat-like text c
 work finds another real adventure decision still reachable only through whole-day Nullkiller delegation, it should
 be added as either a checked action or a bounded helper before tuning the Lua policy.
 
+## Current Parity Audit
+
+The current Lua API is close to the intended parity boundary for adventure AI policy:
+
+- Nullkiller's normal `makeTurn()` phases are available without full-day delegation: priority tasks
+  (`nullkiller_priority_pass`), adventure task search/execution (`nullkiller_tasks`, `nullkiller_step`,
+  `nullkiller_pass`), resource trading (`nullkiller_trade` or the trade phase inside `nullkiller_turn_slice`),
+  and artifact cleanup (`nullkiller_optimize_artifacts` or the artifact phase inside `nullkiller_turn_slice`).
+- Player-visible callback actions that matter for adventure strategy are exposed as checked actions or typed
+  query answers. The missing raw callbacks are intentionally outside AI strategy: save/pause/message/local-state
+  plumbing.
+- Native helpers that can perform multiple internal requests use bounded calls and then return to Lua. This is the
+  required shape for script-driven strategy: Lua can ask Nullkiller to do one pass, one task, one preparation helper,
+  or one dialog answer, then inspect refreshed state and decide what comes next.
+- The remaining evaluation blocker is runtime progression, not script expressiveness: recent random-map smoke runs
+  reached and traced a full scripted day with an applied explicit `end_turn`, but the headless day-limited run did
+  not reliably advance to the next scripted day before timeout. Treat this as an engine/harness handoff issue to
+  debug before using win-rate batches as a script-quality metric.
+
 The script engine should reuse these Nullkiller systems where possible:
 
 - analyzers for hero roles, builds, dangers, and reachable objects
