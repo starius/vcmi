@@ -633,6 +633,17 @@ function ai:transferArmy(sourceId, destinationId, sourceSlot)
 	return self:execute(action)
 end
 
+function ai:bulkMoveArmy(sourceId, destinationId, sourceSlot)
+	local action = copyFields(sourceId)
+	if type(sourceId) ~= "table" then
+		action.source_id = sourceId
+		action.destination_id = destinationId
+		action.source_slot = sourceSlot
+	end
+	action.type = "bulk_move_army"
+	return self:execute(action)
+end
+
 function ai:swapCreatures(sourceId, sourceSlot, destinationId, destinationSlot)
 	local action = copyFields(sourceId)
 	if type(sourceId) ~= "table" then

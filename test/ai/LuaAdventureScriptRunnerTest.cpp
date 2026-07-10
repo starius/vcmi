@@ -779,6 +779,45 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallNamedNullkillerModeHelper
 	EXPECT_EQ(*output.intent, "named bounded helpers");
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBulkMoveArmy)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				ai:bulkMoveArmy(30, 31, 2)
+				ai:bulkMoveArmy({ source_id = 32, destination_id = 33, source_slot = 4 })
+				return ai:output("end_turn", "bulk army moves")
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:bulk-move-army", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 2);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "bulk_move_army");
+	EXPECT_EQ(commands[0]["payload"]["source_id"].Integer(), 30);
+	EXPECT_EQ(commands[0]["payload"]["destination_id"].Integer(), 31);
+	EXPECT_EQ(commands[0]["payload"]["source_slot"].Integer(), 2);
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "bulk_move_army");
+	EXPECT_EQ(commands[1]["payload"]["source_id"].Integer(), 32);
+	EXPECT_EQ(commands[1]["payload"]["destination_id"].Integer(), 33);
+	EXPECT_EQ(commands[1]["payload"]["source_slot"].Integer(), 4);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_EQ(*output.intent, "bulk army moves");
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallNullkillerArmyFormationHelpers)
 {
 	const std::string source = R"lua(

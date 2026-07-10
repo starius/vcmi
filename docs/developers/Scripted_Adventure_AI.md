@@ -200,8 +200,8 @@ The `ai` facade:
   `ai:answerQuery`, `ai:endTurn`: request checked host actions.
   `ai:hireHero(sourceId, heroTypeId, nextHeroTypeId?)` accepts the generic tavern source id; town sources keep
   `town_id` compatibility, and adventure-map tavern sources use the same server-validated `HireHero` request.
-- `ai:swapCreatures`, `ai:mergeStacks`, `ai:mergeOrSwapStacks`, `ai:splitStack`, `ai:bulkSplitStack`, `ai:bulkMergeStacks`,
-  `ai:bulkSplitAndRebalanceStack`, `ai:dismissCreature`, `ai:upgradeCreature`, `ai:setFormation`,
+- `ai:swapCreatures`, `ai:mergeStacks`, `ai:mergeOrSwapStacks`, `ai:splitStack`, `ai:bulkMoveArmy`,
+  `ai:bulkSplitStack`, `ai:bulkMergeStacks`, `ai:bulkSplitAndRebalanceStack`, `ai:dismissCreature`, `ai:upgradeCreature`, `ai:setFormation`,
   `ai:setTactics`, `ai:setTownName`, and `ai:swapGarrisonHero`: request exact army stack, upgrade, formation,
   tactics, town rename, and
   town-garrison operations using stable object, slot, creature, and formation ids.
@@ -1451,9 +1451,9 @@ Regression harness:
 - Done: owned hero artifact state, Nullkiller artifact scores, exact artifact management calls, typed artifact
   assembly prompts, checked assemble/disassemble actions, and transition-slot artifact cleanup are exposed through
   Lua facade methods. Remaining artifact work is higher-level artifact intent helpers.
-- Done: exact army stack management, creature upgrades, upgrade candidates, formation/tactics changes, and town
-  garrison-hero swaps are exposed through checked Lua facade methods. The native merge-or-swap helper and town
-  rename callback are also exposed for raw player-action parity.
+- Done: exact army stack management, bulk army moves, creature upgrades, upgrade candidates, formation/tactics
+  changes, and town garrison-hero swaps are exposed through checked Lua facade methods. The native merge-or-swap
+  helper and town rename callback are also exposed for raw player-action parity.
 - Done: Lua can call Nullkiller's bounded creature-preparation helper through `ai:pickBestCreatures`, matching
   the existing artifact-preparation helper and avoiding Lua-side reimplementation of stack logistics.
 - Done: Lua can call Nullkiller's bounded town-army helper through `ai:nullkillerBuildArmy(townId)`, reusing the
