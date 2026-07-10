@@ -55,6 +55,7 @@
 #include "../../lib/spells/ViewSpellInt.h"
 #include "../../lib/spells/adventure/AdventureSpellMechanics.h"
 #include "../../luascript/LuaAdventureScriptRunner.h"
+#include "../Nullkiller2/AIUtility.h"
 #include "../Nullkiller2/Analyzers/DangerHitMapAnalyzer.h"
 #include "../Nullkiller2/Analyzers/ObjectClusterizer.h"
 #include "../Nullkiller2/Goals/AdventureSpellCast.h"
@@ -1169,10 +1170,10 @@ JsonNode jsonArtifactLocation(const ArtifactLocation & location)
 	return node;
 }
 
-JsonNode jsonArtifactSlot(ObjectInstanceID holderID, ArtifactPosition position, const ArtSlotInfo & slotInfo, bool backpack)
+JsonNode jsonArtifactSlot(const CGHeroInstance * hero, ArtifactPosition position, const ArtSlotInfo & slotInfo, bool backpack)
 {
 	JsonNode node;
-	node["holder_id"] = JsonNode(holderID.getNum());
+	node["holder_id"] = JsonNode(hero->id.getNum());
 	node["slot"] = JsonNode(position.getNum());
 	node["slotInfo"] = jsonArtifactPosition(position);
 	node["backpack"] = JsonNode(backpack);
@@ -1188,6 +1189,8 @@ JsonNode jsonArtifactSlot(ObjectInstanceID holderID, ArtifactPosition position, 
 			node["artifactName"] = JsonNode(jsonText(artifactType->getNameTranslated()));
 			node["combined"] = JsonNode(artifact->isCombined());
 			node["scroll"] = JsonNode(artifact->isScroll());
+			node["nullkillerArtifactScore"] = JsonNode(static_cast<int64_t>(NK2AI::getArtifactScoreForHero(hero, artifact)));
+			node["nullkillerPotentialArtifactScore"] = JsonNode(static_cast<int64_t>(NK2AI::getPotentialArtifactScore(artifactType)));
 			node["possibleSlots"].Vector();
 			if(const auto possibleSlots = artifactType->getPossibleSlots().find(ArtBearer::HERO); possibleSlots != artifactType->getPossibleSlots().end())
 			{
@@ -1255,14 +1258,14 @@ JsonNode jsonArtifacts(const CGHeroInstance * hero)
 	for(const auto & [position, slotInfo] : hero->artifactsWorn)
 	{
 		if(slotInfo.getArt())
-			node["worn"].Vector().push_back(jsonArtifactSlot(hero->id, position, slotInfo, false));
+			node["worn"].Vector().push_back(jsonArtifactSlot(hero, position, slotInfo, false));
 	}
 
 	for(size_t index = 0; index < hero->artifactsInBackpack.size(); ++index)
 	{
 		const ArtSlotInfo & slotInfo = hero->artifactsInBackpack[index];
 		if(slotInfo.getArt())
-			node["backpack"].Vector().push_back(jsonArtifactSlot(hero->id, ArtifactPosition::BACKPACK_START + static_cast<int>(index), slotInfo, true));
+			node["backpack"].Vector().push_back(jsonArtifactSlot(hero, ArtifactPosition::BACKPACK_START + static_cast<int>(index), slotInfo, true));
 	}
 
 	return node;
@@ -6769,7 +6772,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "erase_transition_artifact", "swap_creatures", "merge_stacks", "merge_or_swap_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "set_town_name", "swap_garrison_hero", "nullkiller_trade", "nullkiller_priority_pass", "nullkiller_build_army", "nullkiller_upgrade_army", "nullkiller_recruit_creatures", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_answer_query", "nullkiller_object_interaction" })
+	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "erase_transition_artifact", "swap_creatures", "merge_stacks", "merge_or_swap_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "set_town_name", "swap_garrison_hero", "nullkiller_trade", "nullkiller_priority_pass", "nullkiller_build_army", "nullkiller_upgrade_army", "nullkiller_recruit_creatures", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_pass", "nullkiller_answer_query", "nullkiller_object_interaction" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();
@@ -7237,7 +7240,7 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 	analysis["scriptMemory"]["persistedInPlayerLocalSettings"] = JsonNode(true);
 	analysis["scriptMemory"]["localStateKey"] = JsonNode(SCRIPT_MEMORY_LOCAL_STATE_KEY);
 	analysis["candidateFields"].Vector();
-	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "kindId", "buildingKindId", "transferKindId", "pathActionId", "levelId", "statusId", "targetKindId", "spell_id", "task_id", "goalTypeId", "priorityTier", "heroRoleId", "nullkillerRoleId", "outcomeId", "failureActionId" })
+	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "kindId", "buildingKindId", "transferKindId", "pathActionId", "levelId", "statusId", "targetKindId", "spell_id", "task_id", "goalTypeId", "priorityTier", "heroRoleId", "nullkillerRoleId", "nullkillerArtifactScore", "nullkillerPotentialArtifactScore", "outcomeId", "failureActionId" })
 		analysis["candidateFields"].Vector().push_back(JsonNode(field));
 	analysis["danger"]["candidateDangerSource"] = JsonNode("Nullkiller direct object/guard danger evaluator");
 	analysis["danger"]["enemyReachSource"] = JsonNode("visible enemy distance and strength alerts");

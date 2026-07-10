@@ -178,7 +178,8 @@ The `ai` facade:
   `ai:disassembleArtifact`, and `ai:eraseTransitionArtifact`: request exact artifact management operations
   through the normal callback/server path. Artifact locations use `{ holder_id, slot, creature_slot? }`.
   Transition artifact erase is intentionally limited to the same illegal transition-slot cleanup accepted by the
-  server.
+  server. Owned hero artifact slots include Nullkiller advisory scores (`nullkillerArtifactScore` and
+  `nullkillerPotentialArtifactScore`) so scripts can rank visible artifacts without parsing names.
 - `ai:ignoreScriptDecision(queryId)`: clear a script-local decision prompt such as an artifact assembly prompt
   without sending a server `QueryReply`.
 - `ai:chooseChestReward(query, preference?)`: answer a chest-style blocking dialog by stable component ids.
@@ -986,10 +987,11 @@ Regression harness:
 - Lua can now call `ai:pickBestArtifacts(heroId, otherHeroId?)` to reuse Nullkiller's artifact-preparation helper
   for one owned hero or two co-located owned heroes. This is a coarse helper, not yet a full artifact-slot API.
 - Hero input now includes artifact state: worn slots and backpack entries expose stable slot ids, artifact type ids,
-  artifact instance ids, lock state, and possible slot ids. Lua can request exact artifact swaps, bulk transfers,
-  backpack sorting/scrolling, hero costume operations, artifact assembly, and artifact disassembly through checked
-  host calls. Assembly prompts are exposed as typed script-local decisions with stable artifact ids; Lua may choose
-  an offered assembly action or explicitly ignore the prompt without sending a normal server query reply.
+  artifact instance ids, lock state, possible slot ids, and Nullkiller's read-only artifact scores for that hero
+  and artifact type. Lua can request exact artifact swaps, bulk transfers, backpack sorting/scrolling, hero costume
+  operations, artifact assembly, and artifact disassembly through checked host calls. Assembly prompts are exposed
+  as typed script-local decisions with stable artifact ids; Lua may choose an offered assembly action or explicitly
+  ignore the prompt without sending a normal server query reply.
 - Hero input now exposes `formationId` and `tacticsEnabled`, and Lua can request exact creature stack
   rearrangement, stack splitting, stack merging, creature dismissal, creature upgrades, formation/tactics changes,
   and town garrison-hero swaps through the same checked callback/server packet path used by native clients and AI.
@@ -1221,9 +1223,9 @@ Regression harness:
 - Done: known quest requirements are exposed on visible quest objects using stable ids without revealing inactive
   quest internals. Lua can reason about known blockers, while still using movement actions or bounded Nullkiller
   tasks for actual unlock-chain execution.
-- Done: owned hero artifact state, exact artifact management calls, typed artifact assembly prompts, checked
-  assemble/disassemble actions, and transition-slot artifact cleanup are exposed through Lua facade methods.
-  Remaining artifact work is richer artifact scoring helpers.
+- Done: owned hero artifact state, Nullkiller artifact scores, exact artifact management calls, typed artifact
+  assembly prompts, checked assemble/disassemble actions, and transition-slot artifact cleanup are exposed through
+  Lua facade methods. Remaining artifact work is higher-level artifact intent helpers.
 - Done: exact army stack management, creature upgrades, upgrade candidates, formation/tactics changes, and town
   garrison-hero swaps are exposed through checked Lua facade methods. The native merge-or-swap helper and town
   rename callback are also exposed for raw player-action parity.
