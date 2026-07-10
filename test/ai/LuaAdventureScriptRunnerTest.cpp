@@ -340,7 +340,8 @@ TEST(LuaAdventureScriptRunnerTest, BundledAdventureScriptVariantsRun)
 		"scripts/ai/defaultAdventure.lua",
 		"scripts/ai/aggressiveAdventure.lua",
 		"scripts/ai/economyAdventure.lua",
-		"scripts/ai/explorerAdventure.lua"
+		"scripts/ai/explorerAdventure.lua",
+		"scripts/ai/candidates/fallbackAdventure.lua"
 	};
 
 	for(const std::string & script : scripts)
@@ -348,7 +349,7 @@ TEST(LuaAdventureScriptRunnerTest, BundledAdventureScriptVariantsRun)
 		scripting::LuaAdventureScriptRunner runner(script, readAdventureScript(script));
 		const AI::AdventureScriptOutput output = runner.planDay(makeInput());
 
-		if(script == "scripts/ai/defaultAdventure.lua")
+		if(script == "scripts/ai/defaultAdventure.lua" || script == "scripts/ai/candidates/fallbackAdventure.lua")
 		{
 			EXPECT_EQ(output.status, AI::AdventureScriptStatus::FALLBACK) << script;
 			EXPECT_TRUE(output.actions.empty()) << script;

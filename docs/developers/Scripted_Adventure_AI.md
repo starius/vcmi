@@ -698,13 +698,19 @@ scripts/ai/promoteAdventureAIScript.py \
 Remove `--dry-run` after checking the planned file operations. The archive directory is reserved for old champion
 Lua files and promotion manifests; candidate experiments can live under `scripts/ai/candidates/`.
 
+The current measured control/champion for full-game outcomes is `scripts/ai/candidates/fallbackAdventure.lua`.
+It delegates the whole turn to native Nullkiller through the scripted wrapper. `scripts/ai/defaultAdventure.lua`
+is still the readable experimental policy and fixture target, but recent no-trace full-game runs show it
+oversteers Nullkiller and should not be promoted over the fallback control until it wins repeated training runs
+and does not regress held-out runs.
+
 This enables the intended loop:
 
 1. Put a candidate Lua file under `scripts/ai/candidates/` or another local path.
-2. Run baseline-vs-candidate scenarios with tracing enabled.
+2. Run baseline-vs-candidate promotion scenarios in no-trace mode against the fallback control.
 3. Iterate against training scenarios first; use held-out scenarios only as the promotion guard.
-4. Inspect `evaluation.json`, bucket deltas, summary deltas, and mined mistake notes.
-5. Convert representative mistakes into JSON policy fixtures.
+4. Inspect `evaluation.json`, bucket deltas, win/loss outcomes, run safety, and score deltas.
+5. Rerun selected losses with tracing enabled, then convert representative mistakes into JSON policy fixtures.
 6. Edit the Lua script and rerun without rebuilding.
 7. Promote the candidate only when hard safety gates pass, training improves, and held-out scenarios do not regress.
 8. Promote useful host analysis or action types into C++ only when scripts cannot express them cleanly.
@@ -829,6 +835,9 @@ Regression harness:
   6/10. The all-fallback ScriptedAdventureAI control gave 4/10 with tracing enabled and 5/10 without tracing, with
   different seed-level winners. Treat single full-outcome runs as noisy; use no-trace aggregate promotion batches
   for win/loss control and traced reruns only for explanation, mistake mining, and regression fixtures.
+- A no-trace run of the richer `defaultAdventure.lua` policy on the same corpus won only 2/10, with wins on seeds
+  03 and 08. Because those wins are a subset of the all-fallback no-trace wins, current evidence says the readable
+  default policy is useful for experimentation and unit fixtures but is not yet the champion behavior.
 - `scripts/ai/runAdventureAIBatch.py` terminates a stale client process after a terminal game outcome has appeared
   in stdout and a short grace period has elapsed. This keeps unattended evaluation batches from hanging while still
   recording the completed outcome and traces.
