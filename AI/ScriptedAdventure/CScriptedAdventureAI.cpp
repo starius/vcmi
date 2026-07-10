@@ -1180,7 +1180,11 @@ JsonNode jsonMarketSkillOptions(
 	return node;
 }
 
-JsonNode jsonVisibleTile(const int3 & position, const TerrainTile & tile)
+JsonNode jsonVisibleTile(
+	const int3 & position,
+	const TerrainTile & tile,
+	const std::shared_ptr<CCallback> & callback,
+	PlayerColor player)
 {
 	JsonNode node;
 	node["position"] = jsonPosition(position);
@@ -1192,6 +1196,26 @@ JsonNode jsonVisibleTile(const int3 & position, const TerrainTile & tile)
 	node["water"] = JsonNode(tile.isWater());
 	node["land"] = JsonNode(tile.isLand());
 	node["favorableWinds"] = JsonNode(tile.hasFavorableWinds());
+	node["visitableObjectIds"].Vector();
+	node["blockingObjectIds"].Vector();
+
+	auto appendVisibleObjectID = [&](JsonNode & target, ObjectInstanceID objectID)
+	{
+		if(objectID == ObjectInstanceID())
+			return;
+		const CGObjectInstance * object = callback ? callback->getObj(objectID, false) : nullptr;
+		if(!object || !callback->isVisibleFor(object, player))
+			return;
+		target.Vector().push_back(JsonNode(objectID.getNum()));
+	};
+
+	for(ObjectInstanceID objectID : tile.visitableObjects)
+		appendVisibleObjectID(node["visitableObjectIds"], objectID);
+	for(ObjectInstanceID objectID : tile.blockingObjects)
+		appendVisibleObjectID(node["blockingObjectIds"], objectID);
+
+	node["visitableObjectCount"] = JsonNode(static_cast<int32_t>(node["visitableObjectIds"].Vector().size()));
+	node["blockingObjectCount"] = JsonNode(static_cast<int32_t>(node["blockingObjectIds"].Vector().size()));
 	return node;
 }
 
@@ -8138,7 +8162,7 @@ JsonNode CScriptedAdventureAI::makeScriptInputState()
 		const TerrainTile * tile = cc->getTile(position, false);
 		if(!tile)
 			continue;
-		state["map"]["visibleTiles"].Vector().push_back(jsonVisibleTile(position, *tile));
+		state["map"]["visibleTiles"].Vector().push_back(jsonVisibleTile(position, *tile, cc, playerID));
 
 		auto appendVisibleObject = [&](ObjectInstanceID objectID)
 		{

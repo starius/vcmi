@@ -128,8 +128,8 @@ end
 Input:
 
 - `state`: complete visible player state or selected state sections.
-- `state.map`: map dimensions, complete visible terrain tiles, and complete visible objects gathered through
-  player-specific fog-of-war checks.
+- `state.map`: map dimensions, complete visible terrain tiles, tile-level visible visitable/blocking object ids,
+  and complete visible objects gathered through player-specific fog-of-war checks.
 - `state.ownedObjects`: the full player-specific list of currently owned/flagged map objects, using public
   object fields and stable ids. This is intentionally separate from visible-map scans, because a normal player can
   inspect owned mines, dwellings, and other flagged assets even when they are not near a hero.
@@ -1133,11 +1133,12 @@ Regression harness:
   `typeId`/`subtypeId` plus `kindId`; town build options provide `building_id`, `buildingKindId`,
   `buildingLevel`, and `buildingUpgrade`; paths provide `pathActionId`; visible threat alerts provide `levelId`.
   Localized display strings remain useful in traces but are not part of the strategic contract.
-- Script input now includes complete player-visible `state.map.visibleTiles` terrain records and complete
-  player-visible `state.map.visibleObjects`, plus full `state.ownedObjects` from the player-specific owned-object
-  callback. Visible map data is produced through fog-of-war checks and should be treated as ordinary player
-  information, not hidden AI state. Candidate/action-space arrays may still be capped because they are helper
-  recommendations, not the authoritative visible map.
+- Script input now includes complete player-visible `state.map.visibleTiles` terrain records, tile-level visible
+  visitable/blocking object ids, and complete player-visible `state.map.visibleObjects`, plus full
+  `state.ownedObjects` from the player-specific owned-object callback. Visible map data is produced through
+  fog-of-war checks and should be treated as ordinary player information, not hidden AI state.
+  Candidate/action-space arrays may still be capped because they are helper recommendations, not the authoritative
+  visible map.
 - Visible quest objects now expose known requirements as stable ids after they become active for the player:
   mission id, last day, required resources, artifacts, creatures, skills, heroes/classes, players, spells, nested
   limiter counts, kill targets, and `canCompleteWithContextHero` for reachable-object context.
@@ -1351,8 +1352,8 @@ Regression harness:
 
 - Done: script input includes structured player, resource, hero, town, army, build, recruit, and reachable-object
   data.
-- Done: script input includes map dimensions, complete visible terrain tiles, and complete visible objects
-  gathered through player-specific fog-of-war checks.
+- Done: script input includes map dimensions, complete visible terrain tiles, tile-level visible
+  visitable/blocking object ids, and complete visible objects gathered through player-specific fog-of-war checks.
 - Done: action candidates include allowed build actions, affordable recruitment actions, route-id guarded
   movement actions, reachable object targets, and end turn.
 - Done: route ids are generated with the same shape as MCP route ids and are validated before execution.
