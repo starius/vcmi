@@ -27,6 +27,9 @@
 #include "../../lib/mapObjects/CGTownInstance.h"
 #include "../../lib/mapObjects/army/CArmedInstance.h"
 #include "../../lib/mapObjects/army/CStackInstance.h"
+#include "../../lib/entities/artifact/ArtifactUtils.h"
+#include "../../lib/entities/artifact/CArtifact.h"
+#include "../../lib/entities/artifact/CArtifactInstance.h"
 #include "../../lib/mapping/TerrainTile.h"
 #include "../../lib/networkPacks/PacksForClient.h"
 #include "../../lib/networkPacks/PacksForServer.h"
@@ -543,6 +546,21 @@ std::optional<std::string> readOptionalString(const JsonNode & node, const std::
 	return readString(node, field);
 }
 
+ArtifactLocation readArtifactLocation(const JsonNode & node, const std::string & field)
+{
+	const JsonNode & location = hasField(node, field) ? node[field] : node;
+	if(!location.isStruct())
+		throw std::invalid_argument("Artifact location must be an object: " + field);
+
+	ArtifactLocation result(
+		ObjectInstanceID(readInteger(location, "holder_id")),
+		ArtifactPosition(readInteger(location, "slot"))
+	);
+	if(hasField(location, "creature_slot"))
+		result.creature = SlotID(readInteger(location, "creature_slot"));
+	return result;
+}
+
 std::string normalizeScriptPath(std::string path)
 {
 	if(path.starts_with("file:"))
@@ -733,6 +751,74 @@ JsonNode jsonArmy(const CCreatureSet & army)
 		stack["name"] = JsonNode(jsonText(slot.second->getName()));
 		node.Vector().push_back(stack);
 	}
+	return node;
+}
+
+JsonNode jsonArtifactPosition(ArtifactPosition position)
+{
+	JsonNode node;
+	node["id"] = JsonNode(position.getNum());
+	try
+	{
+		node["identifier"] = JsonNode(ArtifactPosition::encode(position.getNum()));
+	}
+	catch(const std::exception &)
+	{
+		node["identifier"] = JsonNode(std::to_string(position.getNum()));
+	}
+	return node;
+}
+
+JsonNode jsonArtifactSlot(ObjectInstanceID holderID, ArtifactPosition position, const ArtSlotInfo & slotInfo, bool backpack)
+{
+	JsonNode node;
+	node["holder_id"] = JsonNode(holderID.getNum());
+	node["slot"] = JsonNode(position.getNum());
+	node["slotInfo"] = jsonArtifactPosition(position);
+	node["backpack"] = JsonNode(backpack);
+	node["locked"] = JsonNode(slotInfo.locked);
+
+	if(const CArtifactInstance * artifact = slotInfo.getArt())
+	{
+		node["artifactInstanceId"] = JsonNode(artifact->getId().getNum());
+		node["artifactTypeId"] = JsonNode(artifact->getTypeId().getNum());
+		if(const CArtifact * artifactType = artifact->getType())
+		{
+			node["artifactIdentifier"] = JsonNode(artifactType->getJsonKey());
+			node["artifactName"] = JsonNode(jsonText(artifactType->getNameTranslated()));
+			node["combined"] = JsonNode(artifact->isCombined());
+			node["scroll"] = JsonNode(artifact->isScroll());
+			node["possibleSlots"].Vector();
+			if(const auto possibleSlots = artifactType->getPossibleSlots().find(ArtBearer::HERO); possibleSlots != artifactType->getPossibleSlots().end())
+			{
+				for(const ArtifactPosition possibleSlot : possibleSlots->second)
+					node["possibleSlots"].Vector().push_back(jsonArtifactPosition(possibleSlot));
+			}
+		}
+	}
+
+	return node;
+}
+
+JsonNode jsonArtifacts(const CGHeroInstance * hero)
+{
+	JsonNode node;
+	node["worn"].Vector();
+	node["backpack"].Vector();
+
+	for(const auto & [position, slotInfo] : hero->artifactsWorn)
+	{
+		if(slotInfo.getArt())
+			node["worn"].Vector().push_back(jsonArtifactSlot(hero->id, position, slotInfo, false));
+	}
+
+	for(size_t index = 0; index < hero->artifactsInBackpack.size(); ++index)
+	{
+		const ArtSlotInfo & slotInfo = hero->artifactsInBackpack[index];
+		if(slotInfo.getArt())
+			node["backpack"].Vector().push_back(jsonArtifactSlot(hero->id, ArtifactPosition::BACKPACK_START + static_cast<int>(index), slotInfo, true));
+	}
+
 	return node;
 }
 
@@ -1049,6 +1135,7 @@ JsonNode jsonHero(const CGHeroInstance * hero)
 	node["primarySkills"]["knowledge"] = JsonNode(hero->getPrimSkillLevel(PrimarySkill::KNOWLEDGE));
 	node["armyStrength"] = JsonNode(static_cast<int64_t>(hero->getArmyStrength()));
 	node["army"] = jsonArmy(*hero);
+	node["artifacts"] = jsonArtifacts(hero);
 	return node;
 }
 
@@ -2479,6 +2566,147 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		return true;
 	}
 
+	if(type == "swap_artifacts")
+	{
+		const ArtifactLocation src = readArtifactLocation(action, "src");
+		const ArtifactLocation dst = readArtifactLocation(action, "dst");
+		const auto validateArtifactHolder = [&](const ArtifactLocation & location, const std::string & label)
+		{
+			const auto * holder = dynamic_cast<const CArtifactSet *>(cc->getObj(location.artHolder, false));
+			const auto * object = dynamic_cast<const CGObjectInstance *>(holder);
+			if(!holder || !object || object->tempOwner != playerID)
+				throw std::invalid_argument("Artifact " + label + " holder is unknown, hidden, or not owned by scripted AI");
+			if(!ArtifactUtils::checkIfSlotValid(*holder, location.slot))
+				throw std::invalid_argument("Artifact " + label + " slot is invalid for holder");
+		};
+		validateArtifactHolder(src, "source");
+		validateArtifactHolder(dst, "destination");
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(ExchangeArtifacts), CTypeList::getInstance().getTypeID<ExchangeArtifacts>(nullptr), [&]
+		{
+			cc->swapArtifacts(src, dst);
+		});
+		actionResult["src"]["holder_id"] = JsonNode(src.artHolder.getNum());
+		actionResult["src"]["slot"] = JsonNode(src.slot.getNum());
+		actionResult["dst"]["holder_id"] = JsonNode(dst.artHolder.getNum());
+		actionResult["dst"]["slot"] = JsonNode(dst.slot.getNum());
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Swap artifacts request was rejected by server" : "Swap artifacts request was not realized by server");
+		return true;
+	}
+
+	if(type == "bulk_move_artifacts")
+	{
+		const CGHeroInstance * srcHero = cc->getHero(ObjectInstanceID(readInteger(action, "src_hero_id")));
+		const CGHeroInstance * dstHero = cc->getHero(ObjectInstanceID(readInteger(action, "dst_hero_id")));
+		if(!srcHero || !dstHero || srcHero->tempOwner != playerID || dstHero->tempOwner != playerID)
+			throw std::invalid_argument("Artifact bulk move heroes must both be owned by scripted AI");
+		if(srcHero->visitablePos() != dstHero->visitablePos())
+			throw std::invalid_argument("Heroes must be co-located for artifact bulk movement");
+
+		const bool swap = readBool(action, "swap", false);
+		const bool equipped = readBool(action, "equipped", true);
+		const bool backpack = readBool(action, "backpack", true);
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(BulkExchangeArtifacts), CTypeList::getInstance().getTypeID<BulkExchangeArtifacts>(nullptr), [&]
+		{
+			cc->bulkMoveArtifacts(srcHero->id, dstHero->id, swap, equipped, backpack);
+		});
+		actionResult["src_hero_id"] = JsonNode(srcHero->id.getNum());
+		actionResult["dst_hero_id"] = JsonNode(dstHero->id.getNum());
+		actionResult["swap"] = JsonNode(swap);
+		actionResult["equipped"] = JsonNode(equipped);
+		actionResult["backpack"] = JsonNode(backpack);
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Bulk artifact move request was rejected by server" : "Bulk artifact move request was not realized by server");
+		return true;
+	}
+
+	if(type == "sort_backpack_artifacts")
+	{
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+		if(!hero || hero->tempOwner != playerID)
+			throw std::invalid_argument("Unknown hero or hero is not owned by scripted AI");
+
+		const std::string mode = toLowerAscii(hasField(action, "mode") ? readString(action, "mode") : std::string("slot"));
+		if(mode != "slot" && mode != "cost" && mode != "class")
+			throw std::invalid_argument("Unsupported backpack artifact sort mode: " + mode);
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(ManageBackpackArtifacts), CTypeList::getInstance().getTypeID<ManageBackpackArtifacts>(nullptr), [&]
+		{
+			if(mode == "slot")
+				cc->sortBackpackArtifactsBySlot(hero->id);
+			else if(mode == "cost")
+				cc->sortBackpackArtifactsByCost(hero->id);
+			else
+				cc->sortBackpackArtifactsByClass(hero->id);
+		});
+		actionResult["hero_id"] = JsonNode(hero->id.getNum());
+		actionResult["mode"] = JsonNode(mode);
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Backpack artifact sort request was rejected by server" : "Backpack artifact sort request was not realized by server");
+		return true;
+	}
+
+	if(type == "scroll_backpack_artifacts")
+	{
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+		if(!hero || hero->tempOwner != playerID)
+			throw std::invalid_argument("Unknown hero or hero is not owned by scripted AI");
+
+		const bool left = readBool(action, "left", true);
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(ManageBackpackArtifacts), CTypeList::getInstance().getTypeID<ManageBackpackArtifacts>(nullptr), [&]
+		{
+			cc->scrollBackpackArtifacts(hero->id, left);
+		});
+		actionResult["hero_id"] = JsonNode(hero->id.getNum());
+		actionResult["left"] = JsonNode(left);
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Backpack artifact scroll request was rejected by server" : "Backpack artifact scroll request was not realized by server");
+		return true;
+	}
+
+	if(type == "manage_hero_costume")
+	{
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+		if(!hero || hero->tempOwner != playerID)
+			throw std::invalid_argument("Unknown hero or hero is not owned by scripted AI");
+
+		const int32_t costumeIndex = readInteger(action, "costume_index", 0);
+		if(costumeIndex < 0)
+			throw std::invalid_argument("costume_index must be non-negative");
+		const bool saveCostume = readBool(action, "save", false);
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(ManageEquippedArtifacts), CTypeList::getInstance().getTypeID<ManageEquippedArtifacts>(nullptr), [&]
+		{
+			cc->manageHeroCostume(hero->id, static_cast<size_t>(costumeIndex), saveCostume);
+		});
+		actionResult["hero_id"] = JsonNode(hero->id.getNum());
+		actionResult["costume_index"] = JsonNode(costumeIndex);
+		actionResult["save"] = JsonNode(saveCostume);
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Hero costume request was rejected by server" : "Hero costume request was not realized by server");
+		return true;
+	}
+
 	if(type == "move_hero" || type == "visit_object")
 	{
 		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
@@ -2669,7 +2897,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_artifacts", "nullkiller_trade", "dismiss_hero", "build_boat", "dig", "cast_spell", "nullkiller_tasks", "nullkiller_task", "nullkiller_step" })
+	for(const char * type : { "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "nullkiller_trade", "dismiss_hero", "build_boat", "dig", "cast_spell", "nullkiller_tasks", "nullkiller_task", "nullkiller_step" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();

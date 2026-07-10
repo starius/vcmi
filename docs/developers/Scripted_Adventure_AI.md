@@ -151,6 +151,9 @@ The `ai` facade:
   `ai:answerQuery`, `ai:endTurn`: request checked host actions.
 - `ai:pickBestArtifacts(heroId, otherHeroId?)`: ask the host to run Nullkiller's artifact-preparation helper for
   one owned hero, or two co-located owned heroes, through the normal artifact swap callback path.
+- `ai:swapArtifacts(src, dst)`, `ai:bulkMoveArtifacts`, `ai:sortBackpackArtifacts`,
+  `ai:scrollBackpackArtifacts`, `ai:manageHeroCostume`: request exact artifact management operations through
+  the normal callback/server path. Artifact locations use `{ holder_id, slot, creature_slot? }`.
 - `ai:nullkillerTrade()`: ask the host to run Nullkiller's resource-trading helper once, returning whether it
   traded anything.
 - `ai:dismissHero`, `ai:buildBoat`, `ai:dig`, `ai:castSpell`: request checked primitive adventure actions through
@@ -852,6 +855,9 @@ Regression harness:
   `config/ai/scriptedAdventure.json`, so the loop can disable them for bisection without rebuilding.
 - Lua can now call `ai:pickBestArtifacts(heroId, otherHeroId?)` to reuse Nullkiller's artifact-preparation helper
   for one owned hero or two co-located owned heroes. This is a coarse helper, not yet a full artifact-slot API.
+- Hero input now includes artifact state: worn slots and backpack entries expose stable slot ids, artifact type ids,
+  artifact instance ids, lock state, and possible slot ids. Lua can request exact artifact swaps, bulk transfers,
+  backpack sorting/scrolling, and hero costume operations through checked host calls.
 - Lua can now call `ai:nullkillerTrade()` to run Nullkiller's build-driven resource trader once. This covers the
   native support routine, but not exact script-selected market transactions yet.
 - Lua can now request checked primitive adventure actions for dismissing heroes, building boats, digging, and
@@ -1036,8 +1042,9 @@ Regression harness:
   `ai:runNullkillerTask`, and `ai:nullkillerStep`. This is not full parity yet: scripts still need richer direct
   access to typed dialogs, exact artifact-slot operations, market/trading choices, adventure spells, boats, quest
   decisions, and deeper analyzer details.
-- Partial: artifact preparation is exposed through a coarse `pickBestArtifacts` helper, but scripts cannot yet
-  inspect every artifact slot or request exact slot-to-slot moves.
+- Done: owned hero artifact state and exact artifact management calls are exposed through checked Lua facade
+  methods. Remaining artifact work is typed handling of assemble/disassemble prompts and richer artifact scoring
+  helpers.
 - Partial: resource trading is exposed through a coarse `nullkillerTrade` helper, but scripts cannot yet inspect
   every market rate or request exact resource conversions.
 - Partial: primitive adventure spells, digging, boat building, and hero dismissal are exposed, but scripts still

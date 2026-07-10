@@ -213,6 +213,54 @@ function ai:pickBestArtifacts(heroId, otherHeroId)
 	return self:execute(action)
 end
 
+function ai:swapArtifacts(src, dst)
+	return self:execute({ type = "swap_artifacts", src = src, dst = dst })
+end
+
+function ai:bulkMoveArtifacts(srcHeroId, dstHeroId, swap, equipped, backpack)
+	local action = copyFields(srcHeroId)
+	if type(srcHeroId) ~= "table" then
+		action.src_hero_id = srcHeroId
+		action.dst_hero_id = dstHeroId
+		action.swap = swap
+		action.equipped = equipped
+		action.backpack = backpack
+	end
+	action.type = "bulk_move_artifacts"
+	return self:execute(action)
+end
+
+function ai:sortBackpackArtifacts(heroId, mode)
+	local action = copyFields(heroId)
+	if type(heroId) ~= "table" then
+		action.hero_id = heroId
+		action.mode = mode or "slot"
+	end
+	action.type = "sort_backpack_artifacts"
+	return self:execute(action)
+end
+
+function ai:scrollBackpackArtifacts(heroId, left)
+	local action = copyFields(heroId)
+	if type(heroId) ~= "table" then
+		action.hero_id = heroId
+		action.left = left == true
+	end
+	action.type = "scroll_backpack_artifacts"
+	return self:execute(action)
+end
+
+function ai:manageHeroCostume(heroId, costumeIndex, saveCostume)
+	local action = copyFields(heroId)
+	if type(heroId) ~= "table" then
+		action.hero_id = heroId
+		action.costume_index = costumeIndex
+		action.save = saveCostume == true
+	end
+	action.type = "manage_hero_costume"
+	return self:execute(action)
+end
+
 function ai:nullkillerTrade()
 	return self:execute({ type = "nullkiller_trade" })
 end
