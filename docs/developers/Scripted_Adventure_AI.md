@@ -1711,11 +1711,18 @@ Regression harness:
   for actual script or host failures. Its loop budgets against the imperative `maxActions` limit and reads the
   exposed native `analysis.nullkiller.settings.maxPass`, so legacy per-turn script-call limits do not truncate
   bounded native day control.
+- Done: bounded control now treats native candidate exhaustion as an end-turn signal only when the same slice did no
+  useful priority, adventure, replan, trade, or pause work. If a bounded helper exhausts one generated candidate set
+  after doing useful work, Lua refreshes and asks for another bounded slice, matching native Nullkiller's day-loop
+  semantics more closely than immediate full-day fallback or immediate end-turn.
 - Done: a traced 16-map, 14-day parity run of `boundedNullkillerControl.lua` against `Nullkiller2` reached the day
   limit in all scenarios with zero fallback outputs and zero failed checked actions. The trace set contained 225
   bounded `nullkiller_turn_slice` calls, 69 bounded query answers, and 224 script-requested end turns. A no-trace
   full-outcome probe was stopped after 11/16 completed because the long tail continued through blue-only late
   turns; the completed subset was 4 red wins and 7 red losses, so outcome tuning still needs separate evaluation.
+- Done: a 16-map, 3-day traced smoke after the bounded-control exhaustion fix completed all scenarios at the day
+  limit with 48 `end_turn` outputs, 60 bounded `nullkiller_turn_slice` calls, 18 bounded query answers, zero failed
+  checked actions, and zero fallback outputs.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus, then add
   engine-level explored-area and map-control deltas.
 
@@ -1736,6 +1743,10 @@ The next high-value implementation steps are:
 - Treat Lua API parity as the gate for script optimization. A script that cannot express the same meaningful
   choices as Nullkiller should use bounded Nullkiller subroutines and checked facades first; tuning before this
   point mostly optimizes around missing host capabilities.
+- Do not optimize the default/champion policy against Nullkiller until the normal script path no longer needs
+  full-day `ai:nullkiller()` for any ordinary player-visible action, dialog, or Nullkiller subroutine. Missing
+  parity should produce a checked Lua facade, read-only visible-state field, or bounded native helper that returns
+  control to Lua.
 - Use `boundedNullkillerControl.lua` as the first parity regression script. If it needs ordinary full-day fallback
   to finish a day, fix the missing bounded helper, query answer, or observable state before tuning higher-level Lua
   strategy.

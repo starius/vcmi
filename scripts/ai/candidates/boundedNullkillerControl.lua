@@ -123,18 +123,21 @@ local function sliceDidTrade(result)
     return (tonumber(result.tradePasses or 0) or 0) > 0
 end
 
-local function sliceShouldEndTurn(result)
-    return result.shouldStopTurn == true
-        or (tonumber(result.adventureStopTurnSteps or 0) or 0) > 0
-        or result.exhaustedCandidates == true
-end
-
 local function sliceDidWork(result)
     return result.didWork == true
         or sliceDidPriorityWork(result)
         or sliceDidAdventureWork(result)
         or sliceDidTrade(result)
         or result.paused == true
+end
+
+local function sliceShouldEndTurn(result)
+    -- A bounded slice can exhaust one generated candidate set after doing useful
+    -- priority/adventure/trade work. Native Nullkiller keeps planning in that
+    -- case; only a no-work exhaustion means the day is actually idle.
+    return result.shouldStopTurn == true
+        or (tonumber(result.adventureStopTurnSteps or 0) or 0) > 0
+        or (result.exhaustedCandidates == true and not sliceDidWork(result))
 end
 
 local function runNativeSlice(ai, current)

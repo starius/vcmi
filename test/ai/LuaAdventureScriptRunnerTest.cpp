@@ -1383,6 +1383,56 @@ TEST(LuaAdventureScriptRunnerTest, BoundedNullkillerControlEndsTurnWhenNativeSli
 	EXPECT_EQ(output.memory["totalSlices"].Integer(), 1);
 }
 
+TEST(LuaAdventureScriptRunnerTest, BoundedNullkillerControlContinuesAfterProductiveExhaustedSlice)
+{
+	const std::string source = readAdventureScript("scripts/ai/candidates/boundedNullkillerControl.lua");
+	scripting::LuaAdventureScriptRunner runner("test:bounded-nullkiller-control-productive-exhausted", source);
+
+	AI::AdventureScriptInput input = makeInput();
+	input.state["turn"]["active"] = JsonNode(true);
+	input.state["turn"]["queries"].Vector();
+	input.limits["maxActions"] = JsonNode(16);
+
+	std::vector<JsonNode> commands;
+	int slices = 0;
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		const std::string kind = command["kind"].String();
+		if(kind == "refresh")
+		{
+			response["input"] = input.toJson();
+			return response;
+		}
+
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		if(command["payload"]["type"].String() == "nullkiller_turn_slice")
+		{
+			++slices;
+			response["result"]["didWork"] = JsonNode(slices == 1);
+			response["result"]["priorityTasksExecuted"] = JsonNode(slices == 1 ? 1 : 0);
+			response["result"]["shouldStopTurn"] = JsonNode(false);
+			response["result"]["exhaustedCandidates"] = JsonNode(true);
+		}
+		return response;
+	});
+
+	ASSERT_EQ(slices, 2);
+	ASSERT_EQ(commands.size(), 4);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[1]["kind"].String(), "refresh");
+	EXPECT_EQ(commands[2]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[3]["payload"]["type"].String(), "end_turn");
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_EQ(output.memory["totalSlices"].Integer(), 2);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "bounded Nullkiller control accepted native stop-turn signal");
+}
+
 TEST(LuaAdventureScriptRunnerTest, BoundedNullkillerControlAnswersQueriesBeforeNativeSlice)
 {
 	const std::string source = readAdventureScript("scripts/ai/candidates/boundedNullkillerControl.lua");
