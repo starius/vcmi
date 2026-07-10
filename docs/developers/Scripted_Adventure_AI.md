@@ -203,6 +203,10 @@ The `ai` facade:
   `ai:getAvailableHeroes(sourceId)`. Movement-specific wrappers include `ai:getPath(heroId, x, y, z?)`,
   `ai:getPathToObject(heroId, objectId)`, and `ai:getReachable(heroId, options?)`; they return current route ids
   and executable `planAction` records, but movement execution still recalculates the route and rejects stale ids.
+  Nullkiller-specific read wrappers include `ai:getNullkillerTaskCandidates(mode?, maxCandidates?)`, also exposed as
+  `ai:getNullkillerTasks`, `ai:nullkillerTaskCandidates`, and `ai:nullkillerCandidates`; these return native task
+  handles and summaries without executing a game action. A script can then pass a selected `task_id` to
+  `ai:runNullkillerTask`.
   These calls do not expose hidden map data; unknown, hidden, or invalid targets are host errors that Lua may catch
   with `pcall`.
 - `ai:runAction(action)` and `ai:runOption(option, actionField?)`: execute a checked action table directly,
@@ -238,6 +242,12 @@ The `ai` facade:
   `cancelAction`, matching the real client path for cancelable generic object-list queries.
 - `ai:chooseChestReward(query, preference?)`: answer a chest-style blocking dialog by stable component ids.
   `preference` may be `experience` or `gold`; the default is experience.
+- `ai:nullkiller(intent?)` and `ai:nullkillerForRestOfDay(intent?)`: intentionally request full fallback to
+  Nullkiller for the rest of the current day. Scripts that only want native help for one decision should use the
+  bounded helpers below instead.
+- `ai:getNullkillerTaskCandidates(mode?, maxCandidates?)`: read the current native task candidates for a stable
+  search mode without executing them. The returned handles are short-lived and should be used before a refresh or
+  replanning step invalidates them.
 - `ai:nullkillerTrade()`: ask the host to run Nullkiller's resource-trading helper once, returning whether it
   traded anything.
 - `ai:nullkillerPriorityPass(passIndex?)`: ask the host to run Nullkiller's bounded native priority pass once.

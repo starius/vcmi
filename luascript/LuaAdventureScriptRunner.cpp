@@ -241,6 +241,20 @@ function ai:getReachable(heroId, options)
 	return self:inspect(request)
 end
 
+function ai:getNullkillerTaskCandidates(mode, maxCandidates)
+	local request = copyFields(mode)
+	if type(mode) ~= "table" then
+		request.mode = mode or "all"
+		request.max_candidates = maxCandidates
+	end
+	request.what = "nullkiller_tasks"
+	return self:inspect(request)
+end
+
+ai.getNullkillerTasks = ai.getNullkillerTaskCandidates
+ai.nullkillerTaskCandidates = ai.getNullkillerTaskCandidates
+ai.nullkillerCandidates = ai.getNullkillerTaskCandidates
+
 function ai:delegateToNullkiller(intent)
 	return coroutine.yield({
 		kind = "fallback",

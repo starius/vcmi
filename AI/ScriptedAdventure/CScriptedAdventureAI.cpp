@@ -6614,6 +6614,13 @@ JsonNode CScriptedAdventureAI::executeScriptInspect(const JsonNode & request)
 		return makeScriptUpdates(readBool(request, "opponent_only", false));
 	if(what == "limits")
 		return makeScriptInputLimits();
+	if(what == "nullkiller_tasks" || what == "nullkiller_task_candidates")
+	{
+		JsonNode action = request;
+		if(!hasField(action, "mode") && hasField(action, "mode_id"))
+			action["mode"] = action["mode_id"];
+		return makeNullkillerTaskCandidates(action);
+	}
 
 	if(what == "object")
 	{

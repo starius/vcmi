@@ -718,6 +718,57 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 	EXPECT_EQ(output.memory["dimensionDoorSpellKind"].Integer(), 2);
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectNullkillerTaskCandidates)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				local candidates = ai:getNullkillerTaskCandidates(ai.nullkillerTaskModes.defense, 9)
+				ai:runNullkillerTask(candidates.tasks[1].task_id)
+				return ai:output("end_turn", "inspected and ran one Nullkiller task")
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-nullkiller-task-inspect", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		if(command["kind"].String() == "inspect")
+		{
+			response["result"]["modeId"] = command["payload"]["mode"];
+			response["result"]["mode"] = JsonNode("defense");
+			response["result"]["tasks"].Vector();
+			JsonNode task;
+			task["task_id"] = JsonNode(51);
+			response["result"]["tasks"].Vector().push_back(task);
+			response["result"]["count"] = JsonNode(1);
+			return response;
+		}
+
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 2);
+	EXPECT_EQ(commands[0]["kind"].String(), "inspect");
+	EXPECT_EQ(commands[0]["payload"]["what"].String(), "nullkiller_tasks");
+	EXPECT_EQ(commands[0]["payload"]["mode"].Integer(), 8);
+	EXPECT_EQ(commands[0]["payload"]["max_candidates"].Integer(), 9);
+	EXPECT_EQ(commands[1]["kind"].String(), "execute");
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "nullkiller_task");
+	EXPECT_EQ(commands[1]["payload"]["task_id"].Integer(), 51);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "inspected and ran one Nullkiller task");
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallNamedNullkillerModeHelpers)
 {
 	const std::string source = R"lua(
