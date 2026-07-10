@@ -747,9 +747,8 @@ Regression harness:
   the strategic contract.
 - Candidate actions now include `hire_hero` and `transfer_army` for two previously missing Nullkiller-level
   capabilities: adding tavern heroes and concentrating or reinforcing armies through the normal server-validated
-  request path. Their candidate generation is guarded by `experimentalSupportActions` in
-  `config/ai/scriptedAdventure.json` until the default Lua policy can use them without regressing the evaluation
-  corpus.
+  request path. Their candidate generation is controlled by `experimentalSupportActions` in
+  `config/ai/scriptedAdventure.json`, so the loop can disable them for bisection without rebuilding.
 - `analysis.heroThreatAlerts` complements `analysis.defenseAlerts`, so scripts can respond to threatened roaming
   heroes as well as threatened towns.
 - Trace tooling now supports single-run summaries, baseline-vs-candidate comparisons, final visible-state quality
@@ -776,11 +775,13 @@ Regression harness:
   dependence, defense pressure without response, hero threat escape gaps, and missing high-level Nullkiller actions.
   The first follow-up target is now implemented for tavern hero hiring and army transfer; remaining gaps include
   richer defense planning, hero chaining, and deeper blocker plans.
-- A 10-game opt-in run with `experimentalSupportActions=true` requested `hire_hero` 63 times and `transfer_army`
-  160 times. It still lost 10/10 against Nullkiller2, but the average loss day rose from 36.7 with support
-  candidates gated to 44.9 with them enabled on the same seed corpus. This is useful but not yet promotable because
-  `defense_pressure_without_response` and `hero_threat_without_escape` increased, so the next script iteration
-  should make support actions threat-aware instead of enabling them by default.
+- A 10-game support-action run requested `hire_hero` 63 times and `transfer_army` 160 times. It still lost 10/10
+  against Nullkiller2, but the average loss day rose from 36.7 with support candidates gated to 44.9 with them
+  enabled on the same seed corpus. After moving threatened-hero escape selection before the support-action replan
+  return, the same corpus improved to a 47.7 average loss day with `hire_hero` 146 times and `transfer_army` 153
+  times. Support actions are now enabled by default for the improvement loop. Remaining failures are still
+  concentrated around defense pressure, hero threat handling, dialogs during multi-action batches, hero chaining,
+  and deeper blocker plans.
 - `scripts/ai/runAdventureAIBatch.py` terminates a stale client process after a terminal game outcome has appeared
   in stdout and a short grace period has elapsed. This keeps unattended evaluation batches from hanging while still
   recording the completed outcome and traces.

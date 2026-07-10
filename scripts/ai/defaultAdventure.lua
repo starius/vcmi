@@ -1027,10 +1027,19 @@ function Script.planDay(input)
         end
     end
 
+    -- Escape is decided before support-action replanning so hiring or army
+    -- transfers cannot hide an urgent hero threat response from the host.
+    local escapeMove = chooseEscapeMove(input)
+
     local transfer = chooseTransfer(input, memory)
     if transfer then
         actions[#actions + 1] = copyAction(transfer.planAction)
         intents[#intents + 1] = "transfer army " .. tostring(transfer.source_id) .. " to " .. tostring(transfer.destination_id)
+    end
+
+    if escapeMove then
+        actions[#actions + 1] = copyAction(escapeMove.planAction)
+        intents[#intents + 1] = "move threatened hero " .. tostring(escapeMove.hero_id)
     end
 
     if hire or transfer then
@@ -1046,12 +1055,6 @@ function Script.planDay(input)
 
     -- Escape movement has priority over normal target visits. Mixing both in a
     -- single plan could spend movement on the target before the hero is safe.
-    local escapeMove = chooseEscapeMove(input)
-    if escapeMove then
-        actions[#actions + 1] = copyAction(escapeMove.planAction)
-        intents[#intents + 1] = "move threatened hero " .. tostring(escapeMove.hero_id)
-    end
-
     local target = chooseObject(input, memory)
     if target and not escapeMove then
         actions[#actions + 1] = copyAction(target.planAction)

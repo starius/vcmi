@@ -1,0 +1,108 @@
+{
+	"name": "support-action-keeps-escape",
+	"script": "scripts/ai/defaultAdventure.lua",
+	"input": {
+		"state": {
+			"day": 12,
+			"resources": {
+				"gold": 2500
+			},
+			"heroes": [
+				{
+					"id": 5,
+					"name": "Main",
+					"level": 4,
+					"army": [
+						{
+							"count": 35
+						}
+					]
+				}
+			]
+		},
+		"memory": {
+			"version": 1,
+			"roles": {
+				"mainHero": 5
+			}
+		},
+		"analysis": {
+			"experimentalSupportActions": true,
+			"heroThreatAlerts": [
+				{
+					"level": "critical",
+					"hero_id": 5,
+					"distanceSquared": 4,
+					"enemyPosition": {
+						"x": 10,
+						"y": 10,
+						"z": 0
+					}
+				}
+			]
+		},
+		"actionSpace": {
+			"armyTransferOptions": [
+				{
+					"source_id": 42,
+					"destination_id": 5,
+					"source_slot": 0,
+					"transferKindId": 1,
+					"sourceArmyStrength": 3000,
+					"destinationArmyStrength": 1500,
+					"value": 3000,
+					"planAction": {
+						"type": "transfer_army",
+						"source_id": 42,
+						"destination_id": 5,
+						"source_slot": 0
+					}
+				}
+			],
+			"movementOptions": [
+				{
+					"hero_id": 5,
+					"hero": "Main",
+					"safe": true,
+					"value": 100,
+					"path": {
+						"destination": {
+							"x": 18,
+							"y": 18,
+							"z": 0
+						},
+						"isTeleportAction": false
+					},
+					"planAction": {
+						"type": "move_hero",
+						"hero_id": 5,
+						"x": 18,
+						"y": 18,
+						"z": 0,
+						"route_id": "escape-after-transfer"
+					}
+				}
+			]
+		}
+	},
+	"expect": {
+		"status": "need_replan",
+		"actionsExact": [
+			{
+				"type": "transfer_army",
+				"source_id": 42,
+				"destination_id": 5,
+				"source_slot": 0
+			},
+			{
+				"type": "move_hero",
+				"hero_id": 5,
+				"route_id": "escape-after-transfer"
+			}
+		],
+		"intentContains": [
+			"transfer army 42 to 5",
+			"move threatened hero 5"
+		]
+	}
+}
