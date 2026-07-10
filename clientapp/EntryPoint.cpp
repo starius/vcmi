@@ -295,7 +295,7 @@ int main(int argc, char * argv[])
 		("version,v", "display version information and exit")
 		("testmap", po::value<std::string>(), "")
 		("testsave", po::value<std::string>(), "")
-		("testdays", po::value<si64>(), "with --testmap/--testsave, stop after N completed adventure days")
+		("testdays", po::value<si64>(), "with --testmap/--testsave/--testrandommap, stop after N completed adventure days")
 		("testrandommap", "start a generated random map for a headless test run")
 		("randommap-seed", po::value<si64>(), "with --testrandommap, use a fixed random-map generation seed")
 		("randommap-size", po::value<std::string>()->default_value("S"), "with --testrandommap, map size: S, M, L, XL, H, XH, G, or numeric width")
@@ -365,8 +365,12 @@ int main(int argc, char * argv[])
 
 	setThreadNameLoggingOnly("MainGUI");
 	boost::filesystem::path logPath = VCMIDirs::get().userLogsPath() / "VCMI_Client_log.txt";
+	std::optional<std::string> logLocation;
 	if(vm.count("logLocation"))
-		logPath = vm["logLocation"].as<std::string>() + "/VCMI_Client_log.txt";
+	{
+		logLocation = vm["logLocation"].as<std::string>();
+		logPath = *logLocation + "/VCMI_Client_log.txt";
+	}
 
 #ifndef VCMI_IOS
 
@@ -401,6 +405,9 @@ int main(int argc, char * argv[])
 	}
 
 	Settings session = settings.write["session"];
+	if(logLocation)
+		session["logLocation"].String() = *logLocation;
+
 	auto setSettingBool = [&](const std::string & key, const std::string & arg) {
 		Settings s = settings.write(vstd::split(key, "/"));
 		if(vm.count(arg))

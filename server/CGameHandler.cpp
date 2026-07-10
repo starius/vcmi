@@ -668,6 +668,31 @@ void CGameHandler::addStatistics(StatisticDataSet &stat) const
 	}
 }
 
+static void writeHeadlessTestStatistics(const StatisticDataSet & statistics)
+{
+	const auto & logLocation = settings["session"]["logLocation"];
+	if(logLocation.isNull() || logLocation.String().empty())
+	{
+		auto path = statistics.writeCsv();
+		logGlobal->info("Wrote headless test statistics to %s", path);
+		return;
+	}
+
+	boost::filesystem::path statsPath = logLocation.String();
+	boost::filesystem::create_directories(statsPath);
+	statsPath /= "statistics.csv";
+
+	std::ofstream file(statsPath.c_str());
+	if(!file)
+	{
+		logGlobal->error("Failed to write headless test statistics to %s", statsPath.string());
+		return;
+	}
+
+	file << statistics.toCsv(";");
+	logGlobal->info("Wrote headless test statistics to %s", statsPath.string());
+}
+
 void CGameHandler::onNewTurn()
 {
 	logGlobal->trace("Turn %d", gameState().day+1);
@@ -693,6 +718,11 @@ void CGameHandler::onNewTurn()
 	else
 	{
 		addStatistics(*statistics); // write at end of turn
+
+		const si64 testDays = settings["session"]["testdays"].Integer();
+		const bool testRun = !settings["session"]["testmap"].isNull() || !settings["session"]["testsave"].isNull();
+		if(testRun && testDays > 0 && static_cast<si64>(calendar.getCurrentDay()) >= testDays)
+			writeHeadlessTestStatistics(*statistics);
 	}
 
 	const auto & currentDaySelector = [day = gameState().day+1](const Bonus * bonus)

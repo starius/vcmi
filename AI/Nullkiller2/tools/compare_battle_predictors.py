@@ -35,6 +35,24 @@ ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 MAP_LOADED_RE = re.compile(r"\bMap loaded!")
 WINNER_RE = re.compile(r"\b([A-Za-z]+) player won\. Ending game\.")
 LOSER_RE = re.compile(r"\b([A-Za-z]+) player lost\. Ending game\.")
+TEST_DAY_LIMIT_RE = re.compile(r"\bReached test day limit\b")
+
+ADJUDICATION_FIELDS = [
+	"statusRank",
+	"NumberTowns",
+	"ArmyStrength",
+	"NumberHeroes",
+	"Income",
+	"TotalExperience",
+	"MaxHeroLevel",
+	"NumberArtifacts",
+	"NumberDwellings",
+	"NumWinBattlesPlayer",
+	"NumWinBattlesNeutral",
+	"MapExploredRatio",
+	"MovementPointsUsed",
+	"Score",
+]
 
 COLOR_ALIASES = {
 	"red": "Red",
@@ -74,6 +92,11 @@ class GameResult:
 	winner_color: str | None
 	loser_color: str | None
 	winner_model: str | None
+	test_day_limited: bool
+	adjudicated: bool
+	adjudication_day: int | None
+	adjudication_reason: str | None
+	adjudication_vectors: dict[str, list[float | int]] | None
 	diagnostics: list[str]
 
 
@@ -95,6 +118,7 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument("--randommap-monsters", default="normal", choices=("weak", "normal", "strong", "random"), help="Generated map monster strength.")
 	parser.add_argument("--randommap-template", default=None, help="Generated map template id.")
 	parser.add_argument("--testdays", type=int, default=0, help="Optional completed-day limit passed to vcmiclient.")
+	parser.add_argument("--adjudicate-testdays", action="store_true", help="If no player wins by --testdays, pick a deterministic winner from run-local statistics.csv.")
 	parser.add_argument("--legacy-ai", default="Nullkiller2", help="AI name for the baseline player.")
 	parser.add_argument("--candidate-ai", default="Nullkiller2Ratio", help="AI name for the adjusted predictor player.")
 	parser.add_argument("--opponent-ai", default="Nullkiller2", help="Fixed Blue opponent for --comparison-mode red-role.")
@@ -130,6 +154,8 @@ def parse_args() -> argparse.Namespace:
 		parser.error("--seed-step must be positive")
 	if args.timeout <= 0:
 		parser.error("--timeout must be positive")
+	if args.adjudicate_testdays and args.testdays <= 0:
+		parser.error("--adjudicate-testdays requires --testdays")
 	if args.jobs <= 0:
 		parser.error("--jobs must be positive")
 	if args.base_server_port <= 0 or args.base_server_port > 65535:
@@ -300,15 +326,18 @@ def iter_log_lines(run_dir: Path):
 				yield ANSI_RE.sub("", raw_line).strip()
 
 
-def parse_run_logs(task: GameTask) -> tuple[bool, str | None, str | None, list[str]]:
+def parse_run_logs(task: GameTask) -> tuple[bool, str | None, str | None, bool, list[str]]:
 	map_loaded = False
 	winner = None
 	loser = None
+	test_day_limited = False
 	diagnostics: list[str] = []
 
 	for line in iter_log_lines(task.run_dir):
 		if MAP_LOADED_RE.search(line):
 			map_loaded = True
+		if TEST_DAY_LIMIT_RE.search(line):
+			test_day_limited = True
 
 		winner_match = WINNER_RE.search(line)
 		if winner_match:
@@ -324,7 +353,92 @@ def parse_run_logs(task: GameTask) -> tuple[bool, str | None, str | None, list[s
 	if winner is None and loser is not None:
 		winner = opposite_two_player_color(loser)
 
-	return map_loaded, winner, loser, diagnostics[-20:]
+	return map_loaded, winner, loser, test_day_limited, diagnostics[-20:]
+
+
+def parse_stat_number(row: dict[str, str], field: str) -> float | int:
+	value = (row.get(field) or "").strip()
+	if not value:
+		return 0
+	try:
+		if "." in value:
+			return float(value)
+		return int(value)
+	except ValueError:
+		return 0
+
+
+def adjudication_vector(row: dict[str, str]) -> list[float | int]:
+	status = int(parse_stat_number(row, "Status"))
+	status_rank = {
+		2: 1,   # WINNER
+		0: 0,   # INGAME
+		1: -1,  # LOSER
+	}.get(status, -2)
+
+	return [
+		status_rank,
+		parse_stat_number(row, "NumberTowns"),
+		parse_stat_number(row, "ArmyStrength"),
+		parse_stat_number(row, "NumberHeroes"),
+		parse_stat_number(row, "Income"),
+		parse_stat_number(row, "TotalExperience"),
+		parse_stat_number(row, "MaxHeroLevel"),
+		parse_stat_number(row, "NumberArtifacts"),
+		parse_stat_number(row, "NumberDwellings"),
+		parse_stat_number(row, "NumWinBattlesPlayer"),
+		parse_stat_number(row, "NumWinBattlesNeutral"),
+		parse_stat_number(row, "MapExploredRatio"),
+		parse_stat_number(row, "MovementPointsUsed"),
+		parse_stat_number(row, "Score"),
+	]
+
+
+def adjudicate_from_statistics(task: GameTask) -> tuple[dict | None, list[str]]:
+	stats_path = task.run_dir / "statistics.csv"
+	if not stats_path.exists():
+		return None, [f"Missing adjudication statistics: {stats_path}"]
+
+	latest_rows: dict[str, dict[str, str]] = {}
+	with stats_path.open(encoding="utf-8", errors="replace", newline="") as handle:
+		reader = csv.DictReader(handle, delimiter=";")
+		for row in reader:
+			color = canonical_color(row.get("Player"))
+			if color not in ("Red", "Blue"):
+				continue
+
+			day = int(parse_stat_number(row, "Day"))
+			current = latest_rows.get(color)
+			if current is None or day >= int(parse_stat_number(current, "Day")):
+				latest_rows[color] = row
+
+	if "Red" not in latest_rows or "Blue" not in latest_rows:
+		return None, ["Adjudication statistics do not contain both Red and Blue rows"]
+
+	red_vector = adjudication_vector(latest_rows["Red"])
+	blue_vector = adjudication_vector(latest_rows["Blue"])
+	if red_vector == blue_vector:
+		return None, ["Adjudication statistics are exactly tied"]
+
+	winner_color = "Red" if red_vector > blue_vector else "Blue"
+	winner_vector = red_vector if winner_color == "Red" else blue_vector
+	loser_vector = blue_vector if winner_color == "Red" else red_vector
+	day = int(parse_stat_number(latest_rows[winner_color], "Day"))
+	reason = "statistics"
+	for field, winner_value, loser_value in zip(ADJUDICATION_FIELDS, winner_vector, loser_vector):
+		if winner_value != loser_value:
+			reason = f"{field}: {winner_color} {winner_value} > {opposite_two_player_color(winner_color)} {loser_value}"
+			break
+
+	return {
+		"winnerColor": winner_color,
+		"day": day,
+		"reason": reason,
+		"vectors": {
+			"Red": red_vector,
+			"Blue": blue_vector,
+		},
+	}, []
 
 
 def run_game(args: argparse.Namespace, task: GameTask) -> GameResult:
@@ -354,7 +468,27 @@ def run_game(args: argparse.Namespace, task: GameTask) -> GameResult:
 			stdout.write(f"\nTimed out after {args.timeout} seconds.\n".encode())
 
 	duration = time.monotonic() - start
-	map_loaded, winner_color, loser_color, diagnostics = parse_run_logs(task)
+	map_loaded, winner_color, loser_color, test_day_limited, diagnostics = parse_run_logs(task)
+	adjudicated = False
+	adjudication_day = None
+	adjudication_reason = None
+	adjudication_vectors = None
+	if (
+		args.adjudicate_testdays
+		and winner_color is None
+		and test_day_limited
+		and not timed_out
+	):
+		adjudication, adjudication_diagnostics = adjudicate_from_statistics(task)
+		diagnostics.extend(adjudication_diagnostics)
+		if adjudication:
+			winner_color = adjudication["winnerColor"]
+			loser_color = opposite_two_player_color(winner_color)
+			adjudicated = True
+			adjudication_day = adjudication["day"]
+			adjudication_reason = adjudication["reason"]
+			adjudication_vectors = adjudication["vectors"]
+
 	winner_model = model_for_color(task, winner_color)
 	if not args.keep_engine_logs:
 		for log_file in task.run_dir.glob("*_log.txt"):
@@ -370,6 +504,11 @@ def run_game(args: argparse.Namespace, task: GameTask) -> GameResult:
 		winner_color=winner_color,
 		loser_color=loser_color,
 		winner_model=winner_model,
+		test_day_limited=test_day_limited,
+		adjudicated=adjudicated,
+		adjudication_day=adjudication_day,
+		adjudication_reason=adjudication_reason,
+		adjudication_vectors=adjudication_vectors,
 		diagnostics=diagnostics,
 	)
 	write_run_summary(result)
@@ -414,6 +553,12 @@ def result_to_dict(result: GameResult) -> dict:
 		"winnerColor": result.winner_color,
 		"loserColor": result.loser_color,
 		"winnerModel": result.winner_model,
+		"testDayLimited": result.test_day_limited,
+		"adjudicated": result.adjudicated,
+		"adjudicationDay": result.adjudication_day,
+		"adjudicationReason": result.adjudication_reason,
+		"adjudicationFields": ADJUDICATION_FIELDS if result.adjudication_vectors else None,
+		"adjudicationVectors": result.adjudication_vectors,
 		"diagnostics": result.diagnostics,
 	}
 
@@ -556,6 +701,7 @@ def analyze_results(args: argparse.Namespace, results: list[GameResult]) -> dict
 				"template": args.randommap_template,
 			},
 			"testdays": args.testdays,
+			"adjudicateTestdays": args.adjudicate_testdays,
 			"seedStart": args.seed_start,
 			"seedStep": args.seed_step,
 			"jobs": args.jobs,
@@ -597,6 +743,10 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 		"blueModel",
 		"winnerColor",
 		"winnerModel",
+		"testDayLimited",
+		"adjudicated",
+		"adjudicationDay",
+		"adjudicationReason",
 		"timedOut",
 		"mapLoaded",
 		"exitCode",
@@ -670,10 +820,11 @@ def main() -> int:
 
 			results.append(result)
 			winner = result.winner_model or "-"
+			adjudicated = " adjudicated" if result.adjudicated else ""
 			status = "timeout" if result.timed_out else process_status(result.exit_code)["exitCode"]
 			print(
 				f"sample={task.sample:04d} direction={task.direction} "
-				f"winner={winner} loaded={str(result.map_loaded).lower()} "
+				f"winner={winner}{adjudicated} loaded={str(result.map_loaded).lower()} "
 				f"exit={status} duration={result.duration_seconds:.1f}s"
 			)
 
