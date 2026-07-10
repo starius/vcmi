@@ -1806,6 +1806,9 @@ Regression harness:
   inspects native candidates without side effects, applies an optional Lua predicate, executes only the chosen
   opaque handle, and reports `executed = false` when no candidate matches instead of falling back to a full native
   day.
+- Done: the bundled aggressive, economy, and explorer profile scripts now follow the same active-entrypoint shape
+  as the default script: `runDay(ai, input)` calls a local policy scorer directly, while `Script.planDay` remains a
+  compatibility wrapper for tests and older hosts.
 - Done: after adding explicit `nullkiller_reset`, a 16-map, 1-day traced integration smoke completed all scenarios
   at the day limit with 16 `end_turn` outputs, 20 bounded `nullkiller_turn_slice` calls, 145 checked `visit_object`
   actions, 18 bounded query answers, zero failed checked actions, and zero fallback outputs.

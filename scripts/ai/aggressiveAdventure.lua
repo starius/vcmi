@@ -292,8 +292,8 @@ local function bestTarget(input, memory)
     return best
 end
 
-function Script.planDay(input)
-    -- Host entry point. Plan ordering is intentional: prepare army first, then
+local function chooseDayActions(input)
+    -- Policy scorer. Plan ordering is intentional: prepare army first, then
     -- spend movement on the best attack/claim opportunity.
     local memory = initMemory(input)
     markProgress(memory, input.progress)
@@ -330,6 +330,12 @@ function Script.planDay(input)
     return { status = "need_replan", memory = memory, actions = actions, intent = memory.lastIntent, confidence = 0.52 }
 end
 
+function Script.planDay(input)
+    -- Legacy compatibility path for tests and older hosts. Active turns call
+    -- runDay and never require the host to execute this returned batch.
+    return chooseDayActions(input)
+end
+
 local function firstPendingQuery(input)
     local queries = input
         and input.state
@@ -347,8 +353,8 @@ local function commandLimit(input)
 end
 
 function Script.runDay(ai, input)
-    -- Imperative compatibility path for this profile. The policy still uses
-    -- the readable planDay scorer, but every chosen action is now executed as a
+    -- Imperative compatibility path for this profile. The policy still uses a
+    -- readable local scorer, but every chosen action is now executed as a
     -- checked host call with refresh/yield points between side effects.
     local current = input or {}
     local commands = 0
@@ -362,7 +368,7 @@ function Script.runDay(ai, input)
             current = ai:refresh()
             current.memory = ai:memory()
         else
-            local output = Script.planDay(current)
+            local output = chooseDayActions(current)
             ai:setMemory(output.memory or ai:memory())
 
             if output.status == "fallback" then
