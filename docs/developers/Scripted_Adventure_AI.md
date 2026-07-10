@@ -128,6 +128,8 @@ end
 Input:
 
 - `state`: complete visible player state or selected state sections.
+  - `state.map`: map dimensions, visible tile count, a capped sample of visible terrain tiles, and a capped list
+    of visible objects gathered through player-specific fog-of-war checks.
 - `updates`: capped revisioned journal of recent visible changes. Scripts can store the last consumed revision
   in memory when they want delta processing.
 - `opponentUpdates`: the same journal filtered to visible opponent-related changes.
@@ -838,6 +840,10 @@ Regression harness:
   `typeId`/`subtypeId` plus `kindId`; town build options provide `building_id`, `buildingKindId`,
   `buildingLevel`, and `buildingUpgrade`; paths provide `pathActionId`; visible threat alerts provide `levelId`.
   Localized display strings remain useful in traces but are not part of the strategic contract.
+- Script input now includes `state.map.visibleTilesCount`, capped `state.map.visibleTiles` terrain samples, and
+  capped `state.map.visibleObjects`. These are produced through player-specific visibility checks. The caps keep
+  traces bounded; scripts should use counts and object ids, and request richer host candidates when a full-map
+  operation would be too large for direct Lua input.
 - Candidate actions now include `hire_hero` and `transfer_army` for two previously missing Nullkiller-level
   capabilities: adding tavern heroes and concentrating or reinforcing armies through the normal server-validated
   request path. Their candidate generation is controlled by `experimentalSupportActions` in
@@ -1013,6 +1019,8 @@ Regression harness:
 
 - Done: script input includes structured player, resource, hero, town, army, build, recruit, and reachable-object
   data.
+- Done: script input includes map dimensions, visible tile counts/samples, and a capped list of visible objects
+  gathered through player-specific fog-of-war checks.
 - Done: action candidates include allowed build actions, affordable recruitment actions, route-id guarded
   movement actions, reachable object targets, and end turn.
 - Done: route ids are generated with the same shape as MCP route ids and are validated before execution.

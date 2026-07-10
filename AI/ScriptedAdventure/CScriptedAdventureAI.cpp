@@ -27,6 +27,7 @@
 #include "../../lib/mapObjects/CGTownInstance.h"
 #include "../../lib/mapObjects/army/CArmedInstance.h"
 #include "../../lib/mapObjects/army/CStackInstance.h"
+#include "../../lib/mapping/TerrainTile.h"
 #include "../../lib/networkPacks/PacksForClient.h"
 #include "../../lib/networkPacks/PacksForServer.h"
 #include "../../lib/networkPacks/SaveLocalState.h"
@@ -682,6 +683,21 @@ JsonNode jsonPosition(const int3 & position)
 	node["x"] = JsonNode(position.x);
 	node["y"] = JsonNode(position.y);
 	node["z"] = JsonNode(position.z);
+	return node;
+}
+
+JsonNode jsonVisibleTile(const int3 & position, const TerrainTile & tile)
+{
+	JsonNode node;
+	node["position"] = jsonPosition(position);
+	node["terrainId"] = JsonNode(tile.getTerrainID().getNum());
+	node["riverId"] = JsonNode(tile.getRiverID().getNum());
+	node["roadId"] = JsonNode(tile.getRoadID().getNum());
+	node["blocked"] = JsonNode(tile.blocked());
+	node["visitable"] = JsonNode(tile.visitable());
+	node["water"] = JsonNode(tile.isWater());
+	node["land"] = JsonNode(tile.isLand());
+	node["favorableWinds"] = JsonNode(tile.hasFavorableWinds());
 	return node;
 }
 
@@ -2461,6 +2477,8 @@ JsonNode CScriptedAdventureAI::makeScriptInputState()
 {
 	JsonNode state;
 	std::shared_lock gameStateLock(CGameState::mutex);
+	constexpr size_t maxVisibleTileSamples = 256;
+	constexpr size_t maxVisibleObjects = 512;
 
 	state["day"] = JsonNode(cc->getCalendar().getCurrentDay());
 	state["player"]["id"] = JsonNode(playerID.getNum());
@@ -2468,6 +2486,10 @@ JsonNode CScriptedAdventureAI::makeScriptInputState()
 	state["turn"]["active"] = JsonNode(status.haveTurn());
 	state["turn"]["pendingQueries"] = JsonNode(status.getQueriesCount());
 	state["battle"]["state"] = JsonNode(battleStateName(status.getBattle()));
+	const int3 mapSize = cc->getMapSize();
+	state["map"]["width"] = JsonNode(mapSize.x);
+	state["map"]["height"] = JsonNode(mapSize.y);
+	state["map"]["levels"] = JsonNode(mapSize.z);
 
 	if(const PlayerState * playerState = cc->getPlayerState(playerID, false))
 	{
@@ -2494,6 +2516,57 @@ JsonNode CScriptedAdventureAI::makeScriptInputState()
 		if(town)
 			state["towns"].Vector().push_back(jsonTown(town, resources));
 	}
+
+	FowTilesType visibleTiles;
+	cc->getAllTiles(visibleTiles, playerID, -1, [](const TerrainTile * tile)
+	{
+		return tile != nullptr;
+	});
+
+	state["map"]["visibleTilesCount"] = JsonNode(static_cast<int32_t>(visibleTiles.size()));
+	state["map"]["visibleTileSampleLimit"] = JsonNode(static_cast<int32_t>(maxVisibleTileSamples));
+	state["map"]["visibleTiles"].Vector();
+	state["map"]["visibleObjects"].Vector();
+
+	std::set<int32_t> seenVisibleObjects;
+	size_t visibleObjectCount = 0;
+	for(const int3 & position : visibleTiles)
+	{
+		if(state["map"]["visibleTiles"].Vector().size() < maxVisibleTileSamples)
+		{
+			if(const TerrainTile * tile = cc->getTile(position, false))
+				state["map"]["visibleTiles"].Vector().push_back(jsonVisibleTile(position, *tile));
+		}
+
+		const TerrainTile * tile = cc->getTile(position, false);
+		if(!tile)
+			continue;
+
+		auto appendVisibleObject = [&](ObjectInstanceID objectID)
+		{
+			if(objectID == ObjectInstanceID())
+				return;
+			if(!seenVisibleObjects.insert(objectID.getNum()).second)
+				return;
+
+			const CGObjectInstance * object = cc->getObj(objectID, false);
+			if(!object || !cc->isVisibleFor(object, playerID))
+				return;
+
+			++visibleObjectCount;
+			if(state["map"]["visibleObjects"].Vector().size() < maxVisibleObjects)
+				state["map"]["visibleObjects"].Vector().push_back(jsonMapObject(object, playerID, nullptr));
+		};
+
+		for(ObjectInstanceID objectID : tile->visitableObjects)
+			appendVisibleObject(objectID);
+		for(ObjectInstanceID objectID : tile->blockingObjects)
+			appendVisibleObject(objectID);
+	}
+	state["map"]["visibleObjectsCount"] = JsonNode(static_cast<int32_t>(visibleObjectCount));
+	state["map"]["visibleObjectLimit"] = JsonNode(static_cast<int32_t>(maxVisibleObjects));
+	state["map"]["visibleObjectsTruncated"] = JsonNode(visibleObjectCount > maxVisibleObjects);
+	state["map"]["visibleTilesTruncated"] = JsonNode(visibleTiles.size() > maxVisibleTileSamples);
 	return state;
 }
 
