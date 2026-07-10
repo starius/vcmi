@@ -8040,8 +8040,6 @@ JsonNode CScriptedAdventureAI::makeScriptInputState()
 {
 	JsonNode state;
 	std::shared_lock gameStateLock(CGameState::mutex);
-	constexpr size_t maxVisibleTileSamples = 256;
-	constexpr size_t maxVisibleObjects = 512;
 
 	state["day"] = JsonNode(cc->getCalendar().getCurrentDay());
 	state["player"]["id"] = JsonNode(playerID.getNum());
@@ -8128,7 +8126,8 @@ JsonNode CScriptedAdventureAI::makeScriptInputState()
 	const std::vector<int3> visibleTiles = visibleMapTiles(cc, playerID);
 
 	state["map"]["visibleTilesCount"] = JsonNode(static_cast<int32_t>(visibleTiles.size()));
-	state["map"]["visibleTileSampleLimit"] = JsonNode(static_cast<int32_t>(maxVisibleTileSamples));
+	state["map"]["visibleTileSampleLimit"] = JsonNode(static_cast<int32_t>(visibleTiles.size()));
+	state["map"]["visibleTilesComplete"] = JsonNode(true);
 	state["map"]["visibleTiles"].Vector();
 	state["map"]["visibleObjects"].Vector();
 
@@ -8136,15 +8135,10 @@ JsonNode CScriptedAdventureAI::makeScriptInputState()
 	size_t visibleObjectCount = 0;
 	for(const int3 & position : visibleTiles)
 	{
-		if(state["map"]["visibleTiles"].Vector().size() < maxVisibleTileSamples)
-		{
-			if(const TerrainTile * tile = cc->getTile(position, false))
-				state["map"]["visibleTiles"].Vector().push_back(jsonVisibleTile(position, *tile));
-		}
-
 		const TerrainTile * tile = cc->getTile(position, false);
 		if(!tile)
 			continue;
+		state["map"]["visibleTiles"].Vector().push_back(jsonVisibleTile(position, *tile));
 
 		auto appendVisibleObject = [&](ObjectInstanceID objectID)
 		{
@@ -8158,8 +8152,7 @@ JsonNode CScriptedAdventureAI::makeScriptInputState()
 				return;
 
 			++visibleObjectCount;
-			if(state["map"]["visibleObjects"].Vector().size() < maxVisibleObjects)
-				state["map"]["visibleObjects"].Vector().push_back(jsonMapObject(object, playerID, nullptr));
+			state["map"]["visibleObjects"].Vector().push_back(jsonMapObject(object, playerID, nullptr));
 		};
 
 		for(ObjectInstanceID objectID : tile->visitableObjects)
@@ -8168,9 +8161,10 @@ JsonNode CScriptedAdventureAI::makeScriptInputState()
 			appendVisibleObject(objectID);
 	}
 	state["map"]["visibleObjectsCount"] = JsonNode(static_cast<int32_t>(visibleObjectCount));
-	state["map"]["visibleObjectLimit"] = JsonNode(static_cast<int32_t>(maxVisibleObjects));
-	state["map"]["visibleObjectsTruncated"] = JsonNode(visibleObjectCount > maxVisibleObjects);
-	state["map"]["visibleTilesTruncated"] = JsonNode(visibleTiles.size() > maxVisibleTileSamples);
+	state["map"]["visibleObjectLimit"] = JsonNode(static_cast<int32_t>(visibleObjectCount));
+	state["map"]["visibleObjectsComplete"] = JsonNode(true);
+	state["map"]["visibleObjectsTruncated"] = JsonNode(false);
+	state["map"]["visibleTilesTruncated"] = JsonNode(false);
 	return state;
 }
 
