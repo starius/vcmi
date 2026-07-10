@@ -750,10 +750,11 @@ The current Lua API is close to the intended parity boundary for adventure AI po
 - Native helpers that can perform multiple internal requests use bounded calls and then return to Lua. This is the
   required shape for script-driven strategy: Lua can ask Nullkiller to do one pass, one task, one preparation helper,
   or one dialog answer, then inspect refreshed state and decide what comes next.
-- The remaining evaluation blocker is runtime progression, not script expressiveness: recent random-map smoke runs
-  reached and traced a full scripted day with an applied explicit `end_turn`, but the headless day-limited run did
-  not reliably advance to the next scripted day before timeout. Treat this as an engine/harness handoff issue to
-  debug before using win-rate batches as a script-quality metric.
+- Runtime progression has a passing corrected smoke check: `ScriptedAdventureAI` versus canonical `Nullkiller2`
+  on a small two-level random map reached a three-day headless day limit with trace output. Earlier one-day
+  timeouts were caused by using the non-canonical AI name `Nullkiller`, which the engine treats as an unknown
+  adventure AI and silently maps to EmptyAI behavior. The Python batch/evaluation tooling now normalizes that
+  shorthand to `Nullkiller2` before launch.
 
 The script engine should reuse these Nullkiller systems where possible:
 
@@ -1027,7 +1028,7 @@ Headless batches can be launched with:
 scripts/ai/runAdventureAIBatch.py \
   --client <build-dir>/bin/vcmiclient \
   --map "Maps/Dwarven Gold.h3m" \
-  --ai ScriptedAdventureAI --ai Nullkiller \
+  --ai ScriptedAdventureAI --ai Nullkiller2 \
   --testdays 14 \
   --trace \
   --script scripts/ai/defaultAdventure.lua \
@@ -1039,6 +1040,9 @@ The batch runner passes `--testdays N` to stop after N completed adventure days.
 as a safety guard for hangs or unexpectedly slow maps. `--trace` enables `ScriptedAdventureAI` tracing without
 editing `config/ai/scriptedAdventure.json`. `--script` can be either a bundled script resource such as
 `ai/defaultAdventure.lua` or a local Lua file; local files are passed to the AI as `file:/...` script overrides.
+Use `Nullkiller2` as the canonical native adventure AI name in commands. The runner accepts `Nullkiller` as a
+compatibility shorthand and rewrites it to `Nullkiller2`; the engine factory itself does not recognize that
+shorthand.
 Use `--jobs N` to run independent headless games in parallel. Each run writes a `run.json`, raw stdout, logs, and
 trace files under its run directory; the batch root also gets `manifest.json` and a compact `results.json` with
 winner, outcome, completed-day, seed, script, AI order, and trace paths for downstream analysis.

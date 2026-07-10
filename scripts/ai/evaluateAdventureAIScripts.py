@@ -16,7 +16,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from compareAdventureTrace import compare  # noqa: E402
-from runAdventureAIBatch import load_scenarios, run_one, safe_name, scenario_source, script_override_value  # noqa: E402
+from runAdventureAIBatch import load_scenarios, normalize_ai_names, run_one, safe_name, scenario_source, script_override_value  # noqa: E402
 
 
 def nested_int(summary: dict[str, Any], section: str, key: str) -> int:
@@ -394,6 +394,7 @@ def main() -> int:
     parser.add_argument("--allow-more-failed-actions", type=int, default=0, help="Candidate failed actions allowed above baseline.")
     parser.add_argument("--allow-more-important-mistakes", type=int, default=0, help="Candidate important mistakes allowed above baseline.")
     args = parser.parse_args()
+    args.ai = normalize_ai_names(args.ai)
 
     args.output.mkdir(parents=True, exist_ok=True)
     scenarios = load_scenarios(args)

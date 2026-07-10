@@ -28,6 +28,9 @@ TERMINAL_OUTCOME_MARKERS = (
     "Red player won. Ending game.",
     "Red player lost. Ending game.",
 )
+AI_NAME_ALIASES = {
+    "Nullkiller": "Nullkiller2",
+}
 
 
 def as_list(value: Any) -> list[Any]:
@@ -40,6 +43,12 @@ def safe_name(value: str) -> str:
 
 def string_list(value: Any) -> list[str]:
     return [str(item) for item in as_list(value)]
+
+
+def normalize_ai_names(values: list[str] | None) -> list[str] | None:
+    if values is None:
+        return None
+    return [AI_NAME_ALIASES.get(str(value), str(value)) for value in values]
 
 
 def as_dict(value: Any) -> dict[str, Any]:
@@ -488,6 +497,8 @@ def main() -> int:
     args = parser.parse_args()
     if args.ai is None:
         args.ai = ["ScriptedAdventureAI"]
+    else:
+        args.ai = normalize_ai_names(args.ai)
 
     args.output.mkdir(parents=True, exist_ok=True)
     results: list[dict[str, Any]] = []
