@@ -5,11 +5,12 @@ Default adventure policy
 ------------------------
 
 The C++ adventure AI host gives this script a read-only snapshot of the current
-turn plus an already-validated action space. The script does not call game
-actions directly. It only chooses a small ordered plan made from actions the host
-has already declared legal enough to try. If a chosen action becomes invalid or
-unfinished while the host executes it, the host calls this script again with
-progress information and the memory returned here.
+turn, checked imperative methods, and an already-validated action space. The live
+entry point is `runDay(ai, input)`: Lua chooses one small batch of checked calls,
+executes it through the `ai` facade, refreshes, and repeats until it ends the day
+or hands one bounded slice to Nullkiller. If a chosen call becomes invalid or
+unfinished, Lua sees the checked host result and can re-evaluate from fresh
+visible state.
 
 The policy is intentionally heuristic and explicit. We prefer named weights over
 opaque arithmetic so later trace-based tuning can change priorities without
@@ -1173,9 +1174,10 @@ local function defaultQueryAnswer(query)
     return 0
 end
 
-function Script.planDay(input)
-    -- Legacy compatibility path for tests and older hosts. The active AI path
-    -- is runDay below, which executes checked actions imperatively.
+local function chooseDayActions(input)
+    -- Choose the next small batch of checked actions from the current visible
+    -- state. Active play calls this from runDay; Script.planDay below exists
+    -- only as a compatibility wrapper for old tests/tooling.
     local memory = initializeMemory(input)
     markProgress(memory, input.progress)
     rememberOpponentUpdates(input, memory)
@@ -1288,6 +1290,12 @@ function Script.planDay(input)
     }
 end
 
+function Script.planDay(input)
+    -- Legacy compatibility path for tests and older hosts. Active turns call
+    -- runDay and never require the host to execute this returned batch.
+    return chooseDayActions(input)
+end
+
 function Script.runDay(ai, input)
     -- Active imperative entry point. Lua owns the day loop: it reads visible
     -- state, executes checked host calls, refreshes after side effects, answers
@@ -1371,7 +1379,7 @@ function Script.runDay(ai, input)
             commands = commands + 1
             refreshAfterCommand()
         else
-            local output = Script.planDay(current)
+            local output = chooseDayActions(current)
             ai:setMemory(output.memory or ai:memory())
 
             local handledByNullkiller = false

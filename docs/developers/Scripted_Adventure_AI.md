@@ -1789,6 +1789,11 @@ Regression harness:
   smoke completed all scenarios at the day limit with 48 `end_turn` outputs, 391 checked `visit_object` actions,
   74 bounded query answers, 58 bounded `nullkiller_turn_slice` calls, zero failed checked actions, and zero fallback
   outputs.
+- Done: the active `defaultAdventure.lua` `runDay(ai, input)` path no longer calls its legacy `Script.planDay`
+  compatibility entry point. It now calls a neutral `chooseDayActions` helper and executes the returned checked
+  calls imperatively through the Lua facade. `Script.planDay` remains only as a wrapper for old tests/tooling. A
+  3-day traced smoke on the fixed small random-map scenario reached the day limit with `end_turn` outputs only, no
+  failed checked actions, and no fallback outputs.
 - Done: after adding explicit `nullkiller_reset`, a 16-map, 1-day traced integration smoke completed all scenarios
   at the day limit with 16 `end_turn` outputs, 20 bounded `nullkiller_turn_slice` calls, 145 checked `visit_object`
   actions, 18 bounded query answers, zero failed checked actions, and zero fallback outputs.
