@@ -1167,7 +1167,8 @@ Regression harness:
   uses `source_id` as the canonical tavern source field while keeping `town_id` compatibility; pending
   adventure-map tavern windows can expose the same checked hire action through `hireHeroOptions`.
 - Lua can now call `ai:pickBestArtifacts(heroId, otherHeroId?)` to reuse Nullkiller's artifact-preparation helper
-  for one owned hero or two co-located owned heroes. This is a coarse helper, not yet a full artifact-slot API.
+  for one owned hero or two co-located owned heroes. Scripts that need exact control can use the artifact-slot
+  operations described below instead of treating the helper as the only artifact API.
 - Hero input now includes artifact state: worn slots and backpack entries expose stable slot ids, artifact type ids,
   artifact instance ids, lock state, possible slot ids, and Nullkiller's read-only artifact scores for that hero
   and artifact type. Lua can request exact artifact swaps, bulk transfers, backpack sorting/scrolling, hero costume
@@ -1183,8 +1184,9 @@ Regression harness:
 - Lua can now call `ai:nullkillerTrade()` to run Nullkiller's build-driven resource trader once,
   `ai:tradeResources(marketId, sellResourceId, buyResourceId, amount, heroId?)` for the common exact
   resource-to-resource path, or `ai:marketTrade({...})` and its mode-specific wrappers for every native
-  `EMarketMode`. Visible market objects expose their supported market modes; richer market-rate inspection is
-  still a separate read-side improvement.
+  `EMarketMode`. Visible safe market objects expose supported market modes plus `modeDetails` and resource
+  market rates when the details are available to the player; pending market dialogs expose the same detail
+  shape.
 - Script input now includes typed `state.turn.queries` records for level-up, blocking, teleport, object-selection,
   tavern, hero-exchange, garrison, recruitment, university, market dialogs, and script-local artifact assembly
   prompts. Dialogs raised during direct Lua actions now pause the action with `pending_query = true`; Lua can
@@ -1277,17 +1279,17 @@ Regression harness:
   rearrangement. Fallback turns still use native Nullkiller dialog handling, but script-owned movement/object
   actions now answer garrison, hero-exchange, recruitment, teleport, map-object-selection, and blocking dialogs
   through the scripted executor boundary. This is a containment fix, not the final strategy interface.
-- Dialogs should become typed facade decision points instead of raw UI automation. Lua should receive visible
-  dialog/query data and call helpers such as `ai:chooseChestReward`, `ai:nullkillerAnswerQuery`, or
-  `ai:answerQuery` with stable ids. `ai:nullkillerAnswerQuery` is the explicit bounded escape hatch for reusing
-  Nullkiller's native dialog handling without restoring hidden callback side effects for every scripted action.
-  If an unplanned query appears, the executor should return structured progress such as `needs_choice` with the
-  visible dialog state so Lua can refresh and decide.
-- Artifact and army rearrangement should be added back as explicit strategy capabilities, not hidden callback
-  behavior. Facade methods should stay semantic, for example `ai:prepareHero`, `ai:transferArmy`, and
-  `ai:rearrangeArtifacts`, with intent fields such as `combat`, `mobility`, `scout`, `defend_town`, or
-  `deliver_army`. The C++ executor can then use existing legal Nullkiller mechanics and trace every resulting
-  transfer so script iterations can learn whether the preparation helped.
+- Dialogs are now typed facade decision points for the main adventure AI cases. Lua receives visible
+  dialog/query data, direct actions pause with `pending_query`, and scripts can call helpers such as
+  `ai:chooseChestReward`, `ai:nullkillerAnswerQuery`, or `ai:answerQuery` with stable ids. `ai:nullkillerAnswerQuery`
+  is the explicit bounded escape hatch for reusing Nullkiller's native dialog handling without restoring hidden
+  callback side effects for every scripted action. Future API work can add more semantic per-dialog helpers, but
+  unplanned dialogs no longer require full-day Nullkiller delegation.
+- Artifact and army rearrangement are now explicit strategy capabilities rather than hidden callback behavior.
+  Current facade methods include exact stack/artifact operations plus semantic helpers such as `ai:prepareHero`,
+  `ai:transferArmy`, `ai:pickBestCreatures`, and `ai:pickBestArtifacts`. Future wrappers may add richer intent
+  labels such as `combat`, `mobility`, `scout`, `defend_town`, or `deliver_army`, but the current API can already
+  route these decisions through checked C++ actions and trace the resulting transfers.
 - A fresh 10-game default-script run after the callback-boundary fix ended without timeouts: ScriptedAdventureAI
   won 3/10 and Nullkiller2 won 7/10, average completion day 60.4. The run confirms that the integration bug is
   contained, but the default script is still strategically weaker than native Nullkiller/fallback. Trace summaries
