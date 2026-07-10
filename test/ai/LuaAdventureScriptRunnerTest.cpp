@@ -346,6 +346,68 @@ TEST(LuaAdventureScriptRunnerTest, RunsImperativeDayAndExecutesHostCommand)
 	EXPECT_DOUBLE_EQ(*output.confidence, 0.75);
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubroutines)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				local candidates = ai:nullkillerTasks("adventure", 7)
+				ai:runNullkillerTask(candidates.tasks[1].task_id)
+				local step = ai:nullkillerStep({ mode = "priority", max_candidates = 2 })
+				return {
+					status = "end_turn",
+					memory = {
+						version = 1,
+						firstTask = candidates.tasks[1].task_id,
+						stepTask = step.selectedTask.task_id
+					},
+					actions = {}
+				}
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-nullkiller-subroutines", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+
+		const std::string type = command["payload"]["type"].String();
+		if(type == "nullkiller_tasks")
+		{
+			response["result"]["nullkiller"]["tasks"].Vector();
+			JsonNode task;
+			task["task_id"] = JsonNode(41);
+			response["result"]["nullkiller"]["tasks"].Vector().push_back(task);
+		}
+		else if(type == "nullkiller_step")
+		{
+			response["result"]["selectedTask"]["task_id"] = JsonNode(42);
+		}
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 3);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_tasks");
+	EXPECT_EQ(commands[0]["payload"]["mode"].String(), "adventure");
+	EXPECT_EQ(commands[0]["payload"]["max_candidates"].Integer(), 7);
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "nullkiller_task");
+	EXPECT_EQ(commands[1]["payload"]["task_id"].Integer(), 41);
+	EXPECT_EQ(commands[2]["payload"]["type"].String(), "nullkiller_step");
+	EXPECT_EQ(commands[2]["payload"]["mode"].String(), "priority");
+	EXPECT_EQ(commands[2]["payload"]["max_candidates"].Integer(), 2);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_EQ(output.memory["firstTask"].Integer(), 41);
+	EXPECT_EQ(output.memory["stepTask"].Integer(), 42);
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanDelegateToFallback)
 {
 	const std::string source = R"lua(
@@ -498,6 +560,7 @@ TEST(LuaAdventureScriptRunnerTest, BundledAdventureScriptVariantsRun)
 		"scripts/ai/aggressiveAdventure.lua",
 		"scripts/ai/economyAdventure.lua",
 		"scripts/ai/explorerAdventure.lua",
+		"scripts/ai/candidates/boundedNullkillerAdventure.lua",
 		"scripts/ai/candidates/fallbackAdventure.lua"
 	};
 
@@ -506,7 +569,9 @@ TEST(LuaAdventureScriptRunnerTest, BundledAdventureScriptVariantsRun)
 		scripting::LuaAdventureScriptRunner runner(script, readAdventureScript(script));
 		const AI::AdventureScriptOutput output = runner.planDay(makeInput());
 
-		if(script == "scripts/ai/defaultAdventure.lua" || script == "scripts/ai/candidates/fallbackAdventure.lua")
+		if(script == "scripts/ai/defaultAdventure.lua"
+			|| script == "scripts/ai/candidates/boundedNullkillerAdventure.lua"
+			|| script == "scripts/ai/candidates/fallbackAdventure.lua")
 		{
 			EXPECT_EQ(output.status, AI::AdventureScriptStatus::FALLBACK) << script;
 			EXPECT_TRUE(output.actions.empty()) << script;

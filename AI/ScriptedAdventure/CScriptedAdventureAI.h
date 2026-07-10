@@ -126,11 +126,15 @@ private:
 	std::mutex autoAnswerMutex;
 	std::map<QueryID, int> pendingAutoAnswers;
 	bool scriptActionAutoAnswerMode = false;
+	std::vector<std::pair<int32_t, NK2AI::Goals::TTask>> nullkillerTaskHandles;
+	int32_t nextNullkillerTaskHandle = 1;
 
 	void makeScriptedTurn();
 	bool tryMakeScriptedTurn();
 	bool tryMakeImperativeScriptedTurn(scripting::LuaAdventureScriptRunner & runner);
 	bool executeScriptAction(const JsonNode & action, JsonNode & actionResult);
+	JsonNode makeNullkillerTaskCandidates(const JsonNode & action);
+	bool executeNullkillerTaskAction(const JsonNode & action, JsonNode & actionResult);
 	RequestWaitResult submitAndWaitForRequest(const std::type_info & requestType, uint16_t expectedPackType, const std::function<void()> & submit);
 	JsonNode jsonRequestWaitResult(const RequestWaitResult & request) const;
 	bool waitTillFreeForScriptAction(JsonNode & actionResult, const std::string & actionType);

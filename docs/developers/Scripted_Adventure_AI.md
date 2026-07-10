@@ -148,6 +148,13 @@ The `ai` facade:
 - `ai:build`, `ai:recruit`, `ai:hireHero`, `ai:transferArmy`, `ai:moveHero`, `ai:visitObject`,
   `ai:answerQuery`, `ai:endTurn`: request checked host actions.
 - `ai:nullkiller()` / `ai:nullkillerForRestOfDay()`: stop script control and let Nullkiller finish the turn.
+- `ai:nullkillerTasks(mode, maxCandidates)`: ask Nullkiller for a bounded snapshot of native task candidates.
+  `mode` is `priority`, `adventure`, or `all`. Returned `task_id` values are opaque handles that expire on
+  `ai:refresh()` or the next candidate snapshot.
+- `ai:runNullkillerTask(taskId)`: execute one previously returned native Nullkiller task through C++ validation
+  and Nullkiller's normal task machinery, then return control to Lua.
+- `ai:nullkillerStep(mode, maxCandidates)`: ask for candidates and execute the best one as a single bounded
+  Nullkiller subroutine. Unlike `ai:nullkiller()`, this does not intentionally give away the rest of the day.
 - `ai:output(status, intent, confidence)`: return final status plus current memory.
 
 Output from `runDay`:
@@ -376,6 +383,20 @@ Initial integration options:
 
 Recommended path: hybrid. It gives scripts enough strategic influence while preserving mature pathfinding and
 task execution code.
+
+Current bounded subroutine surface:
+
+- `nullkiller_tasks` exposes priority tasks from `RecruitHeroBehavior`, `BuyArmyBehavior`, and
+  `BuildingBehavior`, plus adventure tasks from capture, cluster, defense, escape, gather-army, and exploration
+  behavior decomposition.
+- Candidate JSON contains stable machine fields such as `task_id`, `goalTypeId`, `priority`, `priorityTier`,
+  `hero_id`, `town_id`, `object_id`, `tile`, affected object ids, and hero role ids. Debug descriptions may be
+  present for traces, but scripts should use stable ids for strategy.
+- `nullkiller_task` executes exactly one stored candidate snapshot through `Nullkiller::executeScriptTask`.
+  Native Nullkiller dialog handlers stay active for this path, so the subroutine behaves like Nullkiller rather
+  than simplified script auto-answer logic.
+- `nullkiller_step` is a convenience call that selects and executes the current best bounded candidate, then
+  returns to Lua for refresh, more decisions, or end-turn.
 
 The script engine should reuse these Nullkiller systems where possible:
 
@@ -878,6 +899,12 @@ Regression harness:
   answers for level-ups, blocking dialogs, garrisons, recruitment, markets, and hero exchange. Native Nullkiller
   dialog handling is now preserved for fallback turns. After the fix, all-fallback ScriptedAdventureAI also won
   7/10 on the corpus, matching the mirror by win count.
+- The first bounded Nullkiller subroutine smoke used `scripts/ai/candidates/boundedNullkillerAdventure.lua` on
+  `smoke-training-dwarven-gold` for one day. It executed four `nullkiller_step` actions with no failed host
+  actions, then intentionally delegated the remaining turn when the bounded task surface had no executable native
+  task left. This confirms the Lua coroutine can call native Nullkiller task fragments and regain control, while
+  also showing the next API gap: failed or exhausted native task searches should provide richer replan/try-next
+  details to Lua.
 - The same debugging pass found two opposite modal-query hazards. First, Lua-owned `visit_object` actions could
   leave clients asleep on a stale modal query, for example a garrison dialog opened by movement, so scripted query
   replies are now always sent asynchronously. Second, delegating rich modal callbacks to Nullkiller during a
@@ -985,7 +1012,11 @@ Regression harness:
 - Done: movement/object candidates include read-only `reason`, `value`, `risk`, `safe`, `danger`, `dangerRatio`,
   `estimatedLoss`, and `blockedBy` fields.
 - Done: nearby visible enemy pressure against owned heroes is exposed as `analysis.heroThreatAlerts`.
-- Partial: full danger-map estimates and Nullkiller task fragments are not exposed yet.
+- Partial: first bounded Nullkiller task fragments are exposed through `ai:nullkillerTasks`,
+  `ai:runNullkillerTask`, and `ai:nullkillerStep`. This is not full parity yet: scripts still need richer direct
+  access to typed dialogs, artifact operations, market/trading choices, adventure spells, boats, quest decisions,
+  and deeper analyzer details.
+- Partial: full danger-map estimates are not exposed yet.
 - Partial: MCP and scripted AI still duplicate some JSON assembly code; extraction can happen once the surface
   stabilizes.
 
@@ -1051,7 +1082,8 @@ Regression harness:
 
 - Should `AdventurePlan` live in `lib/ai`, `AI/ScriptedAdventure`, or another shared target?
 - Should the first script output only concrete actions, or also high-level intents that C++ decomposes?
-- Which Nullkiller task abstractions can be safely exposed as candidate plan fragments?
+- Which additional Nullkiller task/analyzer abstractions should be exposed next, and which ones need narrower
+  checked facades before Lua can safely select them?
 - How much opponent movement can be reconstructed from visible updates without leaking hidden information?
 - What is the right default memory size limit?
 - Should script reload be per turn, per day, or only via explicit debug command?
@@ -1062,7 +1094,9 @@ The next high-value implementation steps are:
 
 - Run fixed-map `--testdays N` batches comparing default, aggressive, economy, explorer, Nullkiller, and older
   script versions, then feed trace deltas and mined JSON fixtures back into the Lua policy.
-- Expand the default Lua policy from basic defense/opponent awareness into real defend/gather/avoid-zone
-  strategy once higher-level candidates are available.
-- Expose richer Nullkiller-generated task fragments and danger estimates as read-only candidates for scripts to
-  rank instead of rebuilding those analyses in Lua.
+- Add typed Lua decision surfaces for dialogs and missing player actions: artifact rearrangement, markets,
+  adventure spells, boats/shipyards, quests/gates, level-up choices, university choices, and object selection.
+- Expand the default Lua policy to rank and compose bounded Nullkiller candidates before trying to outperform
+  native Nullkiller on the random-map corpus.
+- Expose richer Nullkiller analyzer data, especially danger-map and blocker/cluster details, as read-only
+  candidate fields instead of rebuilding those analyses in Lua.

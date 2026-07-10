@@ -567,6 +567,40 @@ std::string toUpperAscii(std::string value)
 	return value;
 }
 
+NK2AI::ScriptTaskSearchMode readNullkillerTaskSearchMode(const JsonNode & node, const NK2AI::ScriptTaskSearchMode defaultValue = NK2AI::ScriptTaskSearchMode::ALL)
+{
+	if(!hasField(node, "mode"))
+		return defaultValue;
+
+	if(node["mode"].isNumber())
+	{
+		switch(readInteger(node, "mode"))
+		{
+		case static_cast<int32_t>(NK2AI::ScriptTaskSearchMode::PRIORITY):
+			return NK2AI::ScriptTaskSearchMode::PRIORITY;
+		case static_cast<int32_t>(NK2AI::ScriptTaskSearchMode::ADVENTURE):
+			return NK2AI::ScriptTaskSearchMode::ADVENTURE;
+		case static_cast<int32_t>(NK2AI::ScriptTaskSearchMode::ALL):
+			return NK2AI::ScriptTaskSearchMode::ALL;
+		default:
+			throw std::invalid_argument("Unsupported Nullkiller task search mode id");
+		}
+	}
+
+	if(!node["mode"].isString())
+		throw std::invalid_argument("Nullkiller task search mode must be a string or integer");
+
+	const std::string mode = toLowerAscii(node["mode"].String());
+	if(mode == "priority" || mode == "support")
+		return NK2AI::ScriptTaskSearchMode::PRIORITY;
+	if(mode == "adventure" || mode == "map")
+		return NK2AI::ScriptTaskSearchMode::ADVENTURE;
+	if(mode == "all")
+		return NK2AI::ScriptTaskSearchMode::ALL;
+
+	throw std::invalid_argument("Unsupported Nullkiller task search mode: " + mode);
+}
+
 std::optional<std::string> readEnvironmentString(const char * name)
 {
 	const char * value = std::getenv(name);
@@ -755,6 +789,118 @@ std::string movementResultName(TryMoveHero::EResult result)
 	return "unknown";
 }
 
+std::string nullkillerTaskSearchModeName(NK2AI::ScriptTaskSearchMode mode)
+{
+	switch(mode)
+	{
+	case NK2AI::ScriptTaskSearchMode::PRIORITY:
+		return "priority";
+	case NK2AI::ScriptTaskSearchMode::ADVENTURE:
+		return "adventure";
+	case NK2AI::ScriptTaskSearchMode::ALL:
+		return "all";
+	}
+	return "unknown";
+}
+
+std::string nullkillerHeroRoleName(NK2AI::HeroRole role)
+{
+	switch(role)
+	{
+	case NK2AI::SCOUT:
+		return "scout";
+	case NK2AI::MAIN:
+		return "main";
+	}
+	return "unknown";
+}
+
+std::string nullkillerGoalName(NK2AI::Goals::EGoals goal)
+{
+	switch(goal)
+	{
+	case NK2AI::Goals::INVALID:
+		return "invalid";
+	case NK2AI::Goals::WIN:
+		return "win";
+	case NK2AI::Goals::CONQUER:
+		return "conquer";
+	case NK2AI::Goals::BUILD:
+		return "build";
+	case NK2AI::Goals::EXPLORE:
+		return "explore";
+	case NK2AI::Goals::GATHER_ARMY:
+		return "gather_army";
+	case NK2AI::Goals::BOOST_HERO:
+		return "boost_hero";
+	case NK2AI::Goals::RECRUIT_HERO:
+		return "recruit_hero";
+	case NK2AI::Goals::RECRUIT_HERO_BEHAVIOR:
+		return "recruit_hero_behavior";
+	case NK2AI::Goals::BUILD_STRUCTURE:
+		return "build_structure";
+	case NK2AI::Goals::COLLECT_RES:
+		return "collect_res";
+	case NK2AI::Goals::GATHER_TROOPS:
+		return "gather_troops";
+	case NK2AI::Goals::CAPTURE_OBJECTS:
+		return "capture_objects";
+	case NK2AI::Goals::GET_ART_TYPE:
+		return "get_art_type";
+	case NK2AI::Goals::DEFENCE:
+		return "defence";
+	case NK2AI::Goals::STARTUP:
+		return "startup";
+	case NK2AI::Goals::DIG_AT_TILE:
+		return "dig_at_tile";
+	case NK2AI::Goals::BUY_ARMY:
+		return "buy_army";
+	case NK2AI::Goals::TRADE:
+		return "trade";
+	case NK2AI::Goals::BUILD_BOAT:
+		return "build_boat";
+	case NK2AI::Goals::COMPLETE_QUEST:
+		return "complete_quest";
+	case NK2AI::Goals::ADVENTURE_SPELL_CAST:
+		return "adventure_spell_cast";
+	case NK2AI::Goals::EXECUTE_HERO_CHAIN:
+		return "execute_hero_chain";
+	case NK2AI::Goals::EXCHANGE_SWAP_TOWN_HEROES:
+		return "exchange_swap_town_heroes";
+	case NK2AI::Goals::DISMISS_HERO:
+		return "dismiss_hero";
+	case NK2AI::Goals::COMPOSITION:
+		return "composition";
+	case NK2AI::Goals::CLUSTER_BEHAVIOR:
+		return "cluster_behavior";
+	case NK2AI::Goals::UNLOCK_CLUSTER:
+		return "unlock_cluster";
+	case NK2AI::Goals::HERO_EXCHANGE:
+		return "hero_exchange";
+	case NK2AI::Goals::ARMY_UPGRADE:
+		return "army_upgrade";
+	case NK2AI::Goals::DEFEND_TOWN:
+		return "defend_town";
+	case NK2AI::Goals::CAPTURE_OBJECT:
+		return "capture_object";
+	case NK2AI::Goals::SAVE_RESOURCES:
+		return "save_resources";
+	case NK2AI::Goals::STAY_AT_TOWN_BEHAVIOR:
+		return "stay_at_town_behavior";
+	case NK2AI::Goals::STAY_AT_TOWN:
+		return "stay_at_town";
+	case NK2AI::Goals::EXPLORATION_BEHAVIOR:
+		return "exploration_behavior";
+	case NK2AI::Goals::ESCAPE_BEHAVIOR:
+		return "escape_behavior";
+	case NK2AI::Goals::EXPLORATION_POINT:
+		return "exploration_point";
+	case NK2AI::Goals::EXPLORE_NEIGHBOUR_TILE:
+		return "explore_neighbour_tile";
+	}
+	return "unknown";
+}
+
 JsonNode jsonPositions(const FowTilesType & positions, size_t maxPositions)
 {
 	JsonNode node;
@@ -887,6 +1033,53 @@ JsonNode jsonHero(const CGHeroInstance * hero)
 	node["primarySkills"]["knowledge"] = JsonNode(hero->getPrimSkillLevel(PrimarySkill::KNOWLEDGE));
 	node["armyStrength"] = JsonNode(static_cast<int64_t>(hero->getArmyStrength()));
 	node["army"] = jsonArmy(*hero);
+	return node;
+}
+
+JsonNode jsonNullkillerTaskCandidate(int32_t taskID, const NK2AI::ScriptTaskCandidate & candidate)
+{
+	JsonNode node;
+	node["task_id"] = JsonNode(taskID);
+	node["modeId"] = JsonNode(static_cast<int32_t>(candidate.mode));
+	node["mode"] = JsonNode(nullkillerTaskSearchModeName(candidate.mode));
+	node["priority"].Float() = candidate.task ? candidate.task->priority : 0.0f;
+	node["priorityTier"] = JsonNode(candidate.priorityTier);
+	node["heroRoleId"] = JsonNode(static_cast<int32_t>(candidate.heroRole));
+	node["heroRole"] = JsonNode(nullkillerHeroRoleName(candidate.heroRole));
+	node["affectedObjectIds"].Vector();
+
+	if(candidate.task)
+	{
+		if(const CGHeroInstance * hero = candidate.task->getHero())
+			node["hero_id"] = JsonNode(hero->id.getNum());
+
+		for(const ObjectInstanceID objectID : candidate.task->getAffectedObjects())
+			node["affectedObjectIds"].Vector().push_back(JsonNode(objectID.getNum()));
+
+		if(const auto * goal = dynamic_cast<const NK2AI::Goals::AbstractGoal *>(candidate.task.get()))
+		{
+			node["goalTypeId"] = JsonNode(static_cast<int32_t>(goal->goalType));
+			node["goalType"] = JsonNode(nullkillerGoalName(goal->goalType));
+			if(goal->town)
+				node["town_id"] = JsonNode(goal->town->id.getNum());
+			if(goal->objid >= 0)
+				node["object_id"] = JsonNode(goal->objid);
+			if(goal->bid >= 0)
+				node["building_id"] = JsonNode(goal->bid);
+			if(goal->aid >= 0)
+				node["artifact_id"] = JsonNode(goal->aid);
+			if(goal->resID >= 0)
+				node["resource_id"] = JsonNode(goal->resID);
+			if(goal->tile.x >= 0 && goal->tile.y >= 0 && goal->tile.z >= 0)
+				node["tile"] = jsonPosition(goal->tile);
+			if(goal->goldCost > 0)
+				node["goldCost"] = JsonNode(static_cast<int64_t>(goal->goldCost));
+			node["buildingCost"] = jsonResources(goal->buildingCost);
+		}
+
+		node["debugDescription"] = JsonNode(jsonText(candidate.task->toString()));
+	}
+
 	return node;
 }
 
@@ -1561,6 +1754,72 @@ bool CScriptedAdventureAI::waitTillFreeForScriptAction(JsonNode & actionResult, 
 	return false;
 }
 
+JsonNode CScriptedAdventureAI::makeNullkillerTaskCandidates(const JsonNode & action)
+{
+	const NK2AI::ScriptTaskSearchMode mode = readNullkillerTaskSearchMode(action);
+	const int32_t requestedMax = readInteger(action, "max_candidates", 16);
+	const size_t maxCandidates = static_cast<size_t>(std::clamp<int32_t>(requestedMax, 1, 64));
+
+	JsonNode result;
+	result["modeId"] = JsonNode(static_cast<int32_t>(mode));
+	result["mode"] = JsonNode(nullkillerTaskSearchModeName(mode));
+	result["tasks"].Vector();
+
+	{
+		std::shared_lock gameStateLock(CGameState::mutex);
+		AIGateway::cheatMapReveal(nullkiller);
+		AIGateway::memorizeVisitableObjs(nullkiller->memory, nullkiller->dangerHitMap, playerID, cc);
+		AIGateway::memorizeRevisitableObjs(nullkiller->memory, playerID, cc);
+
+		nullkiller->resetScriptTaskState();
+		const auto candidates = nullkiller->getScriptTaskCandidates(mode, maxCandidates);
+
+		nullkillerTaskHandles.clear();
+		for(const NK2AI::ScriptTaskCandidate & candidate : candidates)
+		{
+			const int32_t taskID = nextNullkillerTaskHandle++;
+			nullkillerTaskHandles.emplace_back(taskID, candidate.task);
+			result["tasks"].Vector().push_back(jsonNullkillerTaskCandidate(taskID, candidate));
+		}
+	}
+
+	result["count"] = JsonNode(static_cast<int32_t>(result["tasks"].Vector().size()));
+	return result;
+}
+
+bool CScriptedAdventureAI::executeNullkillerTaskAction(const JsonNode & action, JsonNode & actionResult)
+{
+	const int32_t taskID = readInteger(action, "task_id");
+	const auto taskIter = std::ranges::find_if(nullkillerTaskHandles, [taskID](const auto & entry)
+	{
+		return entry.first == taskID;
+	});
+	if(taskIter == nullkillerTaskHandles.end())
+		throw std::invalid_argument("Unknown or expired Nullkiller task handle");
+
+	const NK2AI::Goals::TTask task = taskIter->second;
+	actionResult["task_id"] = JsonNode(taskID);
+	if(task)
+		actionResult["debugDescription"] = JsonNode(jsonText(task->toString()));
+
+	bool executed = false;
+	{
+		std::shared_lock gameStateLock(CGameState::mutex);
+		executed = nullkiller->executeScriptTask(task);
+	}
+
+	for(const auto * heroInfo : cc->getHeroesInfo())
+		AIGateway::pickBestArtifacts(cc, heroInfo);
+
+	if(!waitTillFreeForScriptAction(actionResult, "nullkiller_task"))
+		return false;
+
+	actionResult["ok"] = JsonNode(executed);
+	if(!executed)
+		actionResult["error"] = JsonNode("Nullkiller task failed to execute");
+	return executed;
+}
+
 void CScriptedAdventureAI::makeScriptedTurn()
 {
 	try
@@ -1727,6 +1986,7 @@ bool CScriptedAdventureAI::tryMakeImperativeScriptedTurn(scripting::LuaAdventure
 	executed.Vector();
 	failed.Vector();
 	remaining.Vector();
+	nullkillerTaskHandles.clear();
 
 	JsonNode progress = makeProgressJson(executed, failed, remaining);
 	AI::AdventureScriptInput input = makeAdventureScriptInput(progress);
@@ -1749,6 +2009,7 @@ bool CScriptedAdventureAI::tryMakeImperativeScriptedTurn(scripting::LuaAdventure
 			const std::string kind = readString(command, "kind");
 			if(kind == "refresh")
 			{
+				nullkillerTaskHandles.clear();
 				response["input"] = makeAdventureScriptInput(progress).toJson();
 				return response;
 			}
@@ -1864,7 +2125,67 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		{
 			owner.setScriptActionAutoAnswerMode(false);
 		}
-	} autoAnswerModeGuard(*this);
+	};
+
+	std::optional<AutoAnswerModeGuard> autoAnswerModeGuard;
+	if(type != "nullkiller_tasks" && type != "nullkiller_task" && type != "nullkiller_step")
+		autoAnswerModeGuard.emplace(*this);
+
+	if(type == "nullkiller_tasks")
+	{
+		const JsonNode candidates = makeNullkillerTaskCandidates(action);
+		actionResult["ok"] = JsonNode(true);
+		actionResult["nullkiller"] = candidates;
+		return true;
+	}
+
+	if(type == "nullkiller_task")
+		return executeNullkillerTaskAction(action, actionResult);
+
+	if(type == "nullkiller_step")
+	{
+		const JsonNode candidates = makeNullkillerTaskCandidates(action);
+		actionResult["nullkiller"] = candidates;
+		const auto & tasks = candidates["tasks"].Vector();
+		if(tasks.empty())
+		{
+			actionResult["ok"] = JsonNode(true);
+			actionResult["didExecute"] = JsonNode(false);
+			return true;
+		}
+
+		const JsonNode selectedTask = tasks.front();
+		actionResult["selectedTask"] = selectedTask;
+		actionResult["didExecute"] = JsonNode(true);
+
+		JsonNode taskAction;
+		taskAction["task_id"] = selectedTask["task_id"];
+		JsonNode taskResult;
+		try
+		{
+			const bool continueAfterTask = executeNullkillerTaskAction(taskAction, taskResult);
+			if(taskResult["ok"].isBool() && taskResult["ok"].Bool())
+			{
+				actionResult["ok"] = JsonNode(true);
+				actionResult["task_id"] = taskResult["task_id"];
+				if(hasField(taskResult, "debugDescription"))
+					actionResult["debugDescription"] = taskResult["debugDescription"];
+				return continueAfterTask;
+			}
+		}
+		catch(const std::exception & e)
+		{
+			taskResult["ok"] = JsonNode(false);
+			taskResult["error"] = JsonNode(e.what());
+		}
+
+		actionResult["ok"] = JsonNode(true);
+		actionResult["didExecute"] = JsonNode(false);
+		actionResult["failedTask"] = taskResult;
+		if(taskResult["error"].isString())
+			actionResult["error"] = taskResult["error"];
+		return true;
+	}
 
 	if(type == "build")
 	{
@@ -2142,6 +2463,8 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
+	for(const char * type : { "nullkiller_tasks", "nullkiller_task", "nullkiller_step" })
+		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();
 	actionSpace["recruitOptions"].Vector();
@@ -2366,11 +2689,13 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 	analysis["execution"]["validatesRouteIds"] = JsonNode(true);
 	analysis["execution"]["replansAfterObjectVisit"] = JsonNode(true);
 	analysis["execution"]["fallbackAI"] = JsonNode("Nullkiller2");
+	analysis["execution"]["boundedNullkillerSubroutines"] = JsonNode(true);
+	analysis["execution"]["nullkillerTaskHandlesExpireAfterRefresh"] = JsonNode(true);
 	analysis["experimentalSupportActions"] = JsonNode(scriptConfig.experimentalSupportActions);
 	analysis["scriptMemory"]["persistedInPlayerLocalSettings"] = JsonNode(true);
 	analysis["scriptMemory"]["localStateKey"] = JsonNode(SCRIPT_MEMORY_LOCAL_STATE_KEY);
 	analysis["candidateFields"].Vector();
-	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "kindId", "buildingKindId", "transferKindId", "pathActionId", "levelId" })
+	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "kindId", "buildingKindId", "transferKindId", "pathActionId", "levelId", "task_id", "goalTypeId", "priorityTier", "heroRoleId" })
 		analysis["candidateFields"].Vector().push_back(JsonNode(field));
 	analysis["danger"]["candidateDangerSource"] = JsonNode("Nullkiller direct object/guard danger evaluator");
 	analysis["danger"]["enemyReachSource"] = JsonNode("visible enemy distance and strength alerts");

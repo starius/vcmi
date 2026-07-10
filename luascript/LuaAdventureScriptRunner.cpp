@@ -118,6 +118,36 @@ end
 ai.nullkiller = ai.delegateToNullkiller
 ai.nullkillerForRestOfDay = ai.delegateToNullkiller
 
+function ai:nullkillerTasks(mode, maxCandidates)
+	local action = copyFields(mode)
+	if type(mode) ~= "table" then
+		action.mode = mode or "all"
+		action.max_candidates = maxCandidates
+	end
+	action.type = "nullkiller_tasks"
+	local result = self:execute(action)
+	return result.nullkiller or result
+end
+
+function ai:runNullkillerTask(taskId)
+	local action = copyFields(taskId)
+	if type(taskId) ~= "table" then
+		action.task_id = taskId
+	end
+	action.type = "nullkiller_task"
+	return self:execute(action)
+end
+
+function ai:nullkillerStep(mode, maxCandidates)
+	local action = copyFields(mode)
+	if type(mode) ~= "table" then
+		action.mode = mode or "all"
+		action.max_candidates = maxCandidates
+	end
+	action.type = "nullkiller_step"
+	return self:execute(action)
+end
+
 function ai:output(status, intent, confidence)
 	return {
 		status = status or "continue",

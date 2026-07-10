@@ -178,6 +178,114 @@ TaskFailureAction chooseTaskFailureAction(bool hasAnySuccess, bool hasRemainingT
 	return TaskFailureAction::STOP_TURN;
 }
 
+void Nullkiller::resetScriptTaskState()
+{
+	pathfinderTurnStorageMisses.store(0);
+	resetState();
+}
+
+std::vector<ScriptTaskCandidate> Nullkiller::getScriptTaskCandidates(const ScriptTaskSearchMode mode, const size_t maxCandidates)
+{
+	std::vector<ScriptTaskCandidate> result;
+	if(maxCandidates == 0)
+		return result;
+
+	auto appendCandidate = [&](const Goals::TTask & task, ScriptTaskSearchMode sourceMode, int priorityTier)
+	{
+		if(!task || task->priority <= 0 || !areAffectedObjectsPresent(task))
+			return;
+
+		HeroPtr heroPtr(task->getHero(), cc.get());
+		if(task->getHero() && !heroPtr.isVerified(false))
+			return;
+
+		result.push_back(ScriptTaskCandidate{task, sourceMode, priorityTier, getTaskRole(task)});
+	};
+
+	updateState();
+
+	if(mode == ScriptTaskSearchMode::PRIORITY || mode == ScriptTaskSearchMode::ALL)
+	{
+		Goals::TGoalVec priorityTasks;
+		decompose(priorityTasks, sptr(RecruitHeroBehavior()), 1);
+		decompose(priorityTasks, sptr(BuyArmyBehavior()), 1);
+		decompose(priorityTasks, sptr(BuildingBehavior()), 1);
+
+		for(const Goals::TSubgoal & task : priorityTasks)
+		{
+			if(task->asTask()->priority <= 0)
+				task->asTask()->priority = priorityEvaluator->evaluate(task);
+		}
+
+		std::ranges::sort(priorityTasks, [](const Goals::TSubgoal & left, const Goals::TSubgoal & right)
+		{
+			return left->asTask()->priority > right->asTask()->priority;
+		});
+
+		for(const Goals::TSubgoal & task : priorityTasks)
+		{
+			appendCandidate(taskptr(*task), ScriptTaskSearchMode::PRIORITY, PriorityEvaluator::PriorityTier::BUILDINGS);
+			if(result.size() >= maxCandidates)
+				return result;
+		}
+	}
+
+	if(mode == ScriptTaskSearchMode::ADVENTURE || mode == ScriptTaskSearchMode::ALL)
+	{
+		constexpr int MAX_DEPTH = 10;
+		Goals::TGoalVec tasks;
+		decompose(tasks, sptr(CaptureObjectsBehavior()), 1);
+		decompose(tasks, sptr(ClusterBehavior()), MAX_DEPTH);
+		decompose(tasks, sptr(DefenceBehavior()), MAX_DEPTH);
+		decompose(tasks, sptr(EscapeBehavior()), 1);
+		decompose(tasks, sptr(GatherArmyBehavior()), MAX_DEPTH);
+
+		if(!isOpenMap())
+			decompose(tasks, sptr(ExplorationBehavior()), MAX_DEPTH);
+
+		Goals::TTaskVec selectedTasks;
+		int selectedPriorityTier = PriorityEvaluator::PriorityTier::INSTAKILL;
+		for(int priorityTier = PriorityEvaluator::PriorityTier::INSTAKILL; priorityTier <= PriorityEvaluator::PriorityTier::MAX_PRIORITY_TIER; ++priorityTier)
+		{
+			selectedPriorityTier = priorityTier;
+			selectedTasks = buildPlanAndFilter(tasks, priorityTier);
+			if(!selectedTasks.empty())
+				break;
+		}
+
+		std::ranges::sort(selectedTasks, [](const Goals::TTask & left, const Goals::TTask & right)
+		{
+			return left->priority > right->priority;
+		});
+
+		for(const Goals::TTask & task : selectedTasks)
+		{
+			appendCandidate(task, ScriptTaskSearchMode::ADVENTURE, selectedPriorityTier);
+			if(result.size() >= maxCandidates)
+				break;
+		}
+	}
+
+	return result;
+}
+
+bool Nullkiller::executeScriptTask(const Goals::TTask & task)
+{
+	if(!task)
+		throw std::invalid_argument("Nullkiller task handle is empty");
+	if(!areAffectedObjectsPresent(task))
+		throw std::invalid_argument("Nullkiller task refers to an object that is no longer visible or present");
+
+	HeroPtr heroPtr(task->getHero(), cc.get());
+	if(task->getHero() && !heroPtr.isVerified(false))
+		throw std::invalid_argument("Nullkiller task refers to an unavailable hero");
+
+	if(task->priority <= 0)
+		throw std::invalid_argument("Nullkiller task priority is no longer positive");
+
+	return executeTask(task);
+}
+
 Goals::TTask Nullkiller::choseBestTask(Goals::TGoalVec & tasks) const
 {
 	if(tasks.empty())

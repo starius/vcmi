@@ -82,6 +82,21 @@ enum class TaskFailureAction
 
 TaskFailureAction chooseTaskFailureAction(bool hasAnySuccess, bool hasRemainingTasks, bool canReplan);
 
+enum class ScriptTaskSearchMode
+{
+	PRIORITY = 0,
+	ADVENTURE = 1,
+	ALL = 2
+};
+
+struct ScriptTaskCandidate
+{
+	Goals::TTask task;
+	ScriptTaskSearchMode mode = ScriptTaskSearchMode::ALL;
+	int priorityTier = 0;
+	HeroRole heroRole = SCOUT;
+};
+
 class Nullkiller
 {
 private:
@@ -126,6 +141,9 @@ public:
 	virtual ~Nullkiller();
 	void init(const std::shared_ptr<CCallback> & cbInput, AIGateway * aiGwInput);
 	virtual void makeTurn();
+	void resetScriptTaskState();
+	std::vector<ScriptTaskCandidate> getScriptTaskCandidates(ScriptTaskSearchMode mode, size_t maxCandidates);
+	bool executeScriptTask(const Goals::TTask & task);
 	bool updateStateAndExecutePriorityPass(Goals::TGoalVec& tempResults, int passIndex);
 	bool isActive(const CGHeroInstance * hero) const { return activeHero == hero; }
 	bool isHeroLocked(const CGHeroInstance * hero) const;
