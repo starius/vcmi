@@ -313,6 +313,7 @@ TEST(LuaAdventureScriptRunnerTest, RunsImperativeDayAndExecutesHostCommand)
 		return {
 			runDay = function(ai, input)
 				local result = ai:build(7, 12)
+				ai:visitTownBuilding(7, 13)
 				return ai:output("end_turn", "built from imperative script", 0.75)
 			end
 		}
@@ -334,11 +335,15 @@ TEST(LuaAdventureScriptRunnerTest, RunsImperativeDayAndExecutesHostCommand)
 		return response;
 	});
 
-	ASSERT_EQ(commands.size(), 1);
+	ASSERT_EQ(commands.size(), 2);
 	EXPECT_EQ(commands[0]["kind"].String(), "execute");
 	EXPECT_EQ(commands[0]["payload"]["type"].String(), "build");
 	EXPECT_EQ(commands[0]["payload"]["town_id"].Integer(), 7);
 	EXPECT_EQ(commands[0]["payload"]["building_id"].Integer(), 12);
+	EXPECT_EQ(commands[1]["kind"].String(), "execute");
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "visit_town_building");
+	EXPECT_EQ(commands[1]["payload"]["town_id"].Integer(), 7);
+	EXPECT_EQ(commands[1]["payload"]["building_id"].Integer(), 13);
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	ASSERT_TRUE(output.intent);
 	EXPECT_EQ(*output.intent, "built from imperative script");

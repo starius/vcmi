@@ -184,8 +184,9 @@ The `ai` facade:
 - `ai:marketTrade({...})` and wrappers `ai:sendResources`, `ai:sellCreatures`, `ai:buyMarketArtifact`,
   `ai:sellArtifact`, `ai:sacrificeArtifact`, `ai:sacrificeCreatures`, `ai:transformToUndead`, and `ai:buySkill`:
   request every native market mode through stable numeric mode/resource/player/slot/artifact/skill ids.
-- `ai:dismissHero`, `ai:buildBoat`, `ai:dig`, `ai:castSpell`, `ai:buyArtifact`, and `ai:spellResearch`:
-  request checked primitive adventure/town actions through the normal callback/server path.
+- `ai:dismissHero`, `ai:buildBoat`, `ai:dig`, `ai:castSpell`, `ai:buyArtifact`, `ai:spellResearch`, and
+  `ai:visitTownBuilding`: request checked primitive adventure/town actions through the normal callback/server
+  path.
 - `ai:nullkiller()` / `ai:nullkillerForRestOfDay()`: stop script control and let Nullkiller finish the turn.
 - `ai:nullkillerTasks(mode, maxCandidates)`: ask Nullkiller for a bounded snapshot of native task candidates.
   `mode` is `priority`, `adventure`, or `all`. Returned `task_id` values are opaque handles that expire on
@@ -1188,6 +1189,8 @@ Regression harness:
 - Done: spell research is exposed as checked `ai:spellResearch` plus read-side `spellResearchOptions`. Mage-guild
   snapshots now hide deeper research queues and expose only currently visible spells plus the next research-dialog
   candidate.
+- Done: built town structures with immediate/manual visit effects are exposed through checked
+  `ai:visitTownBuilding` and read-side `visitTownBuildingOptions`.
 - Done: market operations are exposed through a coarse `nullkillerTrade` helper, an exact resource-resource
   helper, and a generic `marketTrade` action with wrappers for resource transfer, creature/resource sale,
   artifact purchase/sale/sacrifice, creature sacrifice, undead transformation, and university skill purchase.

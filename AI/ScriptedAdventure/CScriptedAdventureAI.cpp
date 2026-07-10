@@ -5036,6 +5036,31 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		return true;
 	}
 
+	if(type == "visit_town_building")
+	{
+		const CGTownInstance * town = cc->getTown(ObjectInstanceID(readInteger(action, "town_id")));
+		if(!town || town->tempOwner != playerID)
+			throw std::invalid_argument("Unknown town or town is not owned by scripted AI");
+
+		const BuildingID buildingID(readInteger(action, "building_id"));
+		if(!town->hasBuilt(buildingID))
+			throw std::invalid_argument("Town building is not built");
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(VisitTownBuilding), CTypeList::getInstance().getTypeID<VisitTownBuilding>(nullptr), [&]
+		{
+			cc->visitTownBuilding(town, buildingID);
+		});
+		actionResult["town_id"] = JsonNode(town->id.getNum());
+		actionResult["building_id"] = JsonNode(buildingID.getNum());
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Town building visit request was rejected by server" : "Town building visit request was not realized by server");
+		return true;
+	}
+
 	if(type == "recruit")
 	{
 		const int32_t sourceID = hasField(action, "source_id") ? readInteger(action, "source_id") : readInteger(action, "town_id");
@@ -5809,7 +5834,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "swap_creatures", "merge_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "market_trade", "dismiss_hero", "build_boat", "dig", "cast_spell", "buy_artifact", "spell_research", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_answer_query", "nullkiller_object_interaction" })
+	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "swap_creatures", "merge_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "market_trade", "dismiss_hero", "build_boat", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_answer_query", "nullkiller_object_interaction" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();
@@ -5824,6 +5849,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["adventureSpellOptions"].Vector();
 	actionSpace["buyArtifactOptions"].Vector();
 	actionSpace["spellResearchOptions"].Vector();
+	actionSpace["visitTownBuildingOptions"].Vector();
 	actionSpace["recommendedActions"].Vector();
 
 	std::shared_lock gameStateLock(CGameState::mutex);
@@ -5902,6 +5928,29 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 				actionSpace["buildOptions"].Vector().push_back(option);
 				actionSpace["recommendedActions"].Vector().push_back(option["planAction"]);
 			}
+		}
+
+		for(const BuildingID & buildingID : town->getBuildings())
+		{
+			const auto buildingIter = town->getTown()->buildings.find(buildingID);
+			if(buildingIter == town->getTown()->buildings.end() || !buildingIter->second)
+				continue;
+
+			const CBuilding * building = buildingIter->second.get();
+			const bool visitsBank = building->subId == BuildingSubID::BANK;
+			const bool visitsManualReward = town->rewardableBuildings.count(buildingID) && town->getVisitingHero() && building->manualHeroVisit;
+			if(!visitsBank && !visitsManualReward)
+				continue;
+
+			JsonNode option = jsonTownBuilding(town, buildingID);
+			option["town_id"] = JsonNode(town->id.getNum());
+			option["visitKindId"] = JsonNode(visitsBank ? 1 : 2);
+			option["visitKind"] = JsonNode(visitsBank ? "bank" : "manual_reward");
+			option["planAction"]["type"] = JsonNode("visit_town_building");
+			option["planAction"]["town_id"] = option["town_id"];
+			option["planAction"]["building_id"] = option["building_id"];
+			actionSpace["visitTownBuildingOptions"].Vector().push_back(option);
+			actionSpace["recommendedActions"].Vector().push_back(option["planAction"]);
 		}
 
 		if(!town->getVisitingHero())

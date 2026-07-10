@@ -307,6 +307,16 @@ function ai:build(townId, buildingId)
 	return self:execute(action)
 end
 
+function ai:visitTownBuilding(townId, buildingId)
+	local action = copyFields(townId)
+	if type(townId) ~= "table" then
+		action.town_id = townId
+		action.building_id = buildingId
+	end
+	action.type = "visit_town_building"
+	return self:execute(action)
+end
+
 function ai:recruit(sourceId, level, amount, creatureId, destinationId)
 	local action = copyFields(sourceId)
 	if type(sourceId) ~= "table" then
