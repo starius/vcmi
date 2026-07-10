@@ -76,6 +76,7 @@ def make_side_args(args: argparse.Namespace, side_output: Path, script: str, sce
         runs=scenario["runs"],
         testdays=scenario["testdays"],
         timeout=scenario["timeout"],
+        exit_grace_after_outcome=args.exit_grace_after_outcome,
         output=side_output,
         cwd=args.cwd,
         clean=args.clean,
@@ -374,6 +375,7 @@ def main() -> int:
     parser.add_argument("--runs", type=int, default=3, help="Runs per map and side.")
     parser.add_argument("--testdays", type=int, default=7, help="Completed adventure days before each client exits.")
     parser.add_argument("--timeout", type=int, default=300, help="Seconds before stopping one run.")
+    parser.add_argument("--exit-grace-after-outcome", type=float, default=10.0, help="Seconds to wait for clean client exit after a terminal game outcome appears in stdout.")
     parser.add_argument("--output", type=Path, default=Path("scripted-ai-evaluation"), help="Evaluation output directory.")
     parser.add_argument("--cwd", default=None, help="Working directory for vcmiclient.")
     parser.add_argument("--clean", action="store_true", help="Delete existing side/run directories before reuse.")
