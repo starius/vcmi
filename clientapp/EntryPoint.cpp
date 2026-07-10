@@ -211,6 +211,24 @@ static const CRmgTemplate * resolveRandomMapTemplate(const std::string & request
 	throw std::runtime_error("Unknown random map template: " + requestedName);
 }
 
+static JsonNode makeLoggerConfig(const std::string & domain, const std::string & level)
+{
+	JsonMap node;
+	node["domain"] = JsonNode(domain);
+	node["level"] = JsonNode(level);
+	return JsonNode(node);
+}
+
+static void configureHeadlessLogging()
+{
+	Settings logging = settings.write["logging"];
+	auto & loggers = logging["loggers"].Vector();
+	loggers.clear();
+	loggers.push_back(makeLoggerConfig("global", "info"));
+	loggers.push_back(makeLoggerConfig("ai", "info"));
+	loggers.push_back(makeLoggerConfig("rng", "warn"));
+}
+
 static std::shared_ptr<CMapGenOptions> makeRandomMapOptions(const po::variables_map & vm)
 {
 	auto options = std::make_shared<CMapGenOptions>();
@@ -404,6 +422,7 @@ int main(int argc, char * argv[])
 	{
 		session["headless"].Bool() = true;
 		session["onlyai"].Bool() = true;
+		configureHeadlessLogging();
 	}
 	else if(vm.count("spectate"))
 	{

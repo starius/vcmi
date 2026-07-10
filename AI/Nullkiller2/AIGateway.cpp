@@ -1372,9 +1372,10 @@ void AIGateway::executeActionAsync(const std::string & description, const std::f
 	if (!asyncTasks)
 		throw std::runtime_error("Attempt to execute task on shut down AI state!");
 
-	asyncTasks->run([description, whatToDo]() noexcept
+	asyncTasks->run([description, whatToDo, callback = cc]() noexcept
 	{
 		ScopedThreadName guard("NK2AI::AIGateway::" + description);
+		callback->waitTillRealize = true;
 		std::shared_lock gsLock(CGameState::mutex);
 		try
 		{

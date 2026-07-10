@@ -13,6 +13,7 @@ namespace NK2AI
 {
 bool ResourceTrader::trade(BuildAnalyzer & buildAnalyzer, CCallback & cc, const TResources & freeResources)
 {
+	static constexpr int MAX_TRADE_ATTEMPTS_PER_TURN = 16;
 	bool haveTraded = false;
 	ObjectInstanceID marketId;
 
@@ -41,7 +42,8 @@ bool ResourceTrader::trade(BuildAnalyzer & buildAnalyzer, CCallback & cc, const 
 	// return false;
 
 	bool shouldTryToTrade = true;
-	while(shouldTryToTrade)
+	int tradeAttempts = 0;
+	while(shouldTryToTrade && tradeAttempts < MAX_TRADE_ATTEMPTS_PER_TURN)
 	{
 		shouldTryToTrade = false;
 		buildAnalyzer.update();
@@ -67,8 +69,14 @@ bool ResourceTrader::trade(BuildAnalyzer & buildAnalyzer, CCallback & cc, const 
 		if(tradeHelper(EXPENDABLE_BULK_RATIO, *market, missingNow, income, freeAfterMissingTotal, buildAnalyzer, cc))
 		{
 			haveTraded = true;
+			tradeAttempts++;
 			shouldTryToTrade = true;
 		}
+	}
+	if(tradeAttempts == MAX_TRADE_ATTEMPTS_PER_TURN)
+	{
+		logAi->warn("ResourceTrader: Reached trade attempt limit for this turn.");
+		return haveTraded;
 	}
 	return haveTraded;
 }
