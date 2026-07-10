@@ -551,6 +551,23 @@ function ai:pickBestArtifacts(heroId, otherHeroId)
 	return self:execute(action)
 end
 
+function ai:prepareHero(heroId, sourceId, otherHeroId)
+	local action = copyFields(heroId)
+	if type(heroId) ~= "table" then
+		action.hero_id = heroId
+		action.source_id = sourceId
+		action.other_hero_id = otherHeroId
+	end
+	action.type = "prepare_hero"
+	if action.include_artifacts == nil then
+		action.include_artifacts = true
+	end
+	if action.include_creatures == nil then
+		action.include_creatures = true
+	end
+	return self:execute(action)
+end
+
 function ai:swapArtifacts(src, dst)
 	return self:execute({ type = "swap_artifacts", src = src, dst = dst })
 end

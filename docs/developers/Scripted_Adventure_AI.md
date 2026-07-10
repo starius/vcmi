@@ -197,6 +197,10 @@ The `ai` facade:
 - `ai:nullkillerRecruitCreatures(sourceId, destinationId?)`: ask the host to run Nullkiller's bounded recruitment
   helper once for one visible owned dwelling/town. It recruits affordable creatures that fit the destination army,
   including Nullkiller's duplicate-stack merge attempt.
+- `ai:prepareHero(heroId, sourceId?, otherHeroId?)`: run a bounded semantic hero-preparation helper. The host can
+  reuse Nullkiller's legal creature rearrangement from a co-located source army, visited owned town, or other hero,
+  and artifact optimization for the target hero plus an optional co-located other hero. `include_artifacts` and
+  `include_creatures` can be set in the table form to narrow the operation.
 - `ai:requestStatistic()`: request the normal player statistics dataset; the server response is mirrored into
   `updates` as `statistics_response`.
 - `ai:tradeResources(marketId, sellResourceId, buyResourceId, amount, heroId?)`: request an exact
@@ -1250,6 +1254,11 @@ Regression harness:
 - Done: Lua can call Nullkiller's bounded recruitment helper through
   `ai:nullkillerRecruitCreatures(sourceId, destinationId?)`, reusing native affordable recruitment and stack-fit
   handling for one visible owned dwelling or town.
+- Done: Lua can call `ai:prepareHero` for semantic hero preparation without full-day delegation. The checked host
+  call combines Nullkiller's legal best-creature transfer and artifact optimization for an owned target hero, an
+  optional co-located source army, visited owned town, and optional co-located other hero. `actionSpace` exposes
+  `prepareHeroOptions` so scripts can discover these opportunities from visible state instead of reimplementing
+  the co-location scan.
 - Done: pending dialog/window queries are exposed as typed read-side data under `state.turn.queries`, and direct
   Lua actions that open these dialogs now pause for a script answer instead of auto-answering. The bundled default
   script includes a conservative fallback answer policy; richer per-dialog strategy remains Lua policy work.

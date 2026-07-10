@@ -6731,6 +6731,70 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		return true;
 	}
 
+	if(type == "prepare_hero")
+	{
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+		if(!hero || hero->tempOwner != playerID)
+			throw std::invalid_argument("Unknown hero or hero is not owned by scripted AI");
+
+		const bool includeArtifacts = readBool(action, "include_artifacts", true);
+		const bool includeCreatures = readBool(action, "include_creatures", true);
+		if(!includeArtifacts && !includeCreatures)
+			throw std::invalid_argument("Hero preparation must include artifacts or creatures");
+		const CGHeroInstance * otherHero = nullptr;
+		if(hasField(action, "other_hero_id"))
+		{
+			otherHero = cc->getHero(ObjectInstanceID(readInteger(action, "other_hero_id")));
+			if(!otherHero || otherHero->tempOwner != playerID)
+				throw std::invalid_argument("Unknown other hero or other hero is not owned by scripted AI");
+			if(hero == otherHero)
+				throw std::invalid_argument("Hero preparation other hero must differ from target hero");
+			if(hero->visitablePos() != otherHero->visitablePos())
+				throw std::invalid_argument("Heroes must be co-located for hero preparation");
+		}
+
+		const CArmedInstance * source = nullptr;
+		if(hasField(action, "source_id"))
+		{
+			source = readOwnedArmy("source_id", "preparation source");
+			if(source == hero)
+				throw std::invalid_argument("Hero preparation source must differ from target hero");
+			if(hero->visitablePos() != source->visitablePos())
+				throw std::invalid_argument("Hero preparation source must be co-located with target hero");
+		}
+		else if(otherHero)
+		{
+			source = otherHero;
+		}
+		else if(const CGTownInstance * town = hero->getVisitedTown())
+		{
+			if(town->tempOwner == playerID)
+				source = town;
+		}
+
+		if(includeCreatures)
+		{
+			if(!source)
+				throw std::invalid_argument("Hero creature preparation requires source_id, other_hero_id, or a visited owned town");
+			pickBestCreatures(hero, source);
+		}
+
+		if(includeArtifacts)
+			AIGateway::pickBestArtifacts(cc, hero, otherHero);
+
+		actionResult["hero_id"] = JsonNode(hero->id.getNum());
+		actionResult["include_artifacts"] = JsonNode(includeArtifacts);
+		actionResult["include_creatures"] = JsonNode(includeCreatures);
+		if(source)
+			actionResult["source_id"] = JsonNode(source->id.getNum());
+		if(otherHero)
+			actionResult["other_hero_id"] = JsonNode(otherHero->id.getNum());
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(true);
+		return true;
+	}
+
 	if(type == "ignore_script_query")
 	{
 		const QueryID queryID(readInteger(action, "query_id"));
@@ -7230,12 +7294,13 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "erase_transition_artifact", "swap_creatures", "merge_stacks", "merge_or_swap_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "set_town_name", "swap_garrison_hero", "nullkiller_trade", "nullkiller_priority_pass", "nullkiller_build_army", "nullkiller_upgrade_army", "nullkiller_recruit_creatures", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_pass", "nullkiller_answer_query", "nullkiller_object_interaction" })
+	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "prepare_hero", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "erase_transition_artifact", "swap_creatures", "merge_stacks", "merge_or_swap_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "set_town_name", "swap_garrison_hero", "nullkiller_trade", "nullkiller_priority_pass", "nullkiller_build_army", "nullkiller_upgrade_army", "nullkiller_recruit_creatures", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_pass", "nullkiller_answer_query", "nullkiller_object_interaction" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();
 	actionSpace["recruitOptions"].Vector();
 	actionSpace["hireHeroOptions"].Vector();
+	actionSpace["prepareHeroOptions"].Vector();
 	actionSpace["armyTransferOptions"].Vector();
 	actionSpace["upgradeCreatureOptions"].Vector();
 	actionSpace["reachableObjects"].Vector();
@@ -7280,6 +7345,65 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		}
 	};
 
+	std::set<std::tuple<int32_t, int32_t, int32_t, int32_t, bool, bool>> seenPrepareHeroOptions;
+	auto appendPrepareHeroOption = [&](
+		const CGHeroInstance * hero,
+		const CArmedInstance * source,
+		const CGHeroInstance * otherHero,
+		int32_t kindID,
+		const std::string & kind,
+		bool includeArtifacts,
+		bool includeCreatures)
+	{
+		if(!hero || hero->tempOwner != playerID || (!includeArtifacts && !includeCreatures))
+			return;
+		if(includeCreatures)
+		{
+			if(!source || source == hero || source->tempOwner != playerID || source->visitablePos() != hero->visitablePos())
+				return;
+		}
+		if(otherHero)
+		{
+			if(otherHero == hero || otherHero->tempOwner != playerID || otherHero->visitablePos() != hero->visitablePos())
+				return;
+		}
+
+		const int32_t sourceID = source ? source->id.getNum() : -1;
+		const int32_t otherHeroID = otherHero ? otherHero->id.getNum() : -1;
+		if(!seenPrepareHeroOptions.emplace(hero->id.getNum(), sourceID, otherHeroID, kindID, includeArtifacts, includeCreatures).second)
+			return;
+
+		JsonNode option;
+		option["hero_id"] = JsonNode(hero->id.getNum());
+		option["hero"] = jsonHero(hero);
+		option["preparationKindId"] = JsonNode(kindID);
+		option["preparationKind"] = JsonNode(kind);
+		option["includeArtifacts"] = JsonNode(includeArtifacts);
+		option["includeCreatures"] = JsonNode(includeCreatures);
+		if(source)
+		{
+			option["source_id"] = JsonNode(source->id.getNum());
+			option["sourceArmy"] = jsonOwnedArmySnapshot(source);
+		}
+		if(otherHero)
+		{
+			option["other_hero_id"] = JsonNode(otherHero->id.getNum());
+			option["otherHero"] = jsonHero(otherHero);
+		}
+		option["planAction"]["type"] = JsonNode("prepare_hero");
+		option["planAction"]["hero_id"] = option["hero_id"];
+		option["planAction"]["include_artifacts"] = JsonNode(includeArtifacts);
+		option["planAction"]["include_creatures"] = JsonNode(includeCreatures);
+		if(source)
+			option["planAction"]["source_id"] = option["source_id"];
+		if(otherHero)
+			option["planAction"]["other_hero_id"] = option["other_hero_id"];
+
+		actionSpace["prepareHeroOptions"].Vector().push_back(option);
+		if(includeCreatures)
+			actionSpace["recommendedActions"].Vector().push_back(option["planAction"]);
+	};
+
 	for(const CGTownInstance * town : cc->getTownsInfo(true))
 	{
 		if(!town || town->tempOwner != playerID)
@@ -7288,6 +7412,22 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		appendUpgradeOptions(town);
 		appendUpgradeOptions(town->getVisitingHero());
 		appendUpgradeOptions(town->getGarrisonHero());
+
+		if(const CGHeroInstance * visitingHero = town->getVisitingHero())
+		{
+			if(visitingHero->tempOwner == playerID)
+			{
+				appendPrepareHeroOption(visitingHero, town, nullptr, 1, "town_army", true, true);
+				if(const CGHeroInstance * garrisonHero = town->getGarrisonHero())
+				{
+					if(garrisonHero->tempOwner == playerID)
+					{
+						appendPrepareHeroOption(visitingHero, garrisonHero, garrisonHero, 2, "garrison_hero", true, true);
+						appendPrepareHeroOption(garrisonHero, visitingHero, visitingHero, 3, "visiting_hero", true, true);
+					}
+				}
+			}
+		}
 
 		if(town->tempOwner == playerID)
 		{
@@ -7451,8 +7591,26 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		}
 	}
 
+	std::vector<const CGHeroInstance *> ownedHeroes;
 	for(const CGHeroInstance * hero : cc->getHeroesInfo())
+	{
 		appendUpgradeOptions(hero);
+		if(hero && hero->tempOwner == playerID)
+		{
+			ownedHeroes.push_back(hero);
+			appendPrepareHeroOption(hero, nullptr, nullptr, 0, "self_artifacts", true, false);
+		}
+	}
+
+	for(const CGHeroInstance * hero : ownedHeroes)
+	{
+		for(const CGHeroInstance * otherHero : ownedHeroes)
+		{
+			if(hero == otherHero || hero->visitablePos() != otherHero->visitablePos())
+				continue;
+			appendPrepareHeroOption(hero, otherHero, otherHero, 4, "co_located_hero", true, true);
+		}
+	}
 
 	std::set<int32_t> seenShipyards;
 	for(const int3 & position : visibleTiles)
@@ -7698,7 +7856,7 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 	analysis["scriptMemory"]["persistedInPlayerLocalSettings"] = JsonNode(true);
 	analysis["scriptMemory"]["localStateKey"] = JsonNode(SCRIPT_MEMORY_LOCAL_STATE_KEY);
 	analysis["candidateFields"].Vector();
-	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "kindId", "buildingKindId", "transferKindId", "pathActionId", "levelId", "statusId", "targetKindId", "spell_id", "task_id", "goalTypeId", "priorityTier", "heroRoleId", "nullkillerRoleId", "nullkillerArtifactScore", "nullkillerPotentialArtifactScore", "outcomeId", "failureActionId" })
+	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "kindId", "buildingKindId", "transferKindId", "preparationKindId", "pathActionId", "levelId", "statusId", "targetKindId", "spell_id", "task_id", "goalTypeId", "priorityTier", "heroRoleId", "nullkillerRoleId", "nullkillerArtifactScore", "nullkillerPotentialArtifactScore", "outcomeId", "failureActionId" })
 		analysis["candidateFields"].Vector().push_back(JsonNode(field));
 	analysis["danger"]["candidateDangerSource"] = JsonNode("Nullkiller direct object/guard danger evaluator");
 	analysis["danger"]["enemyReachSource"] = JsonNode("visible enemy distance and strength alerts");

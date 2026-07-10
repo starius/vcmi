@@ -658,6 +658,48 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallNamedNullkillerModeHelper
 	EXPECT_EQ(*output.intent, "named bounded helpers");
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanPrepareHero)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				ai:prepareHero(5, 16, 6)
+				ai:prepareHero({ hero_id = 7, include_artifacts = true, include_creatures = false })
+				return ai:output("end_turn", "prepared heroes")
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:prepare-hero-helper", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 2);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "prepare_hero");
+	EXPECT_EQ(commands[0]["payload"]["hero_id"].Integer(), 5);
+	EXPECT_EQ(commands[0]["payload"]["source_id"].Integer(), 16);
+	EXPECT_EQ(commands[0]["payload"]["other_hero_id"].Integer(), 6);
+	EXPECT_TRUE(commands[0]["payload"]["include_artifacts"].Bool());
+	EXPECT_TRUE(commands[0]["payload"]["include_creatures"].Bool());
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "prepare_hero");
+	EXPECT_EQ(commands[1]["payload"]["hero_id"].Integer(), 7);
+	EXPECT_TRUE(commands[1]["payload"]["include_artifacts"].Bool());
+	EXPECT_FALSE(commands[1]["payload"]["include_creatures"].Bool());
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "prepared heroes");
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallMarketTradeHelpers)
 {
 	const std::string source = R"lua(
