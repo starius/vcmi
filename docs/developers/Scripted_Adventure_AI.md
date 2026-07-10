@@ -219,6 +219,10 @@ The `ai` facade:
 - `ai:nullkillerRecruitCreatures(sourceId, destinationId?)`: ask the host to run Nullkiller's bounded recruitment
   helper once for one visible owned dwelling/town. It recruits affordable creatures that fit the destination army,
   including Nullkiller's duplicate-stack merge attempt.
+- `ai:nullkillerAddSingleCreatureStacks(heroId)`, `ai:nullkillerRearrangeForWhirlpool(heroId)`, and
+  `ai:nullkillerRearrangeForSiege(heroId, townId)`: ask the host to run Nullkiller's bounded army-formation
+  helpers for one visible owned hero, with the siege helper additionally requiring a visible enemy town. These
+  expose the native pre-whirlpool and pre-siege preparation tactics without delegating the rest of the day.
 - `ai:prepareHero(heroId, sourceId?, otherHeroId?)`: run a bounded semantic hero-preparation helper. The host can
   reuse Nullkiller's legal creature rearrangement from a co-located source army, visited owned town, or other hero,
   and artifact optimization for the target hero plus an optional co-located other hero. `include_artifacts` and
@@ -1349,6 +1353,10 @@ Regression harness:
 - Done: `nullkillerHelperOptions` also includes concrete visible owned-object helpers for
   `nullkiller_build_army`, `nullkiller_upgrade_army`, and `nullkiller_recruit_creatures`, so Lua can discover the
   semantic native logistics helpers instead of hard-coding town, army, or dwelling scans.
+- Done: Lua can explicitly call Nullkiller's bounded army-formation helpers for single-stack splitting,
+  whirlpool preparation, and siege preparation. `actionSpace.nullkillerHelperOptions` advertises these helpers for
+  visible owned heroes and visible enemy towns, covering native tactics that previously were only reachable as side
+  effects of larger movement/task execution.
 - Done: `nullkillerHelperOptions` includes a bounded `nullkiller_turn_slice` helper. This gives scripts a
   discoverable way to run one native pass-shaped slice and inspect the result, which is the right baseline before
   tuning custom Lua strategy against Nullkiller.

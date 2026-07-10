@@ -6389,6 +6389,44 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		return true;
 	}
 
+	if(type == "nullkiller_add_single_creature_stacks" || type == "nullkiller_rearrange_for_whirlpool")
+	{
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+		if(!hero || hero->tempOwner != playerID || !cc->isVisibleFor(hero, playerID))
+			throw std::invalid_argument("Unknown hero, hero is not visible, or hero is not owned by scripted AI");
+
+		if(type == "nullkiller_rearrange_for_whirlpool")
+			nullkiller->armyFormation->rearrangeArmyForWhirlpool(hero);
+		else
+			nullkiller->armyFormation->addSingleCreatureStacks(hero);
+		actionResult["hero_id"] = JsonNode(hero->id.getNum());
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(true);
+		return true;
+	}
+
+	if(type == "nullkiller_rearrange_for_siege")
+	{
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+		if(!hero || hero->tempOwner != playerID || !cc->isVisibleFor(hero, playerID))
+			throw std::invalid_argument("Unknown hero, hero is not visible, or hero is not owned by scripted AI");
+
+		const CGTownInstance * town = cc->getTown(ObjectInstanceID(readInteger(action, "town_id")));
+		if(!town || !cc->isVisibleFor(town, playerID))
+			throw std::invalid_argument("Unknown siege target town or town is not visible to scripted AI");
+		if(cc->getPlayerRelations(playerID, town->tempOwner) != PlayerRelations::ENEMIES)
+			throw std::invalid_argument("Siege preparation target town is not an enemy");
+
+		nullkiller->armyFormation->rearrangeArmyForSiege(town, hero);
+		actionResult["hero_id"] = JsonNode(hero->id.getNum());
+		actionResult["town_id"] = JsonNode(town->id.getNum());
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(true);
+		return true;
+	}
+
 	if(type == "trade_resources")
 	{
 		const CGObjectInstance * object = cc->getObj(ObjectInstanceID(readInteger(action, "market_id")), false);
@@ -7987,7 +8025,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "prepare_hero", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "erase_transition_artifact", "swap_creatures", "merge_stacks", "merge_or_swap_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "set_town_name", "swap_garrison_hero", "nullkiller_trade", "nullkiller_priority_pass", "nullkiller_turn_slice", "nullkiller_build_army", "nullkiller_upgrade_army", "nullkiller_recruit_creatures", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_pass", "nullkiller_answer_query", "nullkiller_object_interaction" })
+	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "prepare_hero", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "erase_transition_artifact", "swap_creatures", "merge_stacks", "merge_or_swap_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "set_town_name", "swap_garrison_hero", "nullkiller_trade", "nullkiller_priority_pass", "nullkiller_turn_slice", "nullkiller_build_army", "nullkiller_upgrade_army", "nullkiller_recruit_creatures", "nullkiller_add_single_creature_stacks", "nullkiller_rearrange_for_whirlpool", "nullkiller_rearrange_for_siege", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_pass", "nullkiller_answer_query", "nullkiller_object_interaction" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();
@@ -8038,6 +8076,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 
 	std::set<int32_t> seenNullkillerUpgradeArmies;
 	std::set<int32_t> seenNullkillerRecruitSources;
+	std::set<std::tuple<int32_t, int32_t, int32_t>> seenNullkillerFormationHelpers;
 	auto appendNullkillerBuildArmyHelperOption = [&](const CGTownInstance * town)
 	{
 		if(!town || town->tempOwner != playerID || !cc->isVisibleFor(town, playerID))
@@ -8097,6 +8136,45 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		option["planAction"]["source_id"] = option["source_id"];
 		if(destination)
 			option["planAction"]["destination_id"] = option["destination_id"];
+		actionSpace["nullkillerHelperOptions"].Vector().push_back(option);
+	};
+	auto appendNullkillerFormationHelperOption = [&](
+		const CGHeroInstance * hero,
+		const CGTownInstance * town,
+		int32_t helperKindID,
+		const std::string & helperKind,
+		const std::string & actionType)
+	{
+		if(!hero || hero->tempOwner != playerID || !cc->isVisibleFor(hero, playerID))
+			return;
+		if(town)
+		{
+			if(!cc->isVisibleFor(town, playerID))
+				return;
+			if(cc->getPlayerRelations(playerID, town->tempOwner) != PlayerRelations::ENEMIES)
+				return;
+		}
+
+		const int32_t townID = town ? town->id.getNum() : -1;
+		if(!seenNullkillerFormationHelpers.emplace(hero->id.getNum(), townID, helperKindID).second)
+			return;
+
+		JsonNode option;
+		option["helperKindId"] = JsonNode(helperKindID);
+		option["helperKind"] = JsonNode(helperKind);
+		option["bounded"] = JsonNode(true);
+		option["delegatesRestOfDay"] = JsonNode(false);
+		option["hero_id"] = JsonNode(hero->id.getNum());
+		option["hero"] = jsonHero(hero);
+		if(town)
+		{
+			option["town_id"] = JsonNode(town->id.getNum());
+			option["townObject"] = jsonMapObject(town, playerID, nullptr);
+		}
+		option["planAction"]["type"] = JsonNode(actionType);
+		option["planAction"]["hero_id"] = option["hero_id"];
+		if(town)
+			option["planAction"]["town_id"] = option["town_id"];
 		actionSpace["nullkillerHelperOptions"].Vector().push_back(option);
 	};
 
@@ -8385,6 +8463,8 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		{
 			ownedHeroes.push_back(hero);
 			appendPrepareHeroOption(hero, nullptr, nullptr, 0, "self_artifacts", true, false);
+			appendNullkillerFormationHelperOption(hero, nullptr, 6, "single_creature_stacks", "nullkiller_add_single_creature_stacks");
+			appendNullkillerFormationHelperOption(hero, nullptr, 7, "whirlpool_formation", "nullkiller_rearrange_for_whirlpool");
 		}
 	}
 
@@ -8465,6 +8545,11 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 			const CGObjectInstance * object = cc->getObj(objectID, false);
 			appendShipyardOption(objectID);
 			appendQuestObjectOption(object);
+			if(const auto * town = dynamic_cast<const CGTownInstance *>(object))
+			{
+				for(const CGHeroInstance * hero : ownedHeroes)
+					appendNullkillerFormationHelperOption(hero, town, 8, "siege_formation", "nullkiller_rearrange_for_siege");
+			}
 			if(const CGDwelling * dwelling = dynamic_cast<const CGDwelling *>(object))
 				appendNullkillerRecruitHelperOption(dwelling, nullptr);
 		}
@@ -8473,6 +8558,11 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 			const CGObjectInstance * object = cc->getObj(objectID, false);
 			appendShipyardOption(objectID);
 			appendQuestObjectOption(object);
+			if(const auto * town = dynamic_cast<const CGTownInstance *>(object))
+			{
+				for(const CGHeroInstance * hero : ownedHeroes)
+					appendNullkillerFormationHelperOption(hero, town, 8, "siege_formation", "nullkiller_rearrange_for_siege");
+			}
 			if(const CGDwelling * dwelling = dynamic_cast<const CGDwelling *>(object))
 				appendNullkillerRecruitHelperOption(dwelling, nullptr);
 		}

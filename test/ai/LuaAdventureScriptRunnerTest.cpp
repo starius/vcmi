@@ -742,6 +742,44 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallNamedNullkillerModeHelper
 	EXPECT_EQ(*output.intent, "named bounded helpers");
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallNullkillerArmyFormationHelpers)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				ai:nullkillerAddSingleCreatureStacks(17)
+				ai:nullkillerRearrangeForWhirlpool(18)
+				ai:nullkillerRearrangeForSiege(19, 20)
+				return ai:output("end_turn", "native army formation helpers")
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:nullkiller-army-formation-helpers", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 3);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_add_single_creature_stacks");
+	EXPECT_EQ(commands[0]["payload"]["hero_id"].Integer(), 17);
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "nullkiller_rearrange_for_whirlpool");
+	EXPECT_EQ(commands[1]["payload"]["hero_id"].Integer(), 18);
+	EXPECT_EQ(commands[2]["payload"]["type"].String(), "nullkiller_rearrange_for_siege");
+	EXPECT_EQ(commands[2]["payload"]["hero_id"].Integer(), 19);
+	EXPECT_EQ(commands[2]["payload"]["town_id"].Integer(), 20);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteActionSpaceOptions)
 {
 	const std::string source = R"lua(

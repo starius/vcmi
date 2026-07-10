@@ -771,6 +771,34 @@ function ai:nullkillerRecruitCreatures(sourceId, destinationId)
 	return self:execute(action)
 end
 
+function ai:nullkillerAddSingleCreatureStacks(heroId)
+	local action = copyFields(heroId)
+	if type(heroId) ~= "table" then
+		action.hero_id = heroId
+	end
+	action.type = "nullkiller_add_single_creature_stacks"
+	return self:execute(action)
+end
+
+function ai:nullkillerRearrangeForWhirlpool(heroId)
+	local action = copyFields(heroId)
+	if type(heroId) ~= "table" then
+		action.hero_id = heroId
+	end
+	action.type = "nullkiller_rearrange_for_whirlpool"
+	return self:execute(action)
+end
+
+function ai:nullkillerRearrangeForSiege(heroId, townId)
+	local action = copyFields(heroId)
+	if type(heroId) ~= "table" then
+		action.hero_id = heroId
+		action.town_id = townId
+	end
+	action.type = "nullkiller_rearrange_for_siege"
+	return self:execute(action)
+end
+
 function ai:requestStatistic()
 	return self:execute({ type = "request_statistic" })
 end
