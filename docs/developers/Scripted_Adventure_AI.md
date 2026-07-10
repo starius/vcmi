@@ -609,6 +609,9 @@ Current bounded subroutine surface:
   `paused`, and `shouldStopTurn`. A full priority+adventure+trade slice runs the native resource trader even if
   priority/adventure produced no task, and reports `shouldStopTurn` when no phase made progress, matching
   Nullkiller's normal "nothing was done this turn pass" stop condition without delegating the rest of the day.
+  The bundled default Lua policy treats a trade-only slice as end-of-day cleanup rather than a reason to request
+  more slices, because repeated small resource trades can otherwise dominate the command budget without adding
+  new adventure decisions.
 - Lua exposes `ai.nullkillerStepOutcomes`, `ai.nullkillerFailureActions`, and `ai.nullkillerTaskModes` numeric
   constants. Scripts should branch on these constants rather than trace strings.
 - `analysis.nullkiller.settings` exposes Nullkiller's read-only operational thresholds, including max pass counts,

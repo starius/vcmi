@@ -1276,11 +1276,22 @@ function Script.runDay(ai, input)
             return false, ai:output("end_turn", "bounded Nullkiller turn slice accepted native stop-turn signal", Confidence.idle)
         end
 
-        if result.didWork == true
-            or (tonumber(result.priorityTasksExecuted or 0) or 0) > 0
-            or (tonumber(result.adventureStepsExecuted or 0) or 0) > 0
+        local priorityWork = (tonumber(result.priorityTasksExecuted or 0) or 0) > 0
+        local adventureWork = (tonumber(result.adventureStepsExecuted or 0) or 0) > 0
             or (tonumber(result.adventureReplanSteps or 0) or 0) > 0
-            or (tonumber(result.tradePasses or 0) or 0) > 0
+        local tradeOnlyWork = (tonumber(result.tradePasses or 0) or 0) > 0
+            and not priorityWork
+            and not adventureWork
+            and result.paused ~= true
+            and result.stop ~= true
+        if tradeOnlyWork then
+            ai:endTurn()
+            return false, ai:output("end_turn", "bounded Nullkiller turn slice only traded resources", Confidence.idle)
+        end
+
+        if result.didWork == true
+            or priorityWork
+            or adventureWork
             or result.paused == true
             or result.stop == true
         then

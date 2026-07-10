@@ -1509,6 +1509,43 @@ TEST(LuaAdventureScriptRunnerTest, DefaultAdventureEndsTurnOnBoundedNullkillerSt
 	EXPECT_NE(output.intent->find("bounded Nullkiller turn slice accepted native stop-turn signal"), std::string::npos);
 }
 
+TEST(LuaAdventureScriptRunnerTest, DefaultAdventureEndsTurnOnTradeOnlyNullkillerSlice)
+{
+	scripting::LuaAdventureScriptRunner runner(
+		"scripts/ai/defaultAdventure.lua",
+		readAdventureScript("scripts/ai/defaultAdventure.lua"));
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		if(command["payload"]["type"].String() == "nullkiller_turn_slice")
+		{
+			response["result"]["didWork"] = JsonNode(true);
+			response["result"]["priorityTasksExecuted"] = JsonNode(0);
+			response["result"]["adventureStepsExecuted"] = JsonNode(0);
+			response["result"]["adventureReplanSteps"] = JsonNode(0);
+			response["result"]["adventureStopTurnSteps"] = JsonNode(0);
+			response["result"]["tradePasses"] = JsonNode(2);
+			response["result"]["paused"] = JsonNode(false);
+			response["result"]["stop"] = JsonNode(false);
+		}
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 2);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "end_turn");
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_NE(output.intent->find("only traded resources"), std::string::npos);
+}
+
 TEST(LuaAdventureScriptRunnerTest, PackagedConfigUsesFallbackControlScript)
 {
 	const JsonNode config = readJsonFile(std::filesystem::path(VCMI_SOURCE_DIR) / "config/ai/scriptedAdventure.json");
