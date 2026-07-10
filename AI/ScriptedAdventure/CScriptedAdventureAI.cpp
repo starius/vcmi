@@ -2091,6 +2091,23 @@ JsonNode jsonNullkillerResourceTradeOption()
 	return option;
 }
 
+JsonNode jsonNullkillerTurnSliceOption()
+{
+	JsonNode option;
+	option["helperKindId"] = JsonNode(6);
+	option["helperKind"] = JsonNode("turn_slice");
+	option["bounded"] = JsonNode(true);
+	option["delegatesRestOfDay"] = JsonNode(false);
+	option["maxPasses"] = JsonNode(1);
+	option["maxCandidates"] = JsonNode(16);
+	option["maxAttempts"] = JsonNode(16);
+	option["planAction"]["type"] = JsonNode("nullkiller_turn_slice");
+	option["planAction"]["max_passes"] = option["maxPasses"];
+	option["planAction"]["max_candidates"] = option["maxCandidates"];
+	option["planAction"]["max_attempts"] = option["maxAttempts"];
+	return option;
+}
+
 JsonNode jsonAnswerQueryAction(QueryID queryID, int32_t answer)
 {
 	JsonNode action;
@@ -5654,6 +5671,181 @@ bool CScriptedAdventureAI::executeNullkillerPassAction(const JsonNode & action, 
 	return !failed && !paused && stopTurnSteps == 0;
 }
 
+bool CScriptedAdventureAI::executeNullkillerTurnSliceAction(const JsonNode & action, JsonNode & actionResult)
+{
+	const int32_t requestedMaxPasses = readInteger(action, "max_passes", 1);
+	const size_t maxPasses = static_cast<size_t>(std::clamp<int32_t>(requestedMaxPasses, 1, 16));
+	const bool includePriority = readBool(action, "include_priority", true);
+	const bool includeAdventure = readBool(action, "include_adventure", true);
+	const bool includeTrade = readBool(action, "include_trade", true);
+	const bool optimizeArtifacts = readBool(action, "optimize_artifacts", true);
+	const int32_t firstPassIndex = std::max(1, readInteger(action, "first_pass_index", 1));
+
+	JsonNode passes;
+	passes.Vector();
+	int32_t priorityPasses = 0;
+	int32_t priorityTasksExecuted = 0;
+	int32_t adventureSteps = 0;
+	int32_t adventureStepsExecuted = 0;
+	int32_t adventureReplanSteps = 0;
+	int32_t adventureStopTurnSteps = 0;
+	int32_t adventureExhaustedSteps = 0;
+	int32_t tradePasses = 0;
+	int32_t artifactCleanupPasses = 0;
+	bool didWork = false;
+	bool paused = false;
+	bool failed = false;
+	bool shouldStopTurn = false;
+	bool exhausted = false;
+
+	for(size_t passIndex = 0; passIndex < maxPasses && status.haveTurn(); ++passIndex)
+	{
+		JsonNode passResult;
+		passResult["passIndex"] = JsonNode(static_cast<int32_t>(passIndex));
+		bool passDidWork = false;
+		bool passPaused = false;
+		bool passShouldStop = false;
+
+		if(includePriority)
+		{
+			JsonNode priorityAction;
+			priorityAction["type"] = JsonNode("nullkiller_priority_pass");
+			priorityAction["pass_index"] = JsonNode(firstPassIndex + static_cast<int32_t>(passIndex));
+
+			JsonNode priorityResult;
+			const bool continueAfterPriority = executeScriptAction(priorityAction, priorityResult);
+			passResult["priority"] = priorityResult;
+			++priorityPasses;
+
+			if(hasField(priorityResult, "ok") && priorityResult["ok"].isBool() && !priorityResult["ok"].Bool())
+				failed = true;
+
+			const int32_t executed = readInteger(priorityResult, "executed", 0);
+			if(executed > 0)
+			{
+				passDidWork = true;
+				didWork = true;
+				priorityTasksExecuted += executed;
+			}
+
+			if(!readBool(priorityResult, "completed", true))
+				passShouldStop = true;
+			if(!continueAfterPriority)
+				passPaused = !passShouldStop;
+		}
+
+		if(!passPaused && !passShouldStop && includeAdventure && status.haveTurn())
+		{
+			JsonNode stepAction = action;
+			stepAction["type"] = JsonNode("nullkiller_step");
+			if(hasField(action, "adventure_mode"))
+				stepAction["mode"] = action["adventure_mode"];
+			else if(!hasField(stepAction, "mode"))
+				stepAction["mode"] = JsonNode(static_cast<int32_t>(NK2AI::ScriptTaskSearchMode::ADVENTURE));
+
+			JsonNode stepResult;
+			const bool continueAfterStep = executeNullkillerStepAction(stepAction, stepResult);
+			passResult["adventure"] = stepResult;
+			++adventureSteps;
+
+			if(hasField(stepResult, "ok") && stepResult["ok"].isBool() && !stepResult["ok"].Bool())
+				failed = true;
+			if(readBool(stepResult, "didExecute", false))
+			{
+				passDidWork = true;
+				didWork = true;
+				++adventureStepsExecuted;
+			}
+			if(readBool(stepResult, "shouldReplan", false))
+			{
+				passDidWork = true;
+				didWork = true;
+				++adventureReplanSteps;
+			}
+			if(readBool(stepResult, "shouldStopTurn", false))
+			{
+				passShouldStop = true;
+				++adventureStopTurnSteps;
+			}
+			if(readBool(stepResult, "exhaustedCandidates", false))
+			{
+				exhausted = true;
+				++adventureExhaustedSteps;
+			}
+
+			if(!continueAfterStep)
+				passPaused = !passShouldStop;
+		}
+
+		bool traded = false;
+		if(!passPaused && !passShouldStop && includeTrade && passDidWork && status.haveTurn())
+		{
+			{
+				std::shared_lock gameStateLock(CGameState::mutex);
+				traded = nullkiller->executeScriptResourceTrade();
+			}
+			if(!waitTillFreeForScriptAction(actionResult, "nullkiller_turn_slice"))
+			{
+				if(hasField(actionResult, "ok") && actionResult["ok"].isBool() && !actionResult["ok"].Bool())
+					failed = true;
+				passPaused = true;
+			}
+
+			if(traded)
+			{
+				++tradePasses;
+				didWork = true;
+			}
+		}
+		passResult["didTrade"] = JsonNode(traded);
+
+		if(!passPaused && !passShouldStop && optimizeArtifacts && passDidWork && status.haveTurn())
+		{
+			for(const auto * heroInfo : cc->getHeroesInfo())
+				AIGateway::pickBestArtifacts(cc, heroInfo);
+			++artifactCleanupPasses;
+		}
+
+		passResult["didWork"] = JsonNode(passDidWork);
+		passes.Vector().push_back(passResult);
+
+		if(passPaused)
+		{
+			paused = true;
+			break;
+		}
+		if(passShouldStop)
+		{
+			shouldStopTurn = true;
+			break;
+		}
+		if(!passDidWork)
+			break;
+	}
+
+	if(!hasField(actionResult, "ok"))
+		actionResult["ok"] = JsonNode(!failed);
+	else if(actionResult["ok"].isBool() && actionResult["ok"].Bool() && failed)
+		actionResult["ok"] = JsonNode(false);
+	actionResult["maxPasses"] = JsonNode(static_cast<int32_t>(maxPasses));
+	actionResult["passes"] = passes;
+	actionResult["passCount"] = JsonNode(static_cast<int32_t>(passes.Vector().size()));
+	actionResult["priorityPasses"] = JsonNode(priorityPasses);
+	actionResult["priorityTasksExecuted"] = JsonNode(priorityTasksExecuted);
+	actionResult["adventureSteps"] = JsonNode(adventureSteps);
+	actionResult["adventureStepsExecuted"] = JsonNode(adventureStepsExecuted);
+	actionResult["adventureReplanSteps"] = JsonNode(adventureReplanSteps);
+	actionResult["adventureStopTurnSteps"] = JsonNode(adventureStopTurnSteps);
+	actionResult["adventureExhaustedSteps"] = JsonNode(adventureExhaustedSteps);
+	actionResult["tradePasses"] = JsonNode(tradePasses);
+	actionResult["artifactCleanupPasses"] = JsonNode(artifactCleanupPasses);
+	actionResult["didWork"] = JsonNode(didWork);
+	actionResult["paused"] = JsonNode(paused);
+	actionResult["shouldStopTurn"] = JsonNode(shouldStopTurn);
+	actionResult["exhaustedCandidates"] = JsonNode(exhausted);
+	return !failed && !paused && !shouldStopTurn;
+}
+
 void CScriptedAdventureAI::makeScriptedTurn()
 {
 	try
@@ -5967,7 +6159,7 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 	};
 
 	std::optional<AutoAnswerModeGuard> autoAnswerModeGuard;
-	if(type != "nullkiller_trade" && type != "nullkiller_priority_pass" && type != "nullkiller_tasks" && type != "nullkiller_task" && type != "nullkiller_step" && type != "nullkiller_pass" && type != "nullkiller_answer_query")
+	if(type != "nullkiller_trade" && type != "nullkiller_priority_pass" && type != "nullkiller_tasks" && type != "nullkiller_task" && type != "nullkiller_step" && type != "nullkiller_pass" && type != "nullkiller_turn_slice" && type != "nullkiller_answer_query")
 		autoAnswerModeGuard.emplace(*this);
 
 	auto readOwnedArmy = [&](const std::string & field, const std::string & label) -> const CArmedInstance *
@@ -6359,6 +6551,9 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 
 	if(type == "nullkiller_pass")
 		return executeNullkillerPassAction(action, actionResult);
+
+	if(type == "nullkiller_turn_slice")
+		return executeNullkillerTurnSliceAction(action, actionResult);
 
 	if(type == "request_statistic")
 	{
@@ -7632,7 +7827,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "prepare_hero", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "erase_transition_artifact", "swap_creatures", "merge_stacks", "merge_or_swap_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "set_town_name", "swap_garrison_hero", "nullkiller_trade", "nullkiller_priority_pass", "nullkiller_build_army", "nullkiller_upgrade_army", "nullkiller_recruit_creatures", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_pass", "nullkiller_answer_query", "nullkiller_object_interaction" })
+	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "prepare_hero", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "erase_transition_artifact", "swap_creatures", "merge_stacks", "merge_or_swap_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "set_town_name", "swap_garrison_hero", "nullkiller_trade", "nullkiller_priority_pass", "nullkiller_turn_slice", "nullkiller_build_army", "nullkiller_upgrade_army", "nullkiller_recruit_creatures", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_pass", "nullkiller_answer_query", "nullkiller_object_interaction" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();
@@ -7675,6 +7870,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 
 	actionSpace["nullkillerHelperOptions"].Vector().push_back(jsonNullkillerPriorityPassOption());
 	actionSpace["nullkillerHelperOptions"].Vector().push_back(jsonNullkillerResourceTradeOption());
+	actionSpace["nullkillerHelperOptions"].Vector().push_back(jsonNullkillerTurnSliceOption());
 
 	std::shared_lock gameStateLock(CGameState::mutex);
 	const ResourceSet resources = cc->getResourceAmount();

@@ -292,6 +292,17 @@ function ai:nullkillerAdventurePass(maxSteps, maxCandidates, maxAttempts)
 	})
 end
 
+function ai:nullkillerTurnSlice(maxPasses, maxCandidates, maxAttempts)
+	local action = copyFields(maxPasses)
+	if type(maxPasses) ~= "table" then
+		action.max_passes = maxPasses
+		action.max_candidates = maxCandidates
+		action.max_attempts = maxAttempts
+	end
+	action.type = "nullkiller_turn_slice"
+	return self:execute(action)
+end
+
 local function defineNullkillerModeHelpers(name, mode)
 	ai["nullkiller" .. name .. "Tasks"] = function(self, maxCandidates)
 		return self:nullkillerTasks({

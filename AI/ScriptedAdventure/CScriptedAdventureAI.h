@@ -183,6 +183,7 @@ private:
 	bool executeNullkillerQueryAction(const JsonNode & action, JsonNode & actionResult);
 	bool executeNullkillerStepAction(const JsonNode & action, JsonNode & actionResult);
 	bool executeNullkillerPassAction(const JsonNode & action, JsonNode & actionResult);
+	bool executeNullkillerTurnSliceAction(const JsonNode & action, JsonNode & actionResult);
 	RequestWaitResult submitAndWaitForRequest(const std::type_info & requestType, uint16_t expectedPackType, const std::function<void()> & submit);
 	JsonNode jsonRequestWaitResult(const RequestWaitResult & request) const;
 	bool waitTillFreeForScriptAction(JsonNode & actionResult, const std::string & actionType);

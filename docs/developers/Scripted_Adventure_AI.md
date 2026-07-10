@@ -250,6 +250,11 @@ The `ai` facade:
   one capped native subroutine, defaulting to the adventure task family, then return control to Lua. The pass
   stops early when native failure policy asks to stop, candidates are exhausted, a query needs script input, or
   the cap is reached.
+- `ai:nullkillerTurnSlice(optionsOrMaxPasses?, maxCandidates?, maxAttempts?)`: run a bounded native
+  Nullkiller-style turn slice, then return control to Lua. A slice performs the same broad structure as one
+  native turn pass: priority work, one bounded adventure step, resource trading, and artifact cleanup. Options can
+  disable priority/adventure/trade/artifact phases or set an `adventure_mode` numeric task mode when Lua wants a
+  specific native behavior family.
 - Named wrappers are available for every bounded Nullkiller task mode:
   `ai:nullkillerAllTasks/Step/Pass`, `ai:nullkillerPriorityTasks/Step/Pass`,
   `ai:nullkillerAdventureTasks/Step/Pass`, `ai:nullkillerRecruitHeroTasks/Step/Pass`,
@@ -561,6 +566,11 @@ Current bounded subroutine surface:
 - `nullkiller_priority_pass` runs Nullkiller's native priority loop once and then returns to Lua. This exposes the
   build/recruit/hire pre-adventure subroutine that native Nullkiller normally performs before adventure task
   planning, without handing over the rest of the day.
+- `nullkiller_turn_slice` composes the native priority loop, one bounded adventure step, the resource trader, and
+  artifact cleanup into a capped pass-shaped helper. This is the preferred bridge when a Lua policy wants parity
+  with the shape of `Nullkiller::makeTurn` but must keep control after one or a few passes. It returns a `passes`
+  array plus counters such as `priorityTasksExecuted`, `adventureStepsExecuted`, `tradePasses`, `didWork`,
+  `paused`, and `shouldStopTurn`.
 - Lua exposes `ai.nullkillerStepOutcomes`, `ai.nullkillerFailureActions`, and `ai.nullkillerTaskModes` numeric
   constants. Scripts should branch on these constants rather than trace strings.
 - `actionSpace.nullkillerSubroutineOptions` exposes the bounded task families as first-class candidate actions.
@@ -1255,7 +1265,9 @@ Regression harness:
   recruitment, startup, or capture. Candidate snapshots now include bounded structured goal details for
   composition plans, hero-chain paths, cluster blockers, defense threats, upgrades, buildings, boats, and
   adventure spells. Single-query Nullkiller dialog handling is also exposed through `ai:nullkillerAnswerQuery`.
-  The native priority-pass loop is exposed through `ai:nullkillerPriorityPass`.
+  The native priority-pass loop is exposed through `ai:nullkillerPriorityPass`, and the pass-shaped bridge is
+  exposed through `ai:nullkillerTurnSlice` for scripts that want Nullkiller-style priority/adventure/trade phases
+  without handing over the rest of the day.
   This closes the full-day delegation gap for native task families: Lua can choose, rank, and run bounded native
   subroutines, then refresh visible state instead of handing Nullkiller the rest of the turn.
 - Done: Nullkiller path-node special actions are serialized with stable typed metadata, so Lua can identify and
@@ -1302,6 +1314,9 @@ Regression harness:
 - Done: `nullkillerHelperOptions` also includes concrete visible owned-object helpers for
   `nullkiller_build_army`, `nullkiller_upgrade_army`, and `nullkiller_recruit_creatures`, so Lua can discover the
   semantic native logistics helpers instead of hard-coding town, army, or dwelling scans.
+- Done: `nullkillerHelperOptions` includes a bounded `nullkiller_turn_slice` helper. This gives scripts a
+  discoverable way to run one native pass-shaped slice and inspect the result, which is the right baseline before
+  tuning custom Lua strategy against Nullkiller.
 - Done: pending dialog/window queries are exposed as typed read-side data under `state.turn.queries`, and direct
   Lua actions that open these dialogs now pause for a script answer instead of auto-answering. The bundled default
   script includes a conservative fallback answer policy; richer per-dialog strategy remains Lua policy work.

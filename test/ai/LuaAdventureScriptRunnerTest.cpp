@@ -401,6 +401,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 				ai:nullkillerRecruitCreatures(16, 31)
 				ai:nullkillerPass({ mode = ai.nullkillerTaskModes.adventure, max_steps = 3, max_candidates = 4, max_attempts = 5 })
 				ai:nullkillerAdventurePass(2, 6, 7)
+				ai:nullkillerTurnSlice({ max_passes = 2, max_candidates = 8, max_attempts = 3, adventure_mode = ai.nullkillerTaskModes.defense })
 				return {
 					status = "end_turn",
 					memory = {
@@ -444,7 +445,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 		return response;
 	});
 
-	ASSERT_EQ(commands.size(), 45);
+	ASSERT_EQ(commands.size(), 46);
 	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_tasks");
 	EXPECT_EQ(commands[0]["payload"]["mode"].String(), "adventure");
 	EXPECT_EQ(commands[0]["payload"]["max_candidates"].Integer(), 7);
@@ -591,6 +592,11 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 	EXPECT_EQ(commands[44]["payload"]["max_steps"].Integer(), 2);
 	EXPECT_EQ(commands[44]["payload"]["max_candidates"].Integer(), 6);
 	EXPECT_EQ(commands[44]["payload"]["max_attempts"].Integer(), 7);
+	EXPECT_EQ(commands[45]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[45]["payload"]["max_passes"].Integer(), 2);
+	EXPECT_EQ(commands[45]["payload"]["max_candidates"].Integer(), 8);
+	EXPECT_EQ(commands[45]["payload"]["max_attempts"].Integer(), 3);
+	EXPECT_EQ(commands[45]["payload"]["adventure_mode"].Integer(), 8);
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	EXPECT_EQ(output.memory["firstTask"].Integer(), 41);
 	EXPECT_EQ(output.memory["stepTask"].Integer(), 42);
@@ -667,9 +673,11 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteActionSpaceOptions)
 			runDay = function(ai, input)
 				local option = input.actionSpace.nullkillerSubroutineOptions[1]
 				local helper = input.actionSpace.nullkillerHelperOptions[1]
+				local turnSlice = input.actionSpace.nullkillerHelperOptions[2]
 				ai:runOption(option)
 				ai:runOption(option, "passAction")
 				ai:runOption(helper)
+				ai:runOption(turnSlice)
 				ai:runAction({ type = "nullkiller_tasks", mode = ai.nullkillerTaskModes.defense, max_candidates = 5 })
 				return ai:output("end_turn", "executed action-space options")
 			end
@@ -695,6 +703,13 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteActionSpaceOptions)
 	helper["planAction"]["pass_index"] = JsonNode(1);
 	input.actionSpace["nullkillerHelperOptions"].Vector().push_back(helper);
 
+	JsonNode turnSliceHelper;
+	turnSliceHelper["planAction"]["type"] = JsonNode("nullkiller_turn_slice");
+	turnSliceHelper["planAction"]["max_passes"] = JsonNode(1);
+	turnSliceHelper["planAction"]["max_candidates"] = JsonNode(16);
+	turnSliceHelper["planAction"]["max_attempts"] = JsonNode(16);
+	input.actionSpace["nullkillerHelperOptions"].Vector().push_back(turnSliceHelper);
+
 	scripting::LuaAdventureScriptRunner runner("test:imperative-action-space-options", source);
 	std::vector<JsonNode> commands;
 
@@ -711,7 +726,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteActionSpaceOptions)
 		return response;
 	});
 
-	ASSERT_EQ(commands.size(), 4);
+	ASSERT_EQ(commands.size(), 5);
 	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_step");
 	EXPECT_EQ(commands[0]["payload"]["mode"].Integer(), 8);
 	EXPECT_EQ(commands[1]["payload"]["type"].String(), "nullkiller_pass");
@@ -719,9 +734,11 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteActionSpaceOptions)
 	EXPECT_EQ(commands[1]["payload"]["max_steps"].Integer(), 4);
 	EXPECT_EQ(commands[2]["payload"]["type"].String(), "nullkiller_priority_pass");
 	EXPECT_EQ(commands[2]["payload"]["pass_index"].Integer(), 1);
-	EXPECT_EQ(commands[3]["payload"]["type"].String(), "nullkiller_tasks");
-	EXPECT_EQ(commands[3]["payload"]["mode"].Integer(), 8);
-	EXPECT_EQ(commands[3]["payload"]["max_candidates"].Integer(), 5);
+	EXPECT_EQ(commands[3]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[3]["payload"]["max_passes"].Integer(), 1);
+	EXPECT_EQ(commands[4]["payload"]["type"].String(), "nullkiller_tasks");
+	EXPECT_EQ(commands[4]["payload"]["mode"].Integer(), 8);
+	EXPECT_EQ(commands[4]["payload"]["max_candidates"].Integer(), 5);
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	ASSERT_TRUE(output.intent);
 	EXPECT_EQ(*output.intent, "executed action-space options");
