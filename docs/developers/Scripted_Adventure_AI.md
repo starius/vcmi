@@ -473,8 +473,9 @@ Current bounded subroutine surface:
   boat type, boat layer, build status, build position, and cost; quest actions include visible quest object ids.
 - Modal query records expose stable `query_id`, type ids/names, and answer ids. Level-up, blocking, teleport,
   map-object-select, artifact assembly, tavern, garrison, recruitment, university, and market dialogs include
-  typed context where available. Tavern, recruitment, university, and market dialogs reuse the same hire,
-  recruit, army, and market-detail payloads exposed in normal action-space snapshots.
+  typed context where available. Teleport and map-object-select choices include visible object payloads when the
+  target object is visible to the scripted player. Tavern, recruitment, university, and market dialogs reuse the
+  same hire, recruit, army, and market-detail payloads exposed in normal action-space snapshots.
 - `nullkiller_task` executes exactly one stored candidate snapshot through `Nullkiller::executeScriptTask`.
   Native Nullkiller dialog handlers stay active for this path, so the subroutine behaves like Nullkiller rather
   than simplified script auto-answer logic.
@@ -1195,7 +1196,8 @@ Regression harness:
 - Done: Lua can ask Nullkiller to answer a single pending query through `ai:nullkillerAnswerQuery`, preserving
   native bounded handling for level-up skills, cautious yes/no prompts, teleport and map-object choices, hero
   exchanges, garrison pickup, dwelling recruitment, and simple window-closing dialogs without surrendering the
-  rest of the day.
+  rest of the day. Teleport and map-object-select query options now include visible object records, so scripts
+  can choose by object type, owner, position, or quest state without parsing dialog strings.
 - Done: player-visible non-query adventure windows are mirrored into the script update journal. This covers
   generic info dialogs, shipyard dialogs, hill-fort windows, and thieves-guild windows, with stable component,
   object, hero, and shipyard fields where available.

@@ -3240,6 +3240,14 @@ void CScriptedAdventureAI::showTeleportDialog(const CGHeroInstance * hero, Telep
 		exit["answer"] = JsonNode(static_cast<int32_t>(index));
 		exit["object_id"] = JsonNode(exits[index].first.getNum());
 		exit["position"] = jsonPosition(exits[index].second);
+		if(cc)
+		{
+			if(const CGObjectInstance * object = cc->getObj(exits[index].first, false))
+			{
+				if(cc->isVisibleFor(object, playerID))
+					exit["object"] = jsonMapObject(object, playerID, hero);
+			}
+		}
 		data["exits"].Vector().push_back(exit);
 	}
 	recordScriptQuery(askID, "teleport_dialog", data);
@@ -3265,6 +3273,14 @@ void CScriptedAdventureAI::showMapObjectSelectDialog(QueryID askID, const Compon
 		JsonNode option;
 		option["answer"] = JsonNode(objectID.getNum());
 		option["object_id"] = JsonNode(objectID.getNum());
+		if(cc)
+		{
+			if(const CGObjectInstance * object = cc->getObj(objectID, false))
+			{
+				if(cc->isVisibleFor(object, playerID))
+					option["object"] = jsonMapObject(object, playerID, nullptr);
+			}
+		}
 		data["objects"].Vector().push_back(option);
 	}
 	recordScriptQuery(askID, "map_object_select", data);
