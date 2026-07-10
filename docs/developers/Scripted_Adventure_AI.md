@@ -171,8 +171,8 @@ The `ai` facade:
 - `ai:marketTrade({...})` and wrappers `ai:sendResources`, `ai:sellCreatures`, `ai:buyMarketArtifact`,
   `ai:sellArtifact`, `ai:sacrificeArtifact`, `ai:sacrificeCreatures`, `ai:transformToUndead`, and `ai:buySkill`:
   request every native market mode through stable numeric mode/resource/player/slot/artifact/skill ids.
-- `ai:dismissHero`, `ai:buildBoat`, `ai:dig`, `ai:castSpell`: request checked primitive adventure actions through
-  the normal callback/server path.
+- `ai:dismissHero`, `ai:buildBoat`, `ai:dig`, `ai:castSpell`, `ai:buyArtifact`: request checked primitive
+  adventure/town actions through the normal callback/server path.
 - `ai:nullkiller()` / `ai:nullkillerForRestOfDay()`: stop script control and let Nullkiller finish the turn.
 - `ai:nullkillerTasks(mode, maxCandidates)`: ask Nullkiller for a bounded snapshot of native task candidates.
   `mode` is `priority`, `adventure`, or `all`. Returned `task_id` values are opaque handles that expire on
@@ -909,6 +909,9 @@ Regression harness:
   clear script-local prompts through `ai:ignoreScriptDecision(queryId)`.
 - Lua can now request checked primitive adventure actions for dismissing heroes, building boats, digging, and
   casting adventure spells. C++ validates ownership and visible target tiles before forwarding to the server.
+- Lua can now request exact spellbook and blacksmith war-machine purchases through `ai:buyArtifact(heroId,
+  artifactId)`. `actionSpace.buyArtifactOptions` lists currently available purchases for visiting owned heroes
+  using stable artifact ids; the server still enforces Mage Guild, blacksmith, gold, and slot rules.
 - `analysis.heroThreatAlerts` complements `analysis.defenseAlerts`, so scripts can respond to threatened roaming
   heroes as well as threatened towns.
 - Trace tooling now supports single-run summaries, baseline-vs-candidate comparisons, final visible-state quality
@@ -1107,12 +1110,12 @@ Regression harness:
 - Done: visible owned/neutral market objects expose read-side mode details, available items, available unit
   counts, efficiency, and resource-resource exchange rates. Enemy market details remain hidden beyond public
   visible-object mode metadata.
-- Partial: primitive adventure spells, digging, boat building, and hero dismissal are exposed. Owned hero records
-  now include spellbook ids, and action space includes read-side `digOptions`, `shipyardOptions`, and
-  `adventureSpellOptions` with checked `planAction` payloads. Deeper adventure-spell routing remains partial:
-  Lua gets default casts, owned-town targets, and nearby visible tile samples, while complex Dimension Door,
-  Town Portal, boat, and unlock-chain planning should still use bounded Nullkiller tasks until richer analyzer
-  exports exist.
+- Partial: primitive adventure spells, digging, boat building, hero dismissal, and spellbook/war-machine purchases
+  are exposed. Owned hero records now include spellbook ids, and action space includes read-side `digOptions`,
+  `shipyardOptions`, `adventureSpellOptions`, and `buyArtifactOptions` with checked `planAction` payloads. Deeper
+  adventure-spell routing remains partial: Lua gets default casts, owned-town targets, and nearby visible tile
+  samples, while complex Dimension Door, Town Portal, boat, and unlock-chain planning should still use bounded
+  Nullkiller tasks until richer analyzer exports exist.
 - Partial: full danger-map estimates are not exposed yet.
 - Partial: MCP and scripted AI still duplicate some JSON assembly code; extraction can happen once the surface
   stabilizes.

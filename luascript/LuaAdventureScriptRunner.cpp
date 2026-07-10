@@ -613,6 +613,16 @@ function ai:castSpell(heroId, spellId, x, y, z)
 	return self:execute(action)
 end
 
+function ai:buyArtifact(heroId, artifactId)
+	local action = copyFields(heroId)
+	if type(heroId) ~= "table" then
+		action.hero_id = heroId
+		action.artifact_id = artifactId
+	end
+	action.type = "buy_artifact"
+	return self:execute(action)
+end
+
 function ai:moveHero(heroId, x, y, z, routeId)
 	local action = copyFields(heroId)
 	if type(heroId) ~= "table" then

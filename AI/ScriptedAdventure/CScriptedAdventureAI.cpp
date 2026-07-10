@@ -1853,6 +1853,38 @@ JsonNode jsonAdventureSpellOption(const CGHeroInstance * hero, const CSpell * sp
 	return node;
 }
 
+JsonNode jsonBuyArtifactOption(const CGHeroInstance * hero, ArtifactID artifactID, const ResourceSet & resources)
+{
+	JsonNode node;
+	const CArtifact * artifact = artifactID.toArtifact();
+	const bool spellbook = artifactID == ArtifactID::SPELLBOOK;
+	const int32_t price = spellbook ? GameConstants::SPELLBOOK_GOLD_COST : (artifact ? static_cast<int32_t>(artifact->getPrice()) : 0);
+
+	node["hero_id"] = JsonNode(hero->id.getNum());
+	node["hero"] = JsonNode(jsonText(hero->getNameTranslated()));
+	if(const CGTownInstance * town = hero->getVisitedTown())
+	{
+		node["town_id"] = JsonNode(town->id.getNum());
+		node["town"] = JsonNode(jsonText(town->getNameTranslated()));
+	}
+	node["artifact_id"] = JsonNode(artifactID.getNum());
+	node["kindId"] = JsonNode(spellbook ? 1 : 2);
+	node["kind"] = JsonNode(spellbook ? "spellbook" : "war_machine");
+	node["price"] = JsonNode(price);
+	node["affordable"] = JsonNode(resources[EGameResID::GOLD] >= price);
+	if(artifact)
+	{
+		node["artifactIdentifier"] = JsonNode(artifact->getJsonKey());
+		node["artifactName"] = JsonNode(jsonText(artifact->getNameTranslated()));
+		if(artifact->getWarMachine() != CreatureID::NONE)
+			node["warMachineCreatureId"] = JsonNode(artifact->getWarMachine().getNum());
+	}
+	node["planAction"]["type"] = JsonNode("buy_artifact");
+	node["planAction"]["hero_id"] = node["hero_id"];
+	node["planAction"]["artifact_id"] = node["artifact_id"];
+	return node;
+}
+
 bool isObjectPathAction(EPathNodeAction action)
 {
 	return action == EPathNodeAction::BATTLE
@@ -3350,6 +3382,57 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		return true;
 	}
 
+	if(type == "buy_artifact")
+	{
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+		if(!hero || hero->tempOwner != playerID)
+			throw std::invalid_argument("Unknown hero or hero is not owned by scripted AI");
+		const CGTownInstance * town = hero->getVisitedTown();
+		if(!town || town->tempOwner != playerID)
+			throw std::invalid_argument("Hero must be visiting an owned town to buy this artifact");
+
+		const ArtifactID artifactID(readInteger(action, "artifact_id"));
+		const CArtifact * artifact = artifactID.toArtifact();
+		if(!artifact)
+			throw std::invalid_argument("Unknown artifact_id");
+
+		if(artifactID == ArtifactID::SPELLBOOK)
+		{
+			if(!town->hasBuilt(BuildingID::MAGES_GUILD_1))
+				throw std::invalid_argument("Cannot buy a spellbook without Mage Guild 1");
+			if(hero->hasSpellbook())
+				throw std::invalid_argument("Hero already has a spellbook");
+			if(cc->getResourceAmount()[EGameResID::GOLD] < GameConstants::SPELLBOOK_GOLD_COST)
+				throw std::invalid_argument("Not enough gold to buy a spellbook");
+		}
+		else
+		{
+			if(artifact->getWarMachine() == CreatureID::NONE)
+				throw std::invalid_argument("buy_artifact supports spellbooks and war machines only");
+			if(hero->hasArt(artifactID))
+				throw std::invalid_argument("Hero already has this war machine");
+			if(!town->isWarMachineAvailable(artifactID))
+				throw std::invalid_argument("Requested war machine is not available in this town");
+			if(cc->getResourceAmount()[EGameResID::GOLD] < static_cast<int64_t>(artifact->getPrice()))
+				throw std::invalid_argument("Not enough gold to buy this war machine");
+		}
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(BuyArtifact), CTypeList::getInstance().getTypeID<BuyArtifact>(nullptr), [&]
+		{
+			cc->buyArtifact(hero, artifactID);
+		});
+		actionResult["hero_id"] = JsonNode(hero->id.getNum());
+		actionResult["town_id"] = JsonNode(town->id.getNum());
+		actionResult["artifact_id"] = JsonNode(artifactID.getNum());
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Buy artifact request was rejected by server" : "Buy artifact request was not realized by server");
+		return true;
+	}
+
 	if(type == "build")
 	{
 		const CGTownInstance * town = cc->getTown(ObjectInstanceID(readInteger(action, "town_id")));
@@ -4134,7 +4217,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "swap_creatures", "merge_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "market_trade", "dismiss_hero", "build_boat", "dig", "cast_spell", "nullkiller_tasks", "nullkiller_task", "nullkiller_step" })
+	for(const char * type : { "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "swap_creatures", "merge_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "market_trade", "dismiss_hero", "build_boat", "dig", "cast_spell", "buy_artifact", "nullkiller_tasks", "nullkiller_task", "nullkiller_step" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();
@@ -4146,6 +4229,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["shipyardOptions"].Vector();
 	actionSpace["digOptions"].Vector();
 	actionSpace["adventureSpellOptions"].Vector();
+	actionSpace["buyArtifactOptions"].Vector();
 	actionSpace["recommendedActions"].Vector();
 
 	std::shared_lock gameStateLock(CGameState::mutex);
@@ -4226,6 +4310,29 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 			{
 				appendTransferOption(garrisonHero, visitingHero, ScriptArmyTransferKind::GATHER_TO_HERO);
 				appendTransferOption(visitingHero, garrisonHero, ScriptArmyTransferKind::REINFORCE_TOWN);
+			}
+		}
+
+		if(const CGHeroInstance * visitingHero = town->getVisitingHero())
+		{
+			if(visitingHero->tempOwner == playerID)
+			{
+				if(town->hasBuilt(BuildingID::MAGES_GUILD_1) && !visitingHero->hasSpellbook())
+				{
+					JsonNode option = jsonBuyArtifactOption(visitingHero, ArtifactID::SPELLBOOK, resources);
+					actionSpace["buyArtifactOptions"].Vector().push_back(option);
+					if(option["affordable"].Bool())
+						actionSpace["recommendedActions"].Vector().push_back(option["planAction"]);
+				}
+
+				const ArtifactID warMachine = town->getWarMachineInBuilding(BuildingID::BLACKSMITH);
+				if(warMachine != ArtifactID::NONE && !visitingHero->hasArt(warMachine))
+				{
+					JsonNode option = jsonBuyArtifactOption(visitingHero, warMachine, resources);
+					actionSpace["buyArtifactOptions"].Vector().push_back(option);
+					if(option["affordable"].Bool())
+						actionSpace["recommendedActions"].Vector().push_back(option["planAction"]);
+				}
 			}
 		}
 	}
