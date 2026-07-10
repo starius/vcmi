@@ -5792,7 +5792,7 @@ bool CScriptedAdventureAI::executeNullkillerTurnSliceAction(const JsonNode & act
 		}
 
 		bool traded = false;
-		if(!passPaused && !passShouldStop && includeTrade && passDidWork && status.haveTurn())
+		if(!passPaused && !passShouldStop && includeTrade && status.haveTurn())
 		{
 			{
 				std::shared_lock gameStateLock(CGameState::mutex);
@@ -5808,10 +5808,14 @@ bool CScriptedAdventureAI::executeNullkillerTurnSliceAction(const JsonNode & act
 			if(traded)
 			{
 				++tradePasses;
+				passDidWork = true;
 				didWork = true;
 			}
 		}
 		passResult["didTrade"] = JsonNode(traded);
+
+		if(!passPaused && !passShouldStop && includePriority && includeAdventure && includeTrade && !passDidWork)
+			passShouldStop = true;
 
 		if(!passPaused && !passShouldStop && optimizeArtifacts && passDidWork && status.haveTurn())
 		{

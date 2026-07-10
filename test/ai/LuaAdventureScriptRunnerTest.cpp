@@ -1284,6 +1284,38 @@ TEST(LuaAdventureScriptRunnerTest, DefaultAdventureTriesBoundedNullkillerTurnSli
 	EXPECT_NE(output.intent->find("No high-confidence scripted candidate remains"), std::string::npos);
 }
 
+TEST(LuaAdventureScriptRunnerTest, DefaultAdventureEndsTurnOnBoundedNullkillerStopSignal)
+{
+	scripting::LuaAdventureScriptRunner runner(
+		"scripts/ai/defaultAdventure.lua",
+		readAdventureScript("scripts/ai/defaultAdventure.lua"));
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		if(command["payload"]["type"].String() == "nullkiller_turn_slice")
+		{
+			response["result"]["didWork"] = JsonNode(false);
+			response["result"]["shouldStopTurn"] = JsonNode(true);
+			response["result"]["adventureStopTurnSteps"] = JsonNode(0);
+		}
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 2);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "end_turn");
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_NE(output.intent->find("bounded Nullkiller turn slice accepted native stop-turn signal"), std::string::npos);
+}
+
 TEST(LuaAdventureScriptRunnerTest, PackagedConfigUsesFallbackControlScript)
 {
 	const JsonNode config = readJsonFile(std::filesystem::path(VCMI_SOURCE_DIR) / "config/ai/scriptedAdventure.json");

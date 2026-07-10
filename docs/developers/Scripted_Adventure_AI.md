@@ -575,7 +575,9 @@ Current bounded subroutine surface:
   artifact cleanup into a capped pass-shaped helper. This is the preferred bridge when a Lua policy wants parity
   with the shape of `Nullkiller::makeTurn` but must keep control after one or a few passes. It returns a `passes`
   array plus counters such as `priorityTasksExecuted`, `adventureStepsExecuted`, `tradePasses`, `didWork`,
-  `paused`, and `shouldStopTurn`.
+  `paused`, and `shouldStopTurn`. A full priority+adventure+trade slice runs the native resource trader even if
+  priority/adventure produced no task, and reports `shouldStopTurn` when no phase made progress, matching
+  Nullkiller's normal "nothing was done this turn pass" stop condition without delegating the rest of the day.
 - Lua exposes `ai.nullkillerStepOutcomes`, `ai.nullkillerFailureActions`, and `ai.nullkillerTaskModes` numeric
   constants. Scripts should branch on these constants rather than trace strings.
 - `analysis.nullkiller.settings` exposes Nullkiller's read-only operational thresholds, including max pass counts,
