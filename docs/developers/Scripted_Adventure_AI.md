@@ -1704,6 +1704,11 @@ Regression harness:
 - Done: stable-id hardening now covers default, aggressive, economy, and explorer Lua policies. Host path actions,
   risk labels, and threat-alert levels have numeric IDs, with display strings retained only for traces and legacy
   fixture compatibility.
+- Done: `scripts/ai/candidates/boundedNullkillerControl.lua` is an API parity probe that drives Nullkiller's
+  priority/adventure/trade/artifact phases through bounded Lua calls, answers dialogs through the bounded
+  `ai:nullkillerAnswerQuery` helper, refreshes after side effects, and ends the turn when native slices report no
+  remaining work. It intentionally avoids normal `ai:nullkiller()` full-day delegation; full fallback is reserved
+  for actual script or host failures.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus, then add
   engine-level explored-area and map-control deltas.
 
@@ -1724,6 +1729,9 @@ The next high-value implementation steps are:
 - Treat Lua API parity as the gate for script optimization. A script that cannot express the same meaningful
   choices as Nullkiller should use bounded Nullkiller subroutines and checked facades first; tuning before this
   point mostly optimizes around missing host capabilities.
+- Use `boundedNullkillerControl.lua` as the first parity regression script. If it needs ordinary full-day fallback
+  to finish a day, fix the missing bounded helper, query answer, or observable state before tuning higher-level Lua
+  strategy.
 - Keep adventure-spell optimization on the hybrid path: scripts should rank when to use native adventure
   spell-routing subroutines, then inspect returned task/path `specialAction` records, instead of attempting to
   recreate Nullkiller's pathfinder in Lua.

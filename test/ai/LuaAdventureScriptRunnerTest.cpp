@@ -1342,6 +1342,98 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanRefreshVisibleInput)
 	EXPECT_EQ(output.memory["refreshedDay"].Integer(), 2);
 }
 
+TEST(LuaAdventureScriptRunnerTest, BoundedNullkillerControlEndsTurnWhenNativeSliceIsIdle)
+{
+	const std::string source = readAdventureScript("scripts/ai/candidates/boundedNullkillerControl.lua");
+	scripting::LuaAdventureScriptRunner runner("test:bounded-nullkiller-control-idle", source);
+
+	AI::AdventureScriptInput input = makeInput();
+	input.state["turn"]["active"] = JsonNode(true);
+	input.state["turn"]["queries"].Vector();
+	input.limits["maxScriptCallsPerTurn"] = JsonNode(4);
+	input.limits["maxActions"] = JsonNode(16);
+
+	std::vector<JsonNode> commands;
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		if(command["payload"]["type"].String() == "nullkiller_turn_slice")
+		{
+			response["result"]["didWork"] = JsonNode(false);
+			response["result"]["shouldStopTurn"] = JsonNode(false);
+			response["result"]["exhaustedCandidates"] = JsonNode(false);
+		}
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 2);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[0]["payload"]["max_passes"].Integer(), 16);
+	EXPECT_EQ(commands[0]["payload"]["max_candidates"].Integer(), 64);
+	EXPECT_EQ(commands[0]["payload"]["max_attempts"].Integer(), 64);
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "end_turn");
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "bounded Nullkiller control found no remaining native work");
+	EXPECT_EQ(output.memory["totalSlices"].Integer(), 1);
+}
+
+TEST(LuaAdventureScriptRunnerTest, BoundedNullkillerControlAnswersQueriesBeforeNativeSlice)
+{
+	const std::string source = readAdventureScript("scripts/ai/candidates/boundedNullkillerControl.lua");
+	scripting::LuaAdventureScriptRunner runner("test:bounded-nullkiller-control-query", source);
+
+	AI::AdventureScriptInput input = makeInput();
+	input.state["turn"]["active"] = JsonNode(true);
+	JsonNode query;
+	query["query_id"] = JsonNode(77);
+	query["typeId"] = JsonNode(3);
+	input.state["turn"]["queries"].Vector().push_back(query);
+	input.limits["maxScriptCallsPerTurn"] = JsonNode(6);
+	input.limits["maxActions"] = JsonNode(16);
+
+	std::vector<JsonNode> commands;
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		const std::string kind = command["kind"].String();
+		if(kind == "refresh")
+		{
+			AI::AdventureScriptInput refreshed = input;
+			refreshed.state["turn"]["queries"].Vector().clear();
+			response["input"] = refreshed.toJson();
+			return response;
+		}
+
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		if(command["payload"]["type"].String() == "nullkiller_turn_slice")
+		{
+			response["result"]["didWork"] = JsonNode(false);
+			response["result"]["shouldStopTurn"] = JsonNode(false);
+			response["result"]["exhaustedCandidates"] = JsonNode(false);
+		}
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 4);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_answer_query");
+	EXPECT_EQ(commands[0]["payload"]["query_id"].Integer(), 77);
+	EXPECT_EQ(commands[1]["kind"].String(), "refresh");
+	EXPECT_EQ(commands[2]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[3]["payload"]["type"].String(), "end_turn");
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_EQ(output.memory["totalQueriesAnswered"].Integer(), 1);
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanReadNullkillerSnapshots)
 {
 	const std::string source = R"lua(
