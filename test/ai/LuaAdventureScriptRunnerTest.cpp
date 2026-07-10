@@ -508,6 +508,69 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 	EXPECT_EQ(output.memory["stepTask"].Integer(), 42);
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallMarketTradeHelpers)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				ai:marketTrade({ market_id = 16, mode_id = ai.marketModes.resourceResource, sell_resource_id = 0, buy_resource_id = 6, amount = 100 })
+				ai:sendResources(16, 0, 1, 100)
+				ai:sellCreatures(16, 5, 2, 6, 10)
+				ai:buyMarketArtifact(16, 5, 6, 44)
+				ai:sellArtifact(16, 5, 301, 6)
+				ai:sacrificeArtifact(16, 5, 302)
+				ai:sacrificeCreatures(16, 5, 3, 11)
+				ai:transformToUndead(16, 5, 4)
+				ai:buySkill(16, 5, 7)
+				return ai:output("end_turn")
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-market-helpers", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 9);
+	for(const JsonNode & command : commands)
+	{
+		EXPECT_EQ(command["payload"]["type"].String(), "market_trade");
+		EXPECT_EQ(command["payload"]["market_id"].Integer(), 16);
+	}
+	EXPECT_EQ(commands[0]["payload"]["mode_id"].Integer(), 0);
+	EXPECT_EQ(commands[0]["payload"]["sell_resource_id"].Integer(), 0);
+	EXPECT_EQ(commands[0]["payload"]["buy_resource_id"].Integer(), 6);
+	EXPECT_EQ(commands[0]["payload"]["amount"].Integer(), 100);
+	EXPECT_EQ(commands[1]["payload"]["mode_id"].Integer(), 1);
+	EXPECT_EQ(commands[1]["payload"]["target_player_id"].Integer(), 1);
+	EXPECT_EQ(commands[2]["payload"]["mode_id"].Integer(), 2);
+	EXPECT_EQ(commands[2]["payload"]["hero_id"].Integer(), 5);
+	EXPECT_EQ(commands[2]["payload"]["slot"].Integer(), 2);
+	EXPECT_EQ(commands[3]["payload"]["mode_id"].Integer(), 3);
+	EXPECT_EQ(commands[3]["payload"]["artifact_id"].Integer(), 44);
+	EXPECT_EQ(commands[4]["payload"]["mode_id"].Integer(), 4);
+	EXPECT_EQ(commands[4]["payload"]["artifact_instance_id"].Integer(), 301);
+	EXPECT_EQ(commands[5]["payload"]["mode_id"].Integer(), 5);
+	EXPECT_EQ(commands[5]["payload"]["artifact_instance_id"].Integer(), 302);
+	EXPECT_EQ(commands[6]["payload"]["mode_id"].Integer(), 6);
+	EXPECT_EQ(commands[6]["payload"]["amount"].Integer(), 11);
+	EXPECT_EQ(commands[7]["payload"]["mode_id"].Integer(), 7);
+	EXPECT_EQ(commands[7]["payload"]["slot"].Integer(), 4);
+	EXPECT_EQ(commands[8]["payload"]["mode_id"].Integer(), 8);
+	EXPECT_EQ(commands[8]["payload"]["skill_id"].Integer(), 7);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanDelegateToFallback)
 {
 	const std::string source = R"lua(

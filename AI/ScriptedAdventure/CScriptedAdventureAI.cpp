@@ -2371,6 +2371,133 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		return true;
 	}
 
+	if(type == "market_trade")
+	{
+		const CGObjectInstance * object = cc->getObj(ObjectInstanceID(readInteger(action, "market_id")), false);
+		const IMarket * market = dynamic_cast<const IMarket *>(object);
+		if(!object || !market)
+			throw std::invalid_argument("Unknown visible market object");
+
+		const int32_t modeID = readInteger(action, "mode_id");
+		if(modeID < 0 || modeID >= static_cast<int32_t>(EMarketMode::MARKET_AFTER_LAST_PLACEHOLDER))
+			throw std::invalid_argument("Invalid market mode id");
+		const EMarketMode mode = static_cast<EMarketMode>(modeID);
+		if(!market->allowsTrade(mode))
+			throw std::invalid_argument("Market does not allow requested trade mode");
+
+		const CGHeroInstance * hero = nullptr;
+		if(hasField(action, "hero_id"))
+		{
+			hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+			if(!hero || hero->tempOwner != playerID)
+				throw std::invalid_argument("Unknown market trade hero or hero is not owned by scripted AI");
+		}
+
+		auto readResourceID = [&](const std::string & field) -> GameResID
+		{
+			const int32_t resourceID = readInteger(action, field);
+			if(resourceID < 0 || resourceID >= static_cast<int32_t>(GameConstants::RESOURCE_QUANTITY))
+				throw std::invalid_argument("Invalid resource id in " + field);
+			return GameResID(resourceID);
+		};
+		auto requireHero = [&]()
+		{
+			if(!hero)
+				throw std::invalid_argument("Requested market trade mode requires an owned hero_id");
+		};
+		auto readPositiveAmount = [&](const std::string & field) -> ui32
+		{
+			const int32_t amount = readInteger(action, field);
+			if(amount <= 0)
+				throw std::invalid_argument("Market trade amount must be positive");
+			return static_cast<ui32>(amount);
+		};
+
+		TradeItemSell sell;
+		TradeItemBuy buy;
+		ui32 amount = 1;
+		switch(mode)
+		{
+		case EMarketMode::RESOURCE_RESOURCE:
+		{
+			const GameResID sellResource = readResourceID("sell_resource_id");
+			const GameResID buyResource = readResourceID("buy_resource_id");
+			if(sellResource == buyResource)
+				throw std::invalid_argument("Resource trade must buy a different resource than it sells");
+			sell = sellResource;
+			buy = buyResource;
+			amount = readPositiveAmount("amount");
+			break;
+		}
+		case EMarketMode::RESOURCE_PLAYER:
+		{
+			const PlayerColor targetPlayer(readInteger(action, "target_player_id"));
+			if(!targetPlayer.isValidPlayer())
+				throw std::invalid_argument("Invalid target player id for resource transfer");
+			sell = readResourceID("sell_resource_id");
+			buy = targetPlayer;
+			amount = readPositiveAmount("amount");
+			break;
+		}
+		case EMarketMode::CREATURE_RESOURCE:
+			requireHero();
+			sell = readValidSlot("slot");
+			buy = readResourceID("buy_resource_id");
+			amount = readPositiveAmount("amount");
+			break;
+		case EMarketMode::RESOURCE_ARTIFACT:
+			requireHero();
+			sell = readResourceID("sell_resource_id");
+			buy = ArtifactID(readInteger(action, "artifact_id"));
+			break;
+		case EMarketMode::ARTIFACT_RESOURCE:
+			requireHero();
+			sell = ArtifactInstanceID(readInteger(action, "artifact_instance_id"));
+			buy = readResourceID("buy_resource_id");
+			break;
+		case EMarketMode::ARTIFACT_EXP:
+			requireHero();
+			sell = ArtifactInstanceID(readInteger(action, "artifact_instance_id"));
+			buy = GameResID(EGameResID::GOLD);
+			break;
+		case EMarketMode::CREATURE_EXP:
+			requireHero();
+			sell = readValidSlot("slot");
+			buy = GameResID(EGameResID::GOLD);
+			amount = readPositiveAmount("amount");
+			break;
+		case EMarketMode::CREATURE_UNDEAD:
+			sell = readValidSlot("slot");
+			buy = GameResID(EGameResID::GOLD);
+			break;
+		case EMarketMode::RESOURCE_SKILL:
+			requireHero();
+			sell = GameResID(EGameResID::GOLD);
+			buy = SecondarySkill(readInteger(action, "skill_id"));
+			break;
+		case EMarketMode::MARKET_AFTER_LAST_PLACEHOLDER:
+			throw std::invalid_argument("Invalid market mode id");
+		}
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(TradeOnMarketplace), CTypeList::getInstance().getTypeID<TradeOnMarketplace>(nullptr), [&]
+		{
+			cc->trade(object->id, mode, sell, buy, amount, hero);
+		});
+		actionResult["market_id"] = JsonNode(object->id.getNum());
+		actionResult["mode_id"] = JsonNode(modeID);
+		actionResult["mode"] = JsonNode(marketModeName(mode));
+		if(hero)
+			actionResult["hero_id"] = JsonNode(hero->id.getNum());
+		actionResult["amount"] = JsonNode(static_cast<int32_t>(amount));
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Market trade request was rejected by server" : "Market trade request was not realized by server");
+		return true;
+	}
+
 	if(type == "nullkiller_tasks")
 	{
 		const JsonNode candidates = makeNullkillerTaskCandidates(action);
@@ -3211,7 +3338,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "swap_creatures", "merge_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "dismiss_hero", "build_boat", "dig", "cast_spell", "nullkiller_tasks", "nullkiller_task", "nullkiller_step" })
+	for(const char * type : { "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "swap_creatures", "merge_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "market_trade", "dismiss_hero", "build_boat", "dig", "cast_spell", "nullkiller_tasks", "nullkiller_task", "nullkiller_step" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();

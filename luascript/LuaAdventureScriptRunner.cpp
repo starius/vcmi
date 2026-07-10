@@ -118,6 +118,23 @@ end
 ai.nullkiller = ai.delegateToNullkiller
 ai.nullkillerForRestOfDay = ai.delegateToNullkiller
 
+ai.marketModes = {
+	resourceResource = 0,
+	resourcePlayer = 1,
+	creatureResource = 2,
+	resourceArtifact = 3,
+	artifactResource = 4,
+	artifactExperience = 5,
+	creatureExperience = 6,
+	creatureUndead = 7,
+	resourceSkill = 8
+}
+
+ai.formations = {
+	loose = 0,
+	tight = 1
+}
+
 function ai:nullkillerTasks(mode, maxCandidates)
 	local action = copyFields(mode)
 	if type(mode) ~= "table" then
@@ -394,6 +411,107 @@ function ai:tradeResources(marketId, sellResourceId, buyResourceId, amount, hero
 	end
 	action.type = "trade_resources"
 	return self:execute(action)
+end
+
+function ai:marketTrade(action)
+	local payload = copyFields(action)
+	payload.type = "market_trade"
+	return self:execute(payload)
+end
+
+function ai:sendResources(marketId, sellResourceId, targetPlayerId, amount, heroId)
+	local action = copyFields(marketId)
+	if type(marketId) ~= "table" then
+		action.market_id = marketId
+		action.mode_id = self.marketModes.resourcePlayer
+		action.sell_resource_id = sellResourceId
+		action.target_player_id = targetPlayerId
+		action.amount = amount
+		action.hero_id = heroId
+	end
+	return self:marketTrade(action)
+end
+
+function ai:sellCreatures(marketId, heroId, slot, buyResourceId, amount)
+	local action = copyFields(marketId)
+	if type(marketId) ~= "table" then
+		action.market_id = marketId
+		action.mode_id = self.marketModes.creatureResource
+		action.hero_id = heroId
+		action.slot = slot
+		action.buy_resource_id = buyResourceId
+		action.amount = amount
+	end
+	return self:marketTrade(action)
+end
+
+function ai:buyMarketArtifact(marketId, heroId, sellResourceId, artifactId)
+	local action = copyFields(marketId)
+	if type(marketId) ~= "table" then
+		action.market_id = marketId
+		action.mode_id = self.marketModes.resourceArtifact
+		action.hero_id = heroId
+		action.sell_resource_id = sellResourceId
+		action.artifact_id = artifactId
+	end
+	return self:marketTrade(action)
+end
+
+function ai:sellArtifact(marketId, heroId, artifactInstanceId, buyResourceId)
+	local action = copyFields(marketId)
+	if type(marketId) ~= "table" then
+		action.market_id = marketId
+		action.mode_id = self.marketModes.artifactResource
+		action.hero_id = heroId
+		action.artifact_instance_id = artifactInstanceId
+		action.buy_resource_id = buyResourceId
+	end
+	return self:marketTrade(action)
+end
+
+function ai:sacrificeArtifact(marketId, heroId, artifactInstanceId)
+	local action = copyFields(marketId)
+	if type(marketId) ~= "table" then
+		action.market_id = marketId
+		action.mode_id = self.marketModes.artifactExperience
+		action.hero_id = heroId
+		action.artifact_instance_id = artifactInstanceId
+	end
+	return self:marketTrade(action)
+end
+
+function ai:sacrificeCreatures(marketId, heroId, slot, amount)
+	local action = copyFields(marketId)
+	if type(marketId) ~= "table" then
+		action.market_id = marketId
+		action.mode_id = self.marketModes.creatureExperience
+		action.hero_id = heroId
+		action.slot = slot
+		action.amount = amount
+	end
+	return self:marketTrade(action)
+end
+
+function ai:transformToUndead(marketId, heroId, slot)
+	local action = copyFields(marketId)
+	if type(marketId) ~= "table" then
+		action.market_id = marketId
+		action.mode_id = self.marketModes.creatureUndead
+		action.hero_id = heroId
+		action.slot = slot
+	end
+	return self:marketTrade(action)
+end
+
+function ai:buySkill(marketId, heroId, skillId)
+	local action = copyFields(marketId)
+	if type(marketId) ~= "table" then
+		action.market_id = marketId
+		action.mode_id = self.marketModes.resourceSkill
+		action.hero_id = heroId
+		action.skill_id = skillId
+	end
+	return self:marketTrade(action)
 end
 
 function ai:dismissHero(heroId)

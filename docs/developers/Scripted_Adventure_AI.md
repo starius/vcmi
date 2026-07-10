@@ -162,6 +162,9 @@ The `ai` facade:
   traded anything.
 - `ai:tradeResources(marketId, sellResourceId, buyResourceId, amount, heroId?)`: request an exact
   resource-to-resource market trade using stable numeric resource ids and a visible market object id.
+- `ai:marketTrade({...})` and wrappers `ai:sendResources`, `ai:sellCreatures`, `ai:buyMarketArtifact`,
+  `ai:sellArtifact`, `ai:sacrificeArtifact`, `ai:sacrificeCreatures`, `ai:transformToUndead`, and `ai:buySkill`:
+  request every native market mode through stable numeric mode/resource/player/slot/artifact/skill ids.
 - `ai:dismissHero`, `ai:buildBoat`, `ai:dig`, `ai:castSpell`: request checked primitive adventure actions through
   the normal callback/server path.
 - `ai:nullkiller()` / `ai:nullkillerForRestOfDay()`: stop script control and let Nullkiller finish the turn.
@@ -867,10 +870,11 @@ Regression harness:
 - Hero input now exposes `formationId` and `tacticsEnabled`, and Lua can request exact creature stack
   rearrangement, stack splitting, stack merging, creature dismissal, creature upgrades, formation/tactics changes,
   and town garrison-hero swaps through the same checked callback/server packet path used by native clients and AI.
-- Lua can now call `ai:nullkillerTrade()` to run Nullkiller's build-driven resource trader once, or
-  `ai:tradeResources(marketId, sellResourceId, buyResourceId, amount, heroId?)` to request an exact
-  resource-to-resource market transaction. Visible market objects expose their supported market modes, but the
-  remaining non-resource market modes still need typed Lua helpers.
+- Lua can now call `ai:nullkillerTrade()` to run Nullkiller's build-driven resource trader once,
+  `ai:tradeResources(marketId, sellResourceId, buyResourceId, amount, heroId?)` for the common exact
+  resource-to-resource path, or `ai:marketTrade({...})` and its mode-specific wrappers for every native
+  `EMarketMode`. Visible market objects expose their supported market modes; richer market-rate inspection is
+  still a separate read-side improvement.
 - Lua can now request checked primitive adventure actions for dismissing heroes, building boats, digging, and
   casting adventure spells. C++ validates ownership and visible target tiles before forwarding to the server.
 - `analysis.heroThreatAlerts` complements `analysis.defenseAlerts`, so scripts can respond to threatened roaming
@@ -1057,9 +1061,10 @@ Regression harness:
   helpers.
 - Done: exact army stack management, creature upgrades, formation/tactics changes, and town garrison-hero swaps
   are exposed through checked Lua facade methods.
-- Partial: resource trading is exposed through a coarse `nullkillerTrade` helper and an exact
-  `tradeResources` resource-to-resource call. Scripts still cannot inspect every market rate or operate the
-  artifact, creature, experience, skill, or player-resource market modes directly.
+- Done: market operations are exposed through a coarse `nullkillerTrade` helper, an exact resource-resource
+  helper, and a generic `marketTrade` action with wrappers for resource transfer, creature/resource sale,
+  artifact purchase/sale/sacrifice, creature sacrifice, undead transformation, and university skill purchase.
+  Remaining market work is read-side offer/rate exposure, not command coverage.
 - Partial: primitive adventure spells, digging, boat building, and hero dismissal are exposed, but scripts still
   need richer spell/shipyard/dig candidate data to choose these actions well.
 - Partial: full danger-map estimates are not exposed yet.
