@@ -675,6 +675,13 @@ std::string jsonPlayerColor(PlayerColor color)
 	return color.toString();
 }
 
+bool canExposeMarketDetails(const CGObjectInstance * object, PlayerColor player)
+{
+	return object->tempOwner == player
+		|| object->tempOwner == PlayerColor::NEUTRAL
+		|| object->tempOwner == PlayerColor::UNFLAGGABLE;
+}
+
 class ScopedCallbackWaitMode
 {
 	std::shared_ptr<CCallback> callback;
@@ -697,6 +704,7 @@ public:
 };
 
 std::string componentTypeName(ComponentType type);
+std::string marketModeName(EMarketMode mode);
 
 JsonNode jsonPosition(const int3 & position)
 {
@@ -724,6 +732,102 @@ JsonNode jsonComponents(const std::vector<Component> & components)
 	node.Vector();
 	for(const Component & component : components)
 		node.Vector().push_back(jsonComponent(component));
+	return node;
+}
+
+JsonNode jsonTradeItemBuy(const TradeItemBuy & item)
+{
+	JsonNode node;
+	node["id"] = JsonNode(item.getNum());
+
+	const GameResID resource = item.as<GameResID>();
+	if(resource.hasValue() && resource.getNum() >= 0 && resource.getNum() < static_cast<int32_t>(GameConstants::RESOURCE_QUANTITY))
+	{
+		node["kindId"] = JsonNode(0);
+		node["kind"] = JsonNode("resource");
+		node["resource_id"] = JsonNode(resource.getNum());
+		return node;
+	}
+
+	const PlayerColor player = item.as<PlayerColor>();
+	if(player.isValidPlayer())
+	{
+		node["kindId"] = JsonNode(1);
+		node["kind"] = JsonNode("player");
+		node["player_id"] = JsonNode(player.getNum());
+		return node;
+	}
+
+	const ArtifactID artifact = item.as<ArtifactID>();
+	if(artifact.hasValue())
+	{
+		node["kindId"] = JsonNode(2);
+		node["kind"] = JsonNode("artifact");
+		node["artifact_id"] = JsonNode(artifact.getNum());
+		return node;
+	}
+
+	const SecondarySkill skill = item.as<SecondarySkill>();
+	if(skill.hasValue())
+	{
+		node["kindId"] = JsonNode(3);
+		node["kind"] = JsonNode("secondary_skill");
+		node["skill_id"] = JsonNode(skill.getNum());
+		return node;
+	}
+
+	node["kindId"] = JsonNode(-1);
+	node["kind"] = JsonNode("unknown");
+	return node;
+}
+
+JsonNode jsonResourceMarketRates(const IMarket * market)
+{
+	JsonNode node;
+	node.Vector();
+	if(!market || !market->allowsTrade(EMarketMode::RESOURCE_RESOURCE))
+		return node;
+
+	for(size_t sell = 0; sell < GameConstants::RESOURCE_QUANTITY; ++sell)
+	{
+		for(size_t buy = 0; buy < GameConstants::RESOURCE_QUANTITY; ++buy)
+		{
+			if(sell == buy)
+				continue;
+
+			int give = 0;
+			int receive = 0;
+			if(!market->getOffer(static_cast<int>(sell), static_cast<int>(buy), give, receive, EMarketMode::RESOURCE_RESOURCE))
+				continue;
+
+			JsonNode offer;
+			offer["sell_resource_id"] = JsonNode(static_cast<int32_t>(sell));
+			offer["buy_resource_id"] = JsonNode(static_cast<int32_t>(buy));
+			offer["give"] = JsonNode(give);
+			offer["receive"] = JsonNode(receive);
+			node.Vector().push_back(offer);
+		}
+	}
+	return node;
+}
+
+JsonNode jsonMarketModeDetails(const IMarket * market, EMarketMode mode)
+{
+	JsonNode node;
+	node["modeId"] = JsonNode(static_cast<int32_t>(mode));
+	node["mode"] = JsonNode(marketModeName(mode));
+	node["items"].Vector();
+
+	for(const TradeItemBuy & item : market->availableItemsIds(mode))
+	{
+		JsonNode itemNode = jsonTradeItemBuy(item);
+		itemNode["availableUnits"] = JsonNode(market->availableUnits(mode, item.getNum()));
+		node["items"].Vector().push_back(itemNode);
+	}
+
+	if(mode == EMarketMode::RESOURCE_RESOURCE)
+		node["resourceRates"] = jsonResourceMarketRates(market);
+
 	return node;
 }
 
@@ -1242,6 +1346,13 @@ JsonNode jsonMapObject(const CGObjectInstance * object, PlayerColor player, cons
 			modeNode["modeId"] = JsonNode(static_cast<int32_t>(mode));
 			modeNode["mode"] = JsonNode(marketModeName(mode));
 			node["market"]["modes"].Vector().push_back(modeNode);
+		}
+		if(canExposeMarketDetails(object, player))
+		{
+			node["market"]["efficiency"] = JsonNode(market->getMarketEfficiency());
+			node["market"]["modeDetails"].Vector();
+			for(EMarketMode mode : market->availableModes())
+				node["market"]["modeDetails"].Vector().push_back(jsonMarketModeDetails(market, mode));
 		}
 	}
 	return node;

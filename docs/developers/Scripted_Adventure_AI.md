@@ -1092,7 +1092,9 @@ Regression harness:
 - Done: market operations are exposed through a coarse `nullkillerTrade` helper, an exact resource-resource
   helper, and a generic `marketTrade` action with wrappers for resource transfer, creature/resource sale,
   artifact purchase/sale/sacrifice, creature sacrifice, undead transformation, and university skill purchase.
-  Remaining market work is read-side offer/rate exposure, not command coverage.
+- Done: visible owned/neutral market objects expose read-side mode details, available items, available unit
+  counts, efficiency, and resource-resource exchange rates. Enemy market details remain hidden beyond public
+  visible-object mode metadata.
 - Partial: primitive adventure spells, digging, boat building, and hero dismissal are exposed, but scripts still
   need richer spell/shipyard/dig candidate data to choose these actions well.
 - Partial: full danger-map estimates are not exposed yet.
