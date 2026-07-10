@@ -524,9 +524,10 @@ Current bounded subroutine surface:
   typed context where available. Real server query records include a default `answerAction`, a bounded
   `nullkillerAnswerAction`, and `planAction` fields on answer-bearing choices such as level-up skills, blocking
   dialog components, teleport exits, and map-object selections. Teleport and map-object-select choices include
-  visible object payloads when the target object is visible to the scripted player. Tavern, recruitment,
-  university, and market dialogs reuse the same hire, recruit, army, and market-detail payloads exposed in normal
-  action-space snapshots.
+  visible object payloads when the target object is visible to the scripted player, plus `nullkillerPreferred`
+  flags and selected answer/object ids when Nullkiller had already set a target that appears in the offered
+  choices. Tavern, recruitment, university, and market dialogs reuse the same hire, recruit, army, and
+  market-detail payloads exposed in normal action-space snapshots.
 - University and market dialog records include `modeDetails` and `skillOptions` entries. `skillOptions` provide
   stable `skill_id`, affordability/learnability flags, gold cost, Nullkiller's advisory `nullkillerSkillScore`
   when the visitor is owned, and a ready checked `market_trade` `planAction` for buying a secondary skill;
@@ -1299,6 +1300,9 @@ Regression harness:
 - Done: real server query records now include executable `answerAction`, `nullkillerAnswerAction`, and per-choice
   `planAction` payloads where answer ids exist, so scripts can use the same `ai:runOption` pattern for dialog
   decisions that they use for action-space candidates.
+- Done: teleport and map-object-selection query choices expose Nullkiller's current preferred offered object or
+  exit when it is one of the choices already shown to the player, closing the read-side object-selection policy
+  gap without revealing hidden objects.
 - Done: university and market dialog queries now expose stable mode/item details and buy-skill options with
   checked `market_trade` actions, closing one read-side gap for player-choice dialogs without changing native
   trade validation.
@@ -1442,8 +1446,8 @@ The next high-value implementation steps are:
 - Treat Lua API parity as the gate for script optimization. A script that cannot express the same meaningful
   choices as Nullkiller should use bounded Nullkiller subroutines and checked facades first; tuning before this
   point mostly optimizes around missing host capabilities.
-- Add richer Lua decision policies and read-side candidate data for remaining player choices: object selection
-  and deeper adventure-spell target ranking beyond the current sampled candidate surface.
+- Add richer Lua decision policies and read-side candidate data for remaining player choices: deeper
+  adventure-spell target ranking beyond the current sampled candidate surface.
 - Close remaining Lua API parity gaps before tuning scripts: expose bounded Nullkiller helpers or checked facade
   calls for any player-visible action/subroutine that still requires full-day `ai:nullkiller()` delegation.
 - Expose any remaining Nullkiller analyzer data as read-only candidate fields only when a concrete script policy

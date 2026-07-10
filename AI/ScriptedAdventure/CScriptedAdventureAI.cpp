@@ -3929,12 +3929,14 @@ void CScriptedAdventureAI::showTeleportDialog(const CGHeroInstance * hero, Telep
 	data["channel_id"] = JsonNode(channel.getNum());
 	data["impassable"] = JsonNode(impassable);
 	data["exits"].Vector();
+	const ObjectInstanceID nullkillerTarget = destinationTeleport;
 	for(size_t index = 0; index < exits.size(); ++index)
 	{
 		JsonNode exit;
 		exit["answer"] = JsonNode(static_cast<int32_t>(index));
 		exit["object_id"] = JsonNode(exits[index].first.getNum());
 		exit["position"] = jsonPosition(exits[index].second);
+		exit["nullkillerPreferred"] = JsonNode(nullkillerTarget != ObjectInstanceID() && exits[index].first == nullkillerTarget);
 		if(cc)
 		{
 			if(const CGObjectInstance * object = cc->getObj(exits[index].first, false))
@@ -3944,6 +3946,18 @@ void CScriptedAdventureAI::showTeleportDialog(const CGHeroInstance * hero, Telep
 			}
 		}
 		data["exits"].Vector().push_back(exit);
+	}
+	if(nullkillerTarget != ObjectInstanceID())
+	{
+		for(const JsonNode & exit : data["exits"].Vector())
+		{
+			if(readBool(exit, "nullkillerPreferred", false))
+			{
+				data["nullkillerSelectedObjectId"] = JsonNode(nullkillerTarget.getNum());
+				data["nullkillerSelectedAnswer"] = exit["answer"];
+				break;
+			}
+		}
 	}
 	recordScriptQuery(askID, "teleport_dialog", data);
 
@@ -3963,11 +3977,13 @@ void CScriptedAdventureAI::showMapObjectSelectDialog(QueryID askID, const Compon
 	data["title"] = JsonNode(title.toString());
 	data["description"] = JsonNode(description.toString());
 	data["objects"].Vector();
+	const ObjectInstanceID nullkillerTarget = selectedObject;
 	for(const ObjectInstanceID & objectID : objects)
 	{
 		JsonNode option;
 		option["answer"] = JsonNode(objectID.getNum());
 		option["object_id"] = JsonNode(objectID.getNum());
+		option["nullkillerPreferred"] = JsonNode(nullkillerTarget != ObjectInstanceID() && objectID == nullkillerTarget);
 		if(cc)
 		{
 			if(const CGObjectInstance * object = cc->getObj(objectID, false))
@@ -3977,6 +3993,18 @@ void CScriptedAdventureAI::showMapObjectSelectDialog(QueryID askID, const Compon
 			}
 		}
 		data["objects"].Vector().push_back(option);
+	}
+	if(nullkillerTarget != ObjectInstanceID())
+	{
+		for(const JsonNode & object : data["objects"].Vector())
+		{
+			if(readBool(object, "nullkillerPreferred", false))
+			{
+				data["nullkillerSelectedObjectId"] = JsonNode(nullkillerTarget.getNum());
+				data["nullkillerSelectedAnswer"] = object["answer"];
+				break;
+			}
+		}
 	}
 	recordScriptQuery(askID, "map_object_select", data);
 
