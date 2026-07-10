@@ -134,6 +134,8 @@ Input:
   update. Visible quest object details are attached only when they are visible to the player.
 - Visible quest objects include a `quest` block. Requirement details are exposed only when the quest is already
   active/known for the player; inactive visible quest objects expose only active/completed flags.
+- `actionSpace.questObjectOptions`: a capped index of visible quest/guard/gate objects with owned-hero
+  completion candidates.
 - `updates`: capped revisioned journal of recent visible changes. Scripts can store the last consumed revision
   in memory when they want delta processing.
 - `updates` also includes player-visible non-query windows such as generic info dialogs, shipyard dialogs,
@@ -1261,6 +1263,9 @@ Regression harness:
 - Done: known quest requirements are exposed on visible quest objects and current quest-log entries using stable
   ids without revealing inactive quest internals. Lua can reason about known blockers, while still using movement
   actions or bounded Nullkiller tasks for actual unlock-chain execution.
+- Done: `actionSpace.questObjectOptions` indexes visible quest/guard/gate objects directly and reports which
+  owned heroes can already complete each visible active quest. The actual visit still uses route-checked
+  `reachableObjects` or bounded Nullkiller tasks.
 - Done: owned hero artifact state, Nullkiller artifact scores, exact artifact management calls, typed artifact
   assembly prompts, checked assemble/disassemble actions, and transition-slot artifact cleanup are exposed through
   Lua facade methods. Remaining artifact work is higher-level artifact intent helpers.
@@ -1437,9 +1442,8 @@ The next high-value implementation steps are:
 - Treat Lua API parity as the gate for script optimization. A script that cannot express the same meaningful
   choices as Nullkiller should use bounded Nullkiller subroutines and checked facades first; tuning before this
   point mostly optimizes around missing host capabilities.
-- Add richer Lua decision policies and read-side candidate data for remaining player choices: quests/gates,
-  university choices, object selection, and deeper adventure-spell target ranking beyond the current sampled
-  candidate surface.
+- Add richer Lua decision policies and read-side candidate data for remaining player choices: object selection
+  and deeper adventure-spell target ranking beyond the current sampled candidate surface.
 - Close remaining Lua API parity gaps before tuning scripts: expose bounded Nullkiller helpers or checked facade
   calls for any player-visible action/subroutine that still requires full-day `ai:nullkiller()` delegation.
 - Expose any remaining Nullkiller analyzer data as read-only candidate fields only when a concrete script policy

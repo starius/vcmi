@@ -7461,6 +7461,8 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["buyArtifactOptions"].Vector();
 	actionSpace["spellResearchOptions"].Vector();
 	actionSpace["visitTownBuildingOptions"].Vector();
+	actionSpace["questObjectOptions"].Vector();
+	actionSpace["questObjectOptionsTruncated"] = JsonNode(false);
 	actionSpace["nullkillerSubroutineOptions"].Vector();
 	actionSpace["nullkillerHelperOptions"].Vector();
 	actionSpace["recommendedActions"].Vector();
@@ -7841,6 +7843,46 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		}
 	}
 
+	std::set<int32_t> seenQuestObjects;
+	constexpr size_t maxQuestObjectOptions = 64;
+	auto appendQuestObjectOption = [&](const CGObjectInstance * object)
+	{
+		if(!object || !cc->isVisibleFor(object, playerID))
+			return;
+		const auto * questObject = dynamic_cast<const IQuestObject *>(object);
+		if(!questObject || !seenQuestObjects.insert(object->id.getNum()).second)
+			return;
+		if(actionSpace["questObjectOptions"].Vector().size() >= maxQuestObjectOptions)
+		{
+			actionSpace["questObjectOptionsTruncated"] = JsonNode(true);
+			return;
+		}
+
+		const CQuest & quest = questObject->getQuest();
+		const bool active = quest.activeForPlayers.count(playerID) != 0;
+		JsonNode option;
+		option["object_id"] = JsonNode(object->id.getNum());
+		option["object"] = jsonMapObject(object, playerID, nullptr);
+		option["quest"] = jsonQuestObject(questObject, playerID, nullptr);
+		option["heroCandidates"].Vector();
+		option["canCompleteWithAnyOwnedHero"] = JsonNode(false);
+		for(const CGHeroInstance * hero : ownedHeroes)
+		{
+			if(!hero || hero->tempOwner != playerID)
+				continue;
+
+			const bool canComplete = active && questObject->checkQuest(hero);
+			JsonNode candidate;
+			candidate["hero_id"] = JsonNode(hero->id.getNum());
+			candidate["hero"] = jsonHero(hero);
+			candidate["canComplete"] = JsonNode(canComplete);
+			if(canComplete)
+				option["canCompleteWithAnyOwnedHero"] = JsonNode(true);
+			option["heroCandidates"].Vector().push_back(candidate);
+		}
+		actionSpace["questObjectOptions"].Vector().push_back(option);
+	};
+
 	for(const CGHeroInstance * hero : ownedHeroes)
 	{
 		for(const CGHeroInstance * otherHero : ownedHeroes)
@@ -7875,14 +7917,18 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 
 		for(ObjectInstanceID objectID : tile->visitableObjects)
 		{
+			const CGObjectInstance * object = cc->getObj(objectID, false);
 			appendShipyardOption(objectID);
-			if(const CGDwelling * dwelling = dynamic_cast<const CGDwelling *>(cc->getObj(objectID, false)))
+			appendQuestObjectOption(object);
+			if(const CGDwelling * dwelling = dynamic_cast<const CGDwelling *>(object))
 				appendNullkillerRecruitHelperOption(dwelling, nullptr);
 		}
 		for(ObjectInstanceID objectID : tile->blockingObjects)
 		{
+			const CGObjectInstance * object = cc->getObj(objectID, false);
 			appendShipyardOption(objectID);
-			if(const CGDwelling * dwelling = dynamic_cast<const CGDwelling *>(cc->getObj(objectID, false)))
+			appendQuestObjectOption(object);
+			if(const CGDwelling * dwelling = dynamic_cast<const CGDwelling *>(object))
 				appendNullkillerRecruitHelperOption(dwelling, nullptr);
 		}
 	}
@@ -8088,6 +8134,7 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 	analysis["candidateLimits"]["spellTargetRadius"] = JsonNode(12);
 	analysis["candidateLimits"]["maxAdventureSpellOptions"] = JsonNode(64);
 	analysis["candidateLimits"]["maxSpellTargetsPerSpell"] = JsonNode(12);
+	analysis["candidateLimits"]["maxQuestObjectOptions"] = JsonNode(64);
 	analysis["candidateLimits"]["maxVisibleEnemyThreatTiles"] = JsonNode(128);
 	analysis["candidateLimits"]["maxLockedObjectClusters"] = JsonNode(32);
 	analysis["candidateLimits"]["maxLockedClusterObjects"] = JsonNode(16);
