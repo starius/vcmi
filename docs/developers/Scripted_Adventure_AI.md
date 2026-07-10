@@ -782,6 +782,10 @@ Regression harness:
   times. Support actions are now enabled by default for the improvement loop. Remaining failures are still
   concentrated around defense pressure, hero threat handling, dialogs during multi-action batches, hero chaining,
   and deeper blocker plans.
+- An all-fallback control script is kept at `scripts/ai/candidates/fallbackAdventure.lua`. On the same 10-map
+  corpus it also lost 10/10, but averaged 50.5 loss day, which means the default script is still oversteering
+  Nullkiller in some openings. A no-object-routing experiment averaged 47.8 and was rejected. Future candidates
+  should beat the all-fallback control before promotion.
 - `scripts/ai/runAdventureAIBatch.py` terminates a stale client process after a terminal game outcome has appeared
   in stdout and a short grace period has elapsed. This keeps unattended evaluation batches from hanging while still
   recording the completed outcome and traces.
