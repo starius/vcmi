@@ -182,6 +182,9 @@ The `ai` facade:
   `preference` may be `experience` or `gold`; the default is experience.
 - `ai:nullkillerTrade()`: ask the host to run Nullkiller's resource-trading helper once, returning whether it
   traded anything.
+- `ai:nullkillerBuildArmy(townId)`: ask the host to run Nullkiller's bounded town-army helper once for one
+  visible owned town. It may upgrade, recruit, and move creatures to the visiting hero, then returns control to
+  Lua.
 - `ai:requestStatistic()`: request the normal player statistics dataset; the server response is mirrored into
   `updates` as `statistics_response`.
 - `ai:tradeResources(marketId, sellResourceId, buyResourceId, amount, heroId?)`: request an exact
@@ -1194,6 +1197,8 @@ Regression harness:
   rename callback are also exposed for raw player-action parity.
 - Done: Lua can call Nullkiller's bounded creature-preparation helper through `ai:pickBestCreatures`, matching
   the existing artifact-preparation helper and avoiding Lua-side reimplementation of stack logistics.
+- Done: Lua can call Nullkiller's bounded town-army helper through `ai:nullkillerBuildArmy(townId)`, reusing the
+  native upgrade/recruit/move-to-hero sequence for one visible owned town without delegating the rest of the day.
 - Done: pending dialog/window queries are exposed as typed read-side data under `state.turn.queries`, and direct
   Lua actions that open these dialogs now pause for a script answer instead of auto-answering. The bundled default
   script includes a conservative fallback answer policy; richer per-dialog strategy remains Lua policy work.

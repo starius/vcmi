@@ -596,6 +596,15 @@ function ai:nullkillerTrade()
 	return self:execute({ type = "nullkiller_trade" })
 end
 
+function ai:nullkillerBuildArmy(townId)
+	local action = copyFields(townId)
+	if type(townId) ~= "table" then
+		action.town_id = townId
+	end
+	action.type = "nullkiller_build_army"
+	return self:execute(action)
+end
+
 function ai:requestStatistic()
 	return self:execute({ type = "request_statistic" })
 end
