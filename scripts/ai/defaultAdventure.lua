@@ -125,6 +125,12 @@ local Confidence = {
     idle = 0.5
 }
 
+local NativeNullkiller = {
+    maxPassSteps = 4,
+    maxCandidates = 16,
+    maxAttempts = 4
+}
+
 -- Stable enum values mirrored from the C++ scripted adventure host. Lua policy
 -- decisions should use these numeric fields, not localized display names.
 local BuildingKind = {
@@ -1244,32 +1250,39 @@ function Script.runDay(ai, input)
         return current
     end
 
-    local function runBoundedNullkillerStep()
+    local function runBoundedNullkillerPass()
+        local remainingCommands = math.max(1, commandLimit - commands)
+        local maxSteps = math.min(NativeNullkiller.maxPassSteps, remainingCommands)
         local ok, result = pcall(function()
-            return ai:nullkillerStep("all", 16, 4)
+            return ai:nullkillerPass({
+                mode = ai.nullkillerTaskModes.all,
+                max_steps = maxSteps,
+                max_candidates = NativeNullkiller.maxCandidates,
+                max_attempts = NativeNullkiller.maxAttempts
+            })
         end)
         commands = commands + 1
 
         if not ok then
             local memory = ai:memory()
-            memory.lastNullkillerStepError = tostring(result)
+            memory.lastNullkillerPassError = tostring(result)
             ai:setMemory(memory)
             return false
         end
 
-        if result.didExecute then
-            refreshAfterCommand()
-            return true
-        end
-
-        if result.outcomeId == ai.nullkillerStepOutcomes.replan then
-            refreshAfterCommand()
-            return true
-        end
-
-        if result.shouldStopTurn then
+        if (tonumber(result.stopTurnSteps or 0) or 0) > 0 then
             ai:endTurn()
-            return false, ai:output("end_turn", "bounded Nullkiller requested end turn", Confidence.idle)
+            return false, ai:output("end_turn", "bounded Nullkiller pass accepted native stop-turn signal", Confidence.idle)
+        end
+
+        if (tonumber(result.executedSteps or 0) or 0) > 0
+            or (tonumber(result.replanSteps or 0) or 0) > 0
+            or result.didTrade == true
+            or result.paused == true
+            or result.stop == true
+        then
+            refreshAfterCommand()
+            return true
         end
 
         return false
@@ -1299,7 +1312,7 @@ function Script.runDay(ai, input)
 
             local handledByNullkiller = false
             if output.status == "fallback" then
-                local continued, finalOutput = runBoundedNullkillerStep()
+                local continued, finalOutput = runBoundedNullkillerPass()
                 if finalOutput then
                     return finalOutput
                 end
@@ -1345,7 +1358,7 @@ function Script.runDay(ai, input)
                 end
 
                 if (not executedAny or output.status ~= "need_replan") and not shouldReplan then
-                    local continued, finalOutput = runBoundedNullkillerStep()
+                    local continued, finalOutput = runBoundedNullkillerPass()
                     if finalOutput then
                         return finalOutput
                     end

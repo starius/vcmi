@@ -1195,6 +1195,41 @@ TEST(LuaAdventureScriptRunnerTest, BundledAdventureScriptVariantsRun)
 	}
 }
 
+TEST(LuaAdventureScriptRunnerTest, DefaultAdventureTriesBoundedNullkillerPassBeforeFallback)
+{
+	scripting::LuaAdventureScriptRunner runner(
+		"scripts/ai/defaultAdventure.lua",
+		readAdventureScript("scripts/ai/defaultAdventure.lua"));
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		response["result"]["executedSteps"] = JsonNode(0);
+		response["result"]["replanSteps"] = JsonNode(0);
+		response["result"]["stopTurnSteps"] = JsonNode(0);
+		response["result"]["didTrade"] = JsonNode(false);
+		response["result"]["paused"] = JsonNode(false);
+		response["result"]["stop"] = JsonNode(false);
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 1);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_pass");
+	EXPECT_EQ(commands[0]["payload"]["mode"].Integer(), 2);
+	EXPECT_EQ(commands[0]["payload"]["max_steps"].Integer(), 4);
+	EXPECT_EQ(commands[0]["payload"]["max_candidates"].Integer(), 16);
+	EXPECT_EQ(commands[0]["payload"]["max_attempts"].Integer(), 4);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::FALLBACK);
+	ASSERT_TRUE(output.intent);
+	EXPECT_NE(output.intent->find("No high-confidence scripted candidate remains"), std::string::npos);
+}
+
 TEST(LuaAdventureScriptRunnerTest, PackagedConfigUsesFallbackControlScript)
 {
 	const JsonNode config = readJsonFile(std::filesystem::path(VCMI_SOURCE_DIR) / "config/ai/scriptedAdventure.json");
