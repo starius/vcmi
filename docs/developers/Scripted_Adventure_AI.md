@@ -633,6 +633,26 @@ Current bounded subroutine surface:
   such as the priority pass, resource trader, town-army preparation, army upgrades, and owned-dwelling
   recruitment. These options are not automatically added to `recommendedActions`.
 
+## Current API Coverage Stance
+
+The Lua bridge is an adventure-AI policy API, not a general client automation API. Current coverage targets the
+meaningful choices a computer player can make during adventure turns: movement and object visits, town building and
+building visits, creature recruitment and upgrades, hero hire and dismissal, army stack management, artifact
+management, market trades, adventure spells, boat building, town/garrison actions, query answers, memory,
+refresh/replan, and end turn.
+
+Bounded Nullkiller helpers cover native subroutines that are expensive or brittle to reimplement in Lua: task
+candidate generation and execution by mode, one-step/pass/slice execution, priority passes, resource trading, town
+army preparation, creature recruitment, army upgrading, town-garrison pickup, weak-hero dismissal, single-creature
+stack setup, whirlpool formation, siege formation, query answering, object interaction callbacks, artifact
+preparation, creature preparation, and combined hero preparation.
+
+The intentionally excluded `IGameActionCallback` methods are meta/client operations rather than adventure strategy:
+save, pause, chat/message sending, and raw local-state writes. Script-owned memory replaces raw local-state writes,
+and chat/message sending is not exposed because it can trigger cheat-like text commands in some contexts. If future
+work finds another real adventure decision still reachable only through whole-day Nullkiller delegation, it should
+be added as either a checked action or a bounded helper before tuning the Lua policy.
+
 The script engine should reuse these Nullkiller systems where possible:
 
 - analyzers for hero roles, builds, dangers, and reachable objects
