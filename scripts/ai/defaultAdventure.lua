@@ -126,7 +126,10 @@ local Confidence = {
 }
 
 local NativeNullkiller = {
-    maxPassSteps = 4,
+    -- One turn slice is one bounded host command that mirrors a native
+    -- Nullkiller pass shape: priority tasks, one adventure task, resource
+    -- trading, and artifact cleanup. Lua still regains control after the slice.
+    maxTurnSlicePasses = 4,
     maxCandidates = 16,
     maxAttempts = 4
 }
@@ -1250,13 +1253,12 @@ function Script.runDay(ai, input)
         return current
     end
 
-    local function runBoundedNullkillerPass()
+    local function runBoundedNullkillerTurnSlice()
         local remainingCommands = math.max(1, commandLimit - commands)
-        local maxSteps = math.min(NativeNullkiller.maxPassSteps, remainingCommands)
+        local maxPasses = math.min(NativeNullkiller.maxTurnSlicePasses, remainingCommands)
         local ok, result = pcall(function()
-            return ai:nullkillerPass({
-                mode = ai.nullkillerTaskModes.all,
-                max_steps = maxSteps,
+            return ai:nullkillerTurnSlice({
+                max_passes = maxPasses,
                 max_candidates = NativeNullkiller.maxCandidates,
                 max_attempts = NativeNullkiller.maxAttempts
             })
@@ -1265,19 +1267,21 @@ function Script.runDay(ai, input)
 
         if not ok then
             local memory = ai:memory()
-            memory.lastNullkillerPassError = tostring(result)
+            memory.lastNullkillerTurnSliceError = tostring(result)
             ai:setMemory(memory)
             return false
         end
 
-        if (tonumber(result.stopTurnSteps or 0) or 0) > 0 then
+        if result.shouldStopTurn == true or (tonumber(result.adventureStopTurnSteps or 0) or 0) > 0 then
             ai:endTurn()
-            return false, ai:output("end_turn", "bounded Nullkiller pass accepted native stop-turn signal", Confidence.idle)
+            return false, ai:output("end_turn", "bounded Nullkiller turn slice accepted native stop-turn signal", Confidence.idle)
         end
 
-        if (tonumber(result.executedSteps or 0) or 0) > 0
-            or (tonumber(result.replanSteps or 0) or 0) > 0
-            or result.didTrade == true
+        if result.didWork == true
+            or (tonumber(result.priorityTasksExecuted or 0) or 0) > 0
+            or (tonumber(result.adventureStepsExecuted or 0) or 0) > 0
+            or (tonumber(result.adventureReplanSteps or 0) or 0) > 0
+            or (tonumber(result.tradePasses or 0) or 0) > 0
             or result.paused == true
             or result.stop == true
         then
@@ -1312,7 +1316,7 @@ function Script.runDay(ai, input)
 
             local handledByNullkiller = false
             if output.status == "fallback" then
-                local continued, finalOutput = runBoundedNullkillerPass()
+                local continued, finalOutput = runBoundedNullkillerTurnSlice()
                 if finalOutput then
                     return finalOutput
                 end
@@ -1358,7 +1362,7 @@ function Script.runDay(ai, input)
                 end
 
                 if (not executedAny or output.status ~= "need_replan") and not shouldReplan then
-                    local continued, finalOutput = runBoundedNullkillerPass()
+                    local continued, finalOutput = runBoundedNullkillerTurnSlice()
                     if finalOutput then
                         return finalOutput
                     end

@@ -1248,7 +1248,7 @@ TEST(LuaAdventureScriptRunnerTest, BundledAdventureScriptVariantsRun)
 	}
 }
 
-TEST(LuaAdventureScriptRunnerTest, DefaultAdventureTriesBoundedNullkillerPassBeforeFallback)
+TEST(LuaAdventureScriptRunnerTest, DefaultAdventureTriesBoundedNullkillerTurnSliceBeforeFallback)
 {
 	scripting::LuaAdventureScriptRunner runner(
 		"scripts/ai/defaultAdventure.lua",
@@ -1263,19 +1263,20 @@ TEST(LuaAdventureScriptRunnerTest, DefaultAdventureTriesBoundedNullkillerPassBef
 		response["ok"] = JsonNode(true);
 		response["result"]["ok"] = JsonNode(true);
 		response["result"]["type"] = command["payload"]["type"];
-		response["result"]["executedSteps"] = JsonNode(0);
-		response["result"]["replanSteps"] = JsonNode(0);
-		response["result"]["stopTurnSteps"] = JsonNode(0);
-		response["result"]["didTrade"] = JsonNode(false);
+		response["result"]["didWork"] = JsonNode(false);
+		response["result"]["priorityTasksExecuted"] = JsonNode(0);
+		response["result"]["adventureStepsExecuted"] = JsonNode(0);
+		response["result"]["adventureReplanSteps"] = JsonNode(0);
+		response["result"]["adventureStopTurnSteps"] = JsonNode(0);
+		response["result"]["tradePasses"] = JsonNode(0);
 		response["result"]["paused"] = JsonNode(false);
 		response["result"]["stop"] = JsonNode(false);
 		return response;
 	});
 
 	ASSERT_EQ(commands.size(), 1);
-	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_pass");
-	EXPECT_EQ(commands[0]["payload"]["mode"].Integer(), 2);
-	EXPECT_EQ(commands[0]["payload"]["max_steps"].Integer(), 4);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[0]["payload"]["max_passes"].Integer(), 4);
 	EXPECT_EQ(commands[0]["payload"]["max_candidates"].Integer(), 16);
 	EXPECT_EQ(commands[0]["payload"]["max_attempts"].Integer(), 4);
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::FALLBACK);

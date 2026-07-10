@@ -1412,7 +1412,7 @@ Regression harness:
 - Done: it scores allowed builds, recruitment, and reachable object pickups.
 - Done: its active `runDay(ai, input)` path is imperative: Lua owns the day loop, executes checked `ai:*`
   calls directly, refreshes visible state after side effects, answers pending queries, and uses capped bounded
-  Nullkiller passes before delegating the remaining turn. The older `planDay(input)` path remains only as a
+  Nullkiller turn slices before delegating the remaining turn. The older `planDay(input)` path remains only as a
   compatibility shim for fixtures and legacy callers.
 - Done: it assigns a main hero, tracks consumed opponent-update revisions, prioritizes recruitment under strong
   defense pressure, and penalizes scout targets near visible enemy heroes.
