@@ -362,6 +362,17 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 				ai:manageHeroCostume(5, 2, true)
 				ai:nullkillerTrade()
 				ai:tradeResources(16, 0, 6, 100, 5)
+				ai:swapCreatures(30, 0, 31, 1)
+				ai:mergeStacks(30, 2, 31, 3)
+				ai:splitStack(30, 4, 31, 5, 7)
+				ai:bulkSplitStack(30, 0, 2)
+				ai:bulkMergeStacks(30, 1)
+				ai:bulkSplitAndRebalanceStack(30, 2)
+				ai:dismissCreature(30, 3)
+				ai:upgradeCreature(30, 4, 37)
+				ai:setFormation(17, 1)
+				ai:setTactics(17, true)
+				ai:swapGarrisonHero(16)
 				ai:dismissHero(17)
 				ai:buildBoat(18)
 				ai:dig(19)
@@ -406,7 +417,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 		return response;
 	});
 
-	ASSERT_EQ(commands.size(), 15);
+	ASSERT_EQ(commands.size(), 26);
 	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_tasks");
 	EXPECT_EQ(commands[0]["payload"]["mode"].String(), "adventure");
 	EXPECT_EQ(commands[0]["payload"]["max_candidates"].Integer(), 7);
@@ -443,18 +454,55 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 	EXPECT_EQ(commands[10]["payload"]["buy_resource_id"].Integer(), 6);
 	EXPECT_EQ(commands[10]["payload"]["amount"].Integer(), 100);
 	EXPECT_EQ(commands[10]["payload"]["hero_id"].Integer(), 5);
-	EXPECT_EQ(commands[11]["payload"]["type"].String(), "dismiss_hero");
-	EXPECT_EQ(commands[11]["payload"]["hero_id"].Integer(), 17);
-	EXPECT_EQ(commands[12]["payload"]["type"].String(), "build_boat");
-	EXPECT_EQ(commands[12]["payload"]["shipyard_id"].Integer(), 18);
-	EXPECT_EQ(commands[13]["payload"]["type"].String(), "dig");
-	EXPECT_EQ(commands[13]["payload"]["hero_id"].Integer(), 19);
-	EXPECT_EQ(commands[14]["payload"]["type"].String(), "cast_spell");
-	EXPECT_EQ(commands[14]["payload"]["hero_id"].Integer(), 20);
-	EXPECT_EQ(commands[14]["payload"]["spell_id"].Integer(), 21);
-	EXPECT_EQ(commands[14]["payload"]["x"].Integer(), 3);
-	EXPECT_EQ(commands[14]["payload"]["y"].Integer(), 4);
-	EXPECT_EQ(commands[14]["payload"]["z"].Integer(), 0);
+	EXPECT_EQ(commands[11]["payload"]["type"].String(), "swap_creatures");
+	EXPECT_EQ(commands[11]["payload"]["source_id"].Integer(), 30);
+	EXPECT_EQ(commands[11]["payload"]["source_slot"].Integer(), 0);
+	EXPECT_EQ(commands[11]["payload"]["destination_id"].Integer(), 31);
+	EXPECT_EQ(commands[11]["payload"]["destination_slot"].Integer(), 1);
+	EXPECT_EQ(commands[12]["payload"]["type"].String(), "merge_stacks");
+	EXPECT_EQ(commands[12]["payload"]["source_slot"].Integer(), 2);
+	EXPECT_EQ(commands[12]["payload"]["destination_slot"].Integer(), 3);
+	EXPECT_EQ(commands[13]["payload"]["type"].String(), "split_stack");
+	EXPECT_EQ(commands[13]["payload"]["source_slot"].Integer(), 4);
+	EXPECT_EQ(commands[13]["payload"]["destination_slot"].Integer(), 5);
+	EXPECT_EQ(commands[13]["payload"]["amount"].Integer(), 7);
+	EXPECT_EQ(commands[14]["payload"]["type"].String(), "bulk_split_stack");
+	EXPECT_EQ(commands[14]["payload"]["army_id"].Integer(), 30);
+	EXPECT_EQ(commands[14]["payload"]["source_slot"].Integer(), 0);
+	EXPECT_EQ(commands[14]["payload"]["amount"].Integer(), 2);
+	EXPECT_EQ(commands[15]["payload"]["type"].String(), "bulk_merge_stacks");
+	EXPECT_EQ(commands[15]["payload"]["army_id"].Integer(), 30);
+	EXPECT_EQ(commands[15]["payload"]["source_slot"].Integer(), 1);
+	EXPECT_EQ(commands[16]["payload"]["type"].String(), "bulk_split_rebalance_stack");
+	EXPECT_EQ(commands[16]["payload"]["army_id"].Integer(), 30);
+	EXPECT_EQ(commands[16]["payload"]["source_slot"].Integer(), 2);
+	EXPECT_EQ(commands[17]["payload"]["type"].String(), "dismiss_creature");
+	EXPECT_EQ(commands[17]["payload"]["army_id"].Integer(), 30);
+	EXPECT_EQ(commands[17]["payload"]["slot"].Integer(), 3);
+	EXPECT_EQ(commands[18]["payload"]["type"].String(), "upgrade_creature");
+	EXPECT_EQ(commands[18]["payload"]["army_id"].Integer(), 30);
+	EXPECT_EQ(commands[18]["payload"]["slot"].Integer(), 4);
+	EXPECT_EQ(commands[18]["payload"]["creature_id"].Integer(), 37);
+	EXPECT_EQ(commands[19]["payload"]["type"].String(), "set_formation");
+	EXPECT_EQ(commands[19]["payload"]["hero_id"].Integer(), 17);
+	EXPECT_EQ(commands[19]["payload"]["formation_id"].Integer(), 1);
+	EXPECT_EQ(commands[20]["payload"]["type"].String(), "set_tactics");
+	EXPECT_EQ(commands[20]["payload"]["hero_id"].Integer(), 17);
+	EXPECT_TRUE(commands[20]["payload"]["enabled"].Bool());
+	EXPECT_EQ(commands[21]["payload"]["type"].String(), "swap_garrison_hero");
+	EXPECT_EQ(commands[21]["payload"]["town_id"].Integer(), 16);
+	EXPECT_EQ(commands[22]["payload"]["type"].String(), "dismiss_hero");
+	EXPECT_EQ(commands[22]["payload"]["hero_id"].Integer(), 17);
+	EXPECT_EQ(commands[23]["payload"]["type"].String(), "build_boat");
+	EXPECT_EQ(commands[23]["payload"]["shipyard_id"].Integer(), 18);
+	EXPECT_EQ(commands[24]["payload"]["type"].String(), "dig");
+	EXPECT_EQ(commands[24]["payload"]["hero_id"].Integer(), 19);
+	EXPECT_EQ(commands[25]["payload"]["type"].String(), "cast_spell");
+	EXPECT_EQ(commands[25]["payload"]["hero_id"].Integer(), 20);
+	EXPECT_EQ(commands[25]["payload"]["spell_id"].Integer(), 21);
+	EXPECT_EQ(commands[25]["payload"]["x"].Integer(), 3);
+	EXPECT_EQ(commands[25]["payload"]["y"].Integer(), 4);
+	EXPECT_EQ(commands[25]["payload"]["z"].Integer(), 0);
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	EXPECT_EQ(output.memory["firstTask"].Integer(), 41);
 	EXPECT_EQ(output.memory["stepTask"].Integer(), 42);

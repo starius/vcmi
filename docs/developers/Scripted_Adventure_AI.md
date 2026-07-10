@@ -149,6 +149,10 @@ The `ai` facade:
 - `ai:refresh()`: yield to C++ and receive a new visible input snapshot after side effects.
 - `ai:build`, `ai:recruit`, `ai:hireHero`, `ai:transferArmy`, `ai:moveHero`, `ai:visitObject`,
   `ai:answerQuery`, `ai:endTurn`: request checked host actions.
+- `ai:swapCreatures`, `ai:mergeStacks`, `ai:splitStack`, `ai:bulkSplitStack`, `ai:bulkMergeStacks`,
+  `ai:bulkSplitAndRebalanceStack`, `ai:dismissCreature`, `ai:upgradeCreature`, `ai:setFormation`,
+  `ai:setTactics`, and `ai:swapGarrisonHero`: request exact army stack, upgrade, formation, tactics, and
+  town-garrison operations using stable object, slot, creature, and formation ids.
 - `ai:pickBestArtifacts(heroId, otherHeroId?)`: ask the host to run Nullkiller's artifact-preparation helper for
   one owned hero, or two co-located owned heroes, through the normal artifact swap callback path.
 - `ai:swapArtifacts(src, dst)`, `ai:bulkMoveArtifacts`, `ai:sortBackpackArtifacts`,
@@ -860,6 +864,9 @@ Regression harness:
 - Hero input now includes artifact state: worn slots and backpack entries expose stable slot ids, artifact type ids,
   artifact instance ids, lock state, and possible slot ids. Lua can request exact artifact swaps, bulk transfers,
   backpack sorting/scrolling, and hero costume operations through checked host calls.
+- Hero input now exposes `formationId` and `tacticsEnabled`, and Lua can request exact creature stack
+  rearrangement, stack splitting, stack merging, creature dismissal, creature upgrades, formation/tactics changes,
+  and town garrison-hero swaps through the same checked callback/server packet path used by native clients and AI.
 - Lua can now call `ai:nullkillerTrade()` to run Nullkiller's build-driven resource trader once, or
   `ai:tradeResources(marketId, sellResourceId, buyResourceId, amount, heroId?)` to request an exact
   resource-to-resource market transaction. Visible market objects expose their supported market modes, but the
@@ -1048,6 +1055,8 @@ Regression harness:
 - Done: owned hero artifact state and exact artifact management calls are exposed through checked Lua facade
   methods. Remaining artifact work is typed handling of assemble/disassemble prompts and richer artifact scoring
   helpers.
+- Done: exact army stack management, creature upgrades, formation/tactics changes, and town garrison-hero swaps
+  are exposed through checked Lua facade methods.
 - Partial: resource trading is exposed through a coarse `nullkillerTrade` helper and an exact
   `tradeResources` resource-to-resource call. Scripts still cannot inspect every market rate or operate the
   artifact, creature, experience, skill, or player-resource market modes directly.

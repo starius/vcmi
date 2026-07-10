@@ -203,6 +203,124 @@ function ai:transferArmy(sourceId, destinationId, sourceSlot)
 	return self:execute(action)
 end
 
+function ai:swapCreatures(sourceId, sourceSlot, destinationId, destinationSlot)
+	local action = copyFields(sourceId)
+	if type(sourceId) ~= "table" then
+		action.source_id = sourceId
+		action.source_slot = sourceSlot
+		action.destination_id = destinationId
+		action.destination_slot = destinationSlot
+	end
+	action.type = "swap_creatures"
+	return self:execute(action)
+end
+
+function ai:mergeStacks(sourceId, sourceSlot, destinationId, destinationSlot)
+	local action = copyFields(sourceId)
+	if type(sourceId) ~= "table" then
+		action.source_id = sourceId
+		action.source_slot = sourceSlot
+		action.destination_id = destinationId
+		action.destination_slot = destinationSlot
+	end
+	action.type = "merge_stacks"
+	return self:execute(action)
+end
+
+function ai:splitStack(sourceId, sourceSlot, destinationId, destinationSlot, amount)
+	local action = copyFields(sourceId)
+	if type(sourceId) ~= "table" then
+		action.source_id = sourceId
+		action.source_slot = sourceSlot
+		action.destination_id = destinationId
+		action.destination_slot = destinationSlot
+		action.amount = amount
+	end
+	action.type = "split_stack"
+	return self:execute(action)
+end
+
+function ai:bulkSplitStack(armyId, sourceSlot, amount)
+	local action = copyFields(armyId)
+	if type(armyId) ~= "table" then
+		action.army_id = armyId
+		action.source_slot = sourceSlot
+		action.amount = amount
+	end
+	action.type = "bulk_split_stack"
+	return self:execute(action)
+end
+
+function ai:bulkMergeStacks(armyId, sourceSlot)
+	local action = copyFields(armyId)
+	if type(armyId) ~= "table" then
+		action.army_id = armyId
+		action.source_slot = sourceSlot
+	end
+	action.type = "bulk_merge_stacks"
+	return self:execute(action)
+end
+
+function ai:bulkSplitAndRebalanceStack(armyId, sourceSlot)
+	local action = copyFields(armyId)
+	if type(armyId) ~= "table" then
+		action.army_id = armyId
+		action.source_slot = sourceSlot
+	end
+	action.type = "bulk_split_rebalance_stack"
+	return self:execute(action)
+end
+
+function ai:dismissCreature(armyId, slot)
+	local action = copyFields(armyId)
+	if type(armyId) ~= "table" then
+		action.army_id = armyId
+		action.slot = slot
+	end
+	action.type = "dismiss_creature"
+	return self:execute(action)
+end
+
+function ai:upgradeCreature(armyId, slot, creatureId)
+	local action = copyFields(armyId)
+	if type(armyId) ~= "table" then
+		action.army_id = armyId
+		action.slot = slot
+		action.creature_id = creatureId
+	end
+	action.type = "upgrade_creature"
+	return self:execute(action)
+end
+
+function ai:setFormation(heroId, formationId)
+	local action = copyFields(heroId)
+	if type(heroId) ~= "table" then
+		action.hero_id = heroId
+		action.formation_id = formationId
+	end
+	action.type = "set_formation"
+	return self:execute(action)
+end
+
+function ai:setTactics(heroId, enabled)
+	local action = copyFields(heroId)
+	if type(heroId) ~= "table" then
+		action.hero_id = heroId
+		action.enabled = enabled == true
+	end
+	action.type = "set_tactics"
+	return self:execute(action)
+end
+
+function ai:swapGarrisonHero(townId)
+	local action = copyFields(townId)
+	if type(townId) ~= "table" then
+		action.town_id = townId
+	end
+	action.type = "swap_garrison_hero"
+	return self:execute(action)
+end
+
 function ai:pickBestArtifacts(heroId, otherHeroId)
 	local action = copyFields(heroId)
 	if type(heroId) ~= "table" then

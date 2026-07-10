@@ -920,6 +920,18 @@ std::string marketModeName(EMarketMode mode)
 	return "unknown";
 }
 
+std::string armyFormationName(EArmyFormation formation)
+{
+	switch(formation)
+	{
+	case EArmyFormation::LOOSE:
+		return "loose";
+	case EArmyFormation::TIGHT:
+		return "tight";
+	}
+	return "unknown";
+}
+
 std::string nullkillerTaskSearchModeName(NK2AI::ScriptTaskSearchMode mode)
 {
 	switch(mode)
@@ -1169,6 +1181,9 @@ JsonNode jsonHero(const CGHeroInstance * hero)
 	node["manaLimit"] = JsonNode(hero->manaLimit());
 	node["movement"] = JsonNode(hero->movementPointsRemaining());
 	node["movementLimit"] = JsonNode(hero->movementPointsLimit());
+	node["formationId"] = JsonNode(static_cast<int32_t>(hero->formation));
+	node["formation"] = JsonNode(armyFormationName(hero->formation));
+	node["tacticsEnabled"] = JsonNode(hero->tacticFormationEnabled);
 	node["primarySkills"]["attack"] = JsonNode(hero->getPrimSkillLevel(PrimarySkill::ATTACK));
 	node["primarySkills"]["defense"] = JsonNode(hero->getPrimSkillLevel(PrimarySkill::DEFENSE));
 	node["primarySkills"]["spellPower"] = JsonNode(hero->getPrimSkillLevel(PrimarySkill::SPELL_POWER));
@@ -2274,6 +2289,26 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 	if(type != "nullkiller_trade" && type != "nullkiller_tasks" && type != "nullkiller_task" && type != "nullkiller_step")
 		autoAnswerModeGuard.emplace(*this);
 
+	auto readOwnedArmy = [&](const std::string & field, const std::string & label) -> const CArmedInstance *
+	{
+		const auto * army = dynamic_cast<const CArmedInstance *>(cc->getObj(ObjectInstanceID(readInteger(action, field)), false));
+		if(!army || army->tempOwner != playerID)
+			throw std::invalid_argument("Unknown " + label + " army holder or holder is not owned by scripted AI");
+		return army;
+	};
+	auto readValidSlot = [&](const std::string & field) -> SlotID
+	{
+		const SlotID slot(readInteger(action, field));
+		if(!slot.validSlot())
+			throw std::invalid_argument("Invalid army slot id in " + field);
+		return slot;
+	};
+	auto requireStack = [](const CArmedInstance * army, SlotID slot, const std::string & label)
+	{
+		if(!army->hasStackAtSlot(slot))
+			throw std::invalid_argument("No creature stack at " + label + " slot");
+	};
+
 	if(type == "nullkiller_trade")
 	{
 		bool traded = false;
@@ -2625,6 +2660,197 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		actionResult["ok"] = JsonNode(request.applied);
 		if(!request.applied)
 			actionResult["error"] = JsonNode(request.realized ? "Army transfer request was rejected by server" : "Army transfer request was not realized by server");
+		return true;
+	}
+
+	if(type == "swap_creatures" || type == "merge_stacks" || type == "split_stack")
+	{
+		const CArmedInstance * source = readOwnedArmy("source_id", "source");
+		const CArmedInstance * destination = readOwnedArmy("destination_id", "destination");
+		const SlotID sourceSlot = readValidSlot("source_slot");
+		const SlotID destinationSlot = readValidSlot("destination_slot");
+		requireStack(source, sourceSlot, "source");
+
+		if(type == "merge_stacks")
+			requireStack(destination, destinationSlot, "destination");
+		const int32_t amount = type == "split_stack" ? readInteger(action, "amount") : 0;
+		if(type == "split_stack" && amount <= 0)
+			throw std::invalid_argument("split_stack amount must be positive");
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(ArrangeStacks), CTypeList::getInstance().getTypeID<ArrangeStacks>(nullptr), [&]
+		{
+			if(type == "swap_creatures")
+				cc->swapCreatures(source, destination, sourceSlot, destinationSlot);
+			else if(type == "merge_stacks")
+				cc->mergeStacks(source, destination, sourceSlot, destinationSlot);
+			else
+				cc->splitStack(source, destination, sourceSlot, destinationSlot, amount);
+		});
+		actionResult["source_id"] = JsonNode(source->id.getNum());
+		actionResult["destination_id"] = JsonNode(destination->id.getNum());
+		actionResult["source_slot"] = JsonNode(sourceSlot.getNum());
+		actionResult["destination_slot"] = JsonNode(destinationSlot.getNum());
+		if(type == "split_stack")
+			actionResult["amount"] = JsonNode(amount);
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Army stack arrangement request was rejected by server" : "Army stack arrangement request was not realized by server");
+		return true;
+	}
+
+	if(type == "bulk_split_stack" || type == "bulk_merge_stacks" || type == "bulk_split_rebalance_stack")
+	{
+		const CArmedInstance * army = readOwnedArmy("army_id", "bulk operation");
+		const SlotID sourceSlot = readValidSlot("source_slot");
+		requireStack(army, sourceSlot, "source");
+		const int32_t amount = readInteger(action, "amount", 1);
+		if(type == "bulk_split_stack" && amount <= 0)
+			throw std::invalid_argument("bulk_split_stack amount must be positive");
+
+		const std::type_info * requestType = type == "bulk_split_stack"
+			? &typeid(BulkSplitStack)
+			: (type == "bulk_merge_stacks" ? &typeid(BulkMergeStacks) : &typeid(BulkSplitAndRebalanceStack));
+		const uint16_t requestTypeID = type == "bulk_split_stack"
+			? CTypeList::getInstance().getTypeID<BulkSplitStack>(nullptr)
+			: (type == "bulk_merge_stacks" ? CTypeList::getInstance().getTypeID<BulkMergeStacks>(nullptr) : CTypeList::getInstance().getTypeID<BulkSplitAndRebalanceStack>(nullptr));
+		const RequestWaitResult request = submitAndWaitForRequest(*requestType, requestTypeID, [&]
+		{
+			if(type == "bulk_split_stack")
+				cc->bulkSplitStack(army->id, sourceSlot, amount);
+			else if(type == "bulk_merge_stacks")
+				cc->bulkMergeStacks(army->id, sourceSlot);
+			else
+				cc->bulkSplitAndRebalanceStack(army->id, sourceSlot);
+		});
+		actionResult["army_id"] = JsonNode(army->id.getNum());
+		actionResult["source_slot"] = JsonNode(sourceSlot.getNum());
+		if(type == "bulk_split_stack")
+			actionResult["amount"] = JsonNode(amount);
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Bulk army stack request was rejected by server" : "Bulk army stack request was not realized by server");
+		return true;
+	}
+
+	if(type == "dismiss_creature")
+	{
+		const CArmedInstance * army = readOwnedArmy("army_id", "dismiss creature");
+		const SlotID slot = readValidSlot("slot");
+		requireStack(army, slot, "dismissed creature");
+		if(army->stacksCount() < 2 && army->needsLastStack())
+			throw std::invalid_argument("Cannot dismiss the last required creature stack");
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(DisbandCreature), CTypeList::getInstance().getTypeID<DisbandCreature>(nullptr), [&]
+		{
+			cc->dismissCreature(army, slot);
+		});
+		actionResult["army_id"] = JsonNode(army->id.getNum());
+		actionResult["slot"] = JsonNode(slot.getNum());
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Dismiss creature request was rejected by server" : "Dismiss creature request was not realized by server");
+		return true;
+	}
+
+	if(type == "upgrade_creature")
+	{
+		const CArmedInstance * army = readOwnedArmy("army_id", "upgrade creature");
+		const SlotID slot = readValidSlot("slot");
+		requireStack(army, slot, "upgraded creature");
+		const CreatureID creatureID = hasField(action, "creature_id") ? CreatureID(readInteger(action, "creature_id")) : CreatureID::NONE;
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(UpgradeCreature), CTypeList::getInstance().getTypeID<UpgradeCreature>(nullptr), [&]
+		{
+			cc->upgradeCreature(army, slot, creatureID);
+		});
+		actionResult["army_id"] = JsonNode(army->id.getNum());
+		actionResult["slot"] = JsonNode(slot.getNum());
+		actionResult["creature_id"] = JsonNode(creatureID.getNum());
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Upgrade creature request was rejected by server" : "Upgrade creature request was not realized by server");
+		return true;
+	}
+
+	if(type == "set_formation")
+	{
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+		if(!hero || hero->tempOwner != playerID)
+			throw std::invalid_argument("Unknown hero or hero is not owned by scripted AI");
+		const int32_t formationID = readInteger(action, "formation_id");
+		if(formationID < static_cast<int32_t>(EArmyFormation::LOOSE) || formationID > static_cast<int32_t>(EArmyFormation::TIGHT))
+			throw std::invalid_argument("Invalid formation_id");
+		const EArmyFormation formation = static_cast<EArmyFormation>(formationID);
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(SetFormation), CTypeList::getInstance().getTypeID<SetFormation>(nullptr), [&]
+		{
+			cc->setFormation(hero, formation);
+		});
+		actionResult["hero_id"] = JsonNode(hero->id.getNum());
+		actionResult["formation_id"] = JsonNode(formationID);
+		actionResult["formation"] = JsonNode(armyFormationName(formation));
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Set formation request was rejected by server" : "Set formation request was not realized by server");
+		return true;
+	}
+
+	if(type == "set_tactics")
+	{
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+		if(!hero || hero->tempOwner != playerID)
+			throw std::invalid_argument("Unknown hero or hero is not owned by scripted AI");
+		const bool enabled = readBool(action, "enabled", true);
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(SetTactics), CTypeList::getInstance().getTypeID<SetTactics>(nullptr), [&]
+		{
+			cc->setTactics(hero, enabled);
+		});
+		actionResult["hero_id"] = JsonNode(hero->id.getNum());
+		actionResult["enabled"] = JsonNode(enabled);
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Set tactics request was rejected by server" : "Set tactics request was not realized by server");
+		return true;
+	}
+
+	if(type == "swap_garrison_hero")
+	{
+		const CGTownInstance * town = cc->getTown(ObjectInstanceID(readInteger(action, "town_id")));
+		if(!town || town->tempOwner != playerID)
+			throw std::invalid_argument("Unknown town or town is not owned by scripted AI");
+		if(!town->getVisitingHero() || !town->getGarrisonHero())
+			throw std::invalid_argument("Town must have both visiting and garrison heroes to swap");
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(GarrisonHeroSwap), CTypeList::getInstance().getTypeID<GarrisonHeroSwap>(nullptr), [&]
+		{
+			cc->swapGarrisonHero(town);
+		});
+		actionResult["town_id"] = JsonNode(town->id.getNum());
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Swap garrison hero request was rejected by server" : "Swap garrison hero request was not realized by server");
 		return true;
 	}
 
@@ -2985,7 +3211,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "nullkiller_trade", "trade_resources", "dismiss_hero", "build_boat", "dig", "cast_spell", "nullkiller_tasks", "nullkiller_task", "nullkiller_step" })
+	for(const char * type : { "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "swap_creatures", "merge_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "dismiss_hero", "build_boat", "dig", "cast_spell", "nullkiller_tasks", "nullkiller_task", "nullkiller_step" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();
