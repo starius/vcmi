@@ -35,6 +35,9 @@
 #include "../../lib/entities/artifact/CArtifact.h"
 #include "../../lib/entities/artifact/CArtifactInstance.h"
 #include "../../lib/mapping/TerrainTile.h"
+#include "../../lib/entities/hero/CHero.h"
+#include "../../lib/entities/hero/CHeroClass.h"
+#include "../../lib/entities/hero/CHeroHandler.h"
 #include "../../lib/networkPacks/PacksForClient.h"
 #include "../../lib/networkPacks/PacksForServer.h"
 #include "../../lib/networkPacks/SaveLocalState.h"
@@ -502,6 +505,32 @@ std::string mapObjectSubtypeIdentifier(MapObjectID objectID, MapObjectSubID subt
 	}
 }
 
+template<typename Identifier>
+std::string stableIdentifier(Identifier identifier)
+{
+	try
+	{
+		return Identifier::encode(identifier.getNum());
+	}
+	catch(const std::exception &)
+	{
+		return std::to_string(identifier.getNum());
+	}
+}
+
+std::string buildingIdentifier(const CGTownInstance * town, BuildingID buildingID)
+{
+	try
+	{
+		const auto & building = town->getTown()->buildings.at(buildingID);
+		return building ? building->getJsonKey() : std::to_string(buildingID.getNum());
+	}
+	catch(const std::exception &)
+	{
+		return std::to_string(buildingID.getNum());
+	}
+}
+
 bool hasField(const JsonNode & node, const std::string & field)
 {
 	return node.isStruct() && node.Struct().find(field) != node.Struct().end();
@@ -929,10 +958,22 @@ JsonNode jsonArmy(const CCreatureSet & army)
 		JsonNode stack;
 		stack["slot"] = JsonNode(slot.first.getNum());
 		stack["creatureId"] = JsonNode(slot.second->getCreatureID().getNum());
+		stack["creatureIdentifier"] = JsonNode(stableIdentifier(slot.second->getCreatureID()));
 		stack["count"] = JsonNode(slot.second->getCount());
 		stack["name"] = JsonNode(jsonText(slot.second->getName()));
 		node.Vector().push_back(stack);
 	}
+	return node;
+}
+
+JsonNode jsonSecondarySkill(SecondarySkill skillID, ui8 level)
+{
+	JsonNode node;
+	node["skill_id"] = JsonNode(skillID.getNum());
+	node["skillIdentifier"] = JsonNode(stableIdentifier(skillID));
+	node["level"] = JsonNode(static_cast<int32_t>(level));
+	if(level < NSecondarySkill::levels.size())
+		node["levelName"] = JsonNode(NSecondarySkill::levels[level]);
 	return node;
 }
 
@@ -1979,13 +2020,19 @@ JsonNode jsonMapObject(const CGObjectInstance * object, PlayerColor player, cons
 	return node;
 }
 
-JsonNode jsonHero(const CGHeroInstance * hero)
+JsonNode jsonHero(const CGHeroInstance * hero, bool includeOwnedDetails = true)
 {
 	JsonNode node;
 	node["id"] = JsonNode(hero->id.getNum());
 	node["name"] = JsonNode(jsonText(hero->getNameTranslated()));
 	node["position"] = jsonPosition(hero->visitablePos());
 	node["owner"] = JsonNode(jsonPlayerColor(hero->tempOwner));
+	node["heroTypeId"] = JsonNode(hero->getHeroTypeID().getNum());
+	node["heroTypeIdentifier"] = JsonNode(stableIdentifier(hero->getHeroTypeID()));
+	node["heroClassId"] = JsonNode(hero->getHeroClassID().getNum());
+	node["heroClassIdentifier"] = JsonNode(stableIdentifier(hero->getHeroClassID()));
+	node["factionId"] = JsonNode(hero->getFactionID().getNum());
+	node["factionIdentifier"] = JsonNode(stableIdentifier(hero->getFactionID()));
 	node["level"] = JsonNode(static_cast<int32_t>(hero->level));
 	node["mana"] = JsonNode(hero->mana);
 	node["manaLimit"] = JsonNode(hero->manaLimit());
@@ -1994,21 +2041,53 @@ JsonNode jsonHero(const CGHeroInstance * hero)
 	node["formationId"] = JsonNode(static_cast<int32_t>(hero->formation));
 	node["formation"] = JsonNode(armyFormationName(hero->formation));
 	node["tacticsEnabled"] = JsonNode(hero->tacticFormationEnabled);
+	node["inBoat"] = JsonNode(hero->inBoat());
 	node["primarySkills"]["attack"] = JsonNode(hero->getPrimSkillLevel(PrimarySkill::ATTACK));
 	node["primarySkills"]["defense"] = JsonNode(hero->getPrimSkillLevel(PrimarySkill::DEFENSE));
 	node["primarySkills"]["spellPower"] = JsonNode(hero->getPrimSkillLevel(PrimarySkill::SPELL_POWER));
 	node["primarySkills"]["knowledge"] = JsonNode(hero->getPrimSkillLevel(PrimarySkill::KNOWLEDGE));
+	node["secondarySkills"].Vector();
+	if(includeOwnedDetails)
+	{
+		node["manaRegain"] = JsonNode(hero->manaRegain());
+		node["manaNextTurn"] = JsonNode(hero->getManaNewTurn());
+		node["garrisoned"] = JsonNode(hero->isGarrisoned());
+		node["visitedTownId"] = jsonObjectId(hero->getVisitedTown());
+		node["patrol"]["active"] = JsonNode(hero->patrol.patrolling);
+		node["patrol"]["radius"] = JsonNode(hero->patrol.patrolRadius == CGHeroInstance::NO_PATROLLING ? -1 : static_cast<int32_t>(hero->patrol.patrolRadius));
+		node["patrol"]["initialPosition"] = jsonPosition(hero->patrol.initialPos);
+		for(const auto & [skillID, level] : hero->secSkills)
+		{
+			if(skillID == SecondarySkill::NONE)
+				continue;
+			node["secondarySkills"].Vector().push_back(jsonSecondarySkill(skillID, level));
+		}
+		node["experience"] = JsonNode(static_cast<int64_t>(hero->exp));
+		if(hero->level < LIBRARY->heroh->maxSupportedLevel())
+		{
+			const TExpType nextLevelExperience = LIBRARY->heroh->reqExp(hero->level + 1);
+			node["nextLevelExperience"] = JsonNode(static_cast<int64_t>(nextLevelExperience));
+			node["experienceToNextLevel"] = JsonNode(static_cast<int64_t>(nextLevelExperience > hero->exp ? nextLevelExperience - hero->exp : 0));
+		}
+		node["gainsLevel"] = JsonNode(hero->gainsLevel());
+		node["canLearnSkill"] = JsonNode(hero->canLearnSkill());
+	}
+	node["heroStrength"] = JsonNode(static_cast<int64_t>(hero->getHeroStrength()));
 	node["armyStrength"] = JsonNode(static_cast<int64_t>(hero->getArmyStrength()));
+	node["totalStrength"] = JsonNode(static_cast<int64_t>(hero->getTotalStrength()));
 	node["army"] = jsonArmy(*hero);
-	node["artifacts"] = jsonArtifacts(hero);
 	node["hasSpellbook"] = JsonNode(hero->hasSpellbook());
 	node["spells"].Vector();
-	for(const SpellID & spellID : hero->getSpellsInSpellbook())
+	if(includeOwnedDetails)
 	{
-		if(!spellID.hasValue())
-			continue;
-		if(const CSpell * spell = spellID.toSpell())
-			node["spells"].Vector().push_back(jsonKnownSpell(hero, spell));
+		node["artifacts"] = jsonArtifacts(hero);
+		for(const SpellID & spellID : hero->getSpellsInSpellbook())
+		{
+			if(!spellID.hasValue())
+				continue;
+			if(const CSpell * spell = spellID.toSpell())
+				node["spells"].Vector().push_back(jsonKnownSpell(hero, spell));
+		}
 	}
 	return node;
 }
@@ -2266,23 +2345,145 @@ JsonNode jsonUpgradeCreatureOption(
 	return node;
 }
 
-JsonNode jsonTown(const CGTownInstance * town, const ResourceSet & resources)
+JsonNode jsonTownBuilding(const CGTownInstance * town, BuildingID buildingID)
+{
+	JsonNode node;
+	node["building_id"] = JsonNode(buildingID.getNum());
+	node["buildingIdentifier"] = JsonNode(buildingIdentifier(town, buildingID));
+	if(const auto buildingIter = town->getTown()->buildings.find(buildingID); buildingIter != town->getTown()->buildings.end() && buildingIter->second)
+	{
+		const CBuilding * building = buildingIter->second.get();
+		node["buildingKindId"] = JsonNode(static_cast<int32_t>(scriptBuildingKind(buildingID)));
+		node["buildingKind"] = JsonNode(scriptBuildingKindName(scriptBuildingKind(buildingID)));
+		node["buildingLevel"] = JsonNode(scriptBuildingLevel(buildingID));
+		node["buildingUpgrade"] = JsonNode(scriptBuildingUpgrade(buildingID));
+		node["building"] = JsonNode(jsonText(building->getNameTranslated()));
+	}
+	return node;
+}
+
+JsonNode jsonTownMageGuildSpells(const CGTownInstance * town)
+{
+	JsonNode node;
+	node.Vector();
+	const int32_t mageGuildLevel = town->mageGuildLevel();
+	for(size_t levelIndex = 0; levelIndex < town->spells.size(); ++levelIndex)
+	{
+		const int32_t spellLevel = static_cast<int32_t>(levelIndex + 1);
+		if(spellLevel > mageGuildLevel)
+			continue;
+
+		JsonNode levelNode;
+		levelNode["level"] = JsonNode(spellLevel);
+		levelNode["spells"].Vector();
+		for(const SpellID & spellID : town->spells[levelIndex])
+		{
+			if(!spellID.hasValue())
+				continue;
+			JsonNode spellNode;
+			spellNode["spell_id"] = JsonNode(spellID.getNum());
+			spellNode["spellIdentifier"] = JsonNode(stableIdentifier(spellID));
+			if(const CSpell * spell = spellID.toSpell())
+				spellNode["spellName"] = JsonNode(jsonText(spell->getNameTranslated()));
+			levelNode["spells"].Vector().push_back(spellNode);
+		}
+		node.Vector().push_back(levelNode);
+	}
+	return node;
+}
+
+JsonNode jsonTownDwellingLevels(const CGTownInstance * town)
+{
+	JsonNode node;
+	node.Vector();
+	for(int32_t level = 0; level < static_cast<int32_t>(town->creatures.size()); ++level)
+	{
+		JsonNode levelNode;
+		levelNode["level"] = JsonNode(level);
+		levelNode["available"] = JsonNode(static_cast<int32_t>(town->creatures[level].first));
+		levelNode["growth"] = JsonNode(town->creatureGrowth(level));
+		levelNode["creatures"].Vector();
+		for(const CreatureID & creatureID : town->creatures[level].second)
+		{
+			JsonNode creatureNode;
+			creatureNode["creature_id"] = JsonNode(creatureID.getNum());
+			creatureNode["creatureIdentifier"] = JsonNode(stableIdentifier(creatureID));
+			levelNode["creatures"].Vector().push_back(creatureNode);
+		}
+		node.Vector().push_back(levelNode);
+	}
+	return node;
+}
+
+JsonNode jsonTownHordeLevels(const CGTownInstance * town)
+{
+	JsonNode node;
+	node.Vector();
+	for(int32_t hordeIndex = 0; hordeIndex < 2; ++hordeIndex)
+	{
+		JsonNode hordeNode;
+		hordeNode["slot"] = JsonNode(hordeIndex);
+		hordeNode["creatureLevel"] = JsonNode(town->getHordeLevel(hordeIndex));
+		const BuildingID baseBuilding = hordeIndex == 0 ? BuildingID::HORDE_1 : BuildingID::HORDE_2;
+		const BuildingID upgradeBuilding = hordeIndex == 0 ? BuildingID::HORDE_1_UPGR : BuildingID::HORDE_2_UPGR;
+		hordeNode["building_id"] = JsonNode(baseBuilding.getNum());
+		hordeNode["buildingIdentifier"] = JsonNode(buildingIdentifier(town, baseBuilding));
+		hordeNode["built"] = JsonNode(town->hasBuilt(baseBuilding));
+		hordeNode["upgrade_building_id"] = JsonNode(upgradeBuilding.getNum());
+		hordeNode["upgradeBuildingIdentifier"] = JsonNode(buildingIdentifier(town, upgradeBuilding));
+		hordeNode["upgradeBuilt"] = JsonNode(town->hasBuilt(upgradeBuilding));
+		node.Vector().push_back(hordeNode);
+	}
+	return node;
+}
+
+JsonNode jsonTown(const CGTownInstance * town, const ResourceSet & resources, bool includeOwnedDetails = true)
 {
 	JsonNode node;
 	node["id"] = JsonNode(town->id.getNum());
 	node["name"] = JsonNode(jsonText(town->getNameTranslated()));
 	node["position"] = jsonPosition(town->visitablePos());
 	node["owner"] = JsonNode(jsonPlayerColor(town->tempOwner));
+	node["factionId"] = JsonNode(town->getFactionID().getNum());
+	node["factionIdentifier"] = JsonNode(stableIdentifier(town->getFactionID()));
 	node["fortLevel"] = JsonNode(static_cast<int32_t>(town->fortLevel()));
+	node["hallLevel"] = JsonNode(town->hallLevel());
+	node["mageGuildLevel"] = JsonNode(town->mageGuildLevel());
+	node["townLevel"] = JsonNode(town->getTownLevel());
+	node["builtThisTurn"] = JsonNode(town->built);
+	node["destroyedThisTurn"] = JsonNode(town->destroyed);
+	node["hasFort"] = JsonNode(town->hasFort());
+	node["hasCapitol"] = JsonNode(town->hasCapitol());
+	node["armedGarrison"] = JsonNode(town->armedGarrison());
+	node["hasResourceMarketplace"] = JsonNode(town->hasBuiltResourceMarketplace());
 	node["visitingHeroId"] = jsonObjectId(town->getVisitingHero());
 	node["garrisonHeroId"] = jsonObjectId(town->getGarrisonHero());
 	node["armyStrength"] = JsonNode(static_cast<int64_t>(town->getUpperArmy()->getArmyStrength(town->fortLevel())));
 	node["army"] = jsonArmy(*town);
 	node["buildings"].Vector();
+	node["buildingDetails"].Vector();
 	for(const BuildingID & building : town->getBuildings())
+	{
 		node["buildings"].Vector().push_back(JsonNode(building.getNum()));
+		node["buildingDetails"].Vector().push_back(jsonTownBuilding(town, building));
+	}
+	node["hordeLevels"] = jsonTownHordeLevels(town);
+
+	const ArtifactID warMachine = town->getWarMachineInBuilding(BuildingID::BLACKSMITH);
+	node["blacksmithWarMachineArtifactId"] = JsonNode(warMachine.getNum());
+	if(warMachine != ArtifactID::NONE)
+		node["blacksmithWarMachineArtifactIdentifier"] = JsonNode(stableIdentifier(warMachine));
+
 	node["recruitOptions"].Vector();
-	if(!town->getVisitingHero())
+	if(includeOwnedDetails)
+	{
+		node["mageGuildSpells"] = jsonTownMageGuildSpells(town);
+		node["dwellingLevels"] = jsonTownDwellingLevels(town);
+		node["forbiddenBuildings"].Vector();
+		for(const BuildingID & building : town->forbiddenBuildings)
+			node["forbiddenBuildings"].Vector().push_back(jsonTownBuilding(town, building));
+	}
+	if(includeOwnedDetails && !town->getVisitingHero())
 	{
 		const CArmedInstance * destination = town->getUpperArmy();
 		for(int32_t level = 0; level < static_cast<int32_t>(town->creatures.size()); ++level)
@@ -2702,7 +2903,7 @@ void CScriptedAdventureAI::buildChanged(const CGTownInstance * town, BuildingID 
 	if(town && cc && cc->isVisibleFor(town, playerID))
 	{
 		JsonNode data;
-		data["town"] = jsonTown(town, cc->getResourceAmount());
+		data["town"] = jsonTown(town, cc->getResourceAmount(), town->tempOwner == playerID);
 		data["building_id"] = JsonNode(buildingID.getNum());
 		data["change"] = JsonNode(what);
 		appendScriptUpdate("build_changed", data, isOpponent(town->tempOwner));
@@ -4737,7 +4938,7 @@ JsonNode CScriptedAdventureAI::makeScriptInputState()
 	for(const CGTownInstance * town : cc->getTownsInfo())
 	{
 		if(town)
-			state["towns"].Vector().push_back(jsonTown(town, resources));
+			state["towns"].Vector().push_back(jsonTown(town, resources, true));
 	}
 
 	const std::vector<int3> visibleTiles = visibleMapTiles(cc, playerID);
@@ -5220,13 +5421,13 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 		if(const auto * enemyHero = dynamic_cast<const CGHeroInstance *>(object))
 		{
 			enemyHeroes.push_back(enemyHero);
-			JsonNode enemyHeroJson = jsonHero(enemyHero);
+			JsonNode enemyHeroJson = jsonHero(enemyHero, false);
 			enemyHeroJson["visibleObject"] = jsonMapObject(enemyHero, playerID, nullptr);
 			analysis["visibleEnemyHeroes"].Vector().push_back(enemyHeroJson);
 		}
 		else if(const auto * enemyTown = dynamic_cast<const CGTownInstance *>(object))
 		{
-			analysis["visibleEnemyTowns"].Vector().push_back(jsonTown(enemyTown, resources));
+			analysis["visibleEnemyTowns"].Vector().push_back(jsonTown(enemyTown, resources, false));
 		}
 	}
 

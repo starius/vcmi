@@ -1118,6 +1118,11 @@ Regression harness:
   structured goal details for composition plans, hero-chain paths, cluster blockers, defense threats, upgrades,
   buildings, boats, and adventure spells. This is still not full parity: scripts need richer direct access to
   remaining player choices before serious script optimization should be treated as meaningful.
+- Done: owned hero/town snapshots expose richer inspectable state for script decisions: stable hero type/class,
+  faction, creature, secondary-skill, building, spell, and artifact identifiers; hero progression and secondary
+  skills; town hall/fort/mage-guild/town levels; built/destroyed counts; building detail records; owned mage-guild
+  spells; dwelling pools/growth; horde structures; and blacksmith war-machine availability. Owned-only details
+  stay out of visible enemy town/hero analysis to avoid turning the script bridge into a hidden-information path.
 - Done: known quest requirements are exposed on visible quest objects using stable ids without revealing inactive
   quest internals. Lua can reason about known blockers, while still using movement actions or bounded Nullkiller
   tasks for actual unlock-chain execution.
@@ -1223,9 +1228,11 @@ The next high-value implementation steps are:
 - Add richer Lua decision policies and read-side candidate data for dialogs and remaining player choices:
   quests/gates, level-up choices, university choices, object selection, and deeper adventure-spell target
   ranking beyond the current sampled candidate surface.
+- Close remaining Lua API parity gaps before tuning scripts: expose bounded Nullkiller helpers or checked facade
+  calls for any player-visible action/subroutine that still requires full-day `ai:nullkiller()` delegation.
 - Expose any remaining Nullkiller analyzer data as read-only candidate fields only when a concrete script policy
   needs it; do not rebuild those analyses in Lua.
-- Expand the default Lua policy to rank and compose bounded Nullkiller candidates after the API can express the
-  same meaningful choices Nullkiller can make.
+- Expand the default Lua policy to rank and compose bounded Nullkiller candidates only after the API can express
+  the same meaningful choices Nullkiller can make.
 - Run fixed-map `--testdays N` batches comparing default, aggressive, economy, explorer, Nullkiller, and older
   script versions, then feed trace deltas and mined JSON fixtures back into the Lua policy.
