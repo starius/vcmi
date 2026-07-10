@@ -252,6 +252,11 @@ The `ai` facade:
 - `ai:getNullkillerTaskCandidates(mode?, maxCandidates?)`: read the current native task candidates for a stable
   search mode without executing them. The returned handles are short-lived and should be used before a refresh or
   replanning step invalidates them.
+- `ai:runBestNullkillerTask(modeOrOptions?, selector?, maxCandidates?)`: inspect native task candidates, let Lua
+  select one candidate with an optional predicate, and execute only that single opaque task handle. The options form
+  may pass `mode`, `max_candidates`, and `selector`/`predicate`. If no candidate matches, it returns
+  `{ ok = true, executed = false, reason = "no_matching_task" }` without falling back to the rest of Nullkiller's
+  day. `ai:runNullkillerCandidate` and `ai:runFirstNullkillerTask` are aliases.
 - `ai:nullkillerTrade()`: ask the host to run Nullkiller's resource-trading helper once, returning whether it
   traded anything.
 - `ai:nullkillerPriorityPass(passIndex?)`: ask the host to run Nullkiller's bounded native priority pass once.
@@ -309,6 +314,9 @@ The `ai` facade:
   expire on `ai:refresh()` or the next candidate snapshot.
 - `ai:runNullkillerTask(taskId)`: execute one previously returned native Nullkiller task through C++ validation
   and Nullkiller's normal task machinery, then return control to Lua.
+- `ai:runBestNullkillerTask(modeOrOptions?, selector?, maxCandidates?)`: convenience wrapper around
+  `ai:getNullkillerTaskCandidates` plus `ai:runNullkillerTask`. This is the preferred shape when Lua wants to ask
+  Nullkiller for candidate ideas but still apply script policy before executing exactly one native task.
 - `ai:nullkillerStep(mode, maxCandidates, maxAttempts?)`: ask for candidates and execute the best one as a single
   bounded Nullkiller subroutine. Unlike `ai:nullkiller()`, this does not intentionally give away the rest of the
   day.
@@ -1794,6 +1802,10 @@ Regression harness:
   calls imperatively through the Lua facade. `Script.planDay` remains only as a wrapper for old tests/tooling. A
   3-day traced smoke on the fixed small random-map scenario reached the day limit with `end_turn` outputs only, no
   failed checked actions, and no fallback outputs.
+- Done: Lua can now run one script-selected Nullkiller candidate through `ai:runBestNullkillerTask`. The helper
+  inspects native candidates without side effects, applies an optional Lua predicate, executes only the chosen
+  opaque handle, and reports `executed = false` when no candidate matches instead of falling back to a full native
+  day.
 - Done: after adding explicit `nullkiller_reset`, a 16-map, 1-day traced integration smoke completed all scenarios
   at the day limit with 16 `end_turn` outputs, 20 bounded `nullkiller_turn_slice` calls, 145 checked `visit_object`
   actions, 18 bounded query answers, zero failed checked actions, and zero fallback outputs.

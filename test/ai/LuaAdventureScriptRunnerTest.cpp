@@ -1198,6 +1198,103 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteActionSpaceOptions)
 	EXPECT_EQ(*output.intent, "executed action-space options");
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanSelectAndRunOneNullkillerCandidate)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				local executed = ai:runBestNullkillerTask(ai.nullkillerTaskModes.all, function(task)
+					return task.goalTypeId == 8
+				end, 5)
+				local skipped = ai:runBestNullkillerTask({
+					mode = ai.nullkillerTaskModes.capture,
+					max_candidates = 4,
+					predicate = function(task)
+						return task.goalTypeId == 99
+					end
+				})
+				return {
+					status = "end_turn",
+					memory = {
+						version = 1,
+						executedTaskId = executed.task_id,
+						selectedTaskId = executed.selectedTask.task_id,
+						selectedTaskIndex = executed.selectedTaskIndex,
+						candidateCount = executed.candidateCount,
+						skippedExecuted = skipped.executed,
+						skippedReason = skipped.reason,
+						skippedCandidateCount = skipped.candidateCount
+					},
+					actions = {}
+				}
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-select-nullkiller-candidate", source);
+	std::vector<JsonNode> commands;
+	int inspectCount = 0;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		if(command["kind"].String() == "inspect")
+		{
+			++inspectCount;
+			response["result"]["tasks"].Vector();
+			if(inspectCount == 1)
+			{
+				JsonNode first;
+				first["task_id"] = JsonNode(10);
+				first["goalTypeId"] = JsonNode(1);
+				response["result"]["tasks"].Vector().push_back(first);
+
+				JsonNode second;
+				second["task_id"] = JsonNode(11);
+				second["goalTypeId"] = JsonNode(8);
+				response["result"]["tasks"].Vector().push_back(second);
+			}
+			else
+			{
+				JsonNode rejected;
+				rejected["task_id"] = JsonNode(12);
+				rejected["goalTypeId"] = JsonNode(1);
+				response["result"]["tasks"].Vector().push_back(rejected);
+			}
+		}
+		else
+		{
+			response["result"]["ok"] = JsonNode(true);
+			response["result"]["executed"] = JsonNode(true);
+			response["result"]["task_id"] = command["payload"]["task_id"];
+		}
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 3);
+	EXPECT_EQ(commands[0]["kind"].String(), "inspect");
+	EXPECT_EQ(commands[0]["payload"]["what"].String(), "nullkiller_tasks");
+	EXPECT_EQ(commands[0]["payload"]["mode"].Integer(), 2);
+	EXPECT_EQ(commands[0]["payload"]["max_candidates"].Integer(), 5);
+	EXPECT_EQ(commands[1]["kind"].String(), "execute");
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "nullkiller_task");
+	EXPECT_EQ(commands[1]["payload"]["task_id"].Integer(), 11);
+	EXPECT_EQ(commands[2]["kind"].String(), "inspect");
+	EXPECT_EQ(commands[2]["payload"]["mode"].Integer(), 6);
+	EXPECT_EQ(commands[2]["payload"]["max_candidates"].Integer(), 4);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_EQ(output.memory["executedTaskId"].Integer(), 11);
+	EXPECT_EQ(output.memory["selectedTaskId"].Integer(), 11);
+	EXPECT_EQ(output.memory["selectedTaskIndex"].Integer(), 2);
+	EXPECT_EQ(output.memory["candidateCount"].Integer(), 2);
+	EXPECT_FALSE(output.memory["skippedExecuted"].Bool());
+	EXPECT_EQ(output.memory["skippedReason"].String(), "no_matching_task");
+	EXPECT_EQ(output.memory["skippedCandidateCount"].Integer(), 1);
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanPrepareHero)
 {
 	const std::string source = R"lua(

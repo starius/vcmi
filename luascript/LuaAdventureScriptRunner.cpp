@@ -687,6 +687,62 @@ function ai:runNullkillerTask(taskId)
 	return self:execute(action)
 end
 
+function ai:runBestNullkillerTask(mode, selector, maxCandidates)
+	local request = copyFields(mode)
+	local selectorFn = selector
+	if type(mode) ~= "table" then
+		request.mode = mode or ai.nullkillerTaskModes.all
+		if type(selector) == "number" and maxCandidates == nil then
+			request.max_candidates = selector
+			selectorFn = nil
+		else
+			request.max_candidates = maxCandidates
+		end
+	else
+		selectorFn = request.selector or request.predicate or selectorFn
+		request.selector = nil
+		request.predicate = nil
+	end
+
+	local candidates = self:getNullkillerTaskCandidates(request)
+	local tasks = candidates.tasks or {}
+	local selected
+	local selectedIndex = 0
+	if type(selectorFn) == "function" then
+		for index, task in ipairs(tasks) do
+			if selectorFn(task, index, candidates) then
+				selected = task
+				selectedIndex = index
+				break
+			end
+		end
+	else
+		selected = tasks[1]
+		selectedIndex = selected and 1 or 0
+	end
+
+	if type(selected) ~= "table" or selected.task_id == nil then
+		return {
+			ok = true,
+			executed = false,
+			selected = false,
+			candidateCount = #tasks,
+			reason = "no_matching_task",
+			nullkiller = candidates
+		}
+	end
+
+	local result = self:runNullkillerTask(selected.task_id)
+	result.selected = true
+	result.selectedTask = selected
+	result.selectedTaskIndex = selectedIndex
+	result.candidateCount = #tasks
+	return result
+end
+
+ai.runNullkillerCandidate = ai.runBestNullkillerTask
+ai.runFirstNullkillerTask = ai.runBestNullkillerTask
+
 function ai:nullkillerStep(mode, maxCandidates, maxAttempts)
 	local action = copyFields(mode)
 	if type(mode) ~= "table" then
