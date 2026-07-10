@@ -197,6 +197,74 @@ ai.resourceIds = {
 	gold = 6
 }
 
+ai.buildingKinds = {
+	unknown = 0,
+	mageGuild = 1,
+	tavern = 2,
+	shipyard = 3,
+	fortification = 4,
+	hall = 5,
+	market = 6,
+	resourceSilo = 7,
+	blacksmith = 8,
+	special = 9,
+	horde = 10,
+	dwelling = 11,
+	grail = 12,
+	ship = 13
+}
+
+ai.objectKinds = {
+	unknown = 0,
+	treasure = 1,
+	resource = 2,
+	mine = 3,
+	artifact = 4,
+	town = 5,
+	hero = 6,
+	creatureBank = 7,
+	dwelling = 8,
+	monster = 9,
+	teleport = 10,
+	shrine = 11,
+	visitBonus = 12,
+	market = 13,
+	quest = 14
+}
+
+ai.armyTransferKinds = {
+	unknown = 0,
+	gatherToHero = 1,
+	reinforceTown = 2
+}
+
+ai.threatLevels = {
+	unknown = 0,
+	watch = 1,
+	high = 2,
+	critical = 3
+}
+
+ai.riskLevels = {
+	none = 0,
+	acceptable = 1,
+	risky = 2,
+	high = 3,
+	critical = 4
+}
+
+ai.specialActionKinds = {
+	unknown = 0,
+	composite = 1,
+	dimensionDoor = 2,
+	townPortal = 3,
+	summonBoat = 4,
+	buildBoat = 5,
+	whirlpool = 6,
+	quest = 7,
+	adventureCast = 8
+}
+
 ai.nullkillerStepOutcomes = {
 	failed = 0,
 	executed = 1,

@@ -489,6 +489,12 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 						executedOutcome = ai.nullkillerStepOutcomes.executed,
 						defenseMode = ai.nullkillerTaskModes.defense,
 						defendTier = ai.nullkillerPriorityTiers.defend,
+						mineKind = ai.objectKinds.mine,
+						dwellingBuildingKind = ai.buildingKinds.dwelling,
+						gatherTransferKind = ai.armyTransferKinds.gatherToHero,
+						criticalThreat = ai.threatLevels.critical,
+						riskyRisk = ai.riskLevels.risky,
+						townPortalSpecialAction = ai.specialActionKinds.townPortal,
 						dimensionDoorSpellKind = ai.adventureSpellKinds.dimensionDoor
 					},
 					actions = {}
@@ -697,6 +703,12 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 	EXPECT_EQ(output.memory["executedOutcome"].Integer(), 1);
 	EXPECT_EQ(output.memory["defenseMode"].Integer(), 8);
 	EXPECT_EQ(output.memory["defendTier"].Integer(), 6);
+	EXPECT_EQ(output.memory["mineKind"].Integer(), 3);
+	EXPECT_EQ(output.memory["dwellingBuildingKind"].Integer(), 11);
+	EXPECT_EQ(output.memory["gatherTransferKind"].Integer(), 1);
+	EXPECT_EQ(output.memory["criticalThreat"].Integer(), 3);
+	EXPECT_EQ(output.memory["riskyRisk"].Integer(), 2);
+	EXPECT_EQ(output.memory["townPortalSpecialAction"].Integer(), 3);
 	EXPECT_EQ(output.memory["dimensionDoorSpellKind"].Integer(), 2);
 }
 

@@ -633,9 +633,11 @@ Current bounded subroutine surface:
   The bundled default Lua policy treats a trade-only slice as end-of-day cleanup rather than a reason to request
   more slices, because repeated small resource trades can otherwise dominate the command budget without adding
   new adventure decisions.
-- Lua exposes `ai.nullkillerStepOutcomes`, `ai.nullkillerFailureActions`, `ai.nullkillerTaskModes`, and
-  `ai.nullkillerPriorityTiers` numeric constants. Scripts should branch on these constants rather than trace
-  strings.
+- Lua exposes numeric constants for stable host ids used by the strategic contract:
+  `ai.buildingKinds`, `ai.objectKinds`, `ai.armyTransferKinds`, `ai.threatLevels`, `ai.riskLevels`,
+  `ai.specialActionKinds`, `ai.adventureSpellKinds`, `ai.nullkillerStepOutcomes`,
+  `ai.nullkillerFailureActions`, `ai.nullkillerTaskModes`, and `ai.nullkillerPriorityTiers`. Scripts should
+  branch on these constants rather than trace strings or raw magic numbers.
 - `analysis.nullkiller.settings` exposes Nullkiller's read-only operational thresholds, including max pass counts,
   safe attack ratio, retreat thresholds, army-loss target, hero roaming limits, pathfinder limits, and enabled
   native features. `analysis.nullkiller.state` exposes current bounded-planner state such as scan depth,
