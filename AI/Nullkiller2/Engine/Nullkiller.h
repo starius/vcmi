@@ -86,7 +86,16 @@ enum class ScriptTaskSearchMode
 {
 	PRIORITY = 0,
 	ADVENTURE = 1,
-	ALL = 2
+	ALL = 2,
+	RECRUIT_HERO = 3,
+	BUY_ARMY = 4,
+	BUILDING = 5,
+	CAPTURE = 6,
+	CLUSTER = 7,
+	DEFENSE = 8,
+	ESCAPE = 9,
+	GATHER_ARMY = 10,
+	EXPLORATION = 11
 };
 
 struct ScriptTaskCandidate

@@ -607,6 +607,24 @@ NK2AI::ScriptTaskSearchMode readNullkillerTaskSearchMode(const JsonNode & node, 
 			return NK2AI::ScriptTaskSearchMode::ADVENTURE;
 		case static_cast<int32_t>(NK2AI::ScriptTaskSearchMode::ALL):
 			return NK2AI::ScriptTaskSearchMode::ALL;
+		case static_cast<int32_t>(NK2AI::ScriptTaskSearchMode::RECRUIT_HERO):
+			return NK2AI::ScriptTaskSearchMode::RECRUIT_HERO;
+		case static_cast<int32_t>(NK2AI::ScriptTaskSearchMode::BUY_ARMY):
+			return NK2AI::ScriptTaskSearchMode::BUY_ARMY;
+		case static_cast<int32_t>(NK2AI::ScriptTaskSearchMode::BUILDING):
+			return NK2AI::ScriptTaskSearchMode::BUILDING;
+		case static_cast<int32_t>(NK2AI::ScriptTaskSearchMode::CAPTURE):
+			return NK2AI::ScriptTaskSearchMode::CAPTURE;
+		case static_cast<int32_t>(NK2AI::ScriptTaskSearchMode::CLUSTER):
+			return NK2AI::ScriptTaskSearchMode::CLUSTER;
+		case static_cast<int32_t>(NK2AI::ScriptTaskSearchMode::DEFENSE):
+			return NK2AI::ScriptTaskSearchMode::DEFENSE;
+		case static_cast<int32_t>(NK2AI::ScriptTaskSearchMode::ESCAPE):
+			return NK2AI::ScriptTaskSearchMode::ESCAPE;
+		case static_cast<int32_t>(NK2AI::ScriptTaskSearchMode::GATHER_ARMY):
+			return NK2AI::ScriptTaskSearchMode::GATHER_ARMY;
+		case static_cast<int32_t>(NK2AI::ScriptTaskSearchMode::EXPLORATION):
+			return NK2AI::ScriptTaskSearchMode::EXPLORATION;
 		default:
 			throw std::invalid_argument("Unsupported Nullkiller task search mode id");
 		}
@@ -622,6 +640,24 @@ NK2AI::ScriptTaskSearchMode readNullkillerTaskSearchMode(const JsonNode & node, 
 		return NK2AI::ScriptTaskSearchMode::ADVENTURE;
 	if(mode == "all")
 		return NK2AI::ScriptTaskSearchMode::ALL;
+	if(mode == "recruit_hero" || mode == "recruit-hero" || mode == "recruithero")
+		return NK2AI::ScriptTaskSearchMode::RECRUIT_HERO;
+	if(mode == "buy_army" || mode == "buy-army" || mode == "buyarmy")
+		return NK2AI::ScriptTaskSearchMode::BUY_ARMY;
+	if(mode == "building" || mode == "buildings" || mode == "build")
+		return NK2AI::ScriptTaskSearchMode::BUILDING;
+	if(mode == "capture" || mode == "capture_objects" || mode == "capture-objects")
+		return NK2AI::ScriptTaskSearchMode::CAPTURE;
+	if(mode == "cluster" || mode == "clusters")
+		return NK2AI::ScriptTaskSearchMode::CLUSTER;
+	if(mode == "defense" || mode == "defence")
+		return NK2AI::ScriptTaskSearchMode::DEFENSE;
+	if(mode == "escape")
+		return NK2AI::ScriptTaskSearchMode::ESCAPE;
+	if(mode == "gather_army" || mode == "gather-army" || mode == "gatherarmy")
+		return NK2AI::ScriptTaskSearchMode::GATHER_ARMY;
+	if(mode == "exploration" || mode == "explore")
+		return NK2AI::ScriptTaskSearchMode::EXPLORATION;
 
 	throw std::invalid_argument("Unsupported Nullkiller task search mode: " + mode);
 }
@@ -1167,6 +1203,24 @@ std::string nullkillerTaskSearchModeName(NK2AI::ScriptTaskSearchMode mode)
 		return "adventure";
 	case NK2AI::ScriptTaskSearchMode::ALL:
 		return "all";
+	case NK2AI::ScriptTaskSearchMode::RECRUIT_HERO:
+		return "recruit_hero";
+	case NK2AI::ScriptTaskSearchMode::BUY_ARMY:
+		return "buy_army";
+	case NK2AI::ScriptTaskSearchMode::BUILDING:
+		return "building";
+	case NK2AI::ScriptTaskSearchMode::CAPTURE:
+		return "capture";
+	case NK2AI::ScriptTaskSearchMode::CLUSTER:
+		return "cluster";
+	case NK2AI::ScriptTaskSearchMode::DEFENSE:
+		return "defense";
+	case NK2AI::ScriptTaskSearchMode::ESCAPE:
+		return "escape";
+	case NK2AI::ScriptTaskSearchMode::GATHER_ARMY:
+		return "gather_army";
+	case NK2AI::ScriptTaskSearchMode::EXPLORATION:
+		return "exploration";
 	}
 	return "unknown";
 }

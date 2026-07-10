@@ -205,12 +205,29 @@ std::vector<ScriptTaskCandidate> Nullkiller::getScriptTaskCandidates(const Scrip
 
 	updateState();
 
-	if(mode == ScriptTaskSearchMode::PRIORITY || mode == ScriptTaskSearchMode::ALL)
+	const auto includePriorityMode = [&](ScriptTaskSearchMode selected)
 	{
+		return mode == ScriptTaskSearchMode::PRIORITY || mode == ScriptTaskSearchMode::ALL || mode == selected;
+	};
+	const auto includeAdventureMode = [&](ScriptTaskSearchMode selected)
+	{
+		return mode == ScriptTaskSearchMode::ADVENTURE || mode == ScriptTaskSearchMode::ALL || mode == selected;
+	};
+
+	if(includePriorityMode(ScriptTaskSearchMode::RECRUIT_HERO)
+		|| includePriorityMode(ScriptTaskSearchMode::BUY_ARMY)
+		|| includePriorityMode(ScriptTaskSearchMode::BUILDING))
+	{
+		const ScriptTaskSearchMode sourceMode = (mode == ScriptTaskSearchMode::PRIORITY || mode == ScriptTaskSearchMode::ALL)
+			? ScriptTaskSearchMode::PRIORITY
+			: mode;
 		Goals::TGoalVec priorityTasks;
-		decompose(priorityTasks, sptr(RecruitHeroBehavior()), 1);
-		decompose(priorityTasks, sptr(BuyArmyBehavior()), 1);
-		decompose(priorityTasks, sptr(BuildingBehavior()), 1);
+		if(includePriorityMode(ScriptTaskSearchMode::RECRUIT_HERO))
+			decompose(priorityTasks, sptr(RecruitHeroBehavior()), 1);
+		if(includePriorityMode(ScriptTaskSearchMode::BUY_ARMY))
+			decompose(priorityTasks, sptr(BuyArmyBehavior()), 1);
+		if(includePriorityMode(ScriptTaskSearchMode::BUILDING))
+			decompose(priorityTasks, sptr(BuildingBehavior()), 1);
 
 		for(const Goals::TSubgoal & task : priorityTasks)
 		{
@@ -225,23 +242,36 @@ std::vector<ScriptTaskCandidate> Nullkiller::getScriptTaskCandidates(const Scrip
 
 		for(const Goals::TSubgoal & task : priorityTasks)
 		{
-			appendCandidate(taskptr(*task), ScriptTaskSearchMode::PRIORITY, PriorityEvaluator::PriorityTier::BUILDINGS);
+			appendCandidate(taskptr(*task), sourceMode, PriorityEvaluator::PriorityTier::BUILDINGS);
 			if(result.size() >= maxCandidates)
 				return result;
 		}
 	}
 
-	if(mode == ScriptTaskSearchMode::ADVENTURE || mode == ScriptTaskSearchMode::ALL)
+	if(includeAdventureMode(ScriptTaskSearchMode::CAPTURE)
+		|| includeAdventureMode(ScriptTaskSearchMode::CLUSTER)
+		|| includeAdventureMode(ScriptTaskSearchMode::DEFENSE)
+		|| includeAdventureMode(ScriptTaskSearchMode::ESCAPE)
+		|| includeAdventureMode(ScriptTaskSearchMode::GATHER_ARMY)
+		|| includeAdventureMode(ScriptTaskSearchMode::EXPLORATION))
 	{
+		const ScriptTaskSearchMode sourceMode = (mode == ScriptTaskSearchMode::ADVENTURE || mode == ScriptTaskSearchMode::ALL)
+			? ScriptTaskSearchMode::ADVENTURE
+			: mode;
 		constexpr int MAX_DEPTH = 10;
 		Goals::TGoalVec tasks;
-		decompose(tasks, sptr(CaptureObjectsBehavior()), 1);
-		decompose(tasks, sptr(ClusterBehavior()), MAX_DEPTH);
-		decompose(tasks, sptr(DefenceBehavior()), MAX_DEPTH);
-		decompose(tasks, sptr(EscapeBehavior()), 1);
-		decompose(tasks, sptr(GatherArmyBehavior()), MAX_DEPTH);
+		if(includeAdventureMode(ScriptTaskSearchMode::CAPTURE))
+			decompose(tasks, sptr(CaptureObjectsBehavior()), 1);
+		if(includeAdventureMode(ScriptTaskSearchMode::CLUSTER))
+			decompose(tasks, sptr(ClusterBehavior()), MAX_DEPTH);
+		if(includeAdventureMode(ScriptTaskSearchMode::DEFENSE))
+			decompose(tasks, sptr(DefenceBehavior()), MAX_DEPTH);
+		if(includeAdventureMode(ScriptTaskSearchMode::ESCAPE))
+			decompose(tasks, sptr(EscapeBehavior()), 1);
+		if(includeAdventureMode(ScriptTaskSearchMode::GATHER_ARMY))
+			decompose(tasks, sptr(GatherArmyBehavior()), MAX_DEPTH);
 
-		if(!isOpenMap())
+		if(includeAdventureMode(ScriptTaskSearchMode::EXPLORATION) && !isOpenMap())
 			decompose(tasks, sptr(ExplorationBehavior()), MAX_DEPTH);
 
 		Goals::TTaskVec selectedTasks;
@@ -261,7 +291,7 @@ std::vector<ScriptTaskCandidate> Nullkiller::getScriptTaskCandidates(const Scrip
 
 		for(const Goals::TTask & task : selectedTasks)
 		{
-			appendCandidate(task, ScriptTaskSearchMode::ADVENTURE, selectedPriorityTier);
+			appendCandidate(task, sourceMode, selectedPriorityTier);
 			if(result.size() >= maxCandidates)
 				break;
 		}

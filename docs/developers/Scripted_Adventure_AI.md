@@ -414,6 +414,9 @@ Current bounded subroutine surface:
 - `nullkiller_tasks` exposes priority tasks from `RecruitHeroBehavior`, `BuyArmyBehavior`, and
   `BuildingBehavior`, plus adventure tasks from capture, cluster, defense, escape, gather-army, and exploration
   behavior decomposition.
+- Task search modes can be aggregate (`priority`, `adventure`, `all`) or granular (`recruit_hero`, `buy_army`,
+  `building`, `capture`, `cluster`, `defense`, `escape`, `gather_army`, `exploration`). Lua also exposes these
+  as numeric constants under `ai.nullkillerTaskModes`, so scripts can avoid magic numbers and brittle strings.
 - Candidate JSON contains stable machine fields such as `task_id`, `goalTypeId`, `priority`, `priorityTier`,
   `hero_id`, `town_id`, `object_id`, `tile`, affected object ids, and hero role ids. Debug descriptions may be
   present for traces, but scripts should use stable ids for strategy.
@@ -427,8 +430,8 @@ Current bounded subroutine surface:
   candidates using Nullkiller's own failure policy, then returns to Lua for refresh, more decisions, or end-turn.
   It accepts `max_attempts` and returns stable fields including `outcomeId`, `failureActionId`, `didExecute`,
   `shouldReplan`, `shouldStopTurn`, `exhaustedCandidates`, `selectedTaskIndex`, and `attempts`.
-- Lua exposes `ai.nullkillerStepOutcomes` and `ai.nullkillerFailureActions` numeric constants. Scripts should
-  branch on these constants rather than trace strings.
+- Lua exposes `ai.nullkillerStepOutcomes`, `ai.nullkillerFailureActions`, and `ai.nullkillerTaskModes` numeric
+  constants. Scripts should branch on these constants rather than trace strings.
 
 The script engine should reuse these Nullkiller systems where possible:
 
@@ -1079,10 +1082,11 @@ Regression harness:
 - Done: owned hero records expose Nullkiller's main/scout role plus fighting and magic evaluator scores, so Lua
   does not need to re-infer hero roles from scratch.
 - Partial: bounded Nullkiller task fragments are exposed through `ai:nullkillerTasks`, `ai:runNullkillerTask`,
-  and `ai:nullkillerStep`. The bounded step now preserves Nullkiller script-task state across a scripted turn and
-  returns structured execution outcomes. This is still not full parity: scripts need richer direct access to
-  typed dialogs, remaining market/trading choices, quest decisions, and deeper analyzer details before serious
-  script optimization should be treated as meaningful.
+  and `ai:nullkillerStep`. The bounded step now preserves Nullkiller script-task state across a scripted turn,
+  returns structured execution outcomes, and can be restricted to granular behavior families such as defense,
+  gather-army, exploration, building, recruitment, or capture. This is still not full parity: scripts need richer
+  direct access to typed dialogs, quest decisions, and deeper analyzer details before serious script optimization
+  should be treated as meaningful.
 - Done: owned hero artifact state and exact artifact management calls are exposed through checked Lua facade
   methods. Remaining artifact work is typed handling of assemble/disassemble prompts and richer artifact scoring
   helpers.

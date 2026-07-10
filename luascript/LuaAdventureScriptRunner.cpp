@@ -155,6 +155,21 @@ ai.nullkillerFailureActions = {
 	stopTurn = 2
 }
 
+ai.nullkillerTaskModes = {
+	priority = 0,
+	adventure = 1,
+	all = 2,
+	recruitHero = 3,
+	buyArmy = 4,
+	building = 5,
+	capture = 6,
+	cluster = 7,
+	defense = 8,
+	escape = 9,
+	gatherArmy = 10,
+	exploration = 11
+}
+
 function ai:nullkillerTasks(mode, maxCandidates)
 	local action = copyFields(mode)
 	if type(mode) ~= "table" then
