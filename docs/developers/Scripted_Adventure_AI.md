@@ -212,15 +212,22 @@ The `ai` facade:
   expire on `ai:refresh()` or the next candidate snapshot.
 - `ai:runNullkillerTask(taskId)`: execute one previously returned native Nullkiller task through C++ validation
   and Nullkiller's normal task machinery, then return control to Lua.
-- `ai:nullkillerStep(mode, maxCandidates)`: ask for candidates and execute the best one as a single bounded
-  Nullkiller subroutine. Unlike `ai:nullkiller()`, this does not intentionally give away the rest of the day.
+- `ai:nullkillerStep(mode, maxCandidates, maxAttempts?)`: ask for candidates and execute the best one as a single
+  bounded Nullkiller subroutine. Unlike `ai:nullkiller()`, this does not intentionally give away the rest of the
+  day.
+- `ai:nullkillerPass(modeOrOptions?, maxSteps?, maxCandidates?, maxAttempts?)` and
+  `ai:nullkillerAdventurePass(maxSteps?, maxCandidates?, maxAttempts?)`: run several bounded Nullkiller steps as
+  one capped native subroutine, defaulting to the adventure task family, then return control to Lua. The pass
+  stops early when native failure policy asks to stop, candidates are exhausted, a query needs script input, or
+  the cap is reached.
 - Named wrappers are available for every bounded Nullkiller task mode:
-  `ai:nullkillerAllTasks/Step`, `ai:nullkillerPriorityTasks/Step`, `ai:nullkillerAdventureTasks/Step`,
-  `ai:nullkillerRecruitHeroTasks/Step`, `ai:nullkillerBuyArmyTasks/Step`, `ai:nullkillerBuildingTasks/Step`,
-  `ai:nullkillerCaptureTasks/Step`, `ai:nullkillerClusterTasks/Step`, `ai:nullkillerDefenseTasks/Step`,
-  `ai:nullkillerEscapeTasks/Step`, `ai:nullkillerGatherArmyTasks/Step`, and
-  `ai:nullkillerExplorationTasks/Step`, plus `ai:nullkillerStartupTasks/Step`. These wrappers pass stable
-  numeric mode ids.
+  `ai:nullkillerAllTasks/Step/Pass`, `ai:nullkillerPriorityTasks/Step/Pass`,
+  `ai:nullkillerAdventureTasks/Step/Pass`, `ai:nullkillerRecruitHeroTasks/Step/Pass`,
+  `ai:nullkillerBuyArmyTasks/Step/Pass`, `ai:nullkillerBuildingTasks/Step/Pass`,
+  `ai:nullkillerCaptureTasks/Step/Pass`, `ai:nullkillerClusterTasks/Step/Pass`,
+  `ai:nullkillerDefenseTasks/Step/Pass`, `ai:nullkillerEscapeTasks/Step/Pass`,
+  `ai:nullkillerGatherArmyTasks/Step/Pass`, and `ai:nullkillerExplorationTasks/Step/Pass`, plus
+  `ai:nullkillerStartupTasks/Step/Pass`. These wrappers pass stable numeric mode ids.
 - `ai:nullkillerAnswerQuery(queryOrId, defaultAnswer?)`: ask Nullkiller to handle one pending query through its
   native dialog heuristic, then return control to Lua. This is bounded to that one query and does not delegate the
   rest of the day.
@@ -507,6 +514,10 @@ Current bounded subroutine surface:
   candidates using Nullkiller's own failure policy, then returns to Lua for refresh, more decisions, or end-turn.
   It accepts `max_attempts` and returns stable fields including `outcomeId`, `failureActionId`, `didExecute`,
   `shouldReplan`, `shouldStopTurn`, `exhaustedCandidates`, `selectedTaskIndex`, and `attempts`.
+- `nullkiller_pass` is a capped multi-step wrapper around `nullkiller_step`. It is useful when Lua wants a
+  native Nullkiller adventure subroutine larger than one task, but still wants control back before the whole day
+  is delegated. It returns a `steps` array plus `executedSteps`, `replanSteps`, `stopTurnSteps`,
+  `exhaustedSteps`, `didTrade`, and `paused`.
 - `nullkiller_priority_pass` runs Nullkiller's native priority loop once and then returns to Lua. This exposes the
   build/recruit/hire pre-adventure subroutine that native Nullkiller normally performs before adventure task
   planning, without handing over the rest of the day.
@@ -1187,12 +1198,13 @@ Regression harness:
   blocked objects, with caps for trace size. These exports are passive: script input reads already prepared
   Nullkiller analyzer state and does not recompute the planner as a side effect.
 - Partial: bounded Nullkiller task fragments are exposed through `ai:nullkillerTasks`, `ai:runNullkillerTask`,
-  and `ai:nullkillerStep`. The bounded step now preserves Nullkiller script-task state across a scripted turn,
-  returns structured execution outcomes, and can be restricted to granular behavior families such as defense,
-  gather-army, exploration, building, recruitment, startup, or capture. Candidate snapshots now include bounded
-  structured goal details for composition plans, hero-chain paths, cluster blockers, defense threats, upgrades,
-  buildings, boats, and adventure spells. Single-query Nullkiller dialog handling is also exposed through
-  `ai:nullkillerAnswerQuery`. The native priority-pass loop is exposed through `ai:nullkillerPriorityPass`.
+  `ai:nullkillerStep`, and capped `ai:nullkillerPass` / `ai:nullkillerAdventurePass` helpers. The bounded step
+  now preserves Nullkiller script-task state across a scripted turn, returns structured execution outcomes, and
+  can be restricted to granular behavior families such as defense, gather-army, exploration, building,
+  recruitment, startup, or capture. Candidate snapshots now include bounded structured goal details for
+  composition plans, hero-chain paths, cluster blockers, defense threats, upgrades, buildings, boats, and
+  adventure spells. Single-query Nullkiller dialog handling is also exposed through `ai:nullkillerAnswerQuery`.
+  The native priority-pass loop is exposed through `ai:nullkillerPriorityPass`.
   This is still not full parity: scripts need richer direct access to remaining player choices before serious
   script optimization should be treated as meaningful.
 - Done: Nullkiller path-node special actions are serialized with stable typed metadata, so Lua can identify and
@@ -1251,8 +1263,8 @@ Regression harness:
 - Done: Lua can invoke Nullkiller's local object-interaction helper for one owned hero at one visible current
   object, then regain control. This exposes native post-visit handling for towns and hill forts as a bounded
   subroutine instead of requiring full-day delegation.
-- Done: Lua has named wrappers for every bounded Nullkiller task mode, using stable numeric mode ids while keeping
-  scripts readable.
+- Done: Lua has named task, step, and pass wrappers for every bounded Nullkiller task mode, using stable numeric
+  mode ids while keeping scripts readable.
 - Done: Lua can request Nullkiller startup tasks as a bounded task mode. This exposes the native startup helper
   for early tavern/build/recruit/hero-swap decisions without delegating the rest of the day. The compiled but
   disabled `StayAtTownBehavior` remains unexposed because native `makeTurn` does not currently use it.

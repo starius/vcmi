@@ -232,6 +232,27 @@ function ai:nullkillerStep(mode, maxCandidates, maxAttempts)
 	return self:execute(action)
 end
 
+function ai:nullkillerPass(mode, maxSteps, maxCandidates, maxAttempts)
+	local action = copyFields(mode)
+	if type(mode) ~= "table" then
+		action.mode = mode or ai.nullkillerTaskModes.adventure
+		action.max_steps = maxSteps
+		action.max_candidates = maxCandidates
+		action.max_attempts = maxAttempts
+	end
+	action.type = "nullkiller_pass"
+	return self:execute(action)
+end
+
+function ai:nullkillerAdventurePass(maxSteps, maxCandidates, maxAttempts)
+	return self:nullkillerPass({
+		mode = ai.nullkillerTaskModes.adventure,
+		max_steps = maxSteps,
+		max_candidates = maxCandidates,
+		max_attempts = maxAttempts
+	})
+end
+
 local function defineNullkillerModeHelpers(name, mode)
 	ai["nullkiller" .. name .. "Tasks"] = function(self, maxCandidates)
 		return self:nullkillerTasks({
@@ -243,6 +264,15 @@ local function defineNullkillerModeHelpers(name, mode)
 	ai["nullkiller" .. name .. "Step"] = function(self, maxCandidates, maxAttempts)
 		return self:nullkillerStep({
 			mode = mode,
+			max_candidates = maxCandidates,
+			max_attempts = maxAttempts
+		})
+	end
+
+	ai["nullkiller" .. name .. "Pass"] = function(self, maxSteps, maxCandidates, maxAttempts)
+		return self:nullkillerPass({
+			mode = mode,
+			max_steps = maxSteps,
 			max_candidates = maxCandidates,
 			max_attempts = maxAttempts
 		})

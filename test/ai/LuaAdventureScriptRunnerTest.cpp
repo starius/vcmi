@@ -399,6 +399,8 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 				ai:nullkillerPriorityPass(2)
 				ai:nullkillerUpgradeArmy(30)
 				ai:nullkillerRecruitCreatures(16, 31)
+				ai:nullkillerPass({ mode = ai.nullkillerTaskModes.adventure, max_steps = 3, max_candidates = 4, max_attempts = 5 })
+				ai:nullkillerAdventurePass(2, 6, 7)
 				return {
 					status = "end_turn",
 					memory = {
@@ -441,7 +443,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 		return response;
 	});
 
-	ASSERT_EQ(commands.size(), 43);
+	ASSERT_EQ(commands.size(), 45);
 	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_tasks");
 	EXPECT_EQ(commands[0]["payload"]["mode"].String(), "adventure");
 	EXPECT_EQ(commands[0]["payload"]["max_candidates"].Integer(), 7);
@@ -578,6 +580,16 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 	EXPECT_EQ(commands[42]["payload"]["type"].String(), "nullkiller_recruit_creatures");
 	EXPECT_EQ(commands[42]["payload"]["source_id"].Integer(), 16);
 	EXPECT_EQ(commands[42]["payload"]["destination_id"].Integer(), 31);
+	EXPECT_EQ(commands[43]["payload"]["type"].String(), "nullkiller_pass");
+	EXPECT_EQ(commands[43]["payload"]["mode"].Integer(), 1);
+	EXPECT_EQ(commands[43]["payload"]["max_steps"].Integer(), 3);
+	EXPECT_EQ(commands[43]["payload"]["max_candidates"].Integer(), 4);
+	EXPECT_EQ(commands[43]["payload"]["max_attempts"].Integer(), 5);
+	EXPECT_EQ(commands[44]["payload"]["type"].String(), "nullkiller_pass");
+	EXPECT_EQ(commands[44]["payload"]["mode"].Integer(), 1);
+	EXPECT_EQ(commands[44]["payload"]["max_steps"].Integer(), 2);
+	EXPECT_EQ(commands[44]["payload"]["max_candidates"].Integer(), 6);
+	EXPECT_EQ(commands[44]["payload"]["max_attempts"].Integer(), 7);
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	EXPECT_EQ(output.memory["firstTask"].Integer(), 41);
 	EXPECT_EQ(output.memory["stepTask"].Integer(), 42);
@@ -595,6 +607,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallNamedNullkillerModeHelper
 				ai:nullkillerBuildingStep(3, 1)
 				ai:nullkillerStartupTasks(5)
 				ai:nullkillerStartupStep(6, 7)
+				ai:nullkillerGatherArmyPass(2, 8, 3)
 				return ai:output("end_turn", "named bounded helpers")
 			end
 		}
@@ -616,7 +629,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallNamedNullkillerModeHelper
 		return response;
 	});
 
-	ASSERT_EQ(commands.size(), 5);
+	ASSERT_EQ(commands.size(), 6);
 	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_tasks");
 	EXPECT_EQ(commands[0]["payload"]["mode"].Integer(), 8);
 	EXPECT_EQ(commands[0]["payload"]["max_candidates"].Integer(), 9);
@@ -635,6 +648,11 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallNamedNullkillerModeHelper
 	EXPECT_EQ(commands[4]["payload"]["mode"].Integer(), 12);
 	EXPECT_EQ(commands[4]["payload"]["max_candidates"].Integer(), 6);
 	EXPECT_EQ(commands[4]["payload"]["max_attempts"].Integer(), 7);
+	EXPECT_EQ(commands[5]["payload"]["type"].String(), "nullkiller_pass");
+	EXPECT_EQ(commands[5]["payload"]["mode"].Integer(), 10);
+	EXPECT_EQ(commands[5]["payload"]["max_steps"].Integer(), 2);
+	EXPECT_EQ(commands[5]["payload"]["max_candidates"].Integer(), 8);
+	EXPECT_EQ(commands[5]["payload"]["max_attempts"].Integer(), 3);
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	ASSERT_TRUE(output.intent);
 	EXPECT_EQ(*output.intent, "named bounded helpers");

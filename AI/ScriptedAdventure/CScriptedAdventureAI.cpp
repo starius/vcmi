@@ -4796,6 +4796,181 @@ bool CScriptedAdventureAI::executeNullkillerQueryAction(const JsonNode & action,
 	return answerAndWait(readInteger(action, "default_answer", 0));
 }
 
+bool CScriptedAdventureAI::executeNullkillerStepAction(const JsonNode & action, JsonNode & actionResult)
+{
+	const JsonNode candidates = makeNullkillerTaskCandidates(action);
+	actionResult["nullkiller"] = candidates;
+	const auto & tasks = candidates["tasks"].Vector();
+	if(tasks.empty())
+	{
+		actionResult["ok"] = JsonNode(true);
+		actionResult["didExecute"] = JsonNode(false);
+		return true;
+	}
+
+	const int32_t requestedMaxAttempts = readInteger(action, "max_attempts", static_cast<int32_t>(tasks.size()));
+	const size_t maxAttempts = static_cast<size_t>(std::clamp<int32_t>(requestedMaxAttempts, 1, 64));
+	NK2AI::Goals::TTaskVec nativeTasks;
+	nativeTasks.reserve(tasks.size());
+	for(const JsonNode & task : tasks)
+	{
+		const int32_t taskID = static_cast<int32_t>(task["task_id"].Integer());
+		const auto taskIter = std::ranges::find_if(nullkillerTaskHandles, [taskID](const auto & entry)
+		{
+			return entry.first == taskID;
+		});
+		if(taskIter != nullkillerTaskHandles.end())
+			nativeTasks.push_back(taskIter->second);
+	}
+
+	NK2AI::ScriptTaskExecutionResult result;
+	{
+		std::shared_lock gameStateLock(CGameState::mutex);
+		result = nullkiller->executeScriptTaskSequence(nativeTasks, maxAttempts);
+	}
+
+	actionResult["ok"] = JsonNode(true);
+	actionResult["didExecute"] = JsonNode(result.executed);
+	actionResult["attempted"] = JsonNode(result.attempted);
+	actionResult["attempts"] = JsonNode(static_cast<int32_t>(result.attempts));
+	actionResult["maxAttempts"] = JsonNode(static_cast<int32_t>(maxAttempts));
+	actionResult["selectedTaskIndex"] = JsonNode(static_cast<int32_t>(result.selectedTaskIndex));
+	actionResult["failureActionId"] = JsonNode(static_cast<int32_t>(result.failureAction));
+	actionResult["failureAction"] = JsonNode(nullkillerTaskFailureActionName(result.failureAction));
+	actionResult["shouldReplan"] = JsonNode(result.shouldReplan);
+	actionResult["shouldStopTurn"] = JsonNode(result.stopTurn);
+	actionResult["exhaustedCandidates"] = JsonNode(result.exhaustedCandidates);
+	int32_t outcomeID = 0;
+	std::string outcome = "failed";
+	if(result.executed)
+	{
+		outcomeID = 1;
+		outcome = "executed";
+	}
+	else if(result.shouldReplan)
+	{
+		outcomeID = 2;
+		outcome = "replan";
+	}
+	else if(result.stopTurn)
+	{
+		outcomeID = 3;
+		outcome = "stop_turn";
+	}
+	else if(result.exhaustedCandidates)
+	{
+		outcomeID = 4;
+		outcome = "exhausted_candidates";
+	}
+	actionResult["outcomeId"] = JsonNode(outcomeID);
+	actionResult["outcome"] = JsonNode(outcome);
+	if(!tasks.empty() && result.selectedTaskIndex < tasks.size())
+	{
+		const JsonNode selectedTask = tasks[result.selectedTaskIndex];
+		actionResult["selectedTask"] = selectedTask;
+		actionResult["task_id"] = selectedTask["task_id"];
+		if(hasField(selectedTask, "debugDescription"))
+			actionResult["debugDescription"] = selectedTask["debugDescription"];
+	}
+	if(!result.error.empty())
+		actionResult["error"] = JsonNode(result.error);
+
+	if(result.executed)
+	{
+		for(const auto * heroInfo : cc->getHeroesInfo())
+			AIGateway::pickBestArtifacts(cc, heroInfo);
+
+		if(!waitTillFreeForScriptAction(actionResult, "nullkiller_step"))
+			return false;
+
+		return true;
+	}
+
+	actionResult["ok"] = JsonNode(true);
+	actionResult["didExecute"] = JsonNode(false);
+	return !result.stopTurn;
+}
+
+bool CScriptedAdventureAI::executeNullkillerPassAction(const JsonNode & action, JsonNode & actionResult)
+{
+	const int32_t requestedMaxSteps = readInteger(action, "max_steps", 4);
+	const size_t maxSteps = static_cast<size_t>(std::clamp<int32_t>(requestedMaxSteps, 1, 16));
+
+	JsonNode steps;
+	steps.Vector();
+	int32_t executedSteps = 0;
+	int32_t replanSteps = 0;
+	int32_t stopTurnSteps = 0;
+	int32_t exhaustedSteps = 0;
+	bool paused = false;
+	bool failed = false;
+
+	for(size_t stepIndex = 0; stepIndex < maxSteps && status.haveTurn(); ++stepIndex)
+	{
+		JsonNode stepAction = action;
+		stepAction["type"] = JsonNode("nullkiller_step");
+		if(!hasField(stepAction, "mode"))
+			stepAction["mode"] = JsonNode(static_cast<int32_t>(NK2AI::ScriptTaskSearchMode::ADVENTURE));
+
+		JsonNode stepResult;
+		stepResult["stepIndex"] = JsonNode(static_cast<int32_t>(stepIndex));
+		const bool continueAfterStep = executeNullkillerStepAction(stepAction, stepResult);
+
+		if(readBool(stepResult, "didExecute", false))
+			++executedSteps;
+		if(readBool(stepResult, "shouldReplan", false))
+			++replanSteps;
+		if(readBool(stepResult, "shouldStopTurn", false))
+			++stopTurnSteps;
+		if(readBool(stepResult, "exhaustedCandidates", false))
+			++exhaustedSteps;
+		if(hasField(stepResult, "ok") && stepResult["ok"].isBool() && !stepResult["ok"].Bool())
+			failed = true;
+
+		steps.Vector().push_back(stepResult);
+
+		if(!continueAfterStep)
+		{
+			paused = !readBool(stepResult, "shouldStopTurn", false);
+			break;
+		}
+		if(readBool(stepResult, "shouldStopTurn", false) || readBool(stepResult, "exhaustedCandidates", false))
+			break;
+		if(!readBool(stepResult, "didExecute", false) && !readBool(stepResult, "shouldReplan", false))
+			break;
+	}
+
+	bool traded = false;
+	if(executedSteps > 0 && status.haveTurn() && !paused)
+	{
+		{
+			std::shared_lock gameStateLock(CGameState::mutex);
+			traded = nullkiller->executeScriptResourceTrade();
+		}
+		if(!waitTillFreeForScriptAction(actionResult, "nullkiller_pass"))
+		{
+			if(hasField(actionResult, "ok") && actionResult["ok"].isBool() && !actionResult["ok"].Bool())
+				failed = true;
+			paused = true;
+		}
+	}
+
+	if(!hasField(actionResult, "ok"))
+		actionResult["ok"] = JsonNode(!failed);
+	else if(actionResult["ok"].isBool() && actionResult["ok"].Bool() && failed)
+		actionResult["ok"] = JsonNode(false);
+	actionResult["maxSteps"] = JsonNode(static_cast<int32_t>(maxSteps));
+	actionResult["steps"] = steps;
+	actionResult["stepCount"] = JsonNode(static_cast<int32_t>(steps.Vector().size()));
+	actionResult["executedSteps"] = JsonNode(executedSteps);
+	actionResult["replanSteps"] = JsonNode(replanSteps);
+	actionResult["stopTurnSteps"] = JsonNode(stopTurnSteps);
+	actionResult["exhaustedSteps"] = JsonNode(exhaustedSteps);
+	actionResult["didTrade"] = JsonNode(traded);
+	actionResult["paused"] = JsonNode(paused);
+	return !failed && !paused && stopTurnSteps == 0;
+}
+
 void CScriptedAdventureAI::makeScriptedTurn()
 {
 	try
@@ -5109,7 +5284,7 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 	};
 
 	std::optional<AutoAnswerModeGuard> autoAnswerModeGuard;
-	if(type != "nullkiller_trade" && type != "nullkiller_priority_pass" && type != "nullkiller_tasks" && type != "nullkiller_task" && type != "nullkiller_step" && type != "nullkiller_answer_query")
+	if(type != "nullkiller_trade" && type != "nullkiller_priority_pass" && type != "nullkiller_tasks" && type != "nullkiller_task" && type != "nullkiller_step" && type != "nullkiller_pass" && type != "nullkiller_answer_query")
 		autoAnswerModeGuard.emplace(*this);
 
 	auto readOwnedArmy = [&](const std::string & field, const std::string & label) -> const CArmedInstance *
@@ -5438,99 +5613,10 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 	}
 
 	if(type == "nullkiller_step")
-	{
-		const JsonNode candidates = makeNullkillerTaskCandidates(action);
-		actionResult["nullkiller"] = candidates;
-		const auto & tasks = candidates["tasks"].Vector();
-		if(tasks.empty())
-		{
-			actionResult["ok"] = JsonNode(true);
-			actionResult["didExecute"] = JsonNode(false);
-			return true;
-		}
+		return executeNullkillerStepAction(action, actionResult);
 
-		const int32_t requestedMaxAttempts = readInteger(action, "max_attempts", static_cast<int32_t>(tasks.size()));
-		const size_t maxAttempts = static_cast<size_t>(std::clamp<int32_t>(requestedMaxAttempts, 1, 64));
-		NK2AI::Goals::TTaskVec nativeTasks;
-		nativeTasks.reserve(tasks.size());
-		for(const JsonNode & task : tasks)
-		{
-			const int32_t taskID = static_cast<int32_t>(task["task_id"].Integer());
-			const auto taskIter = std::ranges::find_if(nullkillerTaskHandles, [taskID](const auto & entry)
-			{
-				return entry.first == taskID;
-			});
-			if(taskIter != nullkillerTaskHandles.end())
-				nativeTasks.push_back(taskIter->second);
-		}
-
-		NK2AI::ScriptTaskExecutionResult result;
-		{
-			std::shared_lock gameStateLock(CGameState::mutex);
-			result = nullkiller->executeScriptTaskSequence(nativeTasks, maxAttempts);
-		}
-
-		actionResult["ok"] = JsonNode(true);
-		actionResult["didExecute"] = JsonNode(result.executed);
-		actionResult["attempted"] = JsonNode(result.attempted);
-		actionResult["attempts"] = JsonNode(static_cast<int32_t>(result.attempts));
-		actionResult["maxAttempts"] = JsonNode(static_cast<int32_t>(maxAttempts));
-		actionResult["selectedTaskIndex"] = JsonNode(static_cast<int32_t>(result.selectedTaskIndex));
-		actionResult["failureActionId"] = JsonNode(static_cast<int32_t>(result.failureAction));
-		actionResult["failureAction"] = JsonNode(nullkillerTaskFailureActionName(result.failureAction));
-		actionResult["shouldReplan"] = JsonNode(result.shouldReplan);
-		actionResult["shouldStopTurn"] = JsonNode(result.stopTurn);
-		actionResult["exhaustedCandidates"] = JsonNode(result.exhaustedCandidates);
-		int32_t outcomeID = 0;
-		std::string outcome = "failed";
-		if(result.executed)
-		{
-			outcomeID = 1;
-			outcome = "executed";
-		}
-		else if(result.shouldReplan)
-		{
-			outcomeID = 2;
-			outcome = "replan";
-		}
-		else if(result.stopTurn)
-		{
-			outcomeID = 3;
-			outcome = "stop_turn";
-		}
-		else if(result.exhaustedCandidates)
-		{
-			outcomeID = 4;
-			outcome = "exhausted_candidates";
-		}
-		actionResult["outcomeId"] = JsonNode(outcomeID);
-		actionResult["outcome"] = JsonNode(outcome);
-		if(!tasks.empty() && result.selectedTaskIndex < tasks.size())
-		{
-			const JsonNode selectedTask = tasks[result.selectedTaskIndex];
-			actionResult["selectedTask"] = selectedTask;
-			actionResult["task_id"] = selectedTask["task_id"];
-			if(hasField(selectedTask, "debugDescription"))
-				actionResult["debugDescription"] = selectedTask["debugDescription"];
-		}
-		if(!result.error.empty())
-			actionResult["error"] = JsonNode(result.error);
-
-		if(result.executed)
-		{
-			for(const auto * heroInfo : cc->getHeroesInfo())
-				AIGateway::pickBestArtifacts(cc, heroInfo);
-
-			if(!waitTillFreeForScriptAction(actionResult, "nullkiller_step"))
-				return false;
-
-			return true;
-		}
-
-		actionResult["ok"] = JsonNode(true);
-		actionResult["didExecute"] = JsonNode(false);
-		return !result.stopTurn;
-	}
+	if(type == "nullkiller_pass")
+		return executeNullkillerPassAction(action, actionResult);
 
 	if(type == "request_statistic")
 	{
