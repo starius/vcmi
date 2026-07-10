@@ -203,6 +203,16 @@ function ai:transferArmy(sourceId, destinationId, sourceSlot)
 	return self:execute(action)
 end
 
+function ai:pickBestArtifacts(heroId, otherHeroId)
+	local action = copyFields(heroId)
+	if type(heroId) ~= "table" then
+		action.hero_id = heroId
+		action.other_hero_id = otherHeroId
+	end
+	action.type = "pick_best_artifacts"
+	return self:execute(action)
+end
+
 function ai:moveHero(heroId, x, y, z, routeId)
 	local action = copyFields(heroId)
 	if type(heroId) ~= "table" then

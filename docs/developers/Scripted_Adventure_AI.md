@@ -147,6 +147,8 @@ The `ai` facade:
 - `ai:refresh()`: yield to C++ and receive a new visible input snapshot after side effects.
 - `ai:build`, `ai:recruit`, `ai:hireHero`, `ai:transferArmy`, `ai:moveHero`, `ai:visitObject`,
   `ai:answerQuery`, `ai:endTurn`: request checked host actions.
+- `ai:pickBestArtifacts(heroId, otherHeroId?)`: ask the host to run Nullkiller's artifact-preparation helper for
+  one owned hero, or two co-located owned heroes, through the normal artifact swap callback path.
 - `ai:nullkiller()` / `ai:nullkillerForRestOfDay()`: stop script control and let Nullkiller finish the turn.
 - `ai:nullkillerTasks(mode, maxCandidates)`: ask Nullkiller for a bounded snapshot of native task candidates.
   `mode` is `priority`, `adventure`, or `all`. Returned `task_id` values are opaque handles that expire on
@@ -838,6 +840,8 @@ Regression harness:
   capabilities: adding tavern heroes and concentrating or reinforcing armies through the normal server-validated
   request path. Their candidate generation is controlled by `experimentalSupportActions` in
   `config/ai/scriptedAdventure.json`, so the loop can disable them for bisection without rebuilding.
+- Lua can now call `ai:pickBestArtifacts(heroId, otherHeroId?)` to reuse Nullkiller's artifact-preparation helper
+  for one owned hero or two co-located owned heroes. This is a coarse helper, not yet a full artifact-slot API.
 - `analysis.heroThreatAlerts` complements `analysis.defenseAlerts`, so scripts can respond to threatened roaming
   heroes as well as threatened towns.
 - Trace tooling now supports single-run summaries, baseline-vs-candidate comparisons, final visible-state quality
@@ -1014,8 +1018,10 @@ Regression harness:
 - Done: nearby visible enemy pressure against owned heroes is exposed as `analysis.heroThreatAlerts`.
 - Partial: first bounded Nullkiller task fragments are exposed through `ai:nullkillerTasks`,
   `ai:runNullkillerTask`, and `ai:nullkillerStep`. This is not full parity yet: scripts still need richer direct
-  access to typed dialogs, artifact operations, market/trading choices, adventure spells, boats, quest decisions,
-  and deeper analyzer details.
+  access to typed dialogs, exact artifact-slot operations, market/trading choices, adventure spells, boats, quest
+  decisions, and deeper analyzer details.
+- Partial: artifact preparation is exposed through a coarse `pickBestArtifacts` helper, but scripts cannot yet
+  inspect every artifact slot or request exact slot-to-slot moves.
 - Partial: full danger-map estimates are not exposed yet.
 - Partial: MCP and scripted AI still duplicate some JSON assembly code; extraction can happen once the surface
   stabilizes.

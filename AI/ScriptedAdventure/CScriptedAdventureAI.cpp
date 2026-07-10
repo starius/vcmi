@@ -2330,6 +2330,32 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		return true;
 	}
 
+	if(type == "pick_best_artifacts")
+	{
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+		if(!hero || hero->tempOwner != playerID)
+			throw std::invalid_argument("Unknown hero or hero is not owned by scripted AI");
+
+		const CGHeroInstance * otherHero = nullptr;
+		if(hasField(action, "other_hero_id"))
+		{
+			otherHero = cc->getHero(ObjectInstanceID(readInteger(action, "other_hero_id")));
+			if(!otherHero || otherHero->tempOwner != playerID)
+				throw std::invalid_argument("Unknown other hero or other hero is not owned by scripted AI");
+			if(hero->visitablePos() != otherHero->visitablePos())
+				throw std::invalid_argument("Heroes must be co-located for two-hero artifact preparation");
+		}
+
+		AIGateway::pickBestArtifacts(cc, hero, otherHero);
+		actionResult["hero_id"] = JsonNode(hero->id.getNum());
+		if(otherHero)
+			actionResult["other_hero_id"] = JsonNode(otherHero->id.getNum());
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(true);
+		return true;
+	}
+
 	if(type == "move_hero" || type == "visit_object")
 	{
 		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
@@ -2463,7 +2489,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "nullkiller_tasks", "nullkiller_task", "nullkiller_step" })
+	for(const char * type : { "pick_best_artifacts", "nullkiller_tasks", "nullkiller_task", "nullkiller_step" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();
