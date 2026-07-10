@@ -233,6 +233,10 @@ The `ai` facade:
 - `ai:nullkillerMoveCreaturesToHero(townId)`: ask the host to run Nullkiller's bounded town-garrison pickup
   helper for one visible owned town with an owned visiting hero. This moves useful garrison stacks to the visitor
   without also running the broader build-army sequence.
+- `ai:nullkillerDismissWeakHero(options?)`: ask the host to use Nullkiller's weak-hero selector and send one
+  checked dismiss request for the selected owned hero. By default this only acts when Nullkiller's hero cap is
+  reached; scripts can pass `{ require_cap_reached = false }` for explicit advanced use, plus optional
+  `army_limit` and `town_to_spare_id` numeric fields.
 - `ai:nullkillerAddSingleCreatureStacks(heroId)`, `ai:nullkillerRearrangeForWhirlpool(heroId)`, and
   `ai:nullkillerRearrangeForSiege(heroId, townId)`: ask the host to run Nullkiller's bounded army-formation
   helpers for one visible owned hero, with the siege helper additionally requiring a visible enemy town. These
@@ -1369,6 +1373,9 @@ Regression harness:
   handling for one visible owned dwelling or town.
 - Done: Lua can call `ai:nullkillerMoveCreaturesToHero(townId)` to reuse Nullkiller's native town-garrison pickup
   helper independently from the broader `nullkillerBuildArmy` sequence.
+- Done: Lua can call `ai:nullkillerDismissWeakHero(options?)` to reuse Nullkiller's weak-hero selector for one
+  checked dismissal attempt without handing over the remaining day. The helper is also discoverable through
+  `actionSpace.nullkillerHelperOptions` when Nullkiller currently sees a cap-driven weak-hero dismissal candidate.
 - Done: Lua can call `ai:prepareHero` for semantic hero preparation without full-day delegation. The checked host
   call combines Nullkiller's legal best-creature transfer and artifact optimization for an owned target hero, an
   optional co-located source army, visited owned town, and optional co-located other hero. `actionSpace` exposes
@@ -1380,8 +1387,8 @@ Regression harness:
   delegating the rest of the day.
 - Done: `nullkillerHelperOptions` also includes concrete visible owned-object helpers for
   `nullkiller_build_army`, `nullkiller_upgrade_army`, `nullkiller_recruit_creatures`, and
-  `nullkiller_move_creatures_to_hero`, so Lua can discover the semantic native logistics helpers instead of
-  hard-coding town, army, or dwelling scans.
+  `nullkiller_move_creatures_to_hero`, plus the cap-driven `nullkiller_dismiss_weak_hero` helper when available,
+  so Lua can discover the semantic native logistics helpers instead of hard-coding town, army, or dwelling scans.
 - Done: Lua can explicitly call Nullkiller's bounded army-formation helpers for single-stack splitting,
   whirlpool preparation, and siege preparation. `actionSpace.nullkillerHelperOptions` advertises these helpers for
   visible owned heroes and visible enemy towns, covering native tactics that previously were only reachable as side

@@ -780,6 +780,12 @@ function ai:nullkillerMoveCreaturesToHero(townId)
 	return self:execute(action)
 end
 
+function ai:nullkillerDismissWeakHero(options)
+	local action = copyFields(options)
+	action.type = "nullkiller_dismiss_weak_hero"
+	return self:execute(action)
+end
+
 function ai:nullkillerAddSingleCreatureStacks(heroId)
 	local action = copyFields(heroId)
 	if type(heroId) ~= "table" then

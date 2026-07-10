@@ -811,6 +811,41 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallNullkillerTownCreaturePic
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallNullkillerWeakHeroDismissal)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				ai:nullkillerDismissWeakHero()
+				ai:nullkillerDismissWeakHero({ require_cap_reached = false, army_limit = 500, town_to_spare_id = 16 })
+				return ai:output("end_turn", "native weak hero dismissal")
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:nullkiller-weak-hero-dismissal", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 2);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_dismiss_weak_hero");
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "nullkiller_dismiss_weak_hero");
+	EXPECT_FALSE(commands[1]["payload"]["require_cap_reached"].Bool());
+	EXPECT_EQ(commands[1]["payload"]["army_limit"].Integer(), 500);
+	EXPECT_EQ(commands[1]["payload"]["town_to_spare_id"].Integer(), 16);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteActionSpaceOptions)
 {
 	const std::string source = R"lua(

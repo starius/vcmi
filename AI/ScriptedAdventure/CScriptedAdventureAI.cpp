@@ -6410,6 +6410,61 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		return true;
 	}
 
+	if(type == "nullkiller_dismiss_weak_hero")
+	{
+		if(!nullkiller || !nullkiller->heroManager)
+			throw std::invalid_argument("Nullkiller hero manager is not available");
+
+		const bool requireCapReached = readBool(action, "require_cap_reached", true);
+		const uint64_t armyLimit = hasField(action, "army_limit")
+			? static_cast<uint64_t>(std::max<int32_t>(0, readInteger(action, "army_limit")))
+			: std::numeric_limits<uint64_t>::max();
+		const CGTownInstance * townToSpare = nullptr;
+		if(hasField(action, "town_to_spare_id"))
+		{
+			townToSpare = cc->getTown(ObjectInstanceID(readInteger(action, "town_to_spare_id")));
+			if(!townToSpare || townToSpare->tempOwner != playerID || !cc->isVisibleFor(townToSpare, playerID))
+				throw std::invalid_argument("Unknown spare town, town is not visible, or town is not owned by scripted AI");
+		}
+
+		ObjectInstanceID selectedHeroID = ObjectInstanceID::NONE;
+		{
+			std::shared_lock gameStateLock(CGameState::mutex);
+			std::unique_lock aiLock(nullkiller->aiStateMutex);
+			nullkiller->heroManager->update();
+			if(!requireCapReached || nullkiller->heroManager->heroCapReached())
+			{
+				if(const CGHeroInstance * selectedHero = nullkiller->heroManager->findWeakHeroToDismiss(armyLimit, townToSpare))
+					selectedHeroID = selectedHero->id;
+			}
+		}
+
+		if(selectedHeroID == ObjectInstanceID::NONE)
+		{
+			actionResult["didDismiss"] = JsonNode(false);
+			actionResult["ok"] = JsonNode(true);
+			return true;
+		}
+
+		const CGHeroInstance * hero = cc->getHero(selectedHeroID);
+		if(!hero || hero->tempOwner != playerID || !cc->isVisibleFor(hero, playerID))
+			throw std::invalid_argument("Nullkiller selected an unknown, non-visible, or non-owned weak hero");
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(DismissHero), CTypeList::getInstance().getTypeID<DismissHero>(nullptr), [&]
+		{
+			cc->dismissHero(hero);
+		});
+		actionResult["hero_id"] = JsonNode(hero->id.getNum());
+		actionResult["didDismiss"] = JsonNode(request.applied);
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Dismiss weak hero request was rejected by server" : "Dismiss weak hero request was not realized by server");
+		return true;
+	}
+
 	if(type == "nullkiller_add_single_creature_stacks" || type == "nullkiller_rearrange_for_whirlpool")
 	{
 		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
@@ -8054,7 +8109,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "prepare_hero", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "erase_transition_artifact", "swap_creatures", "merge_stacks", "merge_or_swap_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "set_town_name", "swap_garrison_hero", "nullkiller_trade", "nullkiller_priority_pass", "nullkiller_turn_slice", "nullkiller_build_army", "nullkiller_upgrade_army", "nullkiller_recruit_creatures", "nullkiller_move_creatures_to_hero", "nullkiller_add_single_creature_stacks", "nullkiller_rearrange_for_whirlpool", "nullkiller_rearrange_for_siege", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_pass", "nullkiller_answer_query", "nullkiller_object_interaction" })
+	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "prepare_hero", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "erase_transition_artifact", "swap_creatures", "merge_stacks", "merge_or_swap_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "set_town_name", "swap_garrison_hero", "nullkiller_trade", "nullkiller_priority_pass", "nullkiller_turn_slice", "nullkiller_build_army", "nullkiller_upgrade_army", "nullkiller_recruit_creatures", "nullkiller_move_creatures_to_hero", "nullkiller_dismiss_weak_hero", "nullkiller_add_single_creature_stacks", "nullkiller_rearrange_for_whirlpool", "nullkiller_rearrange_for_siege", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_pass", "nullkiller_answer_query", "nullkiller_object_interaction" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();
@@ -8187,6 +8242,37 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		option["hero"] = jsonHero(visitingHero);
 		option["planAction"]["type"] = JsonNode("nullkiller_move_creatures_to_hero");
 		option["planAction"]["town_id"] = option["town_id"];
+		actionSpace["nullkillerHelperOptions"].Vector().push_back(option);
+	};
+	auto appendNullkillerDismissWeakHeroHelperOption = [&]()
+	{
+		if(!nullkiller || !nullkiller->heroManager)
+			return;
+
+		ObjectInstanceID selectedHeroID = ObjectInstanceID::NONE;
+		{
+			std::unique_lock aiLock(nullkiller->aiStateMutex);
+			nullkiller->heroManager->update();
+			if(!nullkiller->heroManager->heroCapReached())
+				return;
+			if(const CGHeroInstance * selectedHero = nullkiller->heroManager->findWeakHeroToDismiss(std::numeric_limits<uint64_t>::max()))
+				selectedHeroID = selectedHero->id;
+		}
+		if(selectedHeroID == ObjectInstanceID::NONE)
+			return;
+
+		const CGHeroInstance * hero = cc->getHero(selectedHeroID);
+		if(!hero || hero->tempOwner != playerID || !cc->isVisibleFor(hero, playerID))
+			return;
+
+		JsonNode option;
+		option["helperKindId"] = JsonNode(10);
+		option["helperKind"] = JsonNode("dismiss_weak_hero");
+		option["bounded"] = JsonNode(true);
+		option["delegatesRestOfDay"] = JsonNode(false);
+		option["hero_id"] = JsonNode(hero->id.getNum());
+		option["hero"] = jsonHero(hero);
+		option["planAction"]["type"] = JsonNode("nullkiller_dismiss_weak_hero");
 		actionSpace["nullkillerHelperOptions"].Vector().push_back(option);
 	};
 	auto appendNullkillerFormationHelperOption = [&](
@@ -8506,6 +8592,8 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 			}
 		}
 	}
+
+	appendNullkillerDismissWeakHeroHelperOption();
 
 	std::vector<const CGHeroInstance *> ownedHeroes;
 	for(const CGHeroInstance * hero : cc->getHeroesInfo())
