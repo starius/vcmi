@@ -436,6 +436,13 @@ The script engine should reuse these Nullkiller systems where possible:
 - deep decomposer for quest/guard/unlock chains
 - task execution wrappers for complex multi-step behaviors
 
+Current read-only Nullkiller analyzer exposure:
+
+- Owned hero records include `nullkillerRoleId` / `nullkillerRole`, using the same main/scout labels as
+  `HeroManager`.
+- Owned hero records include `nullkillerFightingScore` and `nullkillerMagicScore`, which mirror Nullkiller's
+  hero evaluator outputs for script ranking. These are advisory scores, not game rules.
+
 ## Public Related Work
 
 Reviewed in July 2026. The useful conclusion is that VCMI has had adjacent scripting, AI, LLM, and
@@ -1067,6 +1074,8 @@ Regression harness:
 - Done: movement/object candidates include read-only `reason`, `value`, `risk`, `safe`, `danger`, `dangerRatio`,
   `estimatedLoss`, and `blockedBy` fields.
 - Done: nearby visible enemy pressure against owned heroes is exposed as `analysis.heroThreatAlerts`.
+- Done: owned hero records expose Nullkiller's main/scout role plus fighting and magic evaluator scores, so Lua
+  does not need to re-infer hero roles from scratch.
 - Partial: bounded Nullkiller task fragments are exposed through `ai:nullkillerTasks`, `ai:runNullkillerTask`,
   and `ai:nullkillerStep`. The bounded step now preserves Nullkiller script-task state across a scripted turn and
   returns structured execution outcomes. This is still not full parity: scripts need richer direct access to

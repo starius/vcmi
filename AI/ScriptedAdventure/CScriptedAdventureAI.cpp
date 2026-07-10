@@ -3552,11 +3552,42 @@ JsonNode CScriptedAdventureAI::makeScriptInputState()
 		state["resources"] = jsonResources(cc->getResourceAmount());
 	}
 
+	std::map<int32_t, NK2AI::HeroRole> heroRoles;
+	std::map<int32_t, float> heroFightingScores;
+	std::map<int32_t, float> heroMagicScores;
+	{
+		std::unique_lock aiLock(nullkiller->aiStateMutex);
+		nullkiller->heroManager->update();
+		for(const CGHeroInstance * hero : cc->getHeroesInfo())
+		{
+			if(!hero)
+				continue;
+
+			const int32_t heroID = hero->id.getNum();
+			heroRoles[heroID] = nullkiller->heroManager->getHeroRoleOrDefault(NK2AI::HeroPtr(hero, cc.get()));
+			heroFightingScores[heroID] = nullkiller->heroManager->evaluateHero(hero);
+			heroMagicScores[heroID] = nullkiller->heroManager->getMagicStrength(hero);
+		}
+	}
+
 	state["heroes"].Vector();
 	for(const CGHeroInstance * hero : cc->getHeroesInfo())
 	{
 		if(hero)
-			state["heroes"].Vector().push_back(jsonHero(hero));
+		{
+			JsonNode heroNode = jsonHero(hero);
+			const int32_t heroID = hero->id.getNum();
+			if(const auto role = heroRoles.find(heroID); role != heroRoles.end())
+			{
+				heroNode["nullkillerRoleId"] = JsonNode(static_cast<int32_t>(role->second));
+				heroNode["nullkillerRole"] = JsonNode(nullkillerHeroRoleName(role->second));
+			}
+			if(const auto fightingScore = heroFightingScores.find(heroID); fightingScore != heroFightingScores.end())
+				heroNode["nullkillerFightingScore"].Float() = fightingScore->second;
+			if(const auto magicScore = heroMagicScores.find(heroID); magicScore != heroMagicScores.end())
+				heroNode["nullkillerMagicScore"].Float() = magicScore->second;
+			state["heroes"].Vector().push_back(heroNode);
+		}
 	}
 
 	const ResourceSet resources = cc->getResourceAmount();
@@ -3858,7 +3889,7 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 	analysis["scriptMemory"]["persistedInPlayerLocalSettings"] = JsonNode(true);
 	analysis["scriptMemory"]["localStateKey"] = JsonNode(SCRIPT_MEMORY_LOCAL_STATE_KEY);
 	analysis["candidateFields"].Vector();
-	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "kindId", "buildingKindId", "transferKindId", "pathActionId", "levelId", "task_id", "goalTypeId", "priorityTier", "heroRoleId", "outcomeId", "failureActionId" })
+	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "kindId", "buildingKindId", "transferKindId", "pathActionId", "levelId", "task_id", "goalTypeId", "priorityTier", "heroRoleId", "nullkillerRoleId", "outcomeId", "failureActionId" })
 		analysis["candidateFields"].Vector().push_back(JsonNode(field));
 	analysis["danger"]["candidateDangerSource"] = JsonNode("Nullkiller direct object/guard danger evaluator");
 	analysis["danger"]["enemyReachSource"] = JsonNode("visible enemy distance and strength alerts");
