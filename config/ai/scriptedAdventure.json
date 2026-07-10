@@ -1,5 +1,5 @@
 {
-	"script": "ai/candidates/fallbackAdventure.lua",
+	"script": "ai/candidates/boundedNullkillerControl.lua",
 	"reloadScriptEachTurn": false,
 	"maxScriptCallsPerTurn": 8,
 	"maxActionsPerPlan": 64,

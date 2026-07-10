@@ -864,6 +864,7 @@ Configuration:
 ```text
 config/ai/scriptedAdventure.json
 scripts/ai/defaultAdventure.lua
+scripts/ai/candidates/boundedNullkillerControl.lua
 scripts/ai/candidates/fallbackAdventure.lua
 scripts/ai/candidates/statisticsProbeAdventure.lua
 ```
@@ -872,7 +873,7 @@ Example configuration fields:
 
 ```json
 {
-  "script": "ai/candidates/fallbackAdventure.lua",
+  "script": "ai/candidates/boundedNullkillerControl.lua",
   "fallbackAI": "Nullkiller2",
   "reloadScriptEachTurn": false,
   "maxScriptCallsPerTurn": 8,
@@ -888,7 +889,7 @@ games, load once per map/session for deterministic behavior.
 
 Per-player entries override the global script and limits for a specific computer player. Keys can be color
 names such as `red`/`blue` or numeric player ids. Keep personality profiles such as `aggressiveAdventure.lua`,
-`economyAdventure.lua`, and `explorerAdventure.lua` opt-in until they beat the fallback control.
+`economyAdventure.lua`, and `explorerAdventure.lua` opt-in until they beat the bounded control.
 
 ## Default Script Strategy
 
@@ -1144,11 +1145,12 @@ scripts/ai/promoteAdventureAIScript.py \
 Remove `--dry-run` after checking the planned file operations. The archive directory is reserved for old champion
 Lua files and promotion manifests; candidate experiments can live under `scripts/ai/candidates/`.
 
-The current measured control/champion for full-game outcomes is `scripts/ai/candidates/fallbackAdventure.lua`.
-It delegates the whole turn to native Nullkiller through the scripted wrapper. `scripts/ai/defaultAdventure.lua`
-is still the readable experimental policy and fixture target, but recent no-trace full-game runs show it
-oversteers Nullkiller and should not be promoted over the fallback control until it wins repeated training runs
-and does not regress held-out runs.
+The current packaged scripted-AI default is `scripts/ai/candidates/boundedNullkillerControl.lua`. It is an API
+parity control: Lua owns the day loop, calls bounded Nullkiller subroutines, refreshes after side effects, and avoids
+normal full-day delegation. `scripts/ai/candidates/fallbackAdventure.lua` remains the full-day native Nullkiller
+baseline/control for outcome comparisons. `scripts/ai/defaultAdventure.lua` is still the readable experimental policy
+and fixture target, but recent no-trace full-game runs show it oversteers Nullkiller and should not be promoted over
+the bounded control until it wins repeated training runs and does not regress held-out runs.
 
 `scripts/ai/candidates/statisticsProbeAdventure.lua` is an API smoke script, not a promotion candidate. It
 requests the normal statistics dataset, refreshes to observe `statistics_response`, records a small memory flag,
@@ -1157,7 +1159,8 @@ and delegates the rest of the day to Nullkiller.
 This enables the intended loop:
 
 1. Put a candidate Lua file under `scripts/ai/candidates/` or another local path.
-2. Run baseline-vs-candidate promotion scenarios in no-trace mode against the fallback control.
+2. Run baseline-vs-candidate promotion scenarios in no-trace mode against the bounded control and keep the full
+   fallback script as a native-Nullkiller reference.
 3. Iterate against training scenarios first; use held-out scenarios only as the promotion guard.
 4. Inspect `evaluation.json`, bucket deltas, win/loss outcomes, run safety, and score deltas.
 5. Rerun selected losses with tracing enabled, then convert representative mistakes into JSON policy fixtures.
@@ -1378,9 +1381,10 @@ Regression harness:
   default policy is useful for experimentation and unit fixtures but is not yet the champion behavior.
 - Existing eager personality profiles are weaker than the fallback control on the previous 10-map corpus:
   `aggressiveAdventure.lua` and `economyAdventure.lua` were already all losses in partial/full scans, and
-  `explorerAdventure.lua` lost 10/10. The packaged config now uses `ai/candidates/fallbackAdventure.lua` as the
-  default script so normal ScriptedAdventureAI runs start from the measured control. Experimental profiles remain
-  available through per-player config or environment overrides.
+  `explorerAdventure.lua` lost 10/10. The packaged config previously used `ai/candidates/fallbackAdventure.lua` so
+  normal ScriptedAdventureAI runs started from the measured native control. It now uses
+  `ai/candidates/boundedNullkillerControl.lua` so normal runs exercise the bounded Lua API without rebuilding.
+  Experimental profiles remain available through per-player config or environment overrides.
 - `scripts/ai/runAdventureAIBatch.py` terminates a stale client process after a terminal game outcome has appeared
   in stdout and a short grace period has elapsed. This keeps unattended evaluation batches from hanging while still
   recording the completed outcome and traces.

@@ -2074,15 +2074,15 @@ TEST(LuaAdventureScriptRunnerTest, DefaultAdventureEndsTurnOnTradeOnlyNullkiller
 	EXPECT_NE(output.intent->find("only traded resources"), std::string::npos);
 }
 
-TEST(LuaAdventureScriptRunnerTest, PackagedConfigUsesFallbackControlScript)
+TEST(LuaAdventureScriptRunnerTest, PackagedConfigUsesBoundedControlScript)
 {
 	const JsonNode config = readJsonFile(std::filesystem::path(VCMI_SOURCE_DIR) / "config/ai/scriptedAdventure.json");
 
 	ASSERT_TRUE(config["script"].isString());
-	EXPECT_EQ(config["script"].String(), "ai/candidates/fallbackAdventure.lua");
+	EXPECT_EQ(config["script"].String(), "ai/candidates/boundedNullkillerControl.lua");
 	ASSERT_TRUE(config["reloadScriptEachTurn"].isBool());
 	EXPECT_FALSE(config["reloadScriptEachTurn"].Bool())
 		<< "Normal AI runtime should keep one Lua runner instance per game; reload mode is an explicit development override.";
 	EXPECT_FALSE(hasField(config, "players"))
-		<< "Experimental personality scripts should stay opt-in until they beat the fallback control.";
+		<< "Experimental personality scripts should stay opt-in until they beat the bounded control.";
 }
