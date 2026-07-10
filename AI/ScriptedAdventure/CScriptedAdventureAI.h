@@ -125,7 +125,7 @@ private:
 	std::map<int, bool> earlyQueryReplyResults;
 	std::mutex autoAnswerMutex;
 	std::map<QueryID, int> pendingAutoAnswers;
-	bool scriptActionDrainsAutoAnswers = false;
+	bool scriptActionAutoAnswerMode = false;
 
 	void makeScriptedTurn();
 	bool tryMakeScriptedTurn();
@@ -136,6 +136,7 @@ private:
 	void answerQueryWithoutGameStateLock(const std::string & description, QueryID queryID, int selection);
 	void answerPendingAutoQueries();
 	void setScriptActionAutoAnswerMode(bool active);
+	bool isScriptActionAutoAnswerMode();
 	JsonNode makeScriptInputState();
 	JsonNode makeScriptActionSpace() const;
 	JsonNode makeScriptAnalysis() const;

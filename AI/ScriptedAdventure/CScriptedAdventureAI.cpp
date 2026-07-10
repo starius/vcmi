@@ -1124,15 +1124,10 @@ void CScriptedAdventureAI::yourTurn(QueryID queryID)
 
 void CScriptedAdventureAI::answerQueryWithoutGameStateLock(const std::string & description, QueryID queryID, int selection)
 {
-	bool queueAsyncAnswer = false;
 	{
 		std::lock_guard guard(autoAnswerMutex);
 		pendingAutoAnswers[queryID] = selection;
-		queueAsyncAnswer = !scriptActionDrainsAutoAnswers;
 	}
-
-	if(!queueAsyncAnswer)
-		return;
 
 	executeActionAsync(description, [this, queryID]()
 	{
@@ -1167,43 +1162,38 @@ void CScriptedAdventureAI::answerPendingAutoQueries()
 void CScriptedAdventureAI::setScriptActionAutoAnswerMode(bool active)
 {
 	std::lock_guard guard(autoAnswerMutex);
-	scriptActionDrainsAutoAnswers = active;
+	scriptActionAutoAnswerMode = active;
+}
+
+bool CScriptedAdventureAI::isScriptActionAutoAnswerMode()
+{
+	std::lock_guard guard(autoAnswerMutex);
+	return scriptActionAutoAnswerMode;
 }
 
 void CScriptedAdventureAI::heroGotLevel(const CGHeroInstance * hero, PrimarySkill pskill, std::vector<SecondarySkill> & skills, QueryID queryID)
 {
-	(void)hero;
-	(void)pskill;
-	(void)skills;
-	status.addQuery(queryID, "ScriptedAdventureAI hero level dialog");
-	answerQueryWithoutGameStateLock("scriptedHeroGotLevel", queryID, 0);
+	AIGateway::heroGotLevel(hero, pskill, skills, queryID);
 }
 
 void CScriptedAdventureAI::commanderGotLevel(const CCommanderInstance * commander, std::vector<ui32> skills, QueryID queryID)
 {
-	(void)commander;
-	(void)skills;
-	status.addQuery(queryID, "ScriptedAdventureAI commander level dialog");
-	answerQueryWithoutGameStateLock("scriptedCommanderGotLevel", queryID, 0);
+	AIGateway::commanderGotLevel(commander, skills, queryID);
 }
 
 void CScriptedAdventureAI::showBlockingDialog(const std::string & text, const std::vector<Component> & components, QueryID askID, const int soundID, bool selection, bool cancel, bool safeToAutoaccept)
 {
-	(void)text;
-	(void)soundID;
-	(void)safeToAutoaccept;
-	int answer = 0;
-	if(selection && !components.empty())
-		answer = static_cast<int>(components.size());
-	else if(!selection && cancel)
-		answer = 1;
-
-	status.addQuery(askID, "ScriptedAdventureAI blocking dialog");
-	answerQueryWithoutGameStateLock("scriptedShowBlockingDialog", askID, answer);
+	AIGateway::showBlockingDialog(text, components, askID, soundID, selection, cancel, safeToAutoaccept);
 }
 
 void CScriptedAdventureAI::showTeleportDialog(const CGHeroInstance * hero, TeleportChannelID channel, TTeleportExitsList exits, bool impassable, QueryID askID)
 {
+	if(!isScriptActionAutoAnswerMode())
+	{
+		AIGateway::showTeleportDialog(hero, channel, exits, impassable, askID);
+		return;
+	}
+
 	(void)hero;
 	(void)channel;
 	const int answer = (!impassable && !exits.empty()) ? 0 : -1;
@@ -1213,6 +1203,12 @@ void CScriptedAdventureAI::showTeleportDialog(const CGHeroInstance * hero, Telep
 
 void CScriptedAdventureAI::showMapObjectSelectDialog(QueryID askID, const Component & icon, const MetaString & title, const MetaString & description, const std::vector<ObjectInstanceID> & objects)
 {
+	if(!isScriptActionAutoAnswerMode())
+	{
+		AIGateway::showMapObjectSelectDialog(askID, icon, title, description, objects);
+		return;
+	}
+
 	(void)icon;
 	(void)title;
 	(void)description;
@@ -1288,53 +1284,32 @@ void CScriptedAdventureAI::heroVisitsTown(const CGHeroInstance * hero, const CGT
 
 void CScriptedAdventureAI::showTavernWindow(const CGObjectInstance * object, const CGHeroInstance * visitor, QueryID queryID)
 {
-	(void)object;
-	(void)visitor;
-	status.addQuery(queryID, "ScriptedAdventureAI tavern dialog");
-	answerQueryWithoutGameStateLock("scriptedShowTavernWindow", queryID, 0);
+	AIGateway::showTavernWindow(object, visitor, queryID);
 }
 
 void CScriptedAdventureAI::heroExchangeStarted(ObjectInstanceID hero1, ObjectInstanceID hero2, QueryID query)
 {
-	(void)hero1;
-	(void)hero2;
-	status.addQuery(query, "ScriptedAdventureAI hero exchange dialog");
-	answerQueryWithoutGameStateLock("scriptedHeroExchangeStarted", query, 0);
+	AIGateway::heroExchangeStarted(hero1, hero2, query);
 }
 
 void CScriptedAdventureAI::showGarrisonDialog(const CArmedInstance * up, const CGHeroInstance * down, bool removableUnits, QueryID queryID, const MetaString & customTitle)
 {
-	(void)up;
-	(void)down;
-	(void)removableUnits;
-	(void)customTitle;
-	status.addQuery(queryID, "ScriptedAdventureAI garrison dialog");
-	answerQueryWithoutGameStateLock("scriptedShowGarrisonDialog", queryID, 0);
+	AIGateway::showGarrisonDialog(up, down, removableUnits, queryID, customTitle);
 }
 
 void CScriptedAdventureAI::showRecruitmentDialog(const CGDwelling * dwelling, const CArmedInstance * dst, int level, QueryID queryID)
 {
-	(void)dwelling;
-	(void)dst;
-	(void)level;
-	status.addQuery(queryID, "ScriptedAdventureAI recruitment dialog");
-	answerQueryWithoutGameStateLock("scriptedShowRecruitmentDialog", queryID, 0);
+	AIGateway::showRecruitmentDialog(dwelling, dst, level, queryID);
 }
 
 void CScriptedAdventureAI::showUniversityWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID)
 {
-	(void)market;
-	(void)visitor;
-	status.addQuery(queryID, "ScriptedAdventureAI university dialog");
-	answerQueryWithoutGameStateLock("scriptedShowUniversityWindow", queryID, 0);
+	AIGateway::showUniversityWindow(market, visitor, queryID);
 }
 
 void CScriptedAdventureAI::showMarketWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID)
 {
-	(void)market;
-	(void)visitor;
-	status.addQuery(queryID, "ScriptedAdventureAI market dialog");
-	answerQueryWithoutGameStateLock("scriptedShowMarketWindow", queryID, 0);
+	AIGateway::showMarketWindow(market, visitor, queryID);
 }
 
 void CScriptedAdventureAI::tileRevealed(const FowTilesType & pos)
