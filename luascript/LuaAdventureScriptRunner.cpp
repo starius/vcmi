@@ -83,6 +83,31 @@ function ai:analysis()
 	return self.input.analysis
 end
 
+function ai:nullkillerAnalysis()
+	local analysis = self:analysis() or {}
+	return analysis.nullkiller or {}
+end
+
+function ai:nullkillerState()
+	local nullkiller = self:nullkillerAnalysis()
+	return nullkiller.state or {}
+end
+
+function ai:nullkillerSettings()
+	local nullkiller = self:nullkillerAnalysis()
+	return nullkiller.settings or {}
+end
+
+function ai:nullkillerEconomy()
+	local nullkiller = self:nullkillerAnalysis()
+	return nullkiller.economy or {}
+end
+
+function ai:nullkillerHeroRecruitment()
+	local nullkiller = self:nullkillerAnalysis()
+	return nullkiller.heroRecruitment or {}
+end
+
 function ai:limits()
 	return self.input.limits
 end

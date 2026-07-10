@@ -190,6 +190,10 @@ The `ai` facade:
 
 - `ai:state()`, `ai:updates()`, `ai:opponentUpdates()`, `ai:progress()`, `ai:actionSpace()`, `ai:analysis()`,
   `ai:limits()`: read current visible input sections.
+- `ai:nullkillerAnalysis()`, `ai:nullkillerState()`, `ai:nullkillerSettings()`, `ai:nullkillerEconomy()`, and
+  `ai:nullkillerHeroRecruitment()`: read the native Nullkiller-derived snapshot without hard-coding the nested
+  `analysis.nullkiller.*` path in policy code. These are read-only strategy inputs for deciding whether to run
+  bounded Nullkiller helpers; scripts still execute through checked host actions.
 - `ai:pendingQueries()`: return `state.turn.queries` for dialog/window decisions.
 - `ai:memory()` and `ai:setMemory(memory)`: read/replace script-owned memory for this day.
 - `ai:runAction(action)` and `ai:runOption(option, actionField?)`: execute a checked action table directly,
@@ -1219,6 +1223,11 @@ Regression harness:
   yielded `execute`/`refresh`/`fallback` commands. The legacy `planDay(input)` path remains only as a direct
   runner/testing compatibility API; active `ScriptedAdventureAI` turns require `runDay` and fall back to
   Nullkiller when it is missing.
+- The script API parity target is practical rather than “bind every C++ private method”: Lua should see all
+  relevant visible/derived strategy data, execute every useful player action through existing server-checked
+  callback paths, and invoke Nullkiller logic only through bounded helpers such as task candidate listing, one
+  selected task, one step, one pass, one priority pass, resource trade, army/artifact preparation, query answers,
+  and object interaction.
   A smoke run on `Dwarven Gold` and `Ready or Not` reached the one-day limit cleanly and wrote
   `imperative-input`/`imperative-output` traces with fallback status through the configured fallback script.
 - Explicit script delegation through `fallback`/`ai:nullkiller()` is not counted as a script failure; syntax,

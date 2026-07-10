@@ -1342,6 +1342,62 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanRefreshVisibleInput)
 	EXPECT_EQ(output.memory["refreshedDay"].Integer(), 2);
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanReadNullkillerSnapshots)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				local beforeState = ai:nullkillerState()
+				local settings = ai:nullkillerSettings()
+				local economy = ai:nullkillerEconomy()
+				local recruitment = ai:nullkillerHeroRecruitment()
+				ai:refresh()
+				local afterState = ai:nullkillerState()
+
+				ai:setMemory({
+					version = 1,
+					freeGoldBeforeRefresh = beforeState.freeResources.gold,
+					scanDepthAfterRefresh = afterState.scanDepthId,
+					safeAttackRatio = settings.safeAttackRatio,
+					goldPressure = economy.goldPressure,
+					heroCapReached = recruitment.heroCapReached
+				})
+				return ai:output("end_turn", "read Nullkiller snapshot")
+			end
+		}
+	)lua";
+
+	AI::AdventureScriptInput input = makeInput();
+	input.analysis["nullkiller"]["state"]["freeResources"]["gold"] = JsonNode(1200);
+	input.analysis["nullkiller"]["settings"]["safeAttackRatio"].Float() = 1.5;
+	input.analysis["nullkiller"]["economy"]["goldPressure"].Float() = 0.25;
+	input.analysis["nullkiller"]["heroRecruitment"]["heroCapReached"] = JsonNode(false);
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-nullkiller-snapshot", source);
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		EXPECT_EQ(command["kind"].String(), "refresh");
+
+		AI::AdventureScriptInput refreshed = input;
+		refreshed.analysis["nullkiller"]["state"]["scanDepthId"] = JsonNode(3);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["input"] = refreshed.toJson();
+		return response;
+	});
+
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "read Nullkiller snapshot");
+	EXPECT_EQ(output.memory["freeGoldBeforeRefresh"].Integer(), 1200);
+	EXPECT_EQ(output.memory["scanDepthAfterRefresh"].Integer(), 3);
+	EXPECT_DOUBLE_EQ(output.memory["safeAttackRatio"].Float(), 1.5);
+	EXPECT_DOUBLE_EQ(output.memory["goldPressure"].Float(), 0.25);
+	EXPECT_FALSE(output.memory["heroCapReached"].Bool());
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanReadAndAnswerPendingQueries)
 {
 	const std::string source = R"lua(
