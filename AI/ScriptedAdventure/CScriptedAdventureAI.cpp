@@ -2217,6 +2217,99 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		return true;
 	}
 
+	if(type == "dismiss_hero")
+	{
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+		if(!hero || hero->tempOwner != playerID)
+			throw std::invalid_argument("Unknown hero or hero is not owned by scripted AI");
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(DismissHero), CTypeList::getInstance().getTypeID<DismissHero>(nullptr), [&]
+		{
+			cc->dismissHero(hero);
+		});
+		actionResult["hero_id"] = JsonNode(hero->id.getNum());
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Dismiss hero request was rejected by server" : "Dismiss hero request was not realized by server");
+		return true;
+	}
+
+	if(type == "build_boat")
+	{
+		const CGObjectInstance * object = cc->getObj(ObjectInstanceID(readInteger(action, "shipyard_id")), false);
+		const IShipyard * shipyard = dynamic_cast<const IShipyard *>(object);
+		if(!object || !shipyard)
+			throw std::invalid_argument("Unknown visible shipyard object");
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(BuildBoat), CTypeList::getInstance().getTypeID<BuildBoat>(nullptr), [&]
+		{
+			cc->buildBoat(shipyard);
+		});
+		actionResult["shipyard_id"] = JsonNode(object->id.getNum());
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Build boat request was rejected by server" : "Build boat request was not realized by server");
+		return true;
+	}
+
+	if(type == "dig")
+	{
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+		if(!hero || hero->tempOwner != playerID)
+			throw std::invalid_argument("Unknown hero or hero is not owned by scripted AI");
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(DigWithHero), CTypeList::getInstance().getTypeID<DigWithHero>(nullptr), [&]
+		{
+			cc->dig(hero);
+		});
+		actionResult["hero_id"] = JsonNode(hero->id.getNum());
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Dig request was rejected by server" : "Dig request was not realized by server");
+		return true;
+	}
+
+	if(type == "cast_spell")
+	{
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+		if(!hero || hero->tempOwner != playerID)
+			throw std::invalid_argument("Unknown hero or hero is not owned by scripted AI");
+
+		const SpellID spellID(readInteger(action, "spell_id"));
+		int3 destination(-1, -1, -1);
+		if(hasField(action, "x") || hasField(action, "y") || hasField(action, "z"))
+		{
+			const int z = hasField(action, "z") ? readInteger(action, "z") : hero->visitablePos().z;
+			destination = int3(readInteger(action, "x"), readInteger(action, "y"), z);
+			if(!cc->isInTheMap(destination) || !cc->isVisibleFor(destination, playerID))
+				throw std::invalid_argument("Adventure spell target tile is not visible to scripted AI");
+		}
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(CastAdvSpell), CTypeList::getInstance().getTypeID<CastAdvSpell>(nullptr), [&]
+		{
+			cc->castSpell(hero, spellID, destination);
+		});
+		actionResult["hero_id"] = JsonNode(hero->id.getNum());
+		actionResult["spell_id"] = JsonNode(spellID.getNum());
+		actionResult["target"] = jsonPosition(destination);
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Cast spell request was rejected by server" : "Cast spell request was not realized by server");
+		return true;
+	}
+
 	if(type == "build")
 	{
 		const CGTownInstance * town = cc->getTown(ObjectInstanceID(readInteger(action, "town_id")));
@@ -2576,7 +2669,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_artifacts", "nullkiller_trade", "nullkiller_tasks", "nullkiller_task", "nullkiller_step" })
+	for(const char * type : { "pick_best_artifacts", "nullkiller_trade", "dismiss_hero", "build_boat", "dig", "cast_spell", "nullkiller_tasks", "nullkiller_task", "nullkiller_step" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();

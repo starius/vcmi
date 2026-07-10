@@ -217,6 +217,46 @@ function ai:nullkillerTrade()
 	return self:execute({ type = "nullkiller_trade" })
 end
 
+function ai:dismissHero(heroId)
+	local action = copyFields(heroId)
+	if type(heroId) ~= "table" then
+		action.hero_id = heroId
+	end
+	action.type = "dismiss_hero"
+	return self:execute(action)
+end
+
+function ai:buildBoat(shipyardId)
+	local action = copyFields(shipyardId)
+	if type(shipyardId) ~= "table" then
+		action.shipyard_id = shipyardId
+	end
+	action.type = "build_boat"
+	return self:execute(action)
+end
+
+function ai:dig(heroId)
+	local action = copyFields(heroId)
+	if type(heroId) ~= "table" then
+		action.hero_id = heroId
+	end
+	action.type = "dig"
+	return self:execute(action)
+end
+
+function ai:castSpell(heroId, spellId, x, y, z)
+	local action = copyFields(heroId)
+	if type(heroId) ~= "table" then
+		action.hero_id = heroId
+		action.spell_id = spellId
+		action.x = x
+		action.y = y
+		action.z = z
+	end
+	action.type = "cast_spell"
+	return self:execute(action)
+end
+
 function ai:moveHero(heroId, x, y, z, routeId)
 	local action = copyFields(heroId)
 	if type(heroId) ~= "table" then
