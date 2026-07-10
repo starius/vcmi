@@ -1823,6 +1823,9 @@ Regression harness:
 - Done: the bundled aggressive, economy, and explorer profile scripts now follow the same active-entrypoint shape
   as the default script: `runDay(ai, input)` calls a local policy scorer directly, while `Script.planDay` remains a
   compatibility wrapper for tests and older hosts.
+- Done: the bundled aggressive, economy, and explorer profiles no longer use normal full-day `ai:nullkiller()`
+  delegation when their simple scorer has no confident action or reaches its command budget. They now use bounded
+  `ai:nullkillerTurnSlice` calls and regain Lua control just like the default/parity scripts.
 - Done: Lua can inspect player-specific puzzle-map progress through `state.grail` and `ai:getGrail()`. This exposes
   the revealed ratio but gates the exact grail tile until the puzzle is fully revealed, avoiding accidental hidden
   map leakage from the client-side `getGrailPos` callback.

@@ -2425,6 +2425,67 @@ TEST(LuaAdventureScriptRunnerTest, BundledPersonalityScriptsRunImperatively)
 	}
 }
 
+TEST(LuaAdventureScriptRunnerTest, BundledPersonalityScriptsUseBoundedNullkillerAfterBudget)
+{
+	const std::vector<std::string> scripts = {
+		"scripts/ai/aggressiveAdventure.lua",
+		"scripts/ai/economyAdventure.lua",
+		"scripts/ai/explorerAdventure.lua"
+	};
+
+	for(const std::string & script : scripts)
+	{
+		SCOPED_TRACE(script);
+		scripting::LuaAdventureScriptRunner runner(script, readAdventureScript(script));
+		AI::AdventureScriptInput input = makeInput();
+		input.limits["maxScriptCallsPerTurn"] = JsonNode(1);
+		input.limits["maxActions"] = JsonNode(1);
+		input.actionSpace["buildOptions"].Vector();
+
+		JsonNode buildOption;
+		buildOption["buildingKindId"] = JsonNode(2); // tavern; accepted by all three profile scorers
+		buildOption["buildingLevel"] = JsonNode(1);
+		buildOption["planAction"]["type"] = JsonNode("build");
+		buildOption["planAction"]["town_id"] = JsonNode(17);
+		buildOption["planAction"]["building_id"] = JsonNode(2);
+		input.actionSpace["buildOptions"].Vector().push_back(buildOption);
+
+		std::vector<JsonNode> commands;
+		const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+		{
+			commands.push_back(command);
+
+			JsonNode response;
+			response["ok"] = JsonNode(true);
+			if(command["kind"].String() == "refresh")
+			{
+				response["input"] = input.toJson();
+				return response;
+			}
+
+			const std::string type = command["payload"]["type"].String();
+			response["result"]["ok"] = JsonNode(true);
+			response["result"]["type"] = JsonNode(type);
+			if(type == "nullkiller_turn_slice")
+			{
+				response["result"]["didWork"] = JsonNode(false);
+				response["result"]["shouldStopTurn"] = JsonNode(true);
+				response["result"]["adventureStopTurnSteps"] = JsonNode(1);
+			}
+			return response;
+		});
+
+		ASSERT_EQ(commands.size(), 4);
+		EXPECT_EQ(commands[0]["payload"]["type"].String(), "build");
+		EXPECT_EQ(commands[1]["kind"].String(), "refresh");
+		EXPECT_EQ(commands[2]["payload"]["type"].String(), "nullkiller_turn_slice");
+		EXPECT_EQ(commands[3]["payload"]["type"].String(), "end_turn");
+		EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+		ASSERT_TRUE(output.intent);
+		EXPECT_NE(output.intent->find("bounded Nullkiller slice accepted native stop-turn signal"), std::string::npos);
+	}
+}
+
 TEST(LuaAdventureScriptRunnerTest, DefaultAdventureEndsTurnAfterIdleBoundedNullkillerSlice)
 {
 	scripting::LuaAdventureScriptRunner runner(

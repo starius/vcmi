@@ -6,8 +6,8 @@ Explorer adventure policy
 
 This profile is built to reveal map information and exercise movement-heavy
 plans. It favors exploration objects, teleports, and simple scout movement. It
-still obeys the functional script contract: the host provides legal candidates,
-the script ranks them, and the host executes or rejects the returned plan.
+still obeys the script contract: the host provides legal candidates, the script
+ranks them, and side effects go through checked host actions.
 ]]
 
 local MemoryVersion = 1
@@ -309,6 +309,50 @@ local function commandLimit(input)
     return math.max(1, tonumber(limits.maxScriptCallsPerTurn or limits.maxActions or 8) or 8)
 end
 
+local NativeNullkiller = {
+    maxTurnSlicePasses = 4,
+    maxCandidates = 16,
+    maxAttempts = 16
+}
+
+local function positive(value)
+    return (tonumber(value or 0) or 0) > 0
+end
+
+local function runBoundedNullkillerTurnSlice(ai, current, commands, limit, intent, confidence)
+    -- The explorer profile may exhaust its simple scout heuristic before the
+    -- real turn is done. Use a bounded native slice for that gap, then return
+    -- control to Lua instead of handing over the whole remaining day.
+    local remainingCommands = math.max(1, limit - commands)
+    local result = ai:nullkillerTurnSlice({
+        max_passes = math.min(NativeNullkiller.maxTurnSlicePasses, remainingCommands),
+        max_candidates = NativeNullkiller.maxCandidates,
+        max_attempts = NativeNullkiller.maxAttempts
+    }) or {}
+    commands = commands + 1
+
+    if result.shouldStopTurn == true or positive(result.adventureStopTurnSteps) then
+        ai:endTurn()
+        return current, commands, ai:output("end_turn", "bounded Nullkiller slice accepted native stop-turn signal", confidence)
+    end
+
+    if result.didWork == true
+        or result.paused == true
+        or result.stop == true
+        or positive(result.priorityTasksExecuted)
+        or positive(result.adventureStepsExecuted)
+        or positive(result.adventureReplanSteps)
+        or positive(result.tradePasses)
+    then
+        current = ai:refresh()
+        current.memory = ai:memory()
+        return current, commands
+    end
+
+    ai:endTurn()
+    return current, commands, ai:output("end_turn", intent or "bounded Nullkiller slice found no work", confidence)
+end
+
 function Script.runDay(ai, input)
     -- Imperative compatibility path for this profile. The policy still uses a
     -- readable local scorer, but every chosen action is now executed as a
@@ -329,34 +373,44 @@ function Script.runDay(ai, input)
             ai:setMemory(output.memory or ai:memory())
 
             if output.status == "fallback" then
-                return ai:nullkiller(output.intent)
-            end
-
-            local actions = output.actions or {}
-            if #actions == 0 then
-                ai:endTurn()
-                return ai:output("end_turn", output.intent, output.confidence)
-            end
-
-            for _, action in ipairs(actions) do
-                if action.type == "end_turn" then
+                local finalOutput
+                current, commands, finalOutput = runBoundedNullkillerTurnSlice(ai, current, commands, limit, output.intent, output.confidence)
+                if finalOutput then
+                    return finalOutput
+                end
+            else
+                local actions = output.actions or {}
+                if #actions == 0 then
                     ai:endTurn()
                     return ai:output("end_turn", output.intent, output.confidence)
                 end
 
-                ai:execute(action)
-                commands = commands + 1
-                current = ai:refresh()
-                current.memory = ai:memory()
+                for _, action in ipairs(actions) do
+                    if action.type == "end_turn" then
+                        ai:endTurn()
+                        return ai:output("end_turn", output.intent, output.confidence)
+                    end
 
-                if commands >= limit or firstPendingQuery(current) then
-                    break
+                    ai:execute(action)
+                    commands = commands + 1
+                    current = ai:refresh()
+                    current.memory = ai:memory()
+
+                    if commands >= limit or firstPendingQuery(current) then
+                        break
+                    end
                 end
             end
         end
     end
 
-    return ai:nullkiller("explorer profile reached its imperative command budget")
+    local finalOutput
+    current, commands, finalOutput = runBoundedNullkillerTurnSlice(ai, current, commands, limit, "explorer profile reached its imperative command budget", 0.25)
+    if finalOutput then
+        return finalOutput
+    end
+    ai:endTurn()
+    return ai:output("end_turn", "explorer profile reached its bounded native budget", 0.25)
 end
 
 return Script
