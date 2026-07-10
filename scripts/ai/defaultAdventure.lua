@@ -62,6 +62,27 @@ local Score = {
         lowGoldPenalty = 300
     },
 
+    hire = {
+        base = 350,
+        firstScout = 5000,
+        expansionScout = 1200,
+        tooManyPenalty = 700,
+        totalStrength = 0.02,
+        armyStrength = 0.04,
+        lowGoldPenalty = 1000,
+        defensePressurePenalty = 1000
+    },
+
+    transfer = {
+        base = 300,
+        sourceStrength = 0.03,
+        gatherToMain = 650,
+        gatherToScoutPenalty = 250,
+        reinforceTownPressure = 550,
+        criticalGatherPenalty = 400,
+        tinySourcePenalty = 350
+    },
+
     object = {
         base = 400,
         visitedPenalty = 600,
@@ -139,6 +160,11 @@ local ObjectKind = {
     visitBonus = 12,
     market = 13,
     quest = 14
+}
+
+local TransferKind = {
+    gatherToHero = 1,
+    reinforceTown = 2
 }
 
 -- Raw engine IDs are kept as compatibility fallbacks for older traces/tests
@@ -404,6 +430,18 @@ local function heroExists(input, id)
     return false
 end
 
+local function heroCount(input)
+    local count = 0
+    for _ in ipairs(asArray(input.state and input.state.heroes)) do
+        count = count + 1
+    end
+    return count
+end
+
+local function experimentalSupportActionsEnabled(input)
+    return input.analysis and input.analysis.experimentalSupportActions == true
+end
+
 local function distanceSquared(left, right)
     if type(left) ~= "table" or type(right) ~= "table" then
         return nil
@@ -644,6 +682,109 @@ local function chooseRecruit(input)
     return best, bestScore
 end
 
+local function scoreHire(option, input)
+    local gold = resourceValue(input.state and input.state.resources, "gold")
+    local costGold = resourceValue(option.cost, "gold")
+    local heroes = heroCount(input)
+    local pressure = defensePressure(input)
+    local score = Score.hire.base
+
+    -- Extra heroes are most valuable early, when they can scout, collect loose
+    -- resources, and later participate in chaining. Avoid turning late-game
+    -- tavern availability into automatic spending when enough heroes exist.
+    if heroes < 2 then
+        score = score + Score.hire.firstScout
+    elseif heroes < 4 then
+        score = score + Score.hire.expansionScout
+    else
+        score = score - (heroes - 3) * Score.hire.tooManyPenalty
+    end
+
+    score = score + (tonumber(option.totalStrength or 0) or 0) * Score.hire.totalStrength
+    score = score + (tonumber(option.armyStrength or 0) or 0) * Score.hire.armyStrength
+    if costGold > 0 and gold < costGold + Threshold.recruitLowGold then
+        score = score - Score.hire.lowGoldPenalty
+    end
+    if pressure >= Pressure.high then
+        score = score - pressure * Score.hire.defensePressurePenalty
+    end
+    return score
+end
+
+local function chooseHire(input)
+    if not experimentalSupportActionsEnabled(input) then
+        return nil, Score.impossible
+    end
+
+    local best
+    local bestScore = Score.impossible
+    for _, option in ipairs(asArray(input.actionSpace and input.actionSpace.hireHeroOptions)) do
+        if option.planAction then
+            local score = scoreHire(option, input)
+            if score > bestScore then
+                best = option
+                bestScore = score
+            end
+        end
+    end
+    return best, bestScore
+end
+
+local function transferKindId(option)
+    return tonumber(option and (option.transferKindId or option.transfer_kind_id) or 0) or 0
+end
+
+local function scoreTransfer(option, memory, input)
+    local pressure = defensePressure(input)
+    local sourceStrength = tonumber(option.sourceArmyStrength or option.value or 0) or 0
+    local destinationId = tostring(option.destination_id or "")
+    local kind = transferKindId(option)
+    local score = Score.transfer.base + sourceStrength * Score.transfer.sourceStrength
+
+    -- Reinforcing towns is mostly a defensive reaction. Gathering town/garrison
+    -- troops into the main hero is the normal development pattern that lets the
+    -- script avoid leaving combat power stranded in static armies.
+    if kind == TransferKind.reinforceTown then
+        if pressure < Pressure.high then
+            return Score.impossible
+        end
+        score = score + pressure * Score.transfer.reinforceTownPressure
+    elseif kind == TransferKind.gatherToHero then
+        if roleForHero(memory, destinationId) == "main" then
+            score = score + Score.transfer.gatherToMain
+        else
+            score = score - Score.transfer.gatherToScoutPenalty
+        end
+        if pressure >= Pressure.critical then
+            score = score - Score.transfer.criticalGatherPenalty
+        end
+    end
+
+    if sourceStrength < 250 then
+        score = score - Score.transfer.tinySourcePenalty
+    end
+    return score
+end
+
+local function chooseTransfer(input, memory)
+    if not experimentalSupportActionsEnabled(input) then
+        return nil, Score.impossible
+    end
+
+    local best
+    local bestScore = Score.impossible
+    for _, option in ipairs(asArray(input.actionSpace and input.actionSpace.armyTransferOptions)) do
+        if option.planAction then
+            local score = scoreTransfer(option, memory, input)
+            if score > bestScore then
+                best = option
+                bestScore = score
+            end
+        end
+    end
+    return best, bestScore
+end
+
 local function inferredObjectKindFromTypeId(typeId)
     if not typeId then
         return ObjectKind.unknown
@@ -846,7 +987,7 @@ function Script.planDay(input)
     local intents = {}
 
     local pressure = defensePressure(input)
-    local build, recruit
+    local build, recruit, hire
     -- Town defense pressure changes the daily opening: spend on troops first,
     -- then fall back to construction only if no useful recruitment exists.
     if pressure >= Pressure.high then
@@ -862,21 +1003,45 @@ function Script.planDay(input)
             end
         end
     else
-        -- In normal development, take the best economic/strategic build first.
-        -- Recruitment is considered later only if no build was selected.
-        build = chooseBuild(input)
-        if build then
+        -- In normal development, early extra heroes compete with construction:
+        -- the host still validates tavern, gold, and hero caps, while Lua
+        -- decides when map tempo is worth delaying a building.
+        local buildScore
+        local hireScore
+        build, buildScore = chooseBuild(input)
+        hire, hireScore = chooseHire(input)
+        if hire and hireScore > buildScore then
+            actions[#actions + 1] = copyAction(hire.planAction)
+            intents[#intents + 1] = "hire hero " .. tostring(hire.hero_type_id)
+        elseif build then
             actions[#actions + 1] = copyAction(build.planAction)
             intents[#intents + 1] = "build building " .. tostring(build.building_id)
         end
     end
 
-    if not build and not recruit and pressure < Pressure.high then
+    if not build and not recruit and not hire and pressure < Pressure.high then
         recruit = chooseRecruit(input)
         if recruit then
             actions[#actions + 1] = copyAction(recruit.planAction)
             intents[#intents + 1] = "recruit creature " .. tostring(recruit.creature_id)
         end
+    end
+
+    local transfer = chooseTransfer(input, memory)
+    if transfer then
+        actions[#actions + 1] = copyAction(transfer.planAction)
+        intents[#intents + 1] = "transfer army " .. tostring(transfer.source_id) .. " to " .. tostring(transfer.destination_id)
+    end
+
+    if hire or transfer then
+        memory.lastIntent = table.concat(intents, "; ")
+        return {
+            status = "need_replan",
+            memory = memory,
+            actions = actions,
+            intent = memory.lastIntent,
+            confidence = Confidence.scriptedPlan
+        }
     end
 
     -- Escape movement has priority over normal target visits. Mixing both in a
@@ -907,10 +1072,9 @@ function Script.planDay(input)
     end
 
     -- No high-confidence scripted action remains. The current script interface
-    -- cannot yet express important Nullkiller operations such as recruiting
-    -- extra heroes, concentrating armies, or chaining heroes. Delegating the
-    -- remainder of the turn preserves those capabilities instead of ending the
-    -- day with useful but unsupported work still possible.
+    -- still cannot express Nullkiller's full task graph, especially multi-hero
+    -- chaining and deeper blocker plans. Delegating the remainder preserves
+    -- those capabilities instead of ending with useful but unsupported work.
     return {
         status = "fallback",
         memory = memory,

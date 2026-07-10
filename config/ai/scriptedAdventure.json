@@ -7,6 +7,7 @@
 	"maxUpdateEvents": 256,
 	"maxConsecutiveFailures": 3,
 	"disableTurnsAfterFailures": 3,
+	"experimentalSupportActions": false,
 	"trace": false,
 	"players": {
 		"red": {

@@ -1,0 +1,82 @@
+{
+	"name": "hire-hero-before-build",
+	"script": "scripts/ai/defaultAdventure.lua",
+	"input": {
+		"state": {
+			"day": 1,
+			"resources": {
+				"gold": 5000
+			},
+			"heroes": [
+				{
+					"id": 5,
+					"name": "Main",
+					"level": 1,
+					"army": [
+						{
+							"count": 20
+						}
+					]
+				}
+			]
+		},
+		"memory": {
+			"version": 1
+		},
+		"analysis": {
+			"experimentalSupportActions": true
+		},
+		"actionSpace": {
+			"buildOptions": [
+				{
+					"building_id": 12,
+					"buildingKindId": 5,
+					"buildingLevel": 3,
+					"town_id": 42,
+					"cost": {
+						"gold": 2500
+					},
+					"income": {
+						"gold": 1000
+					},
+					"planAction": {
+						"type": "build",
+						"town_id": 42,
+						"building_id": 12
+					}
+				}
+			],
+			"hireHeroOptions": [
+				{
+					"town_id": 42,
+					"hero_type_id": 12,
+					"totalStrength": 2000,
+					"armyStrength": 400,
+					"cost": {
+						"gold": 2500
+					},
+					"planAction": {
+						"type": "hire_hero",
+						"town_id": 42,
+						"hero_type_id": 12
+					}
+				}
+			]
+		}
+	},
+	"expect": {
+		"status": "need_replan",
+		"firstAction": {
+			"type": "hire_hero",
+			"town_id": 42,
+			"hero_type_id": 12
+		},
+		"actionsDoNotContain": [
+			{
+				"type": "build",
+				"building_id": 12
+			}
+		],
+		"intentContains": "hire hero 12"
+	}
+}

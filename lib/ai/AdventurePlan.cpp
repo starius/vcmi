@@ -73,7 +73,7 @@ JsonNode makeFlexibleTypedPlanActionSchema()
 	schema["additionalProperties"] = JsonNode(true);
 	schema["properties"]["id"]["type"] = JsonNode("string");
 	schema["properties"]["type"]["type"] = JsonNode("string");
-	schema["properties"]["type"]["description"] = JsonNode("Canonical or aliased plan action type. Canonical values: build, recruit, move_hero, visit_object, answer_query, end_turn.");
+	schema["properties"]["type"]["description"] = JsonNode("Canonical or aliased plan action type. Canonical values: build, recruit, hire_hero, transfer_army, move_hero, visit_object, answer_query, end_turn.");
 	setRequired(schema, {"type"});
 	return schema;
 }
@@ -99,6 +99,8 @@ std::vector<std::string> acceptedPlanActionTypes()
 	return {
 		"build",
 		"recruit",
+		"hire_hero",
+		"transfer_army",
 		"move_hero",
 		"visit_object",
 		"answer_query",
@@ -114,6 +116,10 @@ std::string canonicalPlanActionType(std::string type)
 		return "build";
 	if(type == "recruit_creatures" || type == "buy_creatures" || type == "recruitment")
 		return "recruit";
+	if(type == "hire" || type == "hirehero" || type == "recruit_hero" || type == "buy_hero")
+		return "hire_hero";
+	if(type == "transfer" || type == "army_transfer" || type == "move_army" || type == "bulk_move_army")
+		return "transfer_army";
 	if(type == "move" || type == "hero_move" || type == "move_tile")
 		return "move_hero";
 	if(type == "move_hero_to_object" || type == "visit" || type == "object" || type == "capture_object" || type == "collect_object")
@@ -180,6 +186,8 @@ JsonNode makeExecutePlanSchema()
 	schema["properties"]["actions"]["description"] = JsonNode("Sequential day-plan actions. Use canonical type values when possible; aliased and tool-shaped actions are accepted and normalized by VCMI.");
 	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("build", {{"town_id", "integer"}, {"building_id", "integer"}}, {"type", "town_id", "building_id"}));
 	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("recruit", {{"source_id", "integer"}, {"town_id", "integer"}, {"destination_id", "integer"}, {"level", "integer"}, {"creature_id", "integer"}, {"amount", "integer"}}, {"type", "level"}));
+	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("hire_hero", {{"town_id", "integer"}, {"hero_type_id", "integer"}, {"next_hero_type_id", "integer"}}, {"type", "town_id", "hero_type_id"}));
+	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("transfer_army", {{"source_id", "integer"}, {"destination_id", "integer"}, {"source_slot", "integer"}}, {"type", "source_id", "destination_id", "source_slot"}));
 	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("move_hero", {{"hero_id", "integer"}, {"x", "integer"}, {"y", "integer"}, {"z", "integer"}, {"route_id", "string"}}, {"type", "hero_id", "x", "y"}));
 	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("visit_object", {{"hero_id", "integer"}, {"object_id", "integer"}, {"route_id", "string"}}, {"type", "hero_id", "object_id"}));
 	schema["properties"]["actions"]["items"]["anyOf"].Vector().push_back(makePlanActionSchema("answer_query", {{"query_id", "integer"}, {"answer", "integer"}}, {"type", "query_id"}));

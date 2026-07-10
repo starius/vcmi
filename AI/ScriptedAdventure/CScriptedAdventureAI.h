@@ -64,6 +64,7 @@ private:
 	{
 		bool reloadScriptEachTurn = true;
 		bool trace = false;
+		bool experimentalSupportActions = false;
 		size_t maxConsecutiveFailures = 3;
 		int disableTurnsAfterFailures = 3;
 	};

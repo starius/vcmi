@@ -91,6 +91,13 @@ enum class ScriptObjectKind : int32_t
 	QUEST = 14
 };
 
+enum class ScriptArmyTransferKind : int32_t
+{
+	UNKNOWN = 0,
+	GATHER_TO_HERO = 1,
+	REINFORCE_TOWN = 2
+};
+
 const char * scriptBuildingKindName(ScriptBuildingKind kind)
 {
 	switch(kind)
@@ -158,6 +165,19 @@ const char * scriptObjectKindName(ScriptObjectKind kind)
 		return "market";
 	case ScriptObjectKind::QUEST:
 		return "quest";
+	default:
+		return "unknown";
+	}
+}
+
+const char * scriptArmyTransferKindName(ScriptArmyTransferKind kind)
+{
+	switch(kind)
+	{
+	case ScriptArmyTransferKind::GATHER_TO_HERO:
+		return "gather_to_hero";
+	case ScriptArmyTransferKind::REINFORCE_TOWN:
+		return "reinforce_town";
 	default:
 		return "unknown";
 	}
@@ -835,6 +855,99 @@ JsonNode jsonRecruitOption(const CGDwelling * dwelling, const CArmedInstance * d
 	node["planAction"]["level"] = node["level"];
 	node["planAction"]["creature_id"] = node["creature_id"];
 	node["planAction"]["amount"] = node["amount"];
+	return node;
+}
+
+std::optional<SlotID> weakestTransferReserveSlot(const CArmedInstance * source)
+{
+	if(!source || source->Slots().empty())
+		return std::nullopt;
+
+	std::optional<SlotID> result;
+	uint64_t bestPower = std::numeric_limits<uint64_t>::max();
+	for(const auto & slot : source->Slots())
+	{
+		if(!slot.second || slot.second->getCount() <= 0)
+			continue;
+
+		const uint64_t power = slot.second->getPower();
+		if(!result || power < bestPower)
+		{
+			result = slot.first;
+			bestPower = power;
+		}
+	}
+	return result;
+}
+
+bool bulkTransferWouldMoveAnything(const CArmedInstance * source, const CArmedInstance * destination, SlotID reserveSlot)
+{
+	if(!source || !destination || source == destination || !reserveSlot.validSlot())
+		return false;
+	if(!source->hasStackAtSlot(reserveSlot))
+		return false;
+	if(source->stacksCount() == 1 && source->getStack(reserveSlot).getCount() <= 1)
+		return false;
+
+	auto freeSlots = destination->getFreeSlots();
+	for(const auto & slot : source->Slots())
+	{
+		if(!slot.second || slot.second->getCount() <= 0)
+			continue;
+
+		SlotID targetSlot = destination->getSlotFor(slot.second->getCreature());
+		if(destination->slotEmpty(targetSlot))
+		{
+			if(freeSlots.empty())
+				continue;
+			freeSlots.erase(freeSlots.begin());
+		}
+
+		if(slot.first != reserveSlot || slot.second->getCount() > 1 || source->stacksCount() > 1)
+			return true;
+	}
+	return false;
+}
+
+JsonNode jsonAvailableHeroOption(const CGTownInstance * town, const CGHeroInstance * hero)
+{
+	JsonNode node;
+	node["town_id"] = JsonNode(town->id.getNum());
+	node["town"] = JsonNode(jsonText(town->getNameTranslated()));
+	node["hero_type_id"] = JsonNode(hero->getHeroTypeID().getNum());
+	node["hero"] = JsonNode(jsonText(hero->getNameTranslated()));
+	node["heroStrength"] = JsonNode(static_cast<int64_t>(hero->getHeroStrength()));
+	node["armyStrength"] = JsonNode(static_cast<int64_t>(hero->getArmyStrength()));
+	node["totalStrength"] = JsonNode(static_cast<int64_t>(hero->getTotalStrength()));
+	node["cost"]["gold"] = JsonNode(GameConstants::HERO_GOLD_COST);
+	node["army"] = jsonArmy(*hero);
+	node["planAction"]["type"] = JsonNode("hire_hero");
+	node["planAction"]["town_id"] = node["town_id"];
+	node["planAction"]["hero_type_id"] = node["hero_type_id"];
+	return node;
+}
+
+JsonNode jsonArmyTransferOption(
+	const CArmedInstance * source,
+	const CArmedInstance * destination,
+	SlotID sourceSlot,
+	ScriptArmyTransferKind kind,
+	int32_t townID)
+{
+	JsonNode node;
+	node["source_id"] = JsonNode(source->id.getNum());
+	node["destination_id"] = JsonNode(destination->id.getNum());
+	node["source_slot"] = JsonNode(sourceSlot.getNum());
+	node["town_id"] = JsonNode(townID);
+	node["transferKindId"] = JsonNode(static_cast<int32_t>(kind));
+	node["transferKind"] = JsonNode(scriptArmyTransferKindName(kind));
+	node["sourceArmyStrength"] = JsonNode(static_cast<int64_t>(source->getArmyStrength()));
+	node["destinationArmyStrength"] = JsonNode(static_cast<int64_t>(destination->getArmyStrength()));
+	node["value"] = JsonNode(static_cast<int64_t>(source->getArmyStrength()));
+	node["planAction"]["type"] = JsonNode("transfer_army");
+	node["planAction"]["source_id"] = node["source_id"];
+	node["planAction"]["destination_id"] = node["destination_id"];
+	node["planAction"]["source_slot"] = node["source_slot"];
 	return node;
 }
 
@@ -1612,6 +1725,76 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		return true;
 	}
 
+	if(type == "hire_hero")
+	{
+		const CGTownInstance * town = cc->getTown(ObjectInstanceID(readInteger(action, "town_id")));
+		if(!town || town->tempOwner != playerID)
+			throw std::invalid_argument("Unknown town or town is not owned by scripted AI");
+		if(town->getVisitingHero())
+			throw std::invalid_argument("Town has a visiting hero and cannot hire another hero");
+		if(cc->getResourceAmount()[EGameResID::GOLD] < GameConstants::HERO_GOLD_COST)
+			throw std::invalid_argument("Not enough gold to hire a hero");
+
+		const HeroTypeID heroTypeID(readInteger(action, "hero_type_id"));
+		const HeroTypeID nextHeroTypeID = hasField(action, "next_hero_type_id")
+			? HeroTypeID(readInteger(action, "next_hero_type_id"))
+			: HeroTypeID::NONE;
+		const CGHeroInstance * heroToHire = nullptr;
+		for(const CGHeroInstance * availableHero : cc->getAvailableHeroes(town))
+		{
+			if(availableHero && availableHero->getHeroTypeID() == heroTypeID)
+			{
+				heroToHire = availableHero;
+				break;
+			}
+		}
+		if(!heroToHire)
+			throw std::invalid_argument("Requested hero_type_id is not available for hiring");
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(HireHero), CTypeList::getInstance().getTypeID<HireHero>(nullptr), [&]
+		{
+			cc->recruitHero(town, heroToHire, nextHeroTypeID);
+		});
+		actionResult["town_id"] = JsonNode(town->id.getNum());
+		actionResult["hero_type_id"] = JsonNode(heroTypeID.getNum());
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Hire hero request was rejected by server" : "Hire hero request was not realized by server");
+		return true;
+	}
+
+	if(type == "transfer_army")
+	{
+		const auto * source = dynamic_cast<const CArmedInstance *>(cc->getObj(ObjectInstanceID(readInteger(action, "source_id")), false));
+		const auto * destination = dynamic_cast<const CArmedInstance *>(cc->getObj(ObjectInstanceID(readInteger(action, "destination_id")), false));
+		if(!source || !destination)
+			throw std::invalid_argument("Unknown army transfer source or destination");
+		if(source->tempOwner != playerID || destination->tempOwner != playerID)
+			throw std::invalid_argument("Army transfer source and destination must be owned by scripted AI");
+
+		const SlotID sourceSlot(readInteger(action, "source_slot"));
+		if(!bulkTransferWouldMoveAnything(source, destination, sourceSlot))
+			throw std::invalid_argument("Army transfer would not move any creatures");
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(BulkMoveArmy), CTypeList::getInstance().getTypeID<BulkMoveArmy>(nullptr), [&]
+		{
+			cc->bulkMoveArmy(source->id, destination->id, sourceSlot);
+		});
+		actionResult["source_id"] = JsonNode(source->id.getNum());
+		actionResult["destination_id"] = JsonNode(destination->id.getNum());
+		actionResult["source_slot"] = JsonNode(sourceSlot.getNum());
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Army transfer request was rejected by server" : "Army transfer request was not realized by server");
+		return true;
+	}
+
 	if(type == "move_hero" || type == "visit_object")
 	{
 		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
@@ -1734,6 +1917,8 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 
 	actionSpace["buildOptions"].Vector();
 	actionSpace["recruitOptions"].Vector();
+	actionSpace["hireHeroOptions"].Vector();
+	actionSpace["armyTransferOptions"].Vector();
 	actionSpace["reachableObjects"].Vector();
 	actionSpace["movementOptions"].Vector();
 	actionSpace["recommendedActions"].Vector();
@@ -1771,6 +1956,46 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 					actionSpace["recruitOptions"].Vector().push_back(option);
 					actionSpace["recommendedActions"].Vector().push_back(option["planAction"]);
 				}
+			}
+		}
+
+		if(scriptConfig.experimentalSupportActions && !town->getVisitingHero() && resources[EGameResID::GOLD] >= GameConstants::HERO_GOLD_COST)
+		{
+			for(const CGHeroInstance * hero : cc->getAvailableHeroes(town))
+			{
+				if(!hero)
+					continue;
+
+				JsonNode option = jsonAvailableHeroOption(town, hero);
+				actionSpace["hireHeroOptions"].Vector().push_back(option);
+				actionSpace["recommendedActions"].Vector().push_back(option["planAction"]);
+			}
+		}
+
+		if(scriptConfig.experimentalSupportActions)
+		{
+			const CGHeroInstance * visitingHero = town->getVisitingHero();
+			const CGHeroInstance * garrisonHero = town->getGarrisonHero();
+			auto appendTransferOption = [&](const CArmedInstance * source, const CArmedInstance * destination, ScriptArmyTransferKind kind)
+			{
+				const std::optional<SlotID> sourceSlot = weakestTransferReserveSlot(source);
+				if(!sourceSlot || !bulkTransferWouldMoveAnything(source, destination, *sourceSlot))
+					return;
+
+				JsonNode option = jsonArmyTransferOption(source, destination, *sourceSlot, kind, town->id.getNum());
+				actionSpace["armyTransferOptions"].Vector().push_back(option);
+				actionSpace["recommendedActions"].Vector().push_back(option["planAction"]);
+			};
+
+			if(visitingHero)
+			{
+				appendTransferOption(town, visitingHero, ScriptArmyTransferKind::GATHER_TO_HERO);
+				appendTransferOption(visitingHero, town, ScriptArmyTransferKind::REINFORCE_TOWN);
+			}
+			if(visitingHero && garrisonHero)
+			{
+				appendTransferOption(garrisonHero, visitingHero, ScriptArmyTransferKind::GATHER_TO_HERO);
+				appendTransferOption(visitingHero, garrisonHero, ScriptArmyTransferKind::REINFORCE_TOWN);
 			}
 		}
 	}
@@ -1913,10 +2138,11 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 	analysis["execution"]["validatesRouteIds"] = JsonNode(true);
 	analysis["execution"]["replansAfterObjectVisit"] = JsonNode(true);
 	analysis["execution"]["fallbackAI"] = JsonNode("Nullkiller2");
+	analysis["experimentalSupportActions"] = JsonNode(scriptConfig.experimentalSupportActions);
 	analysis["scriptMemory"]["persistedInPlayerLocalSettings"] = JsonNode(true);
 	analysis["scriptMemory"]["localStateKey"] = JsonNode(SCRIPT_MEMORY_LOCAL_STATE_KEY);
 	analysis["candidateFields"].Vector();
-	for(const char * field : { "reason", "value", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy" })
+	for(const char * field : { "reason", "value", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "kindId", "buildingKindId", "transferKindId" })
 		analysis["candidateFields"].Vector().push_back(JsonNode(field));
 	analysis["danger"]["candidateDangerSource"] = JsonNode("Nullkiller direct object/guard danger evaluator");
 	analysis["danger"]["enemyReachSource"] = JsonNode("visible enemy distance and strength alerts");
@@ -2218,10 +2444,11 @@ void CScriptedAdventureAI::loadConfig()
 		}
 
 		logAi->info(
-			"ScriptedAdventureAI config loaded: script '%s', reload per turn %d, trace %d, max calls %d, max actions %d, max memory bytes %d, max failures %d, disable turns %d",
+			"ScriptedAdventureAI config loaded: script '%s', reload per turn %d, trace %d, support actions %d, max calls %d, max actions %d, max memory bytes %d, max failures %d, disable turns %d",
 			scriptPath.c_str(),
 			scriptConfig.reloadScriptEachTurn,
 			scriptConfig.trace,
+			scriptConfig.experimentalSupportActions,
 			static_cast<int>(maxScriptCallsPerTurn),
 			static_cast<int>(limits.maxActions),
 			static_cast<int>(limits.maxMemoryBytes),
@@ -2247,6 +2474,7 @@ void CScriptedAdventureAI::applyConfig(const JsonNode & config, const std::strin
 
 	scriptConfig.reloadScriptEachTurn = readBool(config, "reloadScriptEachTurn", scriptConfig.reloadScriptEachTurn);
 	scriptConfig.trace = readBool(config, "trace", scriptConfig.trace);
+	scriptConfig.experimentalSupportActions = readBool(config, "experimentalSupportActions", scriptConfig.experimentalSupportActions);
 	maxScriptCallsPerTurn = readSize(config, "maxScriptCallsPerTurn", maxScriptCallsPerTurn, 1, 64);
 	limits.maxActions = readSize(config, "maxActionsPerPlan", limits.maxActions, 1, 256);
 	limits.maxMemoryBytes = readSize(config, "maxMemoryBytes", limits.maxMemoryBytes, 1024, 4 * 1024 * 1024);

@@ -1,0 +1,62 @@
+{
+	"name": "gather-town-army",
+	"script": "scripts/ai/defaultAdventure.lua",
+	"input": {
+		"state": {
+			"day": 2,
+			"resources": {
+				"gold": 1000
+			},
+			"heroes": [
+				{
+					"id": 5,
+					"name": "Main",
+					"level": 3,
+					"army": [
+						{
+							"count": 20
+						}
+					]
+				}
+			]
+		},
+		"memory": {
+			"version": 1,
+			"roles": {
+				"mainHero": 5
+			}
+		},
+		"analysis": {
+			"experimentalSupportActions": true
+		},
+		"actionSpace": {
+			"armyTransferOptions": [
+				{
+					"source_id": 42,
+					"destination_id": 5,
+					"source_slot": 0,
+					"transferKindId": 1,
+					"sourceArmyStrength": 3000,
+					"destinationArmyStrength": 1000,
+					"value": 3000,
+					"planAction": {
+						"type": "transfer_army",
+						"source_id": 42,
+						"destination_id": 5,
+						"source_slot": 0
+					}
+				}
+			]
+		}
+	},
+	"expect": {
+		"status": "need_replan",
+		"firstAction": {
+			"type": "transfer_army",
+			"source_id": 42,
+			"destination_id": 5,
+			"source_slot": 0
+		},
+		"intentContains": "transfer army 42 to 5"
+	}
+}
