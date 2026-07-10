@@ -1170,6 +1170,16 @@ function Script.runDay(ai, input)
     -- this coroutine instead of returning declarative batches.
     local current = input
     local callLimit = (((current or {}).limits or {}).maxScriptCallsPerTurn) or 8
+    local scriptedActions = 0
+
+    local function isSupportAction(action)
+        local actionType = (action or {}).type
+        return actionType == "build"
+            or actionType == "recruit"
+            or actionType == "hire_hero"
+            or actionType == "transfer_army"
+            or actionType == "answer_query"
+    end
 
     for _ = 1, callLimit do
         local output = Script.planDay(current)
@@ -1181,14 +1191,23 @@ function Script.runDay(ai, input)
 
         local shouldReplan = false
         for _, action in ipairs(output.actions or {}) do
+            if not isSupportAction(action) then
+                return ai:nullkiller("delegate map movement and object routing to Nullkiller")
+            end
+
             local ok, result = pcall(function()
                 return ai:execute(action)
             end)
 
+            scriptedActions = scriptedActions + 1
             current = ai:refresh()
             if not ok or (type(result) == "table" and result.stop) then
                 shouldReplan = true
                 break
+            end
+
+            if scriptedActions >= 1 then
+                return ai:nullkiller(output.intent or "delegate after one scripted support action")
             end
         end
 

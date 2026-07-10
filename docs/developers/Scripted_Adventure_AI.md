@@ -867,6 +867,11 @@ Regression harness:
   behavioral target is reducing oversteering rather than more identifier cleanup.
 - The live small random-map promotion corpus is now `scripts/ai/rmgSmallUndergroundNoWater16.json`, expanded to
   16 fixed generated maps. The promotion target for this corpus is 16/16 victories, not 10/10.
+- On the 16-map corpus, the imperative all-fallback control is the current champion at 11/16 wins. The first
+  converted `defaultAdventure.lua` compatibility wrapper lost 16/16 because it oversteered map movement and object
+  routing; traced runs showed 3050 `visit_object` commands, 927 `move_hero` commands, and 397 replan-limit
+  fallbacks. A safer support-only wrapper that delegates map movement to Nullkiller improved the default candidate
+  to 5/16, but it is still below the all-fallback control and should not be promoted.
 - A later Nullkiller2-vs-Nullkiller2 mirror check showed red wins 7/10 on the same fixed-seed corpus, while
   ScriptedAdventureAI with the all-fallback Lua control initially won only 1/10. The root cause was not Lua policy:
   fallback still ran through `CScriptedAdventureAI` dialog overrides, so Nullkiller inherited simplified scripted

@@ -5,12 +5,14 @@ from __future__ import annotations
 
 import unittest
 import sys
+import json
+import tempfile
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from summarizeAdventureTrace import analyze_mistakes
+from summarizeAdventureTrace import analyze_mistakes, summarize
 
 
 def input_record(script_input: dict) -> dict:
@@ -239,6 +241,7 @@ class HeroThreatMistakeTest(unittest.TestCase):
         )
         self.assertIn("hero_threat_without_escape", {item["type"] for item in mistakes})
 
+
     def test_threat_without_safe_move_candidate_is_not_actionable(self) -> None:
         mistakes = self.mistakes_for(
             [
@@ -294,6 +297,84 @@ class HeroThreatMistakeTest(unittest.TestCase):
             ],
         )
         self.assertNotIn("hero_threat_without_escape", {item["type"] for item in mistakes})
+
+
+class ImperativeTraceSummaryTest(unittest.TestCase):
+    def test_imperative_trace_labels_are_counted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            input_path = root / "player-red-day-1-event-0-imperative-input.json"
+            input_path.write_text(
+                json.dumps(
+                    {
+                        "label": "imperative-input",
+                        "player": "red",
+                        "script": "ai/defaultAdventure.lua",
+                        "payload": {
+                            "input": {
+                                "state": {"heroes": [], "towns": [], "resources": {}},
+                                "updates": {"events": []},
+                                "opponentUpdates": {"events": []},
+                                "analysis": {},
+                                "actionSpace": {},
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            command_path = root / "player-red-day-1-event-1-imperative-command.json"
+            command_path.write_text(
+                json.dumps(
+                    {
+                        "label": "imperative-command",
+                        "player": "red",
+                        "script": "ai/defaultAdventure.lua",
+                        "payload": {
+                            "commandIndex": 0,
+                            "command": {
+                                "kind": "execute",
+                                "payload": {"type": "build", "town_id": 7, "building_id": 12},
+                            },
+                            "response": {
+                                "ok": True,
+                                "result": {"ok": True, "type": "build", "stop": False},
+                            },
+                            "progress": {"executed": [], "failed": [], "remaining": []},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            output_path = root / "player-red-day-1-event-2-imperative-output.json"
+            output_path.write_text(
+                json.dumps(
+                    {
+                        "label": "imperative-output",
+                        "player": "red",
+                        "script": "ai/defaultAdventure.lua",
+                        "payload": {
+                            "output": {
+                                "status": "fallback",
+                                "actions": [],
+                                "intent": "delegate",
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            summary = summarize([input_path, command_path, output_path])
+
+        self.assertEqual(summary["labels"]["imperative-input"], 1)
+        self.assertEqual(summary["labels"]["imperative-command"], 1)
+        self.assertEqual(summary["labels"]["imperative-output"], 1)
+        self.assertEqual(summary["output_statuses"]["fallback"], 1)
+        self.assertEqual(summary["requested_actions"]["build"], 1)
+        self.assertEqual(summary["executed_actions"]["build"], 1)
+        self.assertEqual(summary["output_intents"]["delegate"], 1)
 
 
 class IgnoredBetterObjectMistakeTest(unittest.TestCase):

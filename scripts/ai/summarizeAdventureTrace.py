@@ -100,9 +100,14 @@ def counter_to_dict(counter: Counter[str]) -> dict[str, int]:
 
 
 def count_actions(counter: Counter[str], actions: Any) -> None:
-    for action in as_list(actions):
-        action_type = as_dict(action).get("type", "<missing>")
-        counter[str(action_type)] += 1
+	for action in as_list(actions):
+		action_type = as_dict(action).get("type", "<missing>")
+		counter[str(action_type)] += 1
+
+
+def count_action(counter: Counter[str], action: Any) -> None:
+	action_type = as_dict(action).get("type", "<missing>")
+	counter[str(action_type)] += 1
 
 
 def day_from_path(path: Path) -> str | None:
@@ -702,7 +707,7 @@ def summarize(files: list[Path], max_mistakes: int = 100) -> dict[str, Any]:
             "event": event,
             "callIndex": call_index,
         }
-        if label == "output":
+        if label in {"output", "imperative-output"}:
             output = as_dict(payload.get("output"))
             output_record = dict(record)
             output_record["output"] = output
@@ -711,6 +716,29 @@ def summarize(files: list[Path], max_mistakes: int = 100) -> dict[str, Any]:
             if output.get("intent"):
                 output_intents[str(output["intent"])] += 1
             count_actions(requested_actions, output.get("actions"))
+        elif label == "imperative-command":
+            command = as_dict(payload.get("command"))
+            response = as_dict(payload.get("response"))
+            action = as_dict(command.get("payload"))
+            result = as_dict(response.get("result"))
+            if command.get("kind") == "execute":
+                count_action(requested_actions, action)
+                if response.get("ok") is False:
+                    count_action(failed_actions, action)
+                    failure_errors[str(response.get("error", "<missing>"))] += 1
+                    progress_counts["failed"] += 1
+                else:
+                    count_action(executed_actions, action)
+                    progress_counts["executed"] += 1
+                if result.get("stop"):
+                    progress_counts["stopped_actions"] += 1
+            else:
+                progress_counts[f"imperative_{command.get('kind', '<missing>')}"] += 1
+            if progress := as_dict(payload.get("progress")):
+                progress_record = dict(record)
+                progress_record["progress"] = progress
+                progress_record["stopped"] = bool(result.get("stop"))
+                progresses_by_key[(player, day, as_int(payload.get("commandIndex")))] = progress_record
         elif label == "progress":
             progress = as_dict(payload.get("progress"))
             progress_record = dict(record)
@@ -730,7 +758,7 @@ def summarize(files: list[Path], max_mistakes: int = 100) -> dict[str, Any]:
             for item in failed:
                 error = as_dict(item).get("error", "<missing>")
                 failure_errors[str(error)] += 1
-        elif label == "input":
+        elif label in {"input", "imperative-input"}:
             script_input = as_dict(payload.get("input"))
             input_record = dict(record)
             input_record["input"] = script_input
