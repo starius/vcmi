@@ -134,6 +134,7 @@ private:
 	JsonNode jsonRequestWaitResult(const RequestWaitResult & request) const;
 	bool waitTillFreeForScriptAction(JsonNode & actionResult, const std::string & actionType);
 	void answerQueryWithoutGameStateLock(const std::string & description, QueryID queryID, int selection);
+	void answerScriptActionDialog(const std::string & queryDescription, const std::string & asyncDescription, QueryID queryID, int selection);
 	void answerPendingAutoQueries();
 	void setScriptActionAutoAnswerMode(bool active);
 	bool isScriptActionAutoAnswerMode();

@@ -1146,6 +1146,12 @@ void CScriptedAdventureAI::answerQueryWithoutGameStateLock(const std::string & d
 	});
 }
 
+void CScriptedAdventureAI::answerScriptActionDialog(const std::string & queryDescription, const std::string & asyncDescription, QueryID queryID, int selection)
+{
+	status.addQuery(queryID, queryDescription);
+	answerQueryWithoutGameStateLock(asyncDescription, queryID, selection);
+}
+
 void CScriptedAdventureAI::answerPendingAutoQueries()
 {
 	std::vector<std::pair<QueryID, int>> answers;
@@ -1183,6 +1189,20 @@ void CScriptedAdventureAI::commanderGotLevel(const CCommanderInstance * commande
 
 void CScriptedAdventureAI::showBlockingDialog(const std::string & text, const std::vector<Component> & components, QueryID askID, const int soundID, bool selection, bool cancel, bool safeToAutoaccept)
 {
+	if(isScriptActionAutoAnswerMode())
+	{
+		// Scripted actions are declarative. Keep required modal replies narrow here;
+		// richer policies should become explicit AdventurePlan choices.
+		int answer = 0;
+		if(selection && !components.empty())
+			answer = static_cast<int>(components.size());
+		else if(!selection && cancel)
+			answer = 1;
+
+		answerScriptActionDialog("ScriptedAdventureAI blocking dialog", "scriptedShowBlockingDialog", askID, answer);
+		return;
+	}
+
 	AIGateway::showBlockingDialog(text, components, askID, soundID, selection, cancel, safeToAutoaccept);
 }
 
@@ -1197,8 +1217,7 @@ void CScriptedAdventureAI::showTeleportDialog(const CGHeroInstance * hero, Telep
 	(void)hero;
 	(void)channel;
 	const int answer = (!impassable && !exits.empty()) ? 0 : -1;
-	status.addQuery(askID, "ScriptedAdventureAI teleport dialog");
-	answerQueryWithoutGameStateLock("scriptedShowTeleportDialog", askID, answer);
+	answerScriptActionDialog("ScriptedAdventureAI teleport dialog", "scriptedShowTeleportDialog", askID, answer);
 }
 
 void CScriptedAdventureAI::showMapObjectSelectDialog(QueryID askID, const Component & icon, const MetaString & title, const MetaString & description, const std::vector<ObjectInstanceID> & objects)
@@ -1213,8 +1232,7 @@ void CScriptedAdventureAI::showMapObjectSelectDialog(QueryID askID, const Compon
 	(void)title;
 	(void)description;
 	const int answer = objects.empty() ? 0 : objects.front().getNum();
-	status.addQuery(askID, "ScriptedAdventureAI map object select dialog");
-	answerQueryWithoutGameStateLock("scriptedShowMapObjectSelectDialog", askID, answer);
+	answerScriptActionDialog("ScriptedAdventureAI map object select dialog", "scriptedShowMapObjectSelectDialog", askID, answer);
 }
 
 void CScriptedAdventureAI::buildChanged(const CGTownInstance * town, BuildingID buildingID, int what)
@@ -1289,16 +1307,46 @@ void CScriptedAdventureAI::showTavernWindow(const CGObjectInstance * object, con
 
 void CScriptedAdventureAI::heroExchangeStarted(ObjectInstanceID hero1, ObjectInstanceID hero2, QueryID query)
 {
+	if(isScriptActionAutoAnswerMode())
+	{
+		// Native exchange handling may rearrange artifacts/army as a side effect.
+		// That is valid fallback behavior, but scripted actions need an explicit
+		// transfer/preparation plan action before such changes are made.
+		(void)hero1;
+		(void)hero2;
+		answerScriptActionDialog("ScriptedAdventureAI hero exchange dialog", "scriptedHeroExchangeStarted", query, 0);
+		return;
+	}
+
 	AIGateway::heroExchangeStarted(hero1, hero2, query);
 }
 
 void CScriptedAdventureAI::showGarrisonDialog(const CArmedInstance * up, const CGHeroInstance * down, bool removableUnits, QueryID queryID, const MetaString & customTitle)
 {
+	if(isScriptActionAutoAnswerMode())
+	{
+		(void)up;
+		(void)down;
+		(void)removableUnits;
+		(void)customTitle;
+		answerScriptActionDialog("ScriptedAdventureAI garrison dialog", "scriptedShowGarrisonDialog", queryID, 0);
+		return;
+	}
+
 	AIGateway::showGarrisonDialog(up, down, removableUnits, queryID, customTitle);
 }
 
 void CScriptedAdventureAI::showRecruitmentDialog(const CGDwelling * dwelling, const CArmedInstance * dst, int level, QueryID queryID)
 {
+	if(isScriptActionAutoAnswerMode())
+	{
+		(void)dwelling;
+		(void)dst;
+		(void)level;
+		answerScriptActionDialog("ScriptedAdventureAI recruitment dialog", "scriptedShowRecruitmentDialog", queryID, 0);
+		return;
+	}
+
 	AIGateway::showRecruitmentDialog(dwelling, dst, level, queryID);
 }
 

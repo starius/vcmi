@@ -797,16 +797,30 @@ Regression harness:
   ScriptedAdventureAI with the all-fallback Lua control initially won only 1/10. The root cause was not Lua policy:
   fallback still ran through `CScriptedAdventureAI` dialog overrides, so Nullkiller inherited simplified scripted
   answers for level-ups, blocking dialogs, garrisons, recruitment, markets, and hero exchange. Native Nullkiller
-  dialog handling is now preserved for fallback and for most script-triggered modal dialogs; custom scripted answers
-  remain only where Nullkiller's native handler depends on its own selected target, such as teleport and map-object
-  selection. After the fix, all-fallback ScriptedAdventureAI also won 7/10 on the corpus, matching the mirror by
-  win count.
-- The same debugging pass found that Lua-owned `visit_object` actions could leave clients asleep on a stale modal
-  query, for example a garrison dialog opened by movement. Scripted query replies are now always sent
-  asynchronously, and rich modal dialogs are delegated to Nullkiller's native handlers. A targeted day-35 rerun of
-  the two formerly stuck seeds completed with exit 0: one reached the day limit and one ended normally. This
-  separates integration correctness from policy quality; the default Lua policy still needs a fresh full-corpus run
-  and should not be promoted over the fixed all-fallback control until it wins or does not regress.
+  dialog handling is now preserved for fallback turns. After the fix, all-fallback ScriptedAdventureAI also won
+  7/10 on the corpus, matching the mirror by win count.
+- The same debugging pass found two opposite modal-query hazards. First, Lua-owned `visit_object` actions could
+  leave clients asleep on a stale modal query, for example a garrison dialog opened by movement, so scripted query
+  replies are now always sent asynchronously. Second, delegating rich modal callbacks to Nullkiller during a
+  script-owned action let native helper code perform hidden side effects, especially hero exchange artifact/army
+  rearrangement. Fallback turns still use native Nullkiller dialog handling, but script-owned movement/object
+  actions now answer garrison, hero-exchange, recruitment, teleport, map-object-selection, and blocking dialogs
+  through the scripted executor boundary. This is a containment fix, not the final strategy interface.
+- Dialogs should become typed `AdventurePlan` decision points instead of raw UI automation. A plan may predeclare
+  semantic policies such as chest reward preference, teleport-exit preference, level-up preference, object-selection
+  preference, or "pause and replan on unexpected choice." If an unplanned query appears, the executor should return
+  structured progress such as `needs_choice` with the visible dialog state and current script memory, then call Lua
+  again. The Lua side still returns data; it does not call game actions directly.
+- Artifact and army rearrangement should be added back as explicit strategy capabilities, not hidden callback
+  behavior. Candidate action names should stay declarative, for example `prepare_hero`, `transfer_army`, and
+  `rearrange_artifacts`, with intent fields such as `combat`, `mobility`, `scout`, `defend_town`, or
+  `deliver_army`. The C++ executor can then use existing legal Nullkiller mechanics and trace every resulting
+  transfer so script iterations can learn whether the preparation helped.
+- A fresh 10-game default-script run after the callback-boundary fix ended without timeouts: ScriptedAdventureAI
+  won 3/10 and Nullkiller2 won 7/10, average completion day 60.4. The run confirms that the integration bug is
+  contained, but the default script is still strategically weaker than native Nullkiller/fallback. Trace summaries
+  point at oversteering, one-action replanning, visible-threat escape gaps, and missing high-level Nullkiller task
+  fragments rather than game-data or run-control failures.
 - `scripts/ai/runAdventureAIBatch.py` terminates a stale client process after a terminal game outcome has appeared
   in stdout and a short grace period has elapsed. This keeps unattended evaluation batches from hanging while still
   recording the completed outcome and traces.
