@@ -144,6 +144,17 @@ enum class ScriptObjectKind : int32_t
 	QUEST = 14
 };
 
+enum class ScriptObjectControlKind : int32_t
+{
+	SELF = 0,
+	ALLY = 1,
+	ENEMY = 2,
+	NEUTRAL = 3,
+	UNFLAGGABLE = 4,
+	CANNOT_DETERMINE = 5,
+	UNKNOWN = 6
+};
+
 enum class ScriptArmyTransferKind : int32_t
 {
 	UNKNOWN = 0,
@@ -279,6 +290,27 @@ const char * scriptObjectKindName(ScriptObjectKind kind)
 		return "market";
 	case ScriptObjectKind::QUEST:
 		return "quest";
+	default:
+		return "unknown";
+	}
+}
+
+const char * scriptObjectControlKindName(ScriptObjectControlKind kind)
+{
+	switch(kind)
+	{
+	case ScriptObjectControlKind::SELF:
+		return "self";
+	case ScriptObjectControlKind::ALLY:
+		return "ally";
+	case ScriptObjectControlKind::ENEMY:
+		return "enemy";
+	case ScriptObjectControlKind::NEUTRAL:
+		return "neutral";
+	case ScriptObjectControlKind::UNFLAGGABLE:
+		return "unflaggable";
+	case ScriptObjectControlKind::CANNOT_DETERMINE:
+		return "cannot_determine";
 	default:
 		return "unknown";
 	}
@@ -1228,6 +1260,27 @@ std::string playerStatusName(EPlayerStatus status)
 		return "winner";
 	}
 	return "unknown";
+}
+
+ScriptObjectControlKind scriptObjectControlKind(const std::shared_ptr<CCallback> & callback, PlayerColor player, PlayerColor owner)
+{
+	if(owner == player)
+		return ScriptObjectControlKind::SELF;
+	if(owner == PlayerColor::NEUTRAL)
+		return ScriptObjectControlKind::NEUTRAL;
+	if(owner == PlayerColor::UNFLAGGABLE)
+		return ScriptObjectControlKind::UNFLAGGABLE;
+	if(owner == PlayerColor::CANNOT_DETERMINE)
+		return ScriptObjectControlKind::CANNOT_DETERMINE;
+	if(owner.isValidPlayer() && callback)
+	{
+		const PlayerRelations relation = callback->getPlayerRelations(player, owner);
+		if(relation == PlayerRelations::ALLIES)
+			return ScriptObjectControlKind::ALLY;
+		if(relation == PlayerRelations::ENEMIES)
+			return ScriptObjectControlKind::ENEMY;
+	}
+	return ScriptObjectControlKind::UNKNOWN;
 }
 
 bool canExposeMarketDetails(const CGObjectInstance * object, PlayerColor player)
@@ -8976,7 +9029,21 @@ JsonNode CScriptedAdventureAI::makeScriptInputState()
 	state["questCount"] = JsonNode(static_cast<int32_t>(state["quests"].Vector().size()));
 
 	const std::vector<int3> visibleTiles = visibleMapTiles(cc, playerID);
+	const size_t totalMapTiles = static_cast<size_t>(mapSize.x) * static_cast<size_t>(mapSize.y) * static_cast<size_t>(mapSize.z);
+	const size_t tilesPerLevel = static_cast<size_t>(mapSize.x) * static_cast<size_t>(mapSize.y);
+	std::vector<int32_t> exploredTilesByLevel(static_cast<size_t>(mapSize.z), 0);
+	int32_t exploredLandTiles = 0;
+	int32_t exploredWaterTiles = 0;
+	int32_t exploredRockTiles = 0;
+	int32_t exploredPassableTiles = 0;
+	int32_t exploredBlockedTiles = 0;
+	int32_t exploredVisitableTiles = 0;
+	int32_t exploredRoadTiles = 0;
+	std::map<int32_t, int32_t> visibleObjectKindCounts;
+	std::map<int32_t, int32_t> visibleObjectControlCounts;
+	std::map<int32_t, int32_t> visibleObjectOwnerCounts;
 
+	state["map"]["totalTiles"] = JsonNode(static_cast<int32_t>(totalMapTiles));
 	state["map"]["visibleTilesCount"] = JsonNode(static_cast<int32_t>(visibleTiles.size()));
 	state["map"]["visibleTileSampleLimit"] = JsonNode(static_cast<int32_t>(visibleTiles.size()));
 	state["map"]["visibleTilesComplete"] = JsonNode(true);
@@ -8990,6 +9057,28 @@ JsonNode CScriptedAdventureAI::makeScriptInputState()
 		const TerrainTile * tile = cc->getTile(position, false);
 		if(!tile)
 			continue;
+
+		if(position.z >= 0 && position.z < mapSize.z)
+			++exploredTilesByLevel[static_cast<size_t>(position.z)];
+		const TerrainType * terrain = tile->getTerrain();
+		if(terrain)
+		{
+			if(terrain->isRock())
+				++exploredRockTiles;
+			else if(terrain->isWater())
+				++exploredWaterTiles;
+			else
+				++exploredLandTiles;
+			if(terrain->isPassable())
+				++exploredPassableTiles;
+		}
+		if(tile->blocked())
+			++exploredBlockedTiles;
+		if(tile->visitable())
+			++exploredVisitableTiles;
+		if(tile->hasRoad())
+			++exploredRoadTiles;
+
 		state["map"]["visibleTiles"].Vector().push_back(jsonVisibleTile(position, *tile, cc, playerID));
 
 		auto appendVisibleObject = [&](ObjectInstanceID objectID)
@@ -9004,6 +9093,11 @@ JsonNode CScriptedAdventureAI::makeScriptInputState()
 				return;
 
 			++visibleObjectCount;
+			const ScriptObjectKind objectKind = scriptObjectKind(object->ID);
+			const ScriptObjectControlKind controlKind = scriptObjectControlKind(cc, playerID, object->tempOwner);
+			++visibleObjectKindCounts[static_cast<int32_t>(objectKind)];
+			++visibleObjectControlCounts[static_cast<int32_t>(controlKind)];
+			++visibleObjectOwnerCounts[object->tempOwner.getNum()];
 			state["map"]["visibleObjects"].Vector().push_back(jsonMapObject(object, playerID, nullptr));
 		};
 
@@ -9017,6 +9111,55 @@ JsonNode CScriptedAdventureAI::makeScriptInputState()
 	state["map"]["visibleObjectsComplete"] = JsonNode(true);
 	state["map"]["visibleObjectsTruncated"] = JsonNode(false);
 	state["map"]["visibleTilesTruncated"] = JsonNode(false);
+	state["map"]["exploredTilesCount"] = JsonNode(static_cast<int32_t>(visibleTiles.size()));
+	state["map"]["exploredRatio"].Float() = totalMapTiles > 0 ? static_cast<double>(visibleTiles.size()) / static_cast<double>(totalMapTiles) : 0.0;
+	state["map"]["exploredLandTilesCount"] = JsonNode(exploredLandTiles);
+	state["map"]["exploredWaterTilesCount"] = JsonNode(exploredWaterTiles);
+	state["map"]["exploredRockTilesCount"] = JsonNode(exploredRockTiles);
+	state["map"]["exploredPassableTilesCount"] = JsonNode(exploredPassableTiles);
+	state["map"]["exploredBlockedTilesCount"] = JsonNode(exploredBlockedTiles);
+	state["map"]["exploredVisitableTilesCount"] = JsonNode(exploredVisitableTiles);
+	state["map"]["exploredRoadTilesCount"] = JsonNode(exploredRoadTiles);
+	state["map"]["exploredByLevel"].Vector();
+	for(int32_t z = 0; z < mapSize.z; ++z)
+	{
+		JsonNode levelNode;
+		levelNode["level"] = JsonNode(z);
+		levelNode["totalTiles"] = JsonNode(static_cast<int32_t>(tilesPerLevel));
+		levelNode["exploredTilesCount"] = JsonNode(exploredTilesByLevel[static_cast<size_t>(z)]);
+		levelNode["exploredRatio"].Float() = tilesPerLevel > 0 ? static_cast<double>(exploredTilesByLevel[static_cast<size_t>(z)]) / static_cast<double>(tilesPerLevel) : 0.0;
+		state["map"]["exploredByLevel"].Vector().push_back(levelNode);
+	}
+
+	JsonNode & control = state["map"]["visibleControl"];
+	control["objectCountsByKind"].Vector();
+	for(const auto & [kindID, count] : visibleObjectKindCounts)
+	{
+		JsonNode countNode;
+		countNode["kindId"] = JsonNode(kindID);
+		countNode["kind"] = JsonNode(scriptObjectKindName(static_cast<ScriptObjectKind>(kindID)));
+		countNode["count"] = JsonNode(count);
+		control["objectCountsByKind"].Vector().push_back(countNode);
+	}
+	control["objectCountsByControl"].Vector();
+	for(const auto & [controlID, count] : visibleObjectControlCounts)
+	{
+		JsonNode countNode;
+		countNode["controlId"] = JsonNode(controlID);
+		countNode["control"] = JsonNode(scriptObjectControlKindName(static_cast<ScriptObjectControlKind>(controlID)));
+		countNode["count"] = JsonNode(count);
+		control["objectCountsByControl"].Vector().push_back(countNode);
+	}
+	control["objectCountsByOwner"].Vector();
+	for(const auto & [ownerID, count] : visibleObjectOwnerCounts)
+	{
+		const PlayerColor owner(ownerID);
+		JsonNode countNode;
+		countNode["ownerId"] = JsonNode(ownerID);
+		countNode["owner"] = JsonNode(jsonPlayerColor(owner));
+		countNode["count"] = JsonNode(count);
+		control["objectCountsByOwner"].Vector().push_back(countNode);
+	}
 	return state;
 }
 

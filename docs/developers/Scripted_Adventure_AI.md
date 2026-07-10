@@ -164,6 +164,10 @@ Input:
 - current day/week/month and active player color under `state`. `state.calendar` also includes stable numeric
   `currentDay`, `dayOfWeek`, `dayOfMonth`, `week`, `month`, `daysInWeek`, `weeksInMonth`, and `daysInMonth`
   fields for scripts that reason about growth, timed quests, or build timing.
+- `state.map`: map dimensions plus the current player-visible/explored tile and object snapshot. In addition to
+  the raw visible tile/object arrays, it includes compact explored-area counters and ratios, per-level explored
+  counts, terrain-class counts, and `visibleControl` summaries by object kind, owner, and relation/control id.
+  These summaries are derived only from the same visible tile/object scan that populates the raw arrays.
 - `state.grail`: player-specific puzzle-map knowledge. `knownRatio` is visible to Lua, but the exact `position`
   is included only when the puzzle is fully revealed; partially revealed puzzle maps intentionally do not expose
   the hidden grail tile even though the client internally needs it for rendering.
@@ -1828,11 +1832,14 @@ Regression harness:
   The binding uses numeric ids for script decisions, keeps labels as trace context, gates detailed player-state
   fields through the normal callback access rules, and deliberately excludes enemy economy, army, hero-count, and
   town-count data.
+- Done: `state.map` now includes compact explored-area and visible-control summaries derived from the existing
+  visible tile/object snapshot. Scripts can reason over exploration progress, terrain composition, and visible
+  control balance without rescanning raw tile/object arrays or looking at hidden map state.
 - Done: after adding explicit `nullkiller_reset`, a 16-map, 1-day traced integration smoke completed all scenarios
   at the day limit with 16 `end_turn` outputs, 20 bounded `nullkiller_turn_slice` calls, 145 checked `visit_object`
   actions, 18 bounded query answers, zero failed checked actions, and zero fallback outputs.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus, then add
-  engine-level explored-area and map-control deltas.
+  longitudinal map-control deltas to the evaluation traces.
 
 ## Open Design Questions
 
