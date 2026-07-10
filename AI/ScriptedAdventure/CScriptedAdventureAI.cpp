@@ -410,6 +410,15 @@ int32_t scriptActionTypeId(const std::string & type)
 	return 0;
 }
 
+void setScriptActionType(JsonNode & action, const std::string & type)
+{
+	action["type"] = JsonNode(type);
+	const int32_t typeId = scriptActionTypeId(type);
+	if(typeId == 0)
+		throw std::invalid_argument("Script action type has no stable numeric id: " + type);
+	action["type_id"] = JsonNode(typeId);
+}
+
 std::string scriptActionTypeFromId(int32_t typeId)
 {
 	for(const auto & entry : scriptActionTypeRegistry())
@@ -1435,7 +1444,7 @@ JsonNode jsonMarketSkillOption(
 	node["buyable"] = JsonNode(visitor && !alreadyKnown && canLearnAny && canLearn && affordable);
 	if(visitor && heroManager)
 		node["nullkillerSkillScore"].Float() = heroManager->evaluateSecSkill(skillID, visitor);
-	node["planAction"]["type"] = JsonNode("market_trade");
+	setScriptActionType(node["planAction"], "market_trade");
 	node["planAction"]["market_id"] = JsonNode(market->getObjInstanceID().getNum());
 	node["planAction"]["mode_id"] = JsonNode(static_cast<int32_t>(EMarketMode::RESOURCE_SKILL));
 	if(visitor)
@@ -1636,7 +1645,7 @@ JsonNode jsonArtifactAssemblyPrompt(QueryID decisionID, const CGHeroInstance * h
 	data["hero_id"] = JsonNode(hero->id.getNum());
 	data["slot"] = JsonNode(destination.slot.getNum());
 	data["assemblyOptions"].Vector();
-	data["ignoreAction"]["type"] = JsonNode("ignore_script_query");
+	setScriptActionType(data["ignoreAction"], "ignore_script_query");
 	data["ignoreAction"]["query_id"] = JsonNode(decisionID.getNum());
 
 	const CArtifactInstance * artifact = hero->getArt(destination.slot);
@@ -1660,7 +1669,7 @@ JsonNode jsonArtifactAssemblyPrompt(QueryID decisionID, const CGHeroInstance * h
 			option["artifactIdentifier"] = JsonNode(combinedArtifact->getJsonKey());
 			option["artifactName"] = JsonNode(jsonText(combinedArtifact->getNameTranslated()));
 			option["fused"] = JsonNode(combinedArtifact->isFused());
-			option["planAction"]["type"] = JsonNode("assemble_artifacts");
+			setScriptActionType(option["planAction"], "assemble_artifacts");
 			option["planAction"]["hero_id"] = data["hero_id"];
 			option["planAction"]["slot"] = data["slot"];
 			option["planAction"]["assemble"] = JsonNode(true);
@@ -1711,7 +1720,7 @@ bool heroCanUseMarketAltar(const CGHeroInstance * hero, const CGObjectInstance *
 JsonNode jsonArtifactAltarStageAction(ObjectInstanceID marketID, ObjectInstanceID heroID, ArtifactPosition slot)
 {
 	JsonNode action;
-	action["type"] = JsonNode("swap_artifacts");
+	setScriptActionType(action, "swap_artifacts");
 	action["src"]["holder_id"] = JsonNode(heroID.getNum());
 	action["src"]["slot"] = JsonNode(slot.getNum());
 	action["dst"]["holder_id"] = JsonNode(marketID.getNum());
@@ -1722,7 +1731,7 @@ JsonNode jsonArtifactAltarStageAction(ObjectInstanceID marketID, ObjectInstanceI
 JsonNode jsonArtifactAltarBulkStageAction(ObjectInstanceID marketID, ObjectInstanceID heroID, bool equipped, bool backpack)
 {
 	JsonNode action;
-	action["type"] = JsonNode("bulk_move_artifacts");
+	setScriptActionType(action, "bulk_move_artifacts");
 	action["src_id"] = JsonNode(heroID.getNum());
 	action["dst_id"] = JsonNode(marketID.getNum());
 	action["src_hero_id"] = JsonNode(heroID.getNum());
@@ -1735,7 +1744,7 @@ JsonNode jsonArtifactAltarBulkStageAction(ObjectInstanceID marketID, ObjectInsta
 JsonNode jsonArtifactAltarSacrificeAction(ObjectInstanceID marketID, ObjectInstanceID heroID, ArtifactInstanceID artifactInstanceID)
 {
 	JsonNode action;
-	action["type"] = JsonNode("market_trade");
+	setScriptActionType(action, "market_trade");
 	action["market_id"] = JsonNode(marketID.getNum());
 	action["mode_id"] = JsonNode(static_cast<int32_t>(EMarketMode::ARTIFACT_EXP));
 	action["hero_id"] = JsonNode(heroID.getNum());
@@ -1746,7 +1755,7 @@ JsonNode jsonArtifactAltarSacrificeAction(ObjectInstanceID marketID, ObjectInsta
 JsonNode jsonArtifactAltarBulkSacrificeAction(ObjectInstanceID marketID, ObjectInstanceID heroID, const std::vector<ArtifactInstanceID> & artifactInstanceIDs)
 {
 	JsonNode action;
-	action["type"] = JsonNode("market_trade");
+	setScriptActionType(action, "market_trade");
 	action["market_id"] = JsonNode(marketID.getNum());
 	action["mode_id"] = JsonNode(static_cast<int32_t>(EMarketMode::ARTIFACT_EXP));
 	action["hero_id"] = JsonNode(heroID.getNum());
@@ -1759,7 +1768,7 @@ JsonNode jsonArtifactAltarBulkSacrificeAction(ObjectInstanceID marketID, ObjectI
 JsonNode jsonCreatureAltarSacrificeAction(ObjectInstanceID marketID, ObjectInstanceID heroID, SlotID slot, int32_t amount)
 {
 	JsonNode action;
-	action["type"] = JsonNode("market_trade");
+	setScriptActionType(action, "market_trade");
 	action["market_id"] = JsonNode(marketID.getNum());
 	action["mode_id"] = JsonNode(static_cast<int32_t>(EMarketMode::CREATURE_EXP));
 	action["hero_id"] = JsonNode(heroID.getNum());
@@ -1771,7 +1780,7 @@ JsonNode jsonCreatureAltarSacrificeAction(ObjectInstanceID marketID, ObjectInsta
 JsonNode jsonCreatureAltarBulkSacrificeAction(ObjectInstanceID marketID, ObjectInstanceID heroID, const std::vector<SlotID> & slots, const std::vector<int32_t> & amounts)
 {
 	JsonNode action;
-	action["type"] = JsonNode("market_trade");
+	setScriptActionType(action, "market_trade");
 	action["market_id"] = JsonNode(marketID.getNum());
 	action["mode_id"] = JsonNode(static_cast<int32_t>(EMarketMode::CREATURE_EXP));
 	action["hero_id"] = JsonNode(heroID.getNum());
@@ -2360,16 +2369,16 @@ JsonNode jsonNullkillerSubroutineOption(
 	option["maxCandidates"] = JsonNode(maxCandidates);
 	option["maxAttempts"] = JsonNode(maxAttempts);
 
-	option["tasksAction"]["type"] = JsonNode("nullkiller_tasks");
+	setScriptActionType(option["tasksAction"], "nullkiller_tasks");
 	option["tasksAction"]["mode"] = option["modeId"];
 	option["tasksAction"]["max_candidates"] = option["maxCandidates"];
 
-	option["stepAction"]["type"] = JsonNode("nullkiller_step");
+	setScriptActionType(option["stepAction"], "nullkiller_step");
 	option["stepAction"]["mode"] = option["modeId"];
 	option["stepAction"]["max_candidates"] = option["maxCandidates"];
 	option["stepAction"]["max_attempts"] = option["maxAttempts"];
 
-	option["passAction"]["type"] = JsonNode("nullkiller_pass");
+	setScriptActionType(option["passAction"], "nullkiller_pass");
 	option["passAction"]["mode"] = option["modeId"];
 	option["passAction"]["max_steps"] = option["maxSteps"];
 	option["passAction"]["max_candidates"] = option["maxCandidates"];
@@ -2386,7 +2395,7 @@ JsonNode jsonNullkillerPriorityPassOption()
 	option["helperKind"] = JsonNode("priority_pass");
 	option["bounded"] = JsonNode(true);
 	option["delegatesRestOfDay"] = JsonNode(false);
-	option["planAction"]["type"] = JsonNode("nullkiller_priority_pass");
+	setScriptActionType(option["planAction"], "nullkiller_priority_pass");
 	option["planAction"]["pass_index"] = JsonNode(1);
 	return option;
 }
@@ -2398,7 +2407,7 @@ JsonNode jsonNullkillerResourceTradeOption()
 	option["helperKind"] = JsonNode("resource_trade");
 	option["bounded"] = JsonNode(true);
 	option["delegatesRestOfDay"] = JsonNode(false);
-	option["planAction"]["type"] = JsonNode("nullkiller_trade");
+	setScriptActionType(option["planAction"], "nullkiller_trade");
 	return option;
 }
 
@@ -2409,7 +2418,7 @@ JsonNode jsonNullkillerOptimizeArtifactsOption()
 	option["helperKind"] = JsonNode("artifact_optimization");
 	option["bounded"] = JsonNode(true);
 	option["delegatesRestOfDay"] = JsonNode(false);
-	option["planAction"]["type"] = JsonNode("nullkiller_optimize_artifacts");
+	setScriptActionType(option["planAction"], "nullkiller_optimize_artifacts");
 	return option;
 }
 
@@ -2423,7 +2432,7 @@ JsonNode jsonNullkillerTurnSliceOption()
 	option["maxPasses"] = JsonNode(1);
 	option["maxCandidates"] = JsonNode(16);
 	option["maxAttempts"] = JsonNode(16);
-	option["planAction"]["type"] = JsonNode("nullkiller_turn_slice");
+	setScriptActionType(option["planAction"], "nullkiller_turn_slice");
 	option["planAction"]["max_passes"] = option["maxPasses"];
 	option["planAction"]["max_candidates"] = option["maxCandidates"];
 	option["planAction"]["max_attempts"] = option["maxAttempts"];
@@ -2437,14 +2446,14 @@ JsonNode jsonNullkillerResetOption()
 	option["helperKind"] = JsonNode("planner_reset");
 	option["bounded"] = JsonNode(true);
 	option["delegatesRestOfDay"] = JsonNode(false);
-	option["planAction"]["type"] = JsonNode("nullkiller_reset");
+	setScriptActionType(option["planAction"], "nullkiller_reset");
 	return option;
 }
 
 JsonNode jsonAnswerQueryAction(QueryID queryID, int32_t answer)
 {
 	JsonNode action;
-	action["type"] = JsonNode("answer_query");
+	setScriptActionType(action, "answer_query");
 	action["query_id"] = JsonNode(queryID.getNum());
 	action["answer"] = JsonNode(answer);
 	return action;
@@ -2453,7 +2462,7 @@ JsonNode jsonAnswerQueryAction(QueryID queryID, int32_t answer)
 JsonNode jsonCancelQueryAction(QueryID queryID)
 {
 	JsonNode action;
-	action["type"] = JsonNode("cancel_query");
+	setScriptActionType(action, "cancel_query");
 	action["query_id"] = JsonNode(queryID.getNum());
 	return action;
 }
@@ -2461,7 +2470,7 @@ JsonNode jsonCancelQueryAction(QueryID queryID)
 JsonNode jsonNullkillerAnswerQueryAction(QueryID queryID)
 {
 	JsonNode action;
-	action["type"] = JsonNode("nullkiller_answer_query");
+	setScriptActionType(action, "nullkiller_answer_query");
 	action["query_id"] = JsonNode(queryID.getNum());
 	return action;
 }
@@ -3618,7 +3627,7 @@ JsonNode jsonRecruitOption(const CGDwelling * dwelling, const CArmedInstance * d
 	node["amount"] = JsonNode(amount);
 	if(creature)
 		node["cost"] = jsonResources(creature->getFullRecruitCost());
-	node["planAction"]["type"] = JsonNode("recruit");
+	setScriptActionType(node["planAction"], "recruit");
 	node["planAction"]["source_id"] = node["source_id"];
 	node["planAction"]["destination_id"] = node["destination_id"];
 	node["planAction"]["level"] = node["level"];
@@ -3703,7 +3712,7 @@ JsonNode jsonAvailableHeroOption(const CGObjectInstance * source, const CGHeroIn
 	node["totalStrength"] = JsonNode(static_cast<int64_t>(hero->getTotalStrength()));
 	node["cost"]["gold"] = JsonNode(GameConstants::HERO_GOLD_COST);
 	node["army"] = jsonArmy(*hero);
-	node["planAction"]["type"] = JsonNode("hire_hero");
+	setScriptActionType(node["planAction"], "hire_hero");
 	node["planAction"]["source_id"] = node["source_id"];
 	if(node.Struct().contains("town_id"))
 		node["planAction"]["town_id"] = node["town_id"];
@@ -3826,7 +3835,7 @@ JsonNode jsonArmyTransferOption(
 	node["sourceArmyStrength"] = JsonNode(static_cast<int64_t>(source->getArmyStrength()));
 	node["destinationArmyStrength"] = JsonNode(static_cast<int64_t>(destination->getArmyStrength()));
 	node["value"] = JsonNode(static_cast<int64_t>(source->getArmyStrength()));
-	node["planAction"]["type"] = JsonNode("transfer_army");
+	setScriptActionType(node["planAction"], "transfer_army");
 	node["planAction"]["source_id"] = node["source_id"];
 	node["planAction"]["destination_id"] = node["destination_id"];
 	node["planAction"]["source_slot"] = node["source_slot"];
@@ -3862,7 +3871,7 @@ JsonNode jsonUpgradeCreatureOption(
 	node["currentValue"] = JsonNode(currentValue);
 	node["upgradedValue"] = JsonNode(upgradedValue);
 	node["value"] = JsonNode(upgradedValue - currentValue);
-	node["planAction"]["type"] = JsonNode("upgrade_creature");
+	setScriptActionType(node["planAction"], "upgrade_creature");
 	node["planAction"]["army_id"] = node["army_id"];
 	node["planAction"]["slot"] = node["slot"];
 	node["planAction"]["creature_id"] = node["upgrade_creature_id"];
@@ -3980,11 +3989,11 @@ std::optional<JsonNode> jsonSpellResearchOption(
 	node["acceptedResearches"] = JsonNode(town->spellResearchAcceptedCounter);
 	node["pendingRerolls"] = JsonNode(town->spellResearchPendingRerollsCounters[levelIndex]);
 	node["researchesToday"] = JsonNode(town->spellResearchCounterDay);
-	node["planAction"]["type"] = JsonNode("spell_research");
+	setScriptActionType(node["planAction"], "spell_research");
 	node["planAction"]["town_id"] = node["town_id"];
 	node["planAction"]["spell_id"] = node["spell_id"];
 	node["planAction"]["accept"] = JsonNode(true);
-	node["rerollAction"]["type"] = JsonNode("spell_research");
+	setScriptActionType(node["rerollAction"], "spell_research");
 	node["rerollAction"]["town_id"] = node["town_id"];
 	node["rerollAction"]["spell_id"] = node["spell_id"];
 	node["rerollAction"]["accept"] = JsonNode(false);
@@ -4109,7 +4118,7 @@ JsonNode jsonBuildOption(const CGTownInstance * town, const CBuilding * building
 	node["building"] = JsonNode(jsonText(building->getNameTranslated()));
 	node["cost"] = jsonResources(building->resources);
 	node["income"] = jsonResources(building->produce);
-	node["planAction"]["type"] = JsonNode("build");
+	setScriptActionType(node["planAction"], "build");
 	node["planAction"]["town_id"] = node["town_id"];
 	node["planAction"]["building_id"] = node["building_id"];
 	return node;
@@ -4125,7 +4134,7 @@ JsonNode jsonDigOption(const CGHeroInstance * hero)
 	node["statusId"] = JsonNode(static_cast<int32_t>(status));
 	node["status"] = JsonNode(diggingStatusName(status));
 	node["canDig"] = JsonNode(status == EDiggingStatus::CAN_DIG);
-	node["planAction"]["type"] = JsonNode("dig");
+	setScriptActionType(node["planAction"], "dig");
 	node["planAction"]["hero_id"] = node["hero_id"];
 	return node;
 }
@@ -4151,7 +4160,7 @@ JsonNode jsonShipyardOption(const CGObjectInstance * object, const IShipyard * s
 	node["affordable"] = JsonNode(affordable);
 	node["enemy"] = JsonNode(enemy);
 	node["buildable"] = JsonNode(buildable);
-	node["planAction"]["type"] = JsonNode("build_boat");
+	setScriptActionType(node["planAction"], "build_boat");
 	node["planAction"]["shipyard_id"] = node["shipyard_id"];
 	return node;
 }
@@ -4193,7 +4202,7 @@ JsonNode jsonAdventureSpellOption(
 	node["targetKindId"] = JsonNode(targetKindID);
 	node["targetKind"] = JsonNode(targetKind);
 	node["hasTarget"] = JsonNode(static_cast<bool>(target));
-	node["planAction"]["type"] = JsonNode("cast_spell");
+	setScriptActionType(node["planAction"], "cast_spell");
 	node["planAction"]["hero_id"] = node["hero_id"];
 	node["planAction"]["spell_id"] = node["spell_id"];
 
@@ -4283,7 +4292,7 @@ JsonNode jsonBuyArtifactOption(const CGHeroInstance * hero, ArtifactID artifactI
 		if(artifact->getWarMachine() != CreatureID::NONE)
 			node["warMachineCreatureId"] = JsonNode(artifact->getWarMachine().getNum());
 	}
-	node["planAction"]["type"] = JsonNode("buy_artifact");
+	setScriptActionType(node["planAction"], "buy_artifact");
 	node["planAction"]["hero_id"] = node["hero_id"];
 	node["planAction"]["artifact_id"] = node["artifact_id"];
 	return node;
@@ -6124,7 +6133,7 @@ bool CScriptedAdventureAI::executeNullkillerPassAction(const JsonNode & action, 
 	for(size_t stepIndex = 0; stepIndex < maxSteps && status.haveTurn(); ++stepIndex)
 	{
 		JsonNode stepAction = action;
-		stepAction["type"] = JsonNode("nullkiller_step");
+		setScriptActionType(stepAction, "nullkiller_step");
 		if(!hasField(stepAction, "mode"))
 			stepAction["mode"] = JsonNode(static_cast<int32_t>(NK2AI::ScriptTaskSearchMode::ADVENTURE));
 
@@ -6227,7 +6236,7 @@ bool CScriptedAdventureAI::executeNullkillerTurnSliceAction(const JsonNode & act
 		if(includePriority)
 		{
 			JsonNode priorityAction;
-			priorityAction["type"] = JsonNode("nullkiller_priority_pass");
+			setScriptActionType(priorityAction, "nullkiller_priority_pass");
 			priorityAction["pass_index"] = JsonNode(firstPassIndex + static_cast<int32_t>(passIndex));
 
 			JsonNode priorityResult;
@@ -6255,7 +6264,7 @@ bool CScriptedAdventureAI::executeNullkillerTurnSliceAction(const JsonNode & act
 		if(!passPaused && !passShouldStop && includeAdventure && status.haveTurn())
 		{
 			JsonNode stepAction = action;
-			stepAction["type"] = JsonNode("nullkiller_step");
+			setScriptActionType(stepAction, "nullkiller_step");
 			if(hasField(action, "adventure_mode"))
 				stepAction["mode"] = action["adventure_mode"];
 			else if(!hasField(stepAction, "mode"))
@@ -8613,7 +8622,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		option["delegatesRestOfDay"] = JsonNode(false);
 		option["town_id"] = JsonNode(town->id.getNum());
 		option["town"] = jsonTown(town, resources, true);
-		option["planAction"]["type"] = JsonNode("nullkiller_build_army");
+		setScriptActionType(option["planAction"], "nullkiller_build_army");
 		option["planAction"]["town_id"] = option["town_id"];
 		actionSpace["nullkillerHelperOptions"].Vector().push_back(option);
 	};
@@ -8631,7 +8640,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		option["delegatesRestOfDay"] = JsonNode(false);
 		option["army_id"] = JsonNode(army->id.getNum());
 		option["ownedArmy"] = jsonOwnedArmySnapshot(army);
-		option["planAction"]["type"] = JsonNode("nullkiller_upgrade_army");
+		setScriptActionType(option["planAction"], "nullkiller_upgrade_army");
 		option["planAction"]["army_id"] = option["army_id"];
 		actionSpace["nullkillerHelperOptions"].Vector().push_back(option);
 	};
@@ -8656,7 +8665,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 			option["destination_id"] = JsonNode(destination->id.getNum());
 			option["destinationArmy"] = jsonOwnedArmySnapshot(destination);
 		}
-		option["planAction"]["type"] = JsonNode("nullkiller_recruit_creatures");
+		setScriptActionType(option["planAction"], "nullkiller_recruit_creatures");
 		option["planAction"]["source_id"] = option["source_id"];
 		if(destination)
 			option["planAction"]["destination_id"] = option["destination_id"];
@@ -8680,7 +8689,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		option["hero_id"] = JsonNode(visitingHero->id.getNum());
 		option["town"] = jsonTown(town, resources, true);
 		option["hero"] = jsonHero(visitingHero);
-		option["planAction"]["type"] = JsonNode("nullkiller_move_creatures_to_hero");
+		setScriptActionType(option["planAction"], "nullkiller_move_creatures_to_hero");
 		option["planAction"]["town_id"] = option["town_id"];
 		actionSpace["nullkillerHelperOptions"].Vector().push_back(option);
 	};
@@ -8712,7 +8721,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		option["delegatesRestOfDay"] = JsonNode(false);
 		option["hero_id"] = JsonNode(hero->id.getNum());
 		option["hero"] = jsonHero(hero);
-		option["planAction"]["type"] = JsonNode("nullkiller_dismiss_weak_hero");
+		setScriptActionType(option["planAction"], "nullkiller_dismiss_weak_hero");
 		actionSpace["nullkillerHelperOptions"].Vector().push_back(option);
 	};
 	auto appendNullkillerFormationHelperOption = [&](
@@ -8748,7 +8757,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 			option["town_id"] = JsonNode(town->id.getNum());
 			option["townObject"] = jsonMapObject(town, playerID, nullptr);
 		}
-		option["planAction"]["type"] = JsonNode(actionType);
+		setScriptActionType(option["planAction"], actionType);
 		option["planAction"]["hero_id"] = option["hero_id"];
 		if(town)
 			option["planAction"]["town_id"] = option["town_id"];
@@ -8829,7 +8838,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 			option["other_hero_id"] = JsonNode(otherHero->id.getNum());
 			option["otherHero"] = jsonHero(otherHero);
 		}
-		option["planAction"]["type"] = JsonNode("prepare_hero");
+		setScriptActionType(option["planAction"], "prepare_hero");
 		option["planAction"]["hero_id"] = option["hero_id"];
 		option["planAction"]["include_artifacts"] = JsonNode(includeArtifacts);
 		option["planAction"]["include_creatures"] = JsonNode(includeCreatures);
@@ -8925,7 +8934,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 			option["town_id"] = JsonNode(town->id.getNum());
 			option["visitKindId"] = JsonNode(visitsBank ? 1 : 2);
 			option["visitKind"] = JsonNode(visitsBank ? "bank" : "manual_reward");
-			option["planAction"]["type"] = JsonNode("visit_town_building");
+			setScriptActionType(option["planAction"], "visit_town_building");
 			option["planAction"]["town_id"] = option["town_id"];
 			option["planAction"]["building_id"] = option["building_id"];
 			actionSpace["visitTownBuildingOptions"].Vector().push_back(option);
@@ -9005,7 +9014,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 						option["destination_town_id"] = JsonNode(destination->id.getNum());
 						option["sourceTown"] = jsonTown(town, resources, true);
 						option["destinationTown"] = jsonTown(destination, resources, true);
-						option["planAction"]["type"] = JsonNode("castle_teleport");
+						setScriptActionType(option["planAction"], "castle_teleport");
 						option["planAction"]["hero_id"] = option["hero_id"];
 						option["planAction"]["destination_town_id"] = option["destination_town_id"];
 						actionSpace["castleTeleportOptions"].Vector().push_back(option);
@@ -9280,7 +9289,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 			option["value"] = JsonNode(estimatedValue);
 			option["reason"] = JsonNode(reason);
 			option["blockedBy"].Vector();
-			option["planAction"]["type"] = JsonNode("move_hero");
+			setScriptActionType(option["planAction"], "move_hero");
 			option["planAction"]["hero_id"] = JsonNode(hero->id.getNum());
 			option["planAction"]["x"] = JsonNode(position.x);
 			option["planAction"]["y"] = JsonNode(position.y);
@@ -9310,7 +9319,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 				target["value"] = JsonNode(estimatedValue);
 				target["reason"] = JsonNode(reason + "; object target");
 				target["blockedBy"].Vector();
-				target["planAction"]["type"] = JsonNode("visit_object");
+				setScriptActionType(target["planAction"], "visit_object");
 				target["planAction"]["hero_id"] = JsonNode(hero->id.getNum());
 				target["planAction"]["object_id"] = JsonNode(topObject->id.getNum());
 				target["planAction"]["route_id"] = JsonNode(routeID);
@@ -9336,7 +9345,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		actionSpace["recommendedActions"].Vector().push_back(objectCandidates[index].json["planAction"]);
 	}
 
-	actionSpace["endTurnAction"]["type"] = JsonNode("end_turn");
+	setScriptActionType(actionSpace["endTurnAction"], "end_turn");
 	return actionSpace;
 }
 

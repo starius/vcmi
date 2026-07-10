@@ -1221,7 +1221,8 @@ Regression harness:
 - Script action dispatch now has stable numeric action ids. `actionSpace.acceptedActions` lists `{ type, typeId }`
   records, Lua publishes the same ids under `ai.actionTypeIds`, and the host accepts numeric-only `type_id` actions for
   checked execution. String `type` fields remain compatibility and trace affordances, not the preferred policy
-  branching surface.
+  branching surface. Host-published executable action records such as `planAction`, `answerAction`, `stepAction`,
+  `passAction`, `rerollAction`, and `endTurnAction` include `type_id` at the source.
 - Pending query records expose stable numeric `typeId` values, mirrored by `ai.queryTypes`, so Lua can branch on
   dialog/window kinds without parsing trace labels.
 - Script input now includes complete player-visible `state.map.visibleTiles` terrain records, tile-level visible
@@ -1498,6 +1499,8 @@ Regression harness:
   action, read-only candidate/analyzer field, or bounded Nullkiller helper that returns control to Lua.
 - Done: checked script actions can now be dispatched by stable numeric `type_id`, with `type` strings verified when
   present. This reduces string drift at the Lua/C++ boundary while preserving existing scripts and trace readability.
+  Host-generated executable action records are annotated with `type_id`, so scripts can rank and dispatch candidate
+  actions without parsing action-name strings.
 - Bounded Nullkiller helpers that invoke native task decomposition, pathfinding, task execution, priority passes,
   or resource trading use the same shared pathfinder-storage lock as native `Nullkiller::makeTurn`; add new native
   subroutines at that primitive boundary rather than around higher-level Lua loops to avoid nested lock attempts.
