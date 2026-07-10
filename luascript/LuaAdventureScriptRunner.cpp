@@ -719,6 +719,17 @@ function ai:buyArtifact(heroId, artifactId)
 	return self:execute(action)
 end
 
+function ai:spellResearch(townId, spellId, accept)
+	local action = copyFields(townId)
+	if type(townId) ~= "table" then
+		action.town_id = townId
+		action.spell_id = spellId
+		action.accept = accept ~= false
+	end
+	action.type = "spell_research"
+	return self:execute(action)
+end
+
 function ai:moveHero(heroId, x, y, z, routeId)
 	local action = copyFields(heroId)
 	if type(heroId) ~= "table" then

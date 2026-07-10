@@ -184,8 +184,8 @@ The `ai` facade:
 - `ai:marketTrade({...})` and wrappers `ai:sendResources`, `ai:sellCreatures`, `ai:buyMarketArtifact`,
   `ai:sellArtifact`, `ai:sacrificeArtifact`, `ai:sacrificeCreatures`, `ai:transformToUndead`, and `ai:buySkill`:
   request every native market mode through stable numeric mode/resource/player/slot/artifact/skill ids.
-- `ai:dismissHero`, `ai:buildBoat`, `ai:dig`, `ai:castSpell`, `ai:buyArtifact`: request checked primitive
-  adventure/town actions through the normal callback/server path.
+- `ai:dismissHero`, `ai:buildBoat`, `ai:dig`, `ai:castSpell`, `ai:buyArtifact`, and `ai:spellResearch`:
+  request checked primitive adventure/town actions through the normal callback/server path.
 - `ai:nullkiller()` / `ai:nullkillerForRestOfDay()`: stop script control and let Nullkiller finish the turn.
 - `ai:nullkillerTasks(mode, maxCandidates)`: ask Nullkiller for a bounded snapshot of native task candidates.
   `mode` is `priority`, `adventure`, or `all`. Returned `task_id` values are opaque handles that expire on
@@ -247,6 +247,10 @@ Planner input should expose stable machine fields for every meaningful concept:
 Lua policies should prefer the integer kind/id fields. Stable ASCII identifiers are acceptable for tools and
 debugging, but they should not replace numeric ids in hot scoring paths. User-visible strings are never a
 contract and may change with language packs, mods, or translation fixes.
+
+Mage-guild spell snapshots expose only spells that are currently visible to a real player. Spell research exposes
+the next replacement spell only through explicit `spellResearchOptions`, matching what the research dialog reveals;
+deeper queued spells are not exposed to scripts.
 
 ## Memory Model
 
@@ -1181,6 +1185,9 @@ Regression harness:
   subroutine instead of requiring full-day delegation.
 - Done: Lua has named wrappers for every bounded Nullkiller task mode, using stable numeric mode ids while keeping
   scripts readable.
+- Done: spell research is exposed as checked `ai:spellResearch` plus read-side `spellResearchOptions`. Mage-guild
+  snapshots now hide deeper research queues and expose only currently visible spells plus the next research-dialog
+  candidate.
 - Done: market operations are exposed through a coarse `nullkillerTrade` helper, an exact resource-resource
   helper, and a generic `marketTrade` action with wrappers for resource transfer, creature/resource sale,
   artifact purchase/sale/sacrifice, creature sacrifice, undead transformation, and university skill purchase.

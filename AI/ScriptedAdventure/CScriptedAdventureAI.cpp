@@ -13,6 +13,7 @@
 #include "../../lib/AsyncRunner.h"
 #include "../../lib/CCreatureHandler.h"
 #include "../../lib/CPlayerState.h"
+#include "../../lib/IGameSettings.h"
 #include "../../lib/ResourceSet.h"
 #include "../../lib/StartInfo.h"
 #include "../../lib/UnlockGuard.h"
@@ -2453,8 +2454,15 @@ JsonNode jsonTownMageGuildSpells(const CGTownInstance * town)
 		JsonNode levelNode;
 		levelNode["level"] = JsonNode(spellLevel);
 		levelNode["spells"].Vector();
-		for(const SpellID & spellID : town->spells[levelIndex])
+		const int32_t visibleSpellCount = std::clamp<int32_t>(
+			town->spellsAtLevel(static_cast<int32_t>(levelIndex), false),
+			0,
+			static_cast<int32_t>(town->spells[levelIndex].size()));
+		levelNode["visibleSpellCount"] = JsonNode(visibleSpellCount);
+		levelNode["researchQueueCount"] = JsonNode(static_cast<int32_t>(town->spells[levelIndex].size()) - visibleSpellCount);
+		for(size_t spellIndex = 0; spellIndex < static_cast<size_t>(visibleSpellCount); ++spellIndex)
 		{
+			const SpellID & spellID = town->spells[levelIndex][spellIndex];
 			if(!spellID.hasValue())
 				continue;
 			JsonNode spellNode;
@@ -2466,6 +2474,74 @@ JsonNode jsonTownMageGuildSpells(const CGTownInstance * town)
 		}
 		node.Vector().push_back(levelNode);
 	}
+	return node;
+}
+
+std::optional<JsonNode> jsonSpellResearchOption(
+	const CGTownInstance * town,
+	size_t levelIndex,
+	const SpellID & spellID,
+	const ResourceSet & resources,
+	const IGameSettings & settings)
+{
+	if(!town || levelIndex >= town->spells.size() || !spellID.hasValue())
+		return std::nullopt;
+	if(!settings.getBoolean(EGameSettings::TOWNS_SPELL_RESEARCH) || !town->spellResearchAllowed)
+		return std::nullopt;
+
+	const int32_t visibleSpellCount = std::clamp<int32_t>(
+		town->spellsAtLevel(static_cast<int32_t>(levelIndex), false),
+		0,
+		static_cast<int32_t>(town->spells[levelIndex].size()));
+	const auto spellPosition = vstd::find_pos(town->spells[levelIndex], spellID);
+	if(spellPosition < 0 || spellPosition >= visibleSpellCount)
+		return std::nullopt;
+	if(visibleSpellCount >= static_cast<int32_t>(town->spells[levelIndex].size()))
+		return std::nullopt;
+
+	const auto perDay = settings.getValue(EGameSettings::TOWNS_SPELL_RESEARCH_PER_DAY).Vector();
+	const auto baseCosts = settings.getValue(EGameSettings::TOWNS_SPELL_RESEARCH_COST).Vector();
+	const auto researchMultipliers = settings.getValue(EGameSettings::TOWNS_SPELL_RESEARCH_COST_MULTIPLIER_PER_RESEARCH).Vector();
+	const auto rerollMultipliers = settings.getValue(EGameSettings::TOWNS_SPELL_RESEARCH_COST_MULTIPLIER_PER_REROLL).Vector();
+	if(levelIndex >= perDay.size() || levelIndex >= baseCosts.size() || levelIndex >= researchMultipliers.size() || levelIndex >= rerollMultipliers.size())
+		return std::nullopt;
+
+	if(town->spellResearchCounterDay >= perDay[levelIndex].Float())
+		return std::nullopt;
+	if(levelIndex >= town->spellResearchPendingRerollsCounters.size())
+		return std::nullopt;
+
+	ResourceSet costBase;
+	costBase.resolveFromJson(baseCosts[levelIndex]);
+	const double pastResearchesMultiplier = std::pow(researchMultipliers[levelIndex].Float(), town->spellResearchAcceptedCounter);
+	const double pastRerollsMultiplier = std::pow(rerollMultipliers[levelIndex].Float(), town->spellResearchPendingRerollsCounters[levelIndex]);
+	const ResourceSet cost = costBase.multipliedBy(pastResearchesMultiplier * pastRerollsMultiplier);
+	const SpellID replacementSpellID = town->spells[levelIndex][visibleSpellCount];
+
+	JsonNode node;
+	node["town_id"] = JsonNode(town->id.getNum());
+	node["spell_level"] = JsonNode(static_cast<int32_t>(levelIndex + 1));
+	node["spell_id"] = JsonNode(spellID.getNum());
+	node["spellIdentifier"] = JsonNode(stableIdentifier(spellID));
+	if(const CSpell * spell = spellID.toSpell())
+		node["spellName"] = JsonNode(jsonText(spell->getNameTranslated()));
+	node["replacement_spell_id"] = JsonNode(replacementSpellID.getNum());
+	node["replacementSpellIdentifier"] = JsonNode(stableIdentifier(replacementSpellID));
+	if(const CSpell * spell = replacementSpellID.toSpell())
+		node["replacementSpellName"] = JsonNode(jsonText(spell->getNameTranslated()));
+	node["cost"] = jsonResources(cost);
+	node["affordable"] = JsonNode(resources.canAfford(cost));
+	node["acceptedResearches"] = JsonNode(town->spellResearchAcceptedCounter);
+	node["pendingRerolls"] = JsonNode(town->spellResearchPendingRerollsCounters[levelIndex]);
+	node["researchesToday"] = JsonNode(town->spellResearchCounterDay);
+	node["planAction"]["type"] = JsonNode("spell_research");
+	node["planAction"]["town_id"] = node["town_id"];
+	node["planAction"]["spell_id"] = node["spell_id"];
+	node["planAction"]["accept"] = JsonNode(true);
+	node["rerollAction"]["type"] = JsonNode("spell_research");
+	node["rerollAction"]["town_id"] = node["town_id"];
+	node["rerollAction"]["spell_id"] = node["spell_id"];
+	node["rerollAction"]["accept"] = JsonNode(false);
 	return node;
 }
 
@@ -4863,6 +4939,78 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		return true;
 	}
 
+	if(type == "spell_research")
+	{
+		const CGTownInstance * town = cc->getTown(ObjectInstanceID(readInteger(action, "town_id")));
+		if(!town || town->tempOwner != playerID)
+			throw std::invalid_argument("Unknown town or town is not owned by scripted AI");
+		if(!cc->getSettings().getBoolean(EGameSettings::TOWNS_SPELL_RESEARCH) || !town->spellResearchAllowed)
+			throw std::invalid_argument("Spell research is not available for this town");
+
+		const SpellID spellID(readInteger(action, "spell_id"));
+		int32_t levelIndex = -1;
+		int32_t spellPosition = -1;
+		for(size_t index = 0; index < town->spells.size(); ++index)
+		{
+			const int32_t found = vstd::find_pos(town->spells[index], spellID);
+			if(found != -1)
+			{
+				levelIndex = static_cast<int32_t>(index);
+				spellPosition = found;
+				break;
+			}
+		}
+		if(levelIndex < 0)
+			throw std::invalid_argument("Spell is not present in this town mage guild");
+
+		const int32_t visibleSpellCount = std::clamp<int32_t>(
+			town->spellsAtLevel(levelIndex, false),
+			0,
+			static_cast<int32_t>(town->spells[levelIndex].size()));
+		if(spellPosition >= visibleSpellCount)
+			throw std::invalid_argument("Spell research can only replace currently visible mage guild spells");
+		if(visibleSpellCount >= static_cast<int32_t>(town->spells[levelIndex].size()))
+			throw std::invalid_argument("No replacement spell is available for this mage guild level");
+
+		const auto & perDay = cc->getSettings().getValue(EGameSettings::TOWNS_SPELL_RESEARCH_PER_DAY).Vector();
+		const auto & baseCosts = cc->getSettings().getValue(EGameSettings::TOWNS_SPELL_RESEARCH_COST).Vector();
+		const auto & researchMultipliers = cc->getSettings().getValue(EGameSettings::TOWNS_SPELL_RESEARCH_COST_MULTIPLIER_PER_RESEARCH).Vector();
+		const auto & rerollMultipliers = cc->getSettings().getValue(EGameSettings::TOWNS_SPELL_RESEARCH_COST_MULTIPLIER_PER_REROLL).Vector();
+		const size_t level = static_cast<size_t>(levelIndex);
+		if(level >= perDay.size() || level >= baseCosts.size() || level >= researchMultipliers.size() || level >= rerollMultipliers.size())
+			throw std::invalid_argument("Spell research settings are missing for this mage guild level");
+		if(town->spellResearchCounterDay >= perDay[level].Float())
+			throw std::invalid_argument("Spell research daily limit is already reached");
+		if(level >= town->spellResearchPendingRerollsCounters.size())
+			throw std::invalid_argument("Spell research reroll state is missing for this mage guild level");
+
+		ResourceSet costBase;
+		costBase.resolveFromJson(baseCosts[level]);
+		const double pastResearchesMultiplier = std::pow(researchMultipliers[level].Float(), town->spellResearchAcceptedCounter);
+		const double pastRerollsMultiplier = std::pow(rerollMultipliers[level].Float(), town->spellResearchPendingRerollsCounters[level]);
+		const ResourceSet cost = costBase.multipliedBy(pastResearchesMultiplier * pastRerollsMultiplier);
+		if(!cc->getResourceAmount().canAfford(cost))
+			throw std::invalid_argument("Spell research cannot be afforded");
+
+		const bool accepted = hasField(action, "accepted") ? readBool(action, "accepted", true) : readBool(action, "accept", true);
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(SpellResearch), CTypeList::getInstance().getTypeID<SpellResearch>(nullptr), [&]
+		{
+			cc->spellResearch(town, spellID, accepted);
+		});
+		actionResult["town_id"] = JsonNode(town->id.getNum());
+		actionResult["spell_id"] = JsonNode(spellID.getNum());
+		actionResult["replacement_spell_id"] = JsonNode(town->spells[level][visibleSpellCount].getNum());
+		actionResult["accept"] = JsonNode(accepted);
+		actionResult["cost"] = jsonResources(cost);
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Spell research request was rejected by server" : "Spell research request was not realized by server");
+		return true;
+	}
+
 	if(type == "build")
 	{
 		const CGTownInstance * town = cc->getTown(ObjectInstanceID(readInteger(action, "town_id")));
@@ -5661,7 +5809,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "swap_creatures", "merge_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "market_trade", "dismiss_hero", "build_boat", "dig", "cast_spell", "buy_artifact", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_answer_query", "nullkiller_object_interaction" })
+	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "swap_creatures", "merge_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "market_trade", "dismiss_hero", "build_boat", "dig", "cast_spell", "buy_artifact", "spell_research", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_answer_query", "nullkiller_object_interaction" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();
@@ -5675,6 +5823,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["digOptions"].Vector();
 	actionSpace["adventureSpellOptions"].Vector();
 	actionSpace["buyArtifactOptions"].Vector();
+	actionSpace["spellResearchOptions"].Vector();
 	actionSpace["recommendedActions"].Vector();
 
 	std::shared_lock gameStateLock(CGameState::mutex);
@@ -5716,6 +5865,30 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		appendUpgradeOptions(town);
 		appendUpgradeOptions(town->getVisitingHero());
 		appendUpgradeOptions(town->getGarrisonHero());
+
+		if(town->tempOwner == playerID)
+		{
+			for(size_t levelIndex = 0; levelIndex < town->spells.size(); ++levelIndex)
+			{
+				const int32_t spellLevel = static_cast<int32_t>(levelIndex + 1);
+				if(spellLevel > town->mageGuildLevel())
+					continue;
+
+				const int32_t visibleSpellCount = std::clamp<int32_t>(
+					town->spellsAtLevel(static_cast<int32_t>(levelIndex), false),
+					0,
+					static_cast<int32_t>(town->spells[levelIndex].size()));
+				for(size_t spellIndex = 0; spellIndex < static_cast<size_t>(visibleSpellCount); ++spellIndex)
+				{
+					if(auto option = jsonSpellResearchOption(town, levelIndex, town->spells[levelIndex][spellIndex], resources, cc->getSettings()))
+					{
+						actionSpace["spellResearchOptions"].Vector().push_back(*option);
+						if((*option)["affordable"].Bool())
+							actionSpace["recommendedActions"].Vector().push_back((*option)["planAction"]);
+					}
+				}
+			}
+		}
 
 		for(const auto & buildingEntry : town->getTown()->buildings)
 		{
