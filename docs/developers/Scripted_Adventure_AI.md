@@ -653,6 +653,26 @@ building visits, creature recruitment and upgrades, hero hire and dismissal, arm
 management, market trades, adventure spells, boat building, town/garrison actions, query answers, memory,
 refresh/replan, and end turn.
 
+API parity is the gate before strategic script tuning. A weak result from a Lua policy must first be classified as
+one of two things:
+
+- a policy mistake, where Lua had enough state/actions/helpers and chose badly
+- a host capability gap, where the only practical way to use existing Nullkiller competence was full-day
+  `ai:nullkiller()` delegation
+
+Only the first category should drive script optimization. The second category should produce a checked action,
+read-only analyzer field, or bounded Nullkiller helper that returns control to Lua after one defined subroutine.
+This keeps the editable script in charge of strategy while still allowing it to reuse hard native systems such as
+pathfinding, decomposed tasks, logistics, dialog heuristics, and artifact/army preparation.
+
+At the raw player-action layer, the Lua facade covers the meaningful `IGameActionCallback` adventure actions:
+destination/pathfinder-based hero movement, hero dismissal, digging, adventure spell casts, hero recruitment,
+building construction and visits, creature recruitment and upgrades, spell research, garrison swaps, market trades,
+query replies/cancels, army stack operations, artifact operations, end turn, artifact purchases, formation/tactics,
+town rename, boat building, statistics requests, and bulk army/artifact management. The path-form native movement
+callback is represented through checked route ids and submitted paths derived from the shared pathfinder, not by
+letting scripts push arbitrary hidden path vectors.
+
 Bounded Nullkiller helpers cover native subroutines that are expensive or brittle to reimplement in Lua: task
 candidate generation and execution by mode, one-step/pass/slice execution, priority passes, resource trading, town
 army preparation, creature recruitment, army upgrading, town-garrison pickup, weak-hero dismissal, single-creature
@@ -1191,8 +1211,8 @@ Regression harness:
   Nullkiller delegation for unsupported remainder work, and localized-string removal improved the average to 47.6
   but did not produce wins. Trace mining pointed at capability gaps rather than string drift: scripted fallback
   dependence, defense pressure without response, hero threat escape gaps, and missing high-level Nullkiller actions.
-  The first follow-up target is now implemented for tavern hero hiring and army transfer; remaining gaps include
-  richer defense planning, hero chaining, and deeper blocker plans.
+  Several follow-up API gaps are now closed by checked support actions and bounded Nullkiller helpers; remaining
+  work should keep classifying failures as API parity gaps before treating them as Lua policy tuning.
 - A 10-game support-action run requested `hire_hero` 63 times and `transfer_army` 160 times. It still lost 10/10
   against Nullkiller2, but the average loss day rose from 36.7 with support candidates gated to 44.9 with them
   enabled on the same seed corpus. After moving threatened-hero escape selection before the support-action replan
