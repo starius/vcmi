@@ -128,8 +128,10 @@ end
 Input:
 
 - `state`: complete visible player state or selected state sections.
-  - `state.map`: map dimensions, visible tile count, a capped sample of visible terrain tiles, and a capped list
-    of visible objects gathered through player-specific fog-of-war checks.
+- `state.map`: map dimensions, visible tile count, a capped sample of visible terrain tiles, and a capped list
+  of visible objects gathered through player-specific fog-of-war checks.
+- Visible quest objects include a `quest` block. Requirement details are exposed only when the quest is already
+  active/known for the player; inactive visible quest objects expose only active/completed flags.
 - `updates`: capped revisioned journal of recent visible changes. Scripts can store the last consumed revision
   in memory when they want delta processing.
 - `opponentUpdates`: the same journal filtered to visible opponent-related changes.
@@ -883,6 +885,9 @@ Regression harness:
   capped `state.map.visibleObjects`. These are produced through player-specific visibility checks. The caps keep
   traces bounded; scripts should use counts and object ids, and request richer host candidates when a full-map
   operation would be too large for direct Lua input.
+- Visible quest objects now expose known requirements as stable ids after they become active for the player:
+  mission id, last day, required resources, artifacts, creatures, skills, heroes/classes, players, spells, nested
+  limiter counts, kill targets, and `canCompleteWithContextHero` for reachable-object context.
 - Candidate actions now include `hire_hero` and `transfer_army` for two previously missing Nullkiller-level
   capabilities: adding tavern heroes and concentrating or reinforcing armies through the normal server-validated
   request path. Their candidate generation is controlled by `experimentalSupportActions` in
@@ -1094,8 +1099,11 @@ Regression harness:
   and `ai:nullkillerStep`. The bounded step now preserves Nullkiller script-task state across a scripted turn,
   returns structured execution outcomes, and can be restricted to granular behavior families such as defense,
   gather-army, exploration, building, recruitment, or capture. This is still not full parity: scripts need richer
-  direct access to typed dialogs, quest decisions, and deeper analyzer details before serious script optimization
-  should be treated as meaningful.
+  direct access to typed dialogs and deeper analyzer details before serious script optimization should be treated
+  as meaningful.
+- Done: known quest requirements are exposed on visible quest objects using stable ids without revealing inactive
+  quest internals. Lua can reason about known blockers, while still using movement actions or bounded Nullkiller
+  tasks for actual unlock-chain execution.
 - Done: owned hero artifact state, exact artifact management calls, typed artifact assembly prompts, and checked
   assemble/disassemble actions are exposed through Lua facade methods. Remaining artifact work is richer artifact
   scoring helpers.

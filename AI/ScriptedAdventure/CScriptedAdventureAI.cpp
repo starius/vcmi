@@ -21,6 +21,7 @@
 #include "../../lib/entities/faction/CTown.h"
 #include "../../lib/gameState/CGameState.h"
 #include "../../lib/constants/StringConstants.h"
+#include "../../lib/mapObjects/CQuest.h"
 #include "../../lib/mapObjects/CGDwelling.h"
 #include "../../lib/mapObjects/CGHeroInstance.h"
 #include "../../lib/mapObjects/CGObjectInstance.h"
@@ -1487,6 +1488,150 @@ JsonNode jsonRisk(const CGHeroInstance * hero, uint64_t danger, bool safe)
 	return node;
 }
 
+int32_t questMissionId(const CQuest & quest)
+{
+	for(int32_t index = static_cast<int32_t>(EQuestMission::NONE); index <= static_cast<int32_t>(EQuestMission::HOTA_SCRIPTED); ++index)
+	{
+		const auto mission = static_cast<EQuestMission>(index);
+		if(quest.questName == CQuest::missionName(mission))
+			return index;
+	}
+	return static_cast<int32_t>(EQuestMission::NONE);
+}
+
+JsonNode jsonCreatureRequirement(const CStackBasicDescriptor & creature)
+{
+	JsonNode node;
+	node["creature_id"] = JsonNode(creature.getId().getNum());
+	node["amount"] = JsonNode(static_cast<int32_t>(creature.getCount()));
+	return node;
+}
+
+JsonNode jsonQuestLimiter(const Rewardable::Limiter & limiter, int32_t depth = 0)
+{
+	JsonNode node;
+	node["heroLevel"] = JsonNode(limiter.heroLevel);
+	node["heroExperience"] = JsonNode(limiter.heroExperience);
+	node["manaPoints"] = JsonNode(limiter.manaPoints);
+	node["manaPercentage"] = JsonNode(limiter.manaPercentage);
+	node["movePoints"] = JsonNode(limiter.movePoints);
+	node["movePercentage"] = JsonNode(limiter.movePercentage);
+	node["canLearnSkills"] = JsonNode(limiter.canLearnSkills);
+	node["commanderAlive"] = JsonNode(limiter.commanderAlive);
+	node["hasExtraCreatures"] = JsonNode(limiter.hasExtraCreatures);
+	node["resources"] = jsonResources(limiter.resources);
+
+	node["primarySkills"].Vector();
+	for(size_t index = 0; index < limiter.primary.size(); ++index)
+	{
+		if(limiter.primary[index] <= 0)
+			continue;
+		JsonNode skill;
+		skill["skill_id"] = JsonNode(static_cast<int32_t>(index));
+		skill["amount"] = JsonNode(limiter.primary[index]);
+		node["primarySkills"].Vector().push_back(skill);
+	}
+
+	node["secondarySkills"].Vector();
+	for(const auto & [skillID, level] : limiter.secondary)
+	{
+		JsonNode skill;
+		skill["skill_id"] = JsonNode(skillID.getNum());
+		skill["level"] = JsonNode(level);
+		node["secondarySkills"].Vector().push_back(skill);
+	}
+
+	node["artifacts"].Vector();
+	for(const ArtifactID & artifactID : limiter.artifacts)
+		node["artifacts"].Vector().push_back(JsonNode(artifactID.getNum()));
+
+	node["availableSlots"].Vector();
+	for(const ArtifactPosition & slot : limiter.availableSlots)
+		node["availableSlots"].Vector().push_back(JsonNode(slot.getNum()));
+
+	node["scrolls"].Vector();
+	for(const SpellID & spellID : limiter.scrolls)
+		node["scrolls"].Vector().push_back(JsonNode(spellID.getNum()));
+
+	node["spells"].Vector();
+	for(const SpellID & spellID : limiter.spells)
+		node["spells"].Vector().push_back(JsonNode(spellID.getNum()));
+
+	node["canLearnSpells"].Vector();
+	for(const SpellID & spellID : limiter.canLearnSpells)
+		node["canLearnSpells"].Vector().push_back(JsonNode(spellID.getNum()));
+
+	node["creatures"].Vector();
+	for(const CStackBasicDescriptor & creature : limiter.creatures)
+		node["creatures"].Vector().push_back(jsonCreatureRequirement(creature));
+
+	node["canReceiveCreatures"].Vector();
+	for(const CStackBasicDescriptor & creature : limiter.canReceiveCreatures)
+		node["canReceiveCreatures"].Vector().push_back(jsonCreatureRequirement(creature));
+
+	node["heroes"].Vector();
+	for(const HeroTypeID & heroID : limiter.heroes)
+		node["heroes"].Vector().push_back(JsonNode(heroID.getNum()));
+
+	node["heroClasses"].Vector();
+	for(const HeroClassID & heroClassID : limiter.heroClasses)
+		node["heroClasses"].Vector().push_back(JsonNode(heroClassID.getNum()));
+
+	node["players"].Vector();
+	for(const PlayerColor & player : limiter.players)
+		node["players"].Vector().push_back(JsonNode(player.getNum()));
+
+	node["allOfCount"] = JsonNode(static_cast<int32_t>(limiter.allOf.size()));
+	node["anyOfCount"] = JsonNode(static_cast<int32_t>(limiter.anyOf.size()));
+	node["noneOfCount"] = JsonNode(static_cast<int32_t>(limiter.noneOf.size()));
+	if(depth < 2)
+	{
+		node["allOf"].Vector();
+		for(const auto & child : limiter.allOf)
+			if(child)
+				node["allOf"].Vector().push_back(jsonQuestLimiter(*child, depth + 1));
+
+		node["anyOf"].Vector();
+		for(const auto & child : limiter.anyOf)
+			if(child)
+				node["anyOf"].Vector().push_back(jsonQuestLimiter(*child, depth + 1));
+
+		node["noneOf"].Vector();
+		for(const auto & child : limiter.noneOf)
+			if(child)
+				node["noneOf"].Vector().push_back(jsonQuestLimiter(*child, depth + 1));
+	}
+
+	return node;
+}
+
+JsonNode jsonQuestObject(const IQuestObject * questObject, PlayerColor player, const CGHeroInstance * contextHero)
+{
+	JsonNode node;
+	const CQuest & quest = questObject->getQuest();
+	const bool active = quest.activeForPlayers.count(player) != 0;
+	node["activeForPlayer"] = JsonNode(active);
+	node["completed"] = JsonNode(quest.isCompleted);
+	if(contextHero)
+		node["canCompleteWithContextHero"] = JsonNode(active && questObject->checkQuest(contextHero));
+	if(!active)
+		return node;
+
+	node["quest_id"] = JsonNode(quest.qid.getNum());
+	node["missionId"] = JsonNode(questMissionId(quest));
+	node["mission"] = JsonNode(quest.questName);
+	node["lastDay"] = JsonNode(quest.lastDay);
+	node["repeated"] = JsonNode(quest.repeatedQuest);
+	if(quest.killTarget != ObjectInstanceID::NONE)
+		node["killTargetObjectId"] = JsonNode(quest.killTarget.getNum());
+	if(quest.stackToKill != CreatureID::NONE)
+		node["stackToKillCreatureId"] = JsonNode(quest.stackToKill.getNum());
+	if(quest.heroPortrait != HeroTypeID::NONE)
+		node["killHeroTypeId"] = JsonNode(quest.heroPortrait.getNum());
+	node["requirements"] = jsonQuestLimiter(quest.mission);
+	return node;
+}
+
 JsonNode jsonMapObject(const CGObjectInstance * object, PlayerColor player, const CGHeroInstance * contextHero)
 {
 	const ScriptObjectKind kind = scriptObjectKind(object->ID);
@@ -1505,6 +1650,8 @@ JsonNode jsonMapObject(const CGObjectInstance * object, PlayerColor player, cons
 	node["owner"] = JsonNode(jsonPlayerColor(object->tempOwner));
 	node["position"] = jsonPosition(object->visitablePos());
 	node["passableForPlayer"] = JsonNode(object->passableFor(player));
+	if(const auto * questObject = dynamic_cast<const IQuestObject *>(object))
+		node["quest"] = jsonQuestObject(questObject, player, contextHero);
 	if(const auto * market = dynamic_cast<const IMarket *>(object))
 	{
 		node["market"]["modes"].Vector();
