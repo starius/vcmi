@@ -614,6 +614,15 @@ function ai:nullkillerBuildArmy(townId)
 	return self:execute(action)
 end
 
+function ai:nullkillerUpgradeArmy(armyId)
+	local action = copyFields(armyId)
+	if type(armyId) ~= "table" then
+		action.army_id = armyId
+	end
+	action.type = "nullkiller_upgrade_army"
+	return self:execute(action)
+end
+
 function ai:requestStatistic()
 	return self:execute({ type = "request_statistic" })
 end
