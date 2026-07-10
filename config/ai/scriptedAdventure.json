@@ -1,6 +1,6 @@
 {
 	"script": "ai/candidates/fallbackAdventure.lua",
-	"reloadScriptEachTurn": true,
+	"reloadScriptEachTurn": false,
 	"maxScriptCallsPerTurn": 8,
 	"maxActionsPerPlan": 64,
 	"maxMemoryBytes": 262144,

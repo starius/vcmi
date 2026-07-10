@@ -104,7 +104,7 @@ public:
 private:
 	struct ScriptConfig
 	{
-		bool reloadScriptEachTurn = true;
+		bool reloadScriptEachTurn = false;
 		bool trace = false;
 		bool experimentalSupportActions = false;
 		size_t maxConsecutiveFailures = 3;

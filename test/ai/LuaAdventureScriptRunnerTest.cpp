@@ -1665,6 +1665,9 @@ TEST(LuaAdventureScriptRunnerTest, PackagedConfigUsesFallbackControlScript)
 
 	ASSERT_TRUE(config["script"].isString());
 	EXPECT_EQ(config["script"].String(), "ai/candidates/fallbackAdventure.lua");
+	ASSERT_TRUE(config["reloadScriptEachTurn"].isBool());
+	EXPECT_FALSE(config["reloadScriptEachTurn"].Bool())
+		<< "Normal AI runtime should keep one Lua runner instance per game; reload mode is an explicit development override.";
 	EXPECT_FALSE(hasField(config, "players"))
 		<< "Experimental personality scripts should stay opt-in until they beat the fallback control.";
 }
