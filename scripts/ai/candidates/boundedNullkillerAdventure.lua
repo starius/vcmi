@@ -30,6 +30,7 @@ priorityTier, hero_id, town_id, object_id, tile, and affectedObjectIds.
 local MemoryVersion = 1
 local MaxNullkillerStepsPerDay = 8
 local MaxCandidatesPerStep = 16
+local MaxTaskAttemptsPerStep = 4
 
 local function normalizedMemory(input)
     local memory = (input and input.memory) or {}
@@ -72,7 +73,7 @@ function Script.runDay(ai, input)
 
     while stepsToday < stepLimit and turnIsActive(current) do
         local ok, result = pcall(function()
-            return ai:nullkillerStep("all", MaxCandidatesPerStep)
+            return ai:nullkillerStep("all", MaxCandidatesPerStep, MaxTaskAttemptsPerStep)
         end)
         stepsToday = stepsToday + 1
         memory.totalNullkillerSteps = memory.totalNullkillerSteps + 1
@@ -83,10 +84,21 @@ function Script.runDay(ai, input)
         end
 
         if not result.didExecute then
-            ai:nullkiller("bounded Nullkiller policy found no executable native task")
+            -- Native Nullkiller can sometimes learn from a failed candidate by
+            -- locking the involved hero or widening scan depth. In that case
+            -- the script refreshes and asks for a new bounded step instead of
+            -- surrendering the whole day.
+            if result.outcomeId == ai.nullkillerStepOutcomes.replan then
+                current = ai:refresh()
+            elseif result.shouldStopTurn then
+                ai:endTurn()
+                return ai:output("end_turn", "bounded Nullkiller policy accepted native stop-turn signal", 0.5)
+            else
+                ai:nullkiller("bounded Nullkiller policy found no executable native task")
+            end
+        else
+            current = ai:refresh()
         end
-
-        current = ai:refresh()
     end
 
     if not turnIsActive(current) then

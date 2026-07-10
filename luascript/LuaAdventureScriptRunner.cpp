@@ -141,6 +141,20 @@ ai.formations = {
 	tight = 1
 }
 
+ai.nullkillerStepOutcomes = {
+	failed = 0,
+	executed = 1,
+	replan = 2,
+	stopTurn = 3,
+	exhaustedCandidates = 4
+}
+
+ai.nullkillerFailureActions = {
+	tryNextTask = 0,
+	replan = 1,
+	stopTurn = 2
+}
+
 function ai:nullkillerTasks(mode, maxCandidates)
 	local action = copyFields(mode)
 	if type(mode) ~= "table" then
@@ -161,11 +175,12 @@ function ai:runNullkillerTask(taskId)
 	return self:execute(action)
 end
 
-function ai:nullkillerStep(mode, maxCandidates)
+function ai:nullkillerStep(mode, maxCandidates, maxAttempts)
 	local action = copyFields(mode)
 	if type(mode) ~= "table" then
 		action.mode = mode or "all"
 		action.max_candidates = maxCandidates
+		action.max_attempts = maxAttempts
 	end
 	action.type = "nullkiller_step"
 	return self:execute(action)

@@ -97,6 +97,19 @@ struct ScriptTaskCandidate
 	HeroRole heroRole = SCOUT;
 };
 
+struct ScriptTaskExecutionResult
+{
+	bool attempted = false;
+	bool executed = false;
+	bool shouldReplan = false;
+	bool stopTurn = false;
+	bool exhaustedCandidates = false;
+	size_t selectedTaskIndex = 0;
+	size_t attempts = 0;
+	TaskFailureAction failureAction = TaskFailureAction::TRY_NEXT_TASK;
+	std::string error;
+};
+
 class Nullkiller
 {
 private:
@@ -111,6 +124,7 @@ private:
 	bool openMap;
 	bool useObjectGraph;
 	bool pathfinderInvalidated;
+	bool scriptTaskStateHadSuccess;
 
 public:
 	static std::unique_ptr<ObjectGraph> baseGraph;
@@ -144,6 +158,7 @@ public:
 	void resetScriptTaskState();
 	std::vector<ScriptTaskCandidate> getScriptTaskCandidates(ScriptTaskSearchMode mode, size_t maxCandidates);
 	bool executeScriptTask(const Goals::TTask & task);
+	ScriptTaskExecutionResult executeScriptTaskSequence(const Goals::TTaskVec & tasks, size_t maxAttempts);
 	bool executeScriptResourceTrade();
 	bool updateStateAndExecutePriorityPass(Goals::TGoalVec& tempResults, int passIndex);
 	bool isActive(const CGHeroInstance * hero) const { return activeHero == hero; }

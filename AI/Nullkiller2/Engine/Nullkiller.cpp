@@ -41,6 +41,7 @@ Nullkiller::Nullkiller()
 	: activeHero(nullptr)
 	, scanDepth(ScanDepth::MAIN_FULL)
 	, useHeroChain(true)
+	, scriptTaskStateHadSuccess(false)
 	, memory(std::make_unique<AIMemory>())
 {
 
@@ -286,6 +287,107 @@ bool Nullkiller::executeScriptTask(const Goals::TTask & task)
 	return executeTask(task);
 }
 
+ScriptTaskExecutionResult Nullkiller::executeScriptTaskSequence(const Goals::TTaskVec & tasks, const size_t maxAttempts)
+{
+	ScriptTaskExecutionResult result;
+	const size_t attemptsLimit = std::min(maxAttempts == 0 ? tasks.size() : maxAttempts, tasks.size());
+	if(attemptsLimit == 0)
+	{
+		result.exhaustedCandidates = true;
+		result.error = "No Nullkiller task candidates";
+		return result;
+	}
+
+	bool hasAnySuccess = scriptTaskStateHadSuccess;
+	for(size_t index = 0; index < attemptsLimit; ++index)
+	{
+		const Goals::TTask & selectedTask = tasks[index];
+		result.attempted = true;
+		result.selectedTaskIndex = index;
+		result.attempts += 1;
+
+		if(!selectedTask)
+		{
+			result.error = "Nullkiller task handle is empty";
+			continue;
+		}
+
+		if(!areAffectedObjectsPresent(selectedTask))
+		{
+			result.error = "Nullkiller task refers to an object that is no longer visible or present";
+			continue;
+		}
+
+		if(selectedTask->priority <= 0)
+		{
+			const auto heroes = cc->getHeroesInfo();
+			const auto hasMp = vstd::contains_if(heroes, [](const CGHeroInstance * hero) -> bool
+			{
+				return hero->movementPointsRemaining() > 100;
+			});
+
+			if(hasMp && scanDepth != ScanDepth::ALL_FULL)
+			{
+				logAi->info(
+					"Scripted Nullkiller task %s has too low priority %f. Increasing to ScanDepth::ALL_FULL",
+					selectedTask->toString().c_str(),
+					selectedTask->priority);
+
+				scanDepth = ScanDepth::ALL_FULL;
+				useHeroChain = false;
+				result.failureAction = TaskFailureAction::REPLAN;
+				result.shouldReplan = true;
+				result.error = "Nullkiller increased scan depth and needs replanning";
+				return result;
+			}
+
+			result.error = "Nullkiller task priority is no longer positive";
+			continue;
+		}
+
+		const HeroRole heroRole = getTaskRole(selectedTask);
+		if(heroRole != HeroRole::MAIN || selectedTask->getHeroExchangeCount() <= 1)
+			useHeroChain = false;
+
+		const bool isRecruitHeroGoal = dynamic_cast<RecruitHero*>(selectedTask.get()) != nullptr;
+		HeroPtr heroPtr(selectedTask->getHero(), cc.get());
+		if(!isRecruitHeroGoal && selectedTask->getHero() && !heroPtr.isVerified(false))
+		{
+			result.error = "Nullkiller task refers to an unavailable hero";
+			continue;
+		}
+
+		if(executeTask(selectedTask))
+		{
+			result.executed = true;
+			hasAnySuccess = true;
+			scriptTaskStateHadSuccess = true;
+			result.error.clear();
+			return result;
+		}
+
+		lockTaskHeroes(selectedTask, HeroLockedReason::HERO_CHAIN);
+		const bool hasRemainingTasks = index + 1 < tasks.size();
+		result.failureAction = chooseTaskFailureAction(hasAnySuccess, hasRemainingTasks, hasUnlockedHeroWithMovement());
+		result.error = "Nullkiller task failed to execute";
+
+		if(result.failureAction == TaskFailureAction::TRY_NEXT_TASK)
+			continue;
+
+		if(result.failureAction == TaskFailureAction::REPLAN)
+		{
+			result.shouldReplan = true;
+			return result;
+		}
+
+		result.stopTurn = true;
+		return result;
+	}
+
+	result.exhaustedCandidates = true;
+	return result;
+}
+
 bool Nullkiller::executeScriptResourceTrade()
 {
 	updateState();
@@ -364,6 +466,7 @@ void Nullkiller::resetState()
 
 	lockedResources = TResources();
 	scanDepth = ScanDepth::MAIN_FULL;
+	scriptTaskStateHadSuccess = false;
 	lockedHeroes.clear();
 	dangerHitMap->resetHitmap();
 	useHeroChain = true;

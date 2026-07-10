@@ -1010,6 +1010,20 @@ std::string nullkillerTaskSearchModeName(NK2AI::ScriptTaskSearchMode mode)
 	return "unknown";
 }
 
+std::string nullkillerTaskFailureActionName(NK2AI::TaskFailureAction action)
+{
+	switch(action)
+	{
+	case NK2AI::TaskFailureAction::TRY_NEXT_TASK:
+		return "try_next_task";
+	case NK2AI::TaskFailureAction::REPLAN:
+		return "replan";
+	case NK2AI::TaskFailureAction::STOP_TURN:
+		return "stop_turn";
+	}
+	return "unknown";
+}
+
 std::string nullkillerHeroRoleName(NK2AI::HeroRole role)
 {
 	switch(role)
@@ -2148,7 +2162,6 @@ JsonNode CScriptedAdventureAI::makeNullkillerTaskCandidates(const JsonNode & act
 		AIGateway::memorizeVisitableObjs(nullkiller->memory, nullkiller->dangerHitMap, playerID, cc);
 		AIGateway::memorizeRevisitableObjs(nullkiller->memory, playerID, cc);
 
-		nullkiller->resetScriptTaskState();
 		const auto candidates = nullkiller->getScriptTaskCandidates(mode, maxCandidates);
 
 		nullkillerTaskHandles.clear();
@@ -2243,6 +2256,11 @@ bool CScriptedAdventureAI::tryMakeScriptedTurn()
 	}
 
 	auto runner = makeRunner(*source);
+	{
+		std::shared_lock gameStateLock(CGameState::mutex);
+		nullkiller->resetScriptTaskState();
+	}
+
 	if(runner->hasRunDay())
 		return tryMakeImperativeScriptedTurn(*runner);
 
@@ -2740,37 +2758,87 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 			return true;
 		}
 
-		const JsonNode selectedTask = tasks.front();
-		actionResult["selectedTask"] = selectedTask;
-		actionResult["didExecute"] = JsonNode(true);
-
-		JsonNode taskAction;
-		taskAction["task_id"] = selectedTask["task_id"];
-		JsonNode taskResult;
-		try
+		const int32_t requestedMaxAttempts = readInteger(action, "max_attempts", static_cast<int32_t>(tasks.size()));
+		const size_t maxAttempts = static_cast<size_t>(std::clamp<int32_t>(requestedMaxAttempts, 1, 64));
+		NK2AI::Goals::TTaskVec nativeTasks;
+		nativeTasks.reserve(tasks.size());
+		for(const JsonNode & task : tasks)
 		{
-			const bool continueAfterTask = executeNullkillerTaskAction(taskAction, taskResult);
-			if(taskResult["ok"].isBool() && taskResult["ok"].Bool())
+			const int32_t taskID = static_cast<int32_t>(task["task_id"].Integer());
+			const auto taskIter = std::ranges::find_if(nullkillerTaskHandles, [taskID](const auto & entry)
 			{
-				actionResult["ok"] = JsonNode(true);
-				actionResult["task_id"] = taskResult["task_id"];
-				if(hasField(taskResult, "debugDescription"))
-					actionResult["debugDescription"] = taskResult["debugDescription"];
-				return continueAfterTask;
-			}
+				return entry.first == taskID;
+			});
+			if(taskIter != nullkillerTaskHandles.end())
+				nativeTasks.push_back(taskIter->second);
 		}
-		catch(const std::exception & e)
+
+		NK2AI::ScriptTaskExecutionResult result;
 		{
-			taskResult["ok"] = JsonNode(false);
-			taskResult["error"] = JsonNode(e.what());
+			std::shared_lock gameStateLock(CGameState::mutex);
+			result = nullkiller->executeScriptTaskSequence(nativeTasks, maxAttempts);
+		}
+
+		actionResult["ok"] = JsonNode(true);
+		actionResult["didExecute"] = JsonNode(result.executed);
+		actionResult["attempted"] = JsonNode(result.attempted);
+		actionResult["attempts"] = JsonNode(static_cast<int32_t>(result.attempts));
+		actionResult["maxAttempts"] = JsonNode(static_cast<int32_t>(maxAttempts));
+		actionResult["selectedTaskIndex"] = JsonNode(static_cast<int32_t>(result.selectedTaskIndex));
+		actionResult["failureActionId"] = JsonNode(static_cast<int32_t>(result.failureAction));
+		actionResult["failureAction"] = JsonNode(nullkillerTaskFailureActionName(result.failureAction));
+		actionResult["shouldReplan"] = JsonNode(result.shouldReplan);
+		actionResult["shouldStopTurn"] = JsonNode(result.stopTurn);
+		actionResult["exhaustedCandidates"] = JsonNode(result.exhaustedCandidates);
+		int32_t outcomeID = 0;
+		std::string outcome = "failed";
+		if(result.executed)
+		{
+			outcomeID = 1;
+			outcome = "executed";
+		}
+		else if(result.shouldReplan)
+		{
+			outcomeID = 2;
+			outcome = "replan";
+		}
+		else if(result.stopTurn)
+		{
+			outcomeID = 3;
+			outcome = "stop_turn";
+		}
+		else if(result.exhaustedCandidates)
+		{
+			outcomeID = 4;
+			outcome = "exhausted_candidates";
+		}
+		actionResult["outcomeId"] = JsonNode(outcomeID);
+		actionResult["outcome"] = JsonNode(outcome);
+		if(!tasks.empty() && result.selectedTaskIndex < tasks.size())
+		{
+			const JsonNode selectedTask = tasks[result.selectedTaskIndex];
+			actionResult["selectedTask"] = selectedTask;
+			actionResult["task_id"] = selectedTask["task_id"];
+			if(hasField(selectedTask, "debugDescription"))
+				actionResult["debugDescription"] = selectedTask["debugDescription"];
+		}
+		if(!result.error.empty())
+			actionResult["error"] = JsonNode(result.error);
+
+		if(result.executed)
+		{
+			for(const auto * heroInfo : cc->getHeroesInfo())
+				AIGateway::pickBestArtifacts(cc, heroInfo);
+
+			if(!waitTillFreeForScriptAction(actionResult, "nullkiller_step"))
+				return false;
+
+			return true;
 		}
 
 		actionResult["ok"] = JsonNode(true);
 		actionResult["didExecute"] = JsonNode(false);
-		actionResult["failedTask"] = taskResult;
-		if(taskResult["error"].isString())
-			actionResult["error"] = taskResult["error"];
-		return true;
+		return !result.stopTurn;
 	}
 
 	if(type == "dismiss_hero")
@@ -3790,7 +3858,7 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 	analysis["scriptMemory"]["persistedInPlayerLocalSettings"] = JsonNode(true);
 	analysis["scriptMemory"]["localStateKey"] = JsonNode(SCRIPT_MEMORY_LOCAL_STATE_KEY);
 	analysis["candidateFields"].Vector();
-	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "kindId", "buildingKindId", "transferKindId", "pathActionId", "levelId", "task_id", "goalTypeId", "priorityTier", "heroRoleId" })
+	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "kindId", "buildingKindId", "transferKindId", "pathActionId", "levelId", "task_id", "goalTypeId", "priorityTier", "heroRoleId", "outcomeId", "failureActionId" })
 		analysis["candidateFields"].Vector().push_back(JsonNode(field));
 	analysis["danger"]["candidateDangerSource"] = JsonNode("Nullkiller direct object/guard danger evaluator");
 	analysis["danger"]["enemyReachSource"] = JsonNode("visible enemy distance and strength alerts");

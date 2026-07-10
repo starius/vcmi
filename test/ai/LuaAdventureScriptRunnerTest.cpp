@@ -353,7 +353,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 			runDay = function(ai, input)
 				local candidates = ai:nullkillerTasks("adventure", 7)
 				ai:runNullkillerTask(candidates.tasks[1].task_id)
-				local step = ai:nullkillerStep({ mode = "priority", max_candidates = 2 })
+				local step = ai:nullkillerStep({ mode = "priority", max_candidates = 2, max_attempts = 3 })
 				ai:pickBestArtifacts(5, 6)
 				ai:swapArtifacts({ holder_id = 5, slot = 1 }, { holder_id = 6, slot = 2 })
 				ai:bulkMoveArtifacts(5, 6, true, false, true)
@@ -382,7 +382,8 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 					memory = {
 						version = 1,
 						firstTask = candidates.tasks[1].task_id,
-						stepTask = step.selectedTask.task_id
+						stepTask = step.selectedTask.task_id,
+						executedOutcome = ai.nullkillerStepOutcomes.executed
 					},
 					actions = {}
 				}
@@ -426,6 +427,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 	EXPECT_EQ(commands[2]["payload"]["type"].String(), "nullkiller_step");
 	EXPECT_EQ(commands[2]["payload"]["mode"].String(), "priority");
 	EXPECT_EQ(commands[2]["payload"]["max_candidates"].Integer(), 2);
+	EXPECT_EQ(commands[2]["payload"]["max_attempts"].Integer(), 3);
 	EXPECT_EQ(commands[3]["payload"]["type"].String(), "pick_best_artifacts");
 	EXPECT_EQ(commands[3]["payload"]["hero_id"].Integer(), 5);
 	EXPECT_EQ(commands[3]["payload"]["other_hero_id"].Integer(), 6);
@@ -506,6 +508,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	EXPECT_EQ(output.memory["firstTask"].Integer(), 41);
 	EXPECT_EQ(output.memory["stepTask"].Integer(), 42);
+	EXPECT_EQ(output.memory["executedOutcome"].Integer(), 1);
 }
 
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallMarketTradeHelpers)

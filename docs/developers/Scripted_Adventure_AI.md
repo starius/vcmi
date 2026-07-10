@@ -418,8 +418,15 @@ Current bounded subroutine surface:
 - `nullkiller_task` executes exactly one stored candidate snapshot through `Nullkiller::executeScriptTask`.
   Native Nullkiller dialog handlers stay active for this path, so the subroutine behaves like Nullkiller rather
   than simplified script auto-answer logic.
-- `nullkiller_step` is a convenience call that selects and executes the current best bounded candidate, then
-  returns to Lua for refresh, more decisions, or end-turn.
+- Nullkiller script-task state is reset once at the beginning of the scripted turn, not before every candidate
+  query. This preserves native state such as locked heroes, scan-depth changes, previous task success, and
+  hero-chain decisions across bounded Lua subroutine calls.
+- `nullkiller_step` is a convenience call that selects the current best bounded candidate, can try later
+  candidates using Nullkiller's own failure policy, then returns to Lua for refresh, more decisions, or end-turn.
+  It accepts `max_attempts` and returns stable fields including `outcomeId`, `failureActionId`, `didExecute`,
+  `shouldReplan`, `shouldStopTurn`, `exhaustedCandidates`, `selectedTaskIndex`, and `attempts`.
+- Lua exposes `ai.nullkillerStepOutcomes` and `ai.nullkillerFailureActions` numeric constants. Scripts should
+  branch on these constants rather than trace strings.
 
 The script engine should reuse these Nullkiller systems where possible:
 
@@ -1060,9 +1067,11 @@ Regression harness:
 - Done: movement/object candidates include read-only `reason`, `value`, `risk`, `safe`, `danger`, `dangerRatio`,
   `estimatedLoss`, and `blockedBy` fields.
 - Done: nearby visible enemy pressure against owned heroes is exposed as `analysis.heroThreatAlerts`.
-- Partial: first bounded Nullkiller task fragments are exposed through `ai:nullkillerTasks`,
-  `ai:runNullkillerTask`, and `ai:nullkillerStep`. This is not full parity yet: scripts still need richer direct
-  access to typed dialogs, remaining market/trading choices, quest decisions, and deeper analyzer details.
+- Partial: bounded Nullkiller task fragments are exposed through `ai:nullkillerTasks`, `ai:runNullkillerTask`,
+  and `ai:nullkillerStep`. The bounded step now preserves Nullkiller script-task state across a scripted turn and
+  returns structured execution outcomes. This is still not full parity: scripts need richer direct access to
+  typed dialogs, remaining market/trading choices, quest decisions, and deeper analyzer details before serious
+  script optimization should be treated as meaningful.
 - Done: owned hero artifact state and exact artifact management calls are exposed through checked Lua facade
   methods. Remaining artifact work is typed handling of assemble/disassemble prompts and richer artifact scoring
   helpers.
@@ -1153,12 +1162,12 @@ Regression harness:
 
 The next high-value implementation steps are:
 
-- Run fixed-map `--testdays N` batches comparing default, aggressive, economy, explorer, Nullkiller, and older
-  script versions, then feed trace deltas and mined JSON fixtures back into the Lua policy.
 - Add richer Lua decision policies and read-side candidate data for dialogs and remaining player choices:
   adventure spell candidates, boats/shipyards, quests/gates, level-up choices, university choices, and object
   selection.
-- Expand the default Lua policy to rank and compose bounded Nullkiller candidates before trying to outperform
-  native Nullkiller on the random-map corpus.
 - Expose richer Nullkiller analyzer data, especially danger-map and blocker/cluster details, as read-only
   candidate fields instead of rebuilding those analyses in Lua.
+- Expand the default Lua policy to rank and compose bounded Nullkiller candidates after the API can express the
+  same meaningful choices Nullkiller can make.
+- Run fixed-map `--testdays N` batches comparing default, aggressive, economy, explorer, Nullkiller, and older
+  script versions, then feed trace deltas and mined JSON fixtures back into the Lua policy.
