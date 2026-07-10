@@ -670,6 +670,8 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallMarketTradeHelpers)
 				ai:sellArtifact(16, 5, 301, 6)
 				ai:sacrificeArtifact(16, 5, 302)
 				ai:sacrificeCreatures(16, 5, 3, 11)
+				ai:sacrificeArtifacts(16, 5, { 303, 304 })
+				ai:sacrificeCreatureStacks(16, 5, { 0, 1 }, { 2, 3 })
 				ai:transformToUndead(16, 5, 4)
 				ai:buySkill(16, 5, 7)
 				return ai:output("end_turn")
@@ -691,7 +693,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallMarketTradeHelpers)
 		return response;
 	});
 
-	ASSERT_EQ(commands.size(), 9);
+	ASSERT_EQ(commands.size(), 11);
 	for(const JsonNode & command : commands)
 	{
 		EXPECT_EQ(command["payload"]["type"].String(), "market_trade");
@@ -714,10 +716,24 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallMarketTradeHelpers)
 	EXPECT_EQ(commands[5]["payload"]["artifact_instance_id"].Integer(), 302);
 	EXPECT_EQ(commands[6]["payload"]["mode_id"].Integer(), 6);
 	EXPECT_EQ(commands[6]["payload"]["amount"].Integer(), 11);
-	EXPECT_EQ(commands[7]["payload"]["mode_id"].Integer(), 7);
-	EXPECT_EQ(commands[7]["payload"]["slot"].Integer(), 4);
-	EXPECT_EQ(commands[8]["payload"]["mode_id"].Integer(), 8);
-	EXPECT_EQ(commands[8]["payload"]["skill_id"].Integer(), 7);
+	EXPECT_EQ(commands[7]["payload"]["mode_id"].Integer(), 5);
+	ASSERT_TRUE(commands[7]["payload"]["artifact_instance_ids"].isVector());
+	ASSERT_EQ(commands[7]["payload"]["artifact_instance_ids"].Vector().size(), 2);
+	EXPECT_EQ(commands[7]["payload"]["artifact_instance_ids"].Vector()[0].Integer(), 303);
+	EXPECT_EQ(commands[7]["payload"]["artifact_instance_ids"].Vector()[1].Integer(), 304);
+	EXPECT_EQ(commands[8]["payload"]["mode_id"].Integer(), 6);
+	ASSERT_TRUE(commands[8]["payload"]["slots"].isVector());
+	ASSERT_TRUE(commands[8]["payload"]["amounts"].isVector());
+	ASSERT_EQ(commands[8]["payload"]["slots"].Vector().size(), 2);
+	ASSERT_EQ(commands[8]["payload"]["amounts"].Vector().size(), 2);
+	EXPECT_EQ(commands[8]["payload"]["slots"].Vector()[0].Integer(), 0);
+	EXPECT_EQ(commands[8]["payload"]["slots"].Vector()[1].Integer(), 1);
+	EXPECT_EQ(commands[8]["payload"]["amounts"].Vector()[0].Integer(), 2);
+	EXPECT_EQ(commands[8]["payload"]["amounts"].Vector()[1].Integer(), 3);
+	EXPECT_EQ(commands[9]["payload"]["mode_id"].Integer(), 7);
+	EXPECT_EQ(commands[9]["payload"]["slot"].Integer(), 4);
+	EXPECT_EQ(commands[10]["payload"]["mode_id"].Integer(), 8);
+	EXPECT_EQ(commands[10]["payload"]["skill_id"].Integer(), 7);
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 }
 

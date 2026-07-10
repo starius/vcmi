@@ -202,8 +202,10 @@ The `ai` facade:
 - `ai:tradeResources(marketId, sellResourceId, buyResourceId, amount, heroId?)`: request an exact
   resource-to-resource market trade using stable numeric resource ids and a visible market object id.
 - `ai:marketTrade({...})` and wrappers `ai:sendResources`, `ai:sellCreatures`, `ai:buyMarketArtifact`,
-  `ai:sellArtifact`, `ai:sacrificeArtifact`, `ai:sacrificeCreatures`, `ai:transformToUndead`, and `ai:buySkill`:
-  request every native market mode through stable numeric mode/resource/player/slot/artifact/skill ids.
+  `ai:sellArtifact`, `ai:sacrificeArtifact`, `ai:sacrificeArtifacts`, `ai:sacrificeCreatures`,
+  `ai:sacrificeCreatureStacks`, `ai:transformToUndead`, and `ai:buySkill`: request every native market mode
+  through stable numeric mode/resource/player/slot/artifact/skill ids. Bulk altar helpers use the same vector
+  `TradeOnMarketplace` path as the normal UI.
 - `ai:dismissHero`, `ai:buildBoat`, `ai:castleTeleport`, `ai:dig`, `ai:castSpell`, `ai:buyArtifact`,
   `ai:spellResearch`, and `ai:visitTownBuilding`: request checked primitive adventure/town actions through the
   normal callback/server path.
@@ -1282,7 +1284,8 @@ Regression harness:
   serializer.
 - Done: market operations are exposed through a coarse `nullkillerTrade` helper, an exact resource-resource
   helper, and a generic `marketTrade` action with wrappers for resource transfer, creature/resource sale,
-  artifact purchase/sale/sacrifice, creature sacrifice, undead transformation, and university skill purchase.
+  artifact purchase/sale/sacrifice, bulk artifact sacrifice, creature sacrifice, bulk creature-stack sacrifice,
+  undead transformation, and university skill purchase.
 - Done: visible owned/neutral market objects expose read-side mode details, available items, available unit
   counts, efficiency, and resource-resource exchange rates. Enemy market details remain hidden beyond public
   visible-object mode metadata.

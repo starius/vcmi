@@ -607,6 +607,26 @@ int32_t readInteger(const JsonNode & node, const std::string & field)
 	return static_cast<int32_t>(integralValue);
 }
 
+int32_t readIntegerValue(const JsonNode & node, const std::string & label)
+{
+	if(!node.isNumber())
+		throw std::invalid_argument("Missing or non-integer script action value: " + label);
+
+	if(node.getType() == JsonNode::JsonType::DATA_INTEGER)
+		return static_cast<int32_t>(node.Integer());
+
+	const double value = node.Float();
+	const double integralValue = std::trunc(value);
+	if(!std::isfinite(value)
+		|| value != integralValue
+		|| value < static_cast<double>(std::numeric_limits<int32_t>::min())
+		|| value > static_cast<double>(std::numeric_limits<int32_t>::max()))
+	{
+		throw std::invalid_argument("Missing or non-integer script action value: " + label);
+	}
+	return static_cast<int32_t>(integralValue);
+}
+
 int32_t readInteger(const JsonNode & node, const std::string & field, int32_t defaultValue)
 {
 	if(!hasField(node, field))
@@ -5490,10 +5510,26 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 				throw std::invalid_argument("Market trade amount must be positive");
 			return static_cast<ui32>(amount);
 		};
+		auto readIntegerVector = [&](const std::string & field) -> std::vector<int32_t>
+		{
+			if(!hasField(action, field) || !action[field].isVector())
+				throw std::invalid_argument("Missing or non-vector script action field: " + field);
+			std::vector<int32_t> result;
+			result.reserve(action[field].Vector().size());
+			for(size_t index = 0; index < action[field].Vector().size(); ++index)
+				result.push_back(readIntegerValue(action[field].Vector()[index], field + "[" + std::to_string(index) + "]"));
+			if(result.empty())
+				throw std::invalid_argument("Market trade vector field must not be empty: " + field);
+			return result;
+		};
 
 		TradeItemSell sell;
 		TradeItemBuy buy;
 		ui32 amount = 1;
+		std::vector<TradeItemSell> sells;
+		std::vector<TradeItemBuy> buys;
+		std::vector<ui32> amounts;
+		bool bulkTrade = false;
 		switch(mode)
 		{
 		case EMarketMode::RESOURCE_RESOURCE:
@@ -5535,14 +5571,48 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 			break;
 		case EMarketMode::ARTIFACT_EXP:
 			requireHero();
-			sell = ArtifactInstanceID(readInteger(action, "artifact_instance_id"));
-			buy = GameResID(EGameResID::GOLD);
+			if(hasField(action, "artifact_instance_ids"))
+			{
+				for(const int32_t artifactInstanceID : readIntegerVector("artifact_instance_ids"))
+					sells.emplace_back(ArtifactInstanceID(artifactInstanceID));
+				bulkTrade = true;
+			}
+			else
+			{
+				sell = ArtifactInstanceID(readInteger(action, "artifact_instance_id"));
+				buy = GameResID(EGameResID::GOLD);
+			}
 			break;
 		case EMarketMode::CREATURE_EXP:
 			requireHero();
-			sell = readValidSlot("slot");
-			buy = GameResID(EGameResID::GOLD);
-			amount = readPositiveAmount("amount");
+			if(hasField(action, "slots") || hasField(action, "amounts"))
+			{
+				const std::vector<int32_t> slotIDs = readIntegerVector("slots");
+				const std::vector<int32_t> amountValues = readIntegerVector("amounts");
+				if(slotIDs.size() != amountValues.size())
+					throw std::invalid_argument("Market trade slots and amounts must have the same size");
+
+				for(size_t index = 0; index < slotIDs.size(); ++index)
+				{
+					const SlotID slot(slotIDs[index]);
+					if(!slot.validSlot())
+						throw std::invalid_argument("Invalid army slot id in slots[" + std::to_string(index) + "]");
+					if(!hero->hasStackAtSlot(slot))
+						throw std::invalid_argument("No creature stack at sacrifice slot " + std::to_string(slotIDs[index]));
+					if(amountValues[index] <= 0)
+						throw std::invalid_argument("Market trade amount must be positive in amounts[" + std::to_string(index) + "]");
+
+					sells.emplace_back(slot);
+					amounts.push_back(static_cast<ui32>(amountValues[index]));
+				}
+				bulkTrade = true;
+			}
+			else
+			{
+				sell = readValidSlot("slot");
+				buy = GameResID(EGameResID::GOLD);
+				amount = readPositiveAmount("amount");
+			}
 			break;
 		case EMarketMode::CREATURE_UNDEAD:
 			sell = readValidSlot("slot");
@@ -5557,9 +5627,16 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 			throw std::invalid_argument("Invalid market mode id");
 		}
 
+		if(!bulkTrade)
+		{
+			sells.push_back(sell);
+			buys.push_back(buy);
+			amounts.push_back(amount);
+		}
+
 		const RequestWaitResult request = submitAndWaitForRequest(typeid(TradeOnMarketplace), CTypeList::getInstance().getTypeID<TradeOnMarketplace>(nullptr), [&]
 		{
-			cc->trade(object->id, mode, sell, buy, amount, hero);
+			cc->trade(object->id, mode, sells, buys, amounts, hero);
 		});
 		actionResult["market_id"] = JsonNode(object->id.getNum());
 		actionResult["mode_id"] = JsonNode(modeID);
@@ -5567,6 +5644,8 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		if(hero)
 			actionResult["hero_id"] = JsonNode(hero->id.getNum());
 		actionResult["amount"] = JsonNode(static_cast<int32_t>(amount));
+		actionResult["bulk"] = JsonNode(bulkTrade);
+		actionResult["itemCount"] = JsonNode(static_cast<int32_t>(sells.size()));
 		actionResult["request"] = jsonRequestWaitResult(request);
 		if(!waitTillFreeForScriptAction(actionResult, type))
 			return false;

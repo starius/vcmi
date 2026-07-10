@@ -749,6 +749,17 @@ function ai:sacrificeArtifact(marketId, heroId, artifactInstanceId)
 	return self:marketTrade(action)
 end
 
+function ai:sacrificeArtifacts(marketId, heroId, artifactInstanceIds)
+	local action = copyFields(marketId)
+	if type(marketId) ~= "table" then
+		action.market_id = marketId
+		action.mode_id = self.marketModes.artifactExperience
+		action.hero_id = heroId
+		action.artifact_instance_ids = artifactInstanceIds
+	end
+	return self:marketTrade(action)
+end
+
 function ai:sacrificeCreatures(marketId, heroId, slot, amount)
 	local action = copyFields(marketId)
 	if type(marketId) ~= "table" then
@@ -757,6 +768,18 @@ function ai:sacrificeCreatures(marketId, heroId, slot, amount)
 		action.hero_id = heroId
 		action.slot = slot
 		action.amount = amount
+	end
+	return self:marketTrade(action)
+end
+
+function ai:sacrificeCreatureStacks(marketId, heroId, slots, amounts)
+	local action = copyFields(marketId)
+	if type(marketId) ~= "table" then
+		action.market_id = marketId
+		action.mode_id = self.marketModes.creatureExperience
+		action.hero_id = heroId
+		action.slots = slots
+		action.amounts = amounts
 	end
 	return self:marketTrade(action)
 end
