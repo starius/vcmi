@@ -161,6 +161,8 @@ The `ai` facade:
   `ai:bulkSplitAndRebalanceStack`, `ai:dismissCreature`, `ai:upgradeCreature`, `ai:setFormation`,
   `ai:setTactics`, and `ai:swapGarrisonHero`: request exact army stack, upgrade, formation, tactics, and
   town-garrison operations using stable object, slot, creature, and formation ids.
+- `ai:pickBestCreatures(destinationId, sourceId)`: ask the host to run Nullkiller's creature-preparation helper
+  for two co-located owned army holders, moving the strongest useful stacks into the destination army.
 - `ai:pickBestArtifacts(heroId, otherHeroId?)`: ask the host to run Nullkiller's artifact-preparation helper for
   one owned hero, or two co-located owned heroes, through the normal artifact swap callback path.
 - `ai:swapArtifacts(src, dst)`, `ai:bulkMoveArtifacts`, `ai:sortBackpackArtifacts`,
@@ -1144,6 +1146,8 @@ Regression harness:
   scoring helpers.
 - Done: exact army stack management, creature upgrades, upgrade candidates, formation/tactics changes, and town
   garrison-hero swaps are exposed through checked Lua facade methods.
+- Done: Lua can call Nullkiller's bounded creature-preparation helper through `ai:pickBestCreatures`, matching
+  the existing artifact-preparation helper and avoiding Lua-side reimplementation of stack logistics.
 - Done: pending dialog/window queries are exposed as typed read-side data under `state.turn.queries`, and direct
   Lua actions that open these dialogs now pause for a script answer instead of auto-answering. The bundled default
   script includes a conservative fallback answer policy; richer per-dialog strategy remains Lua policy work.

@@ -4858,6 +4858,24 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		return true;
 	}
 
+	if(type == "pick_best_creatures")
+	{
+		const CArmedInstance * destination = readOwnedArmy("destination_id", "destination");
+		const CArmedInstance * source = readOwnedArmy("source_id", "source");
+		if(destination == source)
+			throw std::invalid_argument("Creature preparation source and destination must be different armies");
+		if(destination->visitablePos() != source->visitablePos())
+			throw std::invalid_argument("Creature preparation armies must be co-located");
+
+		pickBestCreatures(destination, source);
+		actionResult["destination_id"] = JsonNode(destination->id.getNum());
+		actionResult["source_id"] = JsonNode(source->id.getNum());
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(true);
+		return true;
+	}
+
 	if(type == "pick_best_artifacts")
 	{
 		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
@@ -5304,7 +5322,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "swap_creatures", "merge_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "market_trade", "dismiss_hero", "build_boat", "dig", "cast_spell", "buy_artifact", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_answer_query" })
+	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "swap_creatures", "merge_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "market_trade", "dismiss_hero", "build_boat", "dig", "cast_spell", "buy_artifact", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_answer_query" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();

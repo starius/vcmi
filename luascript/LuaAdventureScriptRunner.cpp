@@ -418,6 +418,16 @@ function ai:swapGarrisonHero(townId)
 	return self:execute(action)
 end
 
+function ai:pickBestCreatures(destinationId, sourceId)
+	local action = copyFields(destinationId)
+	if type(destinationId) ~= "table" then
+		action.destination_id = destinationId
+		action.source_id = sourceId
+	end
+	action.type = "pick_best_creatures"
+	return self:execute(action)
+end
+
 function ai:pickBestArtifacts(heroId, otherHeroId)
 	local action = copyFields(heroId)
 	if type(heroId) ~= "table" then
