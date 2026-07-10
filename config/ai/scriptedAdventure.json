@@ -1,5 +1,5 @@
 {
-	"script": "ai/defaultAdventure.lua",
+	"script": "ai/candidates/fallbackAdventure.lua",
 	"reloadScriptEachTurn": true,
 	"maxScriptCallsPerTurn": 8,
 	"maxActionsPerPlan": 64,
@@ -8,16 +8,5 @@
 	"maxConsecutiveFailures": 3,
 	"disableTurnsAfterFailures": 3,
 	"experimentalSupportActions": true,
-	"trace": false,
-	"players": {
-		"red": {
-			"script": "ai/aggressiveAdventure.lua"
-		},
-		"blue": {
-			"script": "ai/economyAdventure.lua"
-		},
-		"tan": {
-			"script": "ai/explorerAdventure.lua"
-		}
-	}
+	"trace": false
 }

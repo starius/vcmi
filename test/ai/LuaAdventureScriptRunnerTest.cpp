@@ -362,3 +362,13 @@ TEST(LuaAdventureScriptRunnerTest, BundledAdventureScriptVariantsRun)
 		}
 	}
 }
+
+TEST(LuaAdventureScriptRunnerTest, PackagedConfigUsesFallbackControlScript)
+{
+	const JsonNode config = readJsonFile(std::filesystem::path(VCMI_SOURCE_DIR) / "config/ai/scriptedAdventure.json");
+
+	ASSERT_TRUE(config["script"].isString());
+	EXPECT_EQ(config["script"].String(), "ai/candidates/fallbackAdventure.lua");
+	EXPECT_FALSE(hasField(config, "players"))
+		<< "Experimental personality scripts should stay opt-in until they beat the fallback control.";
+}

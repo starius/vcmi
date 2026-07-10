@@ -433,24 +433,21 @@ Configuration:
 ```text
 config/ai/scriptedAdventure.json
 scripts/ai/defaultAdventure.lua
+scripts/ai/candidates/fallbackAdventure.lua
 ```
 
 Example configuration fields:
 
 ```json
 {
-  "script": "vcmi:scripts/ai/defaultAdventure.lua",
+  "script": "ai/candidates/fallbackAdventure.lua",
   "fallbackAI": "Nullkiller2",
   "reloadScriptEachTurn": false,
   "maxScriptCallsPerTurn": 8,
   "maxActionsPerPlan": 64,
   "maxMemoryBytes": 262144,
   "maxUpdateEvents": 256,
-  "trace": true,
-  "players": {
-    "red": { "script": "ai/aggressiveAdventure.lua" },
-    "blue": { "script": "ai/economyAdventure.lua" }
-  }
+  "trace": true
 }
 ```
 
@@ -458,7 +455,8 @@ For development, add an opt-in reload mode so behavior can be edited and rerun w
 games, load once per map/session for deterministic behavior.
 
 Per-player entries override the global script and limits for a specific computer player. Keys can be color
-names such as `red`/`blue` or numeric player ids.
+names such as `red`/`blue` or numeric player ids. Keep personality profiles such as `aggressiveAdventure.lua`,
+`economyAdventure.lua`, and `explorerAdventure.lua` opt-in until they beat the fallback control.
 
 ## Default Script Strategy
 
@@ -839,6 +837,11 @@ Regression harness:
 - A no-trace run of the richer `defaultAdventure.lua` policy on the same corpus won only 2/10, with wins on seeds
   03 and 08. Because those wins are a subset of the all-fallback no-trace wins, current evidence says the readable
   default policy is useful for experimentation and unit fixtures but is not yet the champion behavior.
+- Existing eager personality profiles are weaker than the fallback control on the current 10-map corpus:
+  `aggressiveAdventure.lua` and `economyAdventure.lua` were already all losses in partial/full scans, and
+  `explorerAdventure.lua` lost 10/10. The packaged config now uses `ai/candidates/fallbackAdventure.lua` as the
+  default script so normal ScriptedAdventureAI runs start from the measured control. Experimental profiles remain
+  available through per-player config or environment overrides.
 - `scripts/ai/runAdventureAIBatch.py` terminates a stale client process after a terminal game outcome has appeared
   in stdout and a short grace period has elapsed. This keeps unattended evaluation batches from hanging while still
   recording the completed outcome and traces.
