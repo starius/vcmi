@@ -861,10 +861,12 @@ Regression harness:
   Nullkiller in some openings. A no-object-routing experiment averaged 47.8 and was rejected. Future candidates
   should beat the all-fallback control before promotion.
 - Stable-id hardening removed the remaining strategic dependency on display strings in bundled Lua policies and
-  added `scripts/ai/rmgSmallUndergroundNoWater10.json` as the reusable small, two-level, no-water fixed-seed
-  corpus. A fresh run on that corpus still lost 10/10 to Nullkiller2, with average loss day 49.3, min 21, max 108.
+  added the reusable small, two-level, no-water fixed-seed corpus. A fresh run on the initial 10-map version still
+  lost 10/10 to Nullkiller2, with average loss day 49.3, min 21, max 108.
   The result improves the previous default-script average, but still trails the all-fallback control; the next
   behavioral target is reducing oversteering rather than more identifier cleanup.
+- The live small random-map promotion corpus is now `scripts/ai/rmgSmallUndergroundNoWater16.json`, expanded to
+  16 fixed generated maps. The promotion target for this corpus is 16/16 victories, not 10/10.
 - A later Nullkiller2-vs-Nullkiller2 mirror check showed red wins 7/10 on the same fixed-seed corpus, while
   ScriptedAdventureAI with the all-fallback Lua control initially won only 1/10. The root cause was not Lua policy:
   fallback still ran through `CScriptedAdventureAI` dialog overrides, so Nullkiller inherited simplified scripted
@@ -892,14 +894,14 @@ Regression harness:
   contained, but the default script is still strategically weaker than native Nullkiller/fallback. Trace summaries
   point at oversteering, one-action replanning, visible-threat escape gaps, and missing high-level Nullkiller task
   fragments rather than game-data or run-control failures.
-- Current full-game controls on the same 10-map corpus are timing-sensitive. A plain Nullkiller2 mirror gave red
+- Previous full-game controls on the 10-map corpus are timing-sensitive. A plain Nullkiller2 mirror gave red
   6/10. The all-fallback ScriptedAdventureAI control gave 4/10 with tracing enabled and 5/10 without tracing, with
   different seed-level winners. Treat single full-outcome runs as noisy; use no-trace aggregate promotion batches
   for win/loss control and traced reruns only for explanation, mistake mining, and regression fixtures.
 - A no-trace run of the richer `defaultAdventure.lua` policy on the same corpus won only 2/10, with wins on seeds
   03 and 08. Because those wins are a subset of the all-fallback no-trace wins, current evidence says the readable
   default policy is useful for experimentation and unit fixtures but is not yet the champion behavior.
-- Existing eager personality profiles are weaker than the fallback control on the current 10-map corpus:
+- Existing eager personality profiles are weaker than the fallback control on the previous 10-map corpus:
   `aggressiveAdventure.lua` and `economyAdventure.lua` were already all losses in partial/full scans, and
   `explorerAdventure.lua` lost 10/10. The packaged config now uses `ai/candidates/fallbackAdventure.lua` as the
   default script so normal ScriptedAdventureAI runs start from the measured control. Experimental profiles remain

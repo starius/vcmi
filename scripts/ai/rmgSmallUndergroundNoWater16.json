@@ -189,6 +189,120 @@
 			},
 			"gameSeed": 63010,
 			"timeout": 1800
+		},
+		{
+			"name": "rmg_small_u_nowater_normal_11",
+			"group": "training",
+			"stage": "outcome",
+			"kind": "generated-random",
+			"randomMap": {
+				"size": "S",
+				"levels": 2,
+				"players": 2,
+				"teams": 0,
+				"compOnlyPlayers": 0,
+				"compOnlyTeams": 0,
+				"water": "none",
+				"monsterStrength": "normal",
+				"seed": 53011
+			},
+			"gameSeed": 63011,
+			"timeout": 1800
+		},
+		{
+			"name": "rmg_small_u_nowater_normal_12",
+			"group": "training",
+			"stage": "outcome",
+			"kind": "generated-random",
+			"randomMap": {
+				"size": "S",
+				"levels": 2,
+				"players": 2,
+				"teams": 0,
+				"compOnlyPlayers": 0,
+				"compOnlyTeams": 0,
+				"water": "none",
+				"monsterStrength": "normal",
+				"seed": 53012
+			},
+			"gameSeed": 63012,
+			"timeout": 1800
+		},
+		{
+			"name": "rmg_small_u_nowater_normal_13",
+			"group": "training",
+			"stage": "outcome",
+			"kind": "generated-random",
+			"randomMap": {
+				"size": "S",
+				"levels": 2,
+				"players": 2,
+				"teams": 0,
+				"compOnlyPlayers": 0,
+				"compOnlyTeams": 0,
+				"water": "none",
+				"monsterStrength": "normal",
+				"seed": 53013
+			},
+			"gameSeed": 63013,
+			"timeout": 1800
+		},
+		{
+			"name": "rmg_small_u_nowater_normal_14",
+			"group": "training",
+			"stage": "outcome",
+			"kind": "generated-random",
+			"randomMap": {
+				"size": "S",
+				"levels": 2,
+				"players": 2,
+				"teams": 0,
+				"compOnlyPlayers": 0,
+				"compOnlyTeams": 0,
+				"water": "none",
+				"monsterStrength": "normal",
+				"seed": 53014
+			},
+			"gameSeed": 63014,
+			"timeout": 1800
+		},
+		{
+			"name": "rmg_small_u_nowater_normal_15",
+			"group": "training",
+			"stage": "outcome",
+			"kind": "generated-random",
+			"randomMap": {
+				"size": "S",
+				"levels": 2,
+				"players": 2,
+				"teams": 0,
+				"compOnlyPlayers": 0,
+				"compOnlyTeams": 0,
+				"water": "none",
+				"monsterStrength": "normal",
+				"seed": 53015
+			},
+			"gameSeed": 63015,
+			"timeout": 1800
+		},
+		{
+			"name": "rmg_small_u_nowater_normal_16",
+			"group": "training",
+			"stage": "outcome",
+			"kind": "generated-random",
+			"randomMap": {
+				"size": "S",
+				"levels": 2,
+				"players": 2,
+				"teams": 0,
+				"compOnlyPlayers": 0,
+				"compOnlyTeams": 0,
+				"water": "none",
+				"monsterStrength": "normal",
+				"seed": 53016
+			},
+			"gameSeed": 63016,
+			"timeout": 1800
 		}
 	]
 }
