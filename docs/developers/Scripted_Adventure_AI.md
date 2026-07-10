@@ -161,9 +161,10 @@ The `ai` facade:
 - `ai:refresh()`: yield to C++ and receive a new visible input snapshot after side effects.
 - `ai:build`, `ai:recruit`, `ai:hireHero`, `ai:transferArmy`, `ai:moveHero`, `ai:visitObject`,
   `ai:answerQuery`, `ai:endTurn`: request checked host actions.
-- `ai:swapCreatures`, `ai:mergeStacks`, `ai:splitStack`, `ai:bulkSplitStack`, `ai:bulkMergeStacks`,
+- `ai:swapCreatures`, `ai:mergeStacks`, `ai:mergeOrSwapStacks`, `ai:splitStack`, `ai:bulkSplitStack`, `ai:bulkMergeStacks`,
   `ai:bulkSplitAndRebalanceStack`, `ai:dismissCreature`, `ai:upgradeCreature`, `ai:setFormation`,
-  `ai:setTactics`, and `ai:swapGarrisonHero`: request exact army stack, upgrade, formation, tactics, and
+  `ai:setTactics`, `ai:setTownName`, and `ai:swapGarrisonHero`: request exact army stack, upgrade, formation,
+  tactics, town rename, and
   town-garrison operations using stable object, slot, creature, and formation ids.
 - `ai:pickBestCreatures(destinationId, sourceId)`: ask the host to run Nullkiller's creature-preparation helper
   for two co-located owned army holders, moving the strongest useful stacks into the destination army.
@@ -171,8 +172,10 @@ The `ai` facade:
   one owned hero, or two co-located owned heroes, through the normal artifact swap callback path.
 - `ai:swapArtifacts(src, dst)`, `ai:bulkMoveArtifacts`, `ai:sortBackpackArtifacts`,
   `ai:scrollBackpackArtifacts`, `ai:manageHeroCostume`, `ai:assembleArtifacts`,
-  `ai:disassembleArtifact`: request exact artifact management operations through the normal callback/server
-  path. Artifact locations use `{ holder_id, slot, creature_slot? }`.
+  `ai:disassembleArtifact`, and `ai:eraseTransitionArtifact`: request exact artifact management operations
+  through the normal callback/server path. Artifact locations use `{ holder_id, slot, creature_slot? }`.
+  Transition artifact erase is intentionally limited to the same illegal transition-slot cleanup accepted by the
+  server.
 - `ai:ignoreScriptDecision(queryId)`: clear a script-local decision prompt such as an artifact assembly prompt
   without sending a server `QueryReply`.
 - `ai:chooseChestReward(query, preference?)`: answer a chest-style blocking dialog by stable component ids.
@@ -1167,11 +1170,12 @@ Regression harness:
 - Done: known quest requirements are exposed on visible quest objects using stable ids without revealing inactive
   quest internals. Lua can reason about known blockers, while still using movement actions or bounded Nullkiller
   tasks for actual unlock-chain execution.
-- Done: owned hero artifact state, exact artifact management calls, typed artifact assembly prompts, and checked
-  assemble/disassemble actions are exposed through Lua facade methods. Remaining artifact work is richer artifact
-  scoring helpers.
+- Done: owned hero artifact state, exact artifact management calls, typed artifact assembly prompts, checked
+  assemble/disassemble actions, and transition-slot artifact cleanup are exposed through Lua facade methods.
+  Remaining artifact work is richer artifact scoring helpers.
 - Done: exact army stack management, creature upgrades, upgrade candidates, formation/tactics changes, and town
-  garrison-hero swaps are exposed through checked Lua facade methods.
+  garrison-hero swaps are exposed through checked Lua facade methods. The native merge-or-swap helper and town
+  rename callback are also exposed for raw player-action parity.
 - Done: Lua can call Nullkiller's bounded creature-preparation helper through `ai:pickBestCreatures`, matching
   the existing artifact-preparation helper and avoiding Lua-side reimplementation of stack logistics.
 - Done: pending dialog/window queries are exposed as typed read-side data under `state.turn.queries`, and direct

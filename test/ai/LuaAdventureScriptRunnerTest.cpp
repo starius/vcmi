@@ -391,6 +391,9 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 				ai:ignoreScriptDecision(-1000)
 				ai:nullkillerAnswerQuery(88, 1)
 				ai:nullkillerObjectInteraction(20, 16)
+				ai:mergeOrSwapStacks(30, 6, 31, 0)
+				ai:setTownName(16, "Lua Keep")
+				ai:eraseTransitionArtifact(5)
 				ai:pickBestCreatures(31, 30)
 				return {
 					status = "end_turn",
@@ -434,7 +437,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 		return response;
 	});
 
-	ASSERT_EQ(commands.size(), 36);
+	ASSERT_EQ(commands.size(), 39);
 	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_tasks");
 	EXPECT_EQ(commands[0]["payload"]["mode"].String(), "adventure");
 	EXPECT_EQ(commands[0]["payload"]["max_candidates"].Integer(), 7);
@@ -549,9 +552,19 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 	EXPECT_EQ(commands[34]["payload"]["type"].String(), "nullkiller_object_interaction");
 	EXPECT_EQ(commands[34]["payload"]["hero_id"].Integer(), 20);
 	EXPECT_EQ(commands[34]["payload"]["object_id"].Integer(), 16);
-	EXPECT_EQ(commands[35]["payload"]["type"].String(), "pick_best_creatures");
-	EXPECT_EQ(commands[35]["payload"]["destination_id"].Integer(), 31);
+	EXPECT_EQ(commands[35]["payload"]["type"].String(), "merge_or_swap_stacks");
 	EXPECT_EQ(commands[35]["payload"]["source_id"].Integer(), 30);
+	EXPECT_EQ(commands[35]["payload"]["source_slot"].Integer(), 6);
+	EXPECT_EQ(commands[35]["payload"]["destination_id"].Integer(), 31);
+	EXPECT_EQ(commands[35]["payload"]["destination_slot"].Integer(), 0);
+	EXPECT_EQ(commands[36]["payload"]["type"].String(), "set_town_name");
+	EXPECT_EQ(commands[36]["payload"]["town_id"].Integer(), 16);
+	EXPECT_EQ(commands[36]["payload"]["name"].String(), "Lua Keep");
+	EXPECT_EQ(commands[37]["payload"]["type"].String(), "erase_transition_artifact");
+	EXPECT_EQ(commands[37]["payload"]["hero_id"].Integer(), 5);
+	EXPECT_EQ(commands[38]["payload"]["type"].String(), "pick_best_creatures");
+	EXPECT_EQ(commands[38]["payload"]["destination_id"].Integer(), 31);
+	EXPECT_EQ(commands[38]["payload"]["source_id"].Integer(), 30);
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	EXPECT_EQ(output.memory["firstTask"].Integer(), 41);
 	EXPECT_EQ(output.memory["stepTask"].Integer(), 42);

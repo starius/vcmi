@@ -5251,7 +5251,7 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		return true;
 	}
 
-	if(type == "swap_creatures" || type == "merge_stacks" || type == "split_stack")
+	if(type == "swap_creatures" || type == "merge_stacks" || type == "merge_or_swap_stacks" || type == "split_stack")
 	{
 		const CArmedInstance * source = readOwnedArmy("source_id", "source");
 		const CArmedInstance * destination = readOwnedArmy("destination_id", "destination");
@@ -5264,6 +5264,9 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		const int32_t amount = type == "split_stack" ? readInteger(action, "amount") : 0;
 		if(type == "split_stack" && amount <= 0)
 			throw std::invalid_argument("split_stack amount must be positive");
+		const bool mergeOrSwapWillMerge = type == "merge_or_swap_stacks"
+			&& destination->hasStackAtSlot(destinationSlot)
+			&& source->getCreature(sourceSlot) == destination->getCreature(destinationSlot);
 
 		const RequestWaitResult request = submitAndWaitForRequest(typeid(ArrangeStacks), CTypeList::getInstance().getTypeID<ArrangeStacks>(nullptr), [&]
 		{
@@ -5271,6 +5274,8 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 				cc->swapCreatures(source, destination, sourceSlot, destinationSlot);
 			else if(type == "merge_stacks")
 				cc->mergeStacks(source, destination, sourceSlot, destinationSlot);
+			else if(type == "merge_or_swap_stacks")
+				cc->mergeOrSwapStacks(source, destination, sourceSlot, destinationSlot);
 			else
 				cc->splitStack(source, destination, sourceSlot, destinationSlot, amount);
 		});
@@ -5280,6 +5285,8 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		actionResult["destination_slot"] = JsonNode(destinationSlot.getNum());
 		if(type == "split_stack")
 			actionResult["amount"] = JsonNode(amount);
+		if(type == "merge_or_swap_stacks")
+			actionResult["resolved_operation"] = JsonNode(mergeOrSwapWillMerge ? "merge" : "swap");
 		actionResult["request"] = jsonRequestWaitResult(request);
 		if(!waitTillFreeForScriptAction(actionResult, type))
 			return false;
@@ -5417,6 +5424,28 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		actionResult["ok"] = JsonNode(request.applied);
 		if(!request.applied)
 			actionResult["error"] = JsonNode(request.realized ? "Set tactics request was rejected by server" : "Set tactics request was not realized by server");
+		return true;
+	}
+
+	if(type == "set_town_name")
+	{
+		const CGTownInstance * town = cc->getTown(ObjectInstanceID(readInteger(action, "town_id")));
+		if(!town || town->tempOwner != playerID)
+			throw std::invalid_argument("Unknown town or town is not owned by scripted AI");
+		std::string name = readString(action, "name");
+
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(SetTownName), CTypeList::getInstance().getTypeID<SetTownName>(nullptr), [&]
+		{
+			cc->setTownName(town, name);
+		});
+		actionResult["town_id"] = JsonNode(town->id.getNum());
+		actionResult["name"] = JsonNode(name);
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Set town name request was rejected by server" : "Set town name request was not realized by server");
 		return true;
 	}
 
@@ -5577,6 +5606,33 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		actionResult["ok"] = JsonNode(request.applied);
 		if(!request.applied)
 			actionResult["error"] = JsonNode(request.realized ? "Swap artifacts request was rejected by server" : "Swap artifacts request was not realized by server");
+		return true;
+	}
+
+	if(type == "erase_transition_artifact")
+	{
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+		if(!hero || hero->tempOwner != playerID)
+			throw std::invalid_argument("Unknown hero or hero is not owned by scripted AI");
+		const CArtifactInstance * artifact = hero->getArt(ArtifactPosition::TRANSITION_POS);
+		if(!artifact)
+			throw std::invalid_argument("Hero has no artifact in transition slot");
+		if(artifact->canBePutAt(hero))
+			throw std::invalid_argument("Only illegal transition-slot artifacts can be erased");
+
+		const ArtifactLocation location(hero->id, ArtifactPosition::TRANSITION_POS);
+		const RequestWaitResult request = submitAndWaitForRequest(typeid(EraseArtifactByClient), CTypeList::getInstance().getTypeID<EraseArtifactByClient>(nullptr), [&]
+		{
+			cc->eraseArtifactByClient(location);
+		});
+		actionResult["hero_id"] = JsonNode(hero->id.getNum());
+		actionResult["location"] = jsonArtifactLocation(location);
+		actionResult["request"] = jsonRequestWaitResult(request);
+		if(!waitTillFreeForScriptAction(actionResult, type))
+			return false;
+		actionResult["ok"] = JsonNode(request.applied);
+		if(!request.applied)
+			actionResult["error"] = JsonNode(request.realized ? "Erase transition artifact request was rejected by server" : "Erase transition artifact request was not realized by server");
 		return true;
 	}
 
@@ -5906,7 +5962,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "swap_creatures", "merge_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_answer_query", "nullkiller_object_interaction" })
+	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "erase_transition_artifact", "swap_creatures", "merge_stacks", "merge_or_swap_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "set_town_name", "swap_garrison_hero", "nullkiller_trade", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_answer_query", "nullkiller_object_interaction" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();

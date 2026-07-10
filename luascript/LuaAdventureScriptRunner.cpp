@@ -376,6 +376,18 @@ function ai:mergeStacks(sourceId, sourceSlot, destinationId, destinationSlot)
 	return self:execute(action)
 end
 
+function ai:mergeOrSwapStacks(sourceId, sourceSlot, destinationId, destinationSlot)
+	local action = copyFields(sourceId)
+	if type(sourceId) ~= "table" then
+		action.source_id = sourceId
+		action.source_slot = sourceSlot
+		action.destination_id = destinationId
+		action.destination_slot = destinationSlot
+	end
+	action.type = "merge_or_swap_stacks"
+	return self:execute(action)
+end
+
 function ai:splitStack(sourceId, sourceSlot, destinationId, destinationSlot, amount)
 	local action = copyFields(sourceId)
 	if type(sourceId) ~= "table" then
@@ -458,6 +470,16 @@ function ai:setTactics(heroId, enabled)
 		action.enabled = enabled == true
 	end
 	action.type = "set_tactics"
+	return self:execute(action)
+end
+
+function ai:setTownName(townId, name)
+	local action = copyFields(townId)
+	if type(townId) ~= "table" then
+		action.town_id = townId
+		action.name = name
+	end
+	action.type = "set_town_name"
 	return self:execute(action)
 end
 
@@ -558,6 +580,15 @@ function ai:disassembleArtifact(heroId, slot)
 		action.assemble = false
 	end
 	action.type = "assemble_artifacts"
+	return self:execute(action)
+end
+
+function ai:eraseTransitionArtifact(heroId)
+	local action = copyFields(heroId)
+	if type(heroId) ~= "table" then
+		action.hero_id = heroId
+	end
+	action.type = "erase_transition_artifact"
 	return self:execute(action)
 end
 
