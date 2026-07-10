@@ -26,6 +26,7 @@
 #include "../../lib/mapObjects/CGObjectInstance.h"
 #include "../../lib/mapObjects/CGTownInstance.h"
 #include "../../lib/mapObjects/IMarket.h"
+#include "../../lib/mapObjects/IObjectInterface.h"
 #include "../../lib/mapObjects/army/CArmedInstance.h"
 #include "../../lib/mapObjects/army/CStackInstance.h"
 #include "../../lib/entities/artifact/ArtifactUtils.h"
@@ -38,6 +39,10 @@
 #include "../../lib/pathfinder/CGPathNode.h"
 #include "../../lib/pathfinder/PathfinderOptions.h"
 #include "../../lib/serializer/CTypeList.h"
+#include "../../lib/spells/CSpell.h"
+#include "../../lib/spells/CSpellHandler.h"
+#include "../../lib/spells/Problem.h"
+#include "../../lib/spells/adventure/AdventureSpellMechanics.h"
 #include "../../luascript/LuaAdventureScriptRunner.h"
 
 #include <algorithm>
@@ -949,6 +954,20 @@ JsonNode jsonArtifacts(const CGHeroInstance * hero)
 	return node;
 }
 
+JsonNode jsonKnownSpell(const CGHeroInstance * hero, const CSpell * spell)
+{
+	JsonNode node;
+	node["spell_id"] = JsonNode(spell->getId().getNum());
+	node["spellIdentifier"] = JsonNode(spell->getJsonKey());
+	node["spellName"] = JsonNode(jsonText(spell->getNameTranslated()));
+	node["level"] = JsonNode(spell->getLevel());
+	node["adventure"] = JsonNode(spell->isAdventure());
+	node["combat"] = JsonNode(spell->isCombat());
+	node["schoolLevel"] = JsonNode(hero->getSpellSchoolLevel(spell));
+	node["cost"] = JsonNode(hero->getSpellCost(spell));
+	return node;
+}
+
 std::string battleStateName(NK2AI::BattleState battleState)
 {
 	switch(battleState)
@@ -1042,6 +1061,44 @@ std::string marketModeName(EMarketMode mode)
 		return "resource_skill";
 	case EMarketMode::MARKET_AFTER_LAST_PLACEHOLDER:
 		break;
+	}
+	return "unknown";
+}
+
+std::string diggingStatusName(EDiggingStatus status)
+{
+	switch(status)
+	{
+	case EDiggingStatus::UNKNOWN:
+		return "unknown";
+	case EDiggingStatus::CAN_DIG:
+		return "can_dig";
+	case EDiggingStatus::LACK_OF_MOVEMENT:
+		return "lack_of_movement";
+	case EDiggingStatus::WRONG_TERRAIN:
+		return "wrong_terrain";
+	case EDiggingStatus::TILE_OCCUPIED:
+		return "tile_occupied";
+	case EDiggingStatus::BACKPACK_IS_FULL:
+		return "backpack_is_full";
+	}
+	return "unknown";
+}
+
+std::string shipyardStatusName(IBoatGenerator::EGeneratorState status)
+{
+	switch(status)
+	{
+	case IBoatGenerator::GOOD:
+		return "good";
+	case IBoatGenerator::BOAT_ALREADY_BUILT:
+		return "boat_already_built";
+	case IBoatGenerator::TILE_BLOCKED:
+		return "tile_blocked";
+	case IBoatGenerator::NO_WATER:
+		return "no_water";
+	case IBoatGenerator::UNKNOWN:
+		return "unknown";
 	}
 	return "unknown";
 }
@@ -1380,6 +1437,15 @@ JsonNode jsonHero(const CGHeroInstance * hero)
 	node["armyStrength"] = JsonNode(static_cast<int64_t>(hero->getArmyStrength()));
 	node["army"] = jsonArmy(*hero);
 	node["artifacts"] = jsonArtifacts(hero);
+	node["hasSpellbook"] = JsonNode(hero->hasSpellbook());
+	node["spells"].Vector();
+	for(const SpellID & spellID : hero->getSpellsInSpellbook())
+	{
+		if(!spellID.hasValue())
+			continue;
+		if(const CSpell * spell = spellID.toSpell())
+			node["spells"].Vector().push_back(jsonKnownSpell(hero, spell));
+	}
 	return node;
 }
 
@@ -1605,6 +1671,74 @@ JsonNode jsonBuildOption(const CGTownInstance * town, const CBuilding * building
 	node["planAction"]["type"] = JsonNode("build");
 	node["planAction"]["town_id"] = node["town_id"];
 	node["planAction"]["building_id"] = node["building_id"];
+	return node;
+}
+
+JsonNode jsonDigOption(const CGHeroInstance * hero)
+{
+	const EDiggingStatus status = hero->diggingStatus();
+	JsonNode node;
+	node["hero_id"] = JsonNode(hero->id.getNum());
+	node["hero"] = JsonNode(jsonText(hero->getNameTranslated()));
+	node["position"] = jsonPosition(hero->visitablePos());
+	node["statusId"] = JsonNode(static_cast<int32_t>(status));
+	node["status"] = JsonNode(diggingStatusName(status));
+	node["canDig"] = JsonNode(status == EDiggingStatus::CAN_DIG);
+	node["planAction"]["type"] = JsonNode("dig");
+	node["planAction"]["hero_id"] = node["hero_id"];
+	return node;
+}
+
+JsonNode jsonShipyardOption(const CGObjectInstance * object, const IShipyard * shipyard, const ResourceSet & resources, bool enemy)
+{
+	ResourceSet cost;
+	shipyard->getBoatCost(cost);
+	const auto status = shipyard->shipyardStatus();
+	const bool affordable = resources.canAfford(cost);
+	const bool buildable = status == IBoatGenerator::GOOD && affordable && !enemy;
+
+	JsonNode node;
+	node["shipyard_id"] = JsonNode(object->id.getNum());
+	node["position"] = jsonPosition(object->visitablePos());
+	node["owner"] = JsonNode(jsonPlayerColor(object->tempOwner));
+	node["statusId"] = JsonNode(static_cast<int32_t>(status));
+	node["status"] = JsonNode(shipyardStatusName(status));
+	node["bestLocation"] = jsonPosition(shipyard->bestLocation());
+	node["boatTypeId"] = JsonNode(shipyard->getBoatType().getNum());
+	node["boatLayerId"] = JsonNode(static_cast<int32_t>(shipyard->getBoatLayer()));
+	node["cost"] = jsonResources(cost);
+	node["affordable"] = JsonNode(affordable);
+	node["enemy"] = JsonNode(enemy);
+	node["buildable"] = JsonNode(buildable);
+	node["planAction"]["type"] = JsonNode("build_boat");
+	node["planAction"]["shipyard_id"] = node["shipyard_id"];
+	return node;
+}
+
+JsonNode jsonAdventureSpellOption(const CGHeroInstance * hero, const CSpell * spell, const std::optional<int3> & target, int32_t targetKindID, const std::string & targetKind)
+{
+	JsonNode node;
+	node["hero_id"] = JsonNode(hero->id.getNum());
+	node["hero"] = JsonNode(jsonText(hero->getNameTranslated()));
+	node["spell_id"] = JsonNode(spell->getId().getNum());
+	node["spellIdentifier"] = JsonNode(spell->getJsonKey());
+	node["spellName"] = JsonNode(jsonText(spell->getNameTranslated()));
+	node["level"] = JsonNode(spell->getLevel());
+	node["schoolLevel"] = JsonNode(hero->getSpellSchoolLevel(spell));
+	node["cost"] = JsonNode(hero->getSpellCost(spell));
+	node["mana"] = JsonNode(hero->mana);
+	node["targetKindId"] = JsonNode(targetKindID);
+	node["targetKind"] = JsonNode(targetKind);
+	node["planAction"]["type"] = JsonNode("cast_spell");
+	node["planAction"]["hero_id"] = node["hero_id"];
+	node["planAction"]["spell_id"] = node["spell_id"];
+	if(target)
+	{
+		node["target"] = jsonPosition(*target);
+		node["planAction"]["x"] = JsonNode(target->x);
+		node["planAction"]["y"] = JsonNode(target->y);
+		node["planAction"]["z"] = JsonNode(target->z);
+	}
 	return node;
 }
 
@@ -3777,10 +3911,18 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["armyTransferOptions"].Vector();
 	actionSpace["reachableObjects"].Vector();
 	actionSpace["movementOptions"].Vector();
+	actionSpace["shipyardOptions"].Vector();
+	actionSpace["digOptions"].Vector();
+	actionSpace["adventureSpellOptions"].Vector();
 	actionSpace["recommendedActions"].Vector();
 
 	std::shared_lock gameStateLock(CGameState::mutex);
 	const ResourceSet resources = cc->getResourceAmount();
+	FowTilesType visibleTiles;
+	cc->getAllTiles(visibleTiles, playerID, -1, [](const TerrainTile * tile)
+	{
+		return tile != nullptr;
+	});
 
 	for(const CGTownInstance * town : cc->getTownsInfo(true))
 	{
@@ -3856,6 +3998,39 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		}
 	}
 
+	std::set<int32_t> seenShipyards;
+	for(const int3 & position : visibleTiles)
+	{
+		const TerrainTile * tile = cc->getTile(position, false);
+		if(!tile)
+			continue;
+
+		auto appendShipyardOption = [&](ObjectInstanceID objectID)
+		{
+			if(objectID == ObjectInstanceID() || !seenShipyards.insert(objectID.getNum()).second)
+				return;
+
+			const CGObjectInstance * object = cc->getObj(objectID, false);
+			const IShipyard * shipyard = dynamic_cast<const IShipyard *>(object);
+			if(!object || !shipyard || !cc->isVisibleFor(object, playerID))
+				return;
+
+			const bool enemy = cc->getPlayerRelations(playerID, object->tempOwner) == PlayerRelations::ENEMIES;
+			JsonNode option = jsonShipyardOption(object, shipyard, resources, enemy);
+			actionSpace["shipyardOptions"].Vector().push_back(option);
+		};
+
+		for(ObjectInstanceID objectID : tile->visitableObjects)
+			appendShipyardOption(objectID);
+		for(ObjectInstanceID objectID : tile->blockingObjects)
+			appendShipyardOption(objectID);
+	}
+
+	constexpr size_t maxAdventureSpellOptions = 64;
+	constexpr size_t maxSpellTargetsPerSpell = 12;
+	constexpr int spellTargetRadius = 12;
+	std::set<std::tuple<int32_t, int32_t, int32_t, int32_t, int32_t>> seenSpellTargets;
+
 	struct MovementCandidate
 	{
 		JsonNode json;
@@ -3875,7 +4050,68 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 
 	for(const CGHeroInstance * hero : cc->getHeroesInfo())
 	{
-		if(!hero || hero->tempOwner != playerID || hero->movementPointsRemaining() <= 0)
+		if(!hero || hero->tempOwner != playerID)
+			continue;
+
+		JsonNode digOption = jsonDigOption(hero);
+		actionSpace["digOptions"].Vector().push_back(digOption);
+
+		for(const auto & spellPtr : LIBRARY->spellh->objects)
+		{
+			const CSpell * spell = spellPtr.get();
+			if(!spell || !spell->isAdventure() || !hero->canCastThisSpell(spell))
+				continue;
+
+			auto appendSpellOption = [&](const std::optional<int3> & target, int32_t targetKindID, const std::string & targetKind)
+			{
+				if(actionSpace["adventureSpellOptions"].Vector().size() >= maxAdventureSpellOptions)
+					return;
+
+				const int3 keyTarget = target.value_or(int3(-1, -1, -1));
+				if(!seenSpellTargets.emplace(hero->id.getNum(), spell->getId().getNum(), keyTarget.x, keyTarget.y, keyTarget.z).second)
+					return;
+
+				spells::detail::ProblemImpl problem;
+				if(!spell->getAdventureMechanics().canBeCastAt(problem, cc.get(), hero, keyTarget))
+					return;
+
+				JsonNode option = jsonAdventureSpellOption(hero, spell, target, targetKindID, targetKind);
+				actionSpace["adventureSpellOptions"].Vector().push_back(option);
+			};
+
+			appendSpellOption(std::nullopt, 0, "default");
+
+			size_t targetsForSpell = 0;
+			for(const CGTownInstance * town : cc->getTownsInfo(true))
+			{
+				if(targetsForSpell >= maxSpellTargetsPerSpell)
+					break;
+				if(!town || town->tempOwner != playerID)
+					continue;
+
+				const size_t before = actionSpace["adventureSpellOptions"].Vector().size();
+				appendSpellOption(town->visitablePos(), 1, "owned_town");
+				if(actionSpace["adventureSpellOptions"].Vector().size() > before)
+					++targetsForSpell;
+			}
+
+			FowTilesType targetTiles;
+			cc->getTilesInRange(targetTiles, hero->visitablePos(), spellTargetRadius, ETileVisibility::REVEALED, playerID);
+			for(const int3 & target : targetTiles)
+			{
+				if(targetsForSpell >= maxSpellTargetsPerSpell)
+					break;
+				if(!cc->isInTheMap(target) || !cc->isVisibleFor(target, playerID))
+					continue;
+
+				const size_t before = actionSpace["adventureSpellOptions"].Vector().size();
+				appendSpellOption(target, 2, "visible_tile");
+				if(actionSpace["adventureSpellOptions"].Vector().size() > before)
+					++targetsForSpell;
+			}
+		}
+
+		if(hero->movementPointsRemaining() <= 0)
 			continue;
 
 		CPathsInfo paths(cc->getMapSize(), hero);
@@ -3988,6 +4224,9 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 	analysis["candidateLimits"]["reachableRadius"] = JsonNode(16);
 	analysis["candidateLimits"]["maxMovementOptions"] = JsonNode(48);
 	analysis["candidateLimits"]["maxObjectTargets"] = JsonNode(24);
+	analysis["candidateLimits"]["spellTargetRadius"] = JsonNode(12);
+	analysis["candidateLimits"]["maxAdventureSpellOptions"] = JsonNode(64);
+	analysis["candidateLimits"]["maxSpellTargetsPerSpell"] = JsonNode(12);
 	analysis["candidateLimits"]["maxUpdateEvents"] = JsonNode(static_cast<int32_t>(maxScriptUpdateJournal));
 	analysis["execution"]["validatesOwnership"] = JsonNode(true);
 	analysis["execution"]["validatesVisibility"] = JsonNode(true);
@@ -4000,7 +4239,7 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 	analysis["scriptMemory"]["persistedInPlayerLocalSettings"] = JsonNode(true);
 	analysis["scriptMemory"]["localStateKey"] = JsonNode(SCRIPT_MEMORY_LOCAL_STATE_KEY);
 	analysis["candidateFields"].Vector();
-	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "kindId", "buildingKindId", "transferKindId", "pathActionId", "levelId", "task_id", "goalTypeId", "priorityTier", "heroRoleId", "nullkillerRoleId", "outcomeId", "failureActionId" })
+	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "kindId", "buildingKindId", "transferKindId", "pathActionId", "levelId", "statusId", "targetKindId", "spell_id", "task_id", "goalTypeId", "priorityTier", "heroRoleId", "nullkillerRoleId", "outcomeId", "failureActionId" })
 		analysis["candidateFields"].Vector().push_back(JsonNode(field));
 	analysis["danger"]["candidateDangerSource"] = JsonNode("Nullkiller direct object/guard danger evaluator");
 	analysis["danger"]["enemyReachSource"] = JsonNode("visible enemy distance and strength alerts");

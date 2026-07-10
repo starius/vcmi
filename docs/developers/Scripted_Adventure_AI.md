@@ -331,6 +331,8 @@ Required host analysis:
 - army gathering and hero-chain candidates
 - defense alerts for threatened towns/heroes
 - exploration frontier candidates
+- adventure spell, dig, boat/shipyard, and other direct player-action candidates with checked `planAction`
+  payloads
 - abstract blockers and unlock chains, reusing Nullkiller analysis where possible
 
 Required action candidates:
@@ -1095,8 +1097,12 @@ Regression harness:
 - Done: visible owned/neutral market objects expose read-side mode details, available items, available unit
   counts, efficiency, and resource-resource exchange rates. Enemy market details remain hidden beyond public
   visible-object mode metadata.
-- Partial: primitive adventure spells, digging, boat building, and hero dismissal are exposed, but scripts still
-  need richer spell/shipyard/dig candidate data to choose these actions well.
+- Partial: primitive adventure spells, digging, boat building, and hero dismissal are exposed. Owned hero records
+  now include spellbook ids, and action space includes read-side `digOptions`, `shipyardOptions`, and
+  `adventureSpellOptions` with checked `planAction` payloads. Deeper adventure-spell routing remains partial:
+  Lua gets default casts, owned-town targets, and nearby visible tile samples, while complex Dimension Door,
+  Town Portal, boat, and unlock-chain planning should still use bounded Nullkiller tasks until richer analyzer
+  exports exist.
 - Partial: full danger-map estimates are not exposed yet.
 - Partial: MCP and scripted AI still duplicate some JSON assembly code; extraction can happen once the surface
   stabilizes.
@@ -1176,8 +1182,8 @@ Regression harness:
 The next high-value implementation steps are:
 
 - Add richer Lua decision policies and read-side candidate data for dialogs and remaining player choices:
-  adventure spell candidates, boats/shipyards, quests/gates, level-up choices, university choices, and object
-  selection.
+  quests/gates, level-up choices, university choices, object selection, and deeper adventure-spell target
+  ranking beyond the current sampled candidate surface.
 - Expose richer Nullkiller analyzer data, especially danger-map and blocker/cluster details, as read-only
   candidate fields instead of rebuilding those analyses in Lua.
 - Expand the default Lua policy to rank and compose bounded Nullkiller candidates after the API can express the
