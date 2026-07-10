@@ -65,6 +65,12 @@
 #include "../Nullkiller2/Markers/DefendTown.h"
 #include "../Nullkiller2/Markers/HeroExchange.h"
 #include "../Nullkiller2/Markers/UnlockCluster.h"
+#include "../Nullkiller2/Pathfinding/Actions/AdventureSpellCastMovementActions.h"
+#include "../Nullkiller2/Pathfinding/Actions/BoatActions.h"
+#include "../Nullkiller2/Pathfinding/Actions/DimensionDoorAction.h"
+#include "../Nullkiller2/Pathfinding/Actions/QuestAction.h"
+#include "../Nullkiller2/Pathfinding/Actions/TownPortalAction.h"
+#include "../Nullkiller2/Pathfinding/Actions/WhirlpoolAction.h"
 
 #include <algorithm>
 #include <cctype>
@@ -144,6 +150,19 @@ enum class ScriptRiskLevel : int32_t
 	RISKY = 2,
 	HIGH = 3,
 	CRITICAL = 4
+};
+
+enum class ScriptSpecialActionKind : int32_t
+{
+	UNKNOWN = 0,
+	COMPOSITE = 1,
+	DIMENSION_DOOR = 2,
+	TOWN_PORTAL = 3,
+	SUMMON_BOAT = 4,
+	BUILD_BOAT = 5,
+	WHIRLPOOL = 6,
+	QUEST = 7,
+	ADVENTURE_CAST = 8
 };
 
 const char * scriptBuildingKindName(ScriptBuildingKind kind)
@@ -260,6 +279,31 @@ const char * scriptRiskLevelName(ScriptRiskLevel level)
 		return "high";
 	case ScriptRiskLevel::CRITICAL:
 		return "critical";
+	default:
+		return "unknown";
+	}
+}
+
+const char * scriptSpecialActionKindName(ScriptSpecialActionKind kind)
+{
+	switch(kind)
+	{
+	case ScriptSpecialActionKind::COMPOSITE:
+		return "composite";
+	case ScriptSpecialActionKind::DIMENSION_DOOR:
+		return "dimension_door";
+	case ScriptSpecialActionKind::TOWN_PORTAL:
+		return "town_portal";
+	case ScriptSpecialActionKind::SUMMON_BOAT:
+		return "summon_boat";
+	case ScriptSpecialActionKind::BUILD_BOAT:
+		return "build_boat";
+	case ScriptSpecialActionKind::WHIRLPOOL:
+		return "whirlpool";
+	case ScriptSpecialActionKind::QUEST:
+		return "quest";
+	case ScriptSpecialActionKind::ADVENTURE_CAST:
+		return "adventure_cast";
 	default:
 		return "unknown";
 	}
@@ -1626,7 +1670,80 @@ bool hasVisibleThreat(const NK2AI::HitMapNode & node, const std::shared_ptr<CCal
 	return hasVisibleThreatHero(node.fastestDanger, cc, player) || hasVisibleThreatHero(node.maximumDanger, cc, player);
 }
 
-JsonNode jsonNullkillerPath(const NK2AI::AIPath & path, size_t maxNodes = 16)
+ScriptSpecialActionKind specialActionKind(const NK2AI::SpecialAction & action)
+{
+	if(dynamic_cast<const NK2AI::CompositeAction *>(&action))
+		return ScriptSpecialActionKind::COMPOSITE;
+	if(dynamic_cast<const NK2AI::AIPathfinding::DimensionDoorAction *>(&action))
+		return ScriptSpecialActionKind::DIMENSION_DOOR;
+	if(dynamic_cast<const NK2AI::AIPathfinding::TownPortalAction *>(&action))
+		return ScriptSpecialActionKind::TOWN_PORTAL;
+	if(dynamic_cast<const NK2AI::AIPathfinding::SummonBoatAction *>(&action))
+		return ScriptSpecialActionKind::SUMMON_BOAT;
+	if(dynamic_cast<const NK2AI::AIPathfinding::BuildBoatAction *>(&action))
+		return ScriptSpecialActionKind::BUILD_BOAT;
+	if(dynamic_cast<const NK2AI::AIPathfinding::WhirlpoolAction *>(&action))
+		return ScriptSpecialActionKind::WHIRLPOOL;
+	if(dynamic_cast<const NK2AI::AIPathfinding::QuestAction *>(&action))
+		return ScriptSpecialActionKind::QUEST;
+	if(dynamic_cast<const NK2AI::AIPathfinding::AdventureCastAction *>(&action))
+		return ScriptSpecialActionKind::ADVENTURE_CAST;
+	return ScriptSpecialActionKind::UNKNOWN;
+}
+
+JsonNode jsonSpecialAction(
+	const NK2AI::SpecialAction & action,
+	const std::shared_ptr<CCallback> & cc,
+	PlayerColor player,
+	const int3 & destination,
+	int depth)
+{
+	const ScriptSpecialActionKind kind = specialActionKind(action);
+	JsonNode node;
+	node["kindId"] = JsonNode(static_cast<int32_t>(kind));
+	node["kind"] = JsonNode(scriptSpecialActionKindName(kind));
+	node["parts"].Vector();
+
+	if(destination.isValid())
+		node["destination"] = jsonPosition(destination);
+
+	if(const CGObjectInstance * target = action.targetObject())
+	{
+		if(!cc || cc->isVisibleFor(target, player))
+		{
+			node["targetObjectId"] = JsonNode(target->id.getNum());
+			node["targetObjectTypeId"] = JsonNode(target->ID.getNum());
+			node["targetPosition"] = jsonPosition(target->visitablePos());
+		}
+	}
+
+	const auto parts = action.getParts();
+	node["partCount"] = JsonNode(static_cast<int32_t>(parts.size()));
+	node["partsTruncated"] = JsonNode(false);
+	if(depth > 0 && !parts.empty())
+	{
+		constexpr size_t maxParts = 8;
+		if(parts.size() > maxParts)
+			node["partsTruncated"] = JsonNode(true);
+		size_t count = 0;
+		for(const auto & part : parts)
+		{
+			if(!part)
+				continue;
+			if(count++ >= maxParts)
+				break;
+			node["parts"].Vector().push_back(jsonSpecialAction(*part, cc, player, destination, depth - 1));
+		}
+	}
+
+	return node;
+}
+
+JsonNode jsonNullkillerPath(
+	const NK2AI::AIPath & path,
+	const std::shared_ptr<CCallback> & cc,
+	PlayerColor player,
+	size_t maxNodes = 16)
 {
 	JsonNode node;
 	node["nodeLimit"] = JsonNode(static_cast<int32_t>(maxNodes));
@@ -1674,6 +1791,7 @@ JsonNode jsonNullkillerPath(const NK2AI::AIPath & path, size_t maxNodes = 16)
 			pathNodeJson["hero_id"] = JsonNode(pathNode.targetHero->id.getNum());
 		if(pathNode.specialAction)
 		{
+			pathNodeJson["specialAction"] = jsonSpecialAction(*pathNode.specialAction, cc, player, pathNode.coord, 1);
 			if(const CGObjectInstance * target = pathNode.specialAction->targetObject())
 			{
 				pathNodeJson["specialActionTargetObjectId"] = JsonNode(target->id.getNum());
@@ -1740,10 +1858,10 @@ JsonNode jsonNullkillerGoalDetails(const NK2AI::Goals::AbstractGoal & goal, cons
 	}
 
 	if(const auto * executeChain = dynamic_cast<const NK2AI::Goals::ExecuteHeroChain *>(&goal))
-		details["path"] = jsonNullkillerPath(executeChain->getPath());
+		details["path"] = jsonNullkillerPath(executeChain->getPath(), cc, playerID);
 
 	if(const auto * heroExchange = dynamic_cast<const NK2AI::Goals::HeroExchange *>(&goal))
-		details["exchangePath"] = jsonNullkillerPath(heroExchange->exchangePath);
+		details["exchangePath"] = jsonNullkillerPath(heroExchange->exchangePath, cc, playerID);
 
 	if(const auto * unlockCluster = dynamic_cast<const NK2AI::Goals::UnlockCluster *>(&goal))
 	{
@@ -1756,7 +1874,7 @@ JsonNode jsonNullkillerGoalDetails(const NK2AI::Goals::AbstractGoal & goal, cons
 				details["blockerObjectTypeId"] = JsonNode(cluster->blocker->ID.getNum());
 			}
 		}
-		details["pathToCenter"] = jsonNullkillerPath(unlockCluster->getPathToCenter());
+		details["pathToCenter"] = jsonNullkillerPath(unlockCluster->getPathToCenter(), cc, playerID);
 	}
 
 	if(const auto * defendTown = dynamic_cast<const NK2AI::Goals::DefendTown *>(&goal))
