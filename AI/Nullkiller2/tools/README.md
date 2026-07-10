@@ -79,7 +79,8 @@ Additional checks:
 
 ## Battle Predictor A/B
 
-`compare_battle_predictors.py` compares `Nullkiller2` with `Nullkiller2Ratio`.
+`compare_battle_predictors.py` compares `Nullkiller2` with a configured
+candidate such as `Nullkiller2Ratio`, `Nullkiller2V2`, or `Nullkiller2V3`.
 The default `--comparison-mode color-swap` is for true competitive maps: it
 runs each sample twice and swaps Red/Blue to control for color advantage.
 
@@ -102,5 +103,11 @@ python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
   --randommap-players 2 \
   --samples 50 \
   --legacy-ai Nullkiller2 \
-  --candidate-ai Nullkiller2V2
+  --candidate-ai Nullkiller2V3 \
+  --testdays 28 \
+  --adjudicate-testdays
 ```
+
+With `--adjudicate-testdays`, games that reach the completed-day limit without
+a standard winner are scored deterministically from the run-local
+`statistics.csv`. Full standard victories still take precedence when they occur.

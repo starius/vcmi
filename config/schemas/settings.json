@@ -610,12 +610,12 @@
 			"properties" : {
 				"adventureAlliedAI" : {
 					"type" : "string",
-					"enum" : [ "EmptyAI", "Nullkiller2", "Nullkiller2Ratio", "Nullkiller2V2" ],
+					"enum" : [ "EmptyAI", "Nullkiller2", "Nullkiller2Ratio", "Nullkiller2V2", "Nullkiller2V3" ],
 					"default" : "Nullkiller2"
 				},
 				"adventureEnemyAI" : {
 					"type" : "string",
-					"enum" : [ "EmptyAI", "Nullkiller2", "Nullkiller2Ratio", "Nullkiller2V2" ],
+					"enum" : [ "EmptyAI", "Nullkiller2", "Nullkiller2Ratio", "Nullkiller2V2", "Nullkiller2V3" ],
 					"default" : "Nullkiller2"
 				},
 				"combatEnemyAI" : {

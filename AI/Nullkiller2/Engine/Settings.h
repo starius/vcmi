@@ -18,7 +18,8 @@ namespace NK2AI
 	{
 		LEGACY,
 		RATIO,
-		V2
+		V2,
+		V3
 	};
 
 	class Settings

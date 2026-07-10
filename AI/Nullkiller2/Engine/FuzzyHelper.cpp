@@ -16,7 +16,9 @@
 #include "../../../lib/mapObjectConstructors/AObjectTypeHandler.h"
 #include "../../../lib/mapObjectConstructors/CObjectClassesHandler.h"
 #include "../../../lib/mapObjects/army/CStackInstance.h"
+#include "../../../lib/spells/CSpell.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <limits>
@@ -36,8 +38,9 @@ constexpr double BATTLE_PREDICTION_SAFE_PROBABILITY = 0.55;
 constexpr double MIN_CALIBRATED_REQUIRED_RATIO = 0.25;
 constexpr double MAX_CALIBRATED_REQUIRED_RATIO = 4.0;
 
-constexpr BattlePredictionFeature LOG_STRENGTH_RATIO{2.29045846667, 0.437265671215, 0.806169412392};
-constexpr std::array<BattlePredictionFeature, 12> BATTLE_PREDICTION_FEATURES{{
+constexpr BattlePredictionFeature V2_LOG_STRENGTH_RATIO{2.29045846667, 0.437265671215, 0.806169412392};
+constexpr double V2_BATTLE_PREDICTION_INTERCEPT = 1.25491514231;
+constexpr std::array<BattlePredictionFeature, 12> V2_BATTLE_PREDICTION_FEATURES{{
 	{0.188331947115, 0.490706319703, 0.499913620045}, // defender has hero
 	{1.65620941787, 10.224091904, 0.736716600813}, // log attacker army strength
 	{-1.63940215415, 10.1120818809, 0.760765130202}, // log defender army strength
@@ -50,6 +53,28 @@ constexpr std::array<BattlePredictionFeature, 12> BATTLE_PREDICTION_FEATURES{{
 	{-0.122638318073, 0.508122743381, 0.498525145772}, // mana ratio difference
 	{-0.391808195656, 0.565055762082, 0.495749682622}, // attacker has spellbook
 	{-0.00131909457523, 0.275092936803, 0.446561096519}, // defender has spellbook
+}};
+
+constexpr BattlePredictionFeature V3_LOG_STRENGTH_RATIO{2.20556993221, 0.124887862096, 0.642593085507};
+constexpr double V3_BATTLE_PREDICTION_INTERCEPT = 1.28536151217;
+constexpr std::array<BattlePredictionFeature, 17> V3_BATTLE_PREDICTION_FEATURES{{
+	{0.0707993144308, 0.485485485485, 0.499789284467}, // defender has hero
+	{0.938598430928, 10.244622525, 0.758724296163}, // log attacker army strength
+	{-0.909692081585, 10.1197346629, 0.775148611745}, // log defender army strength
+	{-0.837431900062, 0.429799267267, 0.693281449923}, // log stack count ratio
+	{0.0407143596407, -0.26789660833, 0.405769675859}, // largest stack share difference
+	{0.583652547789, 5.94844844845, 8.93216819836}, // attack difference
+	{0.330481922386, 4.85435435435, 9.33163372334}, // defense difference
+	{0.378095925599, 5.10960960961, 8.63226585327}, // spell power difference
+	{0.15336497787, 4.73023023023, 9.03562059222}, // knowledge difference
+	{-0.0707993144308, 0.514514514515, 0.499789284467}, // level difference
+	{-0.0905198940439, 0.36960340363, 0.553308837373}, // mana ratio difference
+	{-0.175386654623, 37.7027027027, 87.8173535828}, // current mana difference
+	{0.160955434576, 48.1056056056, 93.0080257368}, // mana limit difference
+	{-0.119702664047, 0.614614614615, 0.486686233745}, // attacker has spellbook
+	{0.0554573173897, 0.27027027027, 0.44409937095}, // defender has spellbook
+	{-0.143994639893, 0.339339339339, 0.659089039756}, // combat spell count difference
+	{0.69796393922, 0.34243107926, 0.44112371216}, // log hero strength ratio
 }};
 
 double scaledFeature(double value, const BattlePredictionFeature & feature)
@@ -79,6 +104,21 @@ double primarySkill(const CGHeroInstance * hero, PrimarySkill skill)
 	return hero ? hero->getPrimSkillLevel(skill) : 0.0;
 }
 
+double heroLevel(const CGHeroInstance * hero)
+{
+	return hero ? hero->level : 0.0;
+}
+
+double currentMana(const CGHeroInstance * hero)
+{
+	return hero ? hero->mana : 0.0;
+}
+
+double manaLimit(const CGHeroInstance * hero)
+{
+	return hero ? hero->manaLimit() : 0.0;
+}
+
 double stackCount(const CCreatureSet * army)
 {
 	return army ? army->stacksCount() : 0.0;
@@ -101,11 +141,45 @@ double logit(double probability)
 	return std::log(probability / (1.0 - probability));
 }
 
+double combatSpellCount(const CGHeroInstance * hero)
+{
+	if(!hero || !hero->hasSpellbook())
+		return 0.0;
+
+	double result = 0.0;
+	for(const auto & spellID : hero->getSpellsInSpellbook())
+	{
+		const auto * spell = spellID.toSpell();
+		if(spell && !spell->isAdventure())
+			result += 1.0;
+	}
+
+	return result;
+}
+
+template<size_t N>
+double requiredRatioForModel(
+	double intercept,
+	const BattlePredictionFeature & logStrengthRatio,
+	const std::array<double, N> & featureValues,
+	const std::array<BattlePredictionFeature, N> & features)
+{
+	double scoreWithoutRatio = intercept;
+	for(size_t index = 0; index < featureValues.size(); ++index)
+		scoreWithoutRatio += scaledFeature(featureValues[index], features[index]);
+
+	const double requiredLogRatio = logStrengthRatio.mean
+		+ logStrengthRatio.scale * (logit(BATTLE_PREDICTION_SAFE_PROBABILITY) - scoreWithoutRatio) / logStrengthRatio.coefficient;
+
+	return std::clamp(std::exp(requiredLogRatio), MIN_CALIBRATED_REQUIRED_RATIO, MAX_CALIBRATED_REQUIRED_RATIO);
+}
+
 uint64_t calibrateDangerForVisitor(
 	const CGHeroInstance * visitor,
 	const CArmedInstance * defender,
 	const CGHeroInstance * defenderHero,
 	uint64_t fallbackDanger,
+	BattlePredictionModel battlePredictionModel,
 	float safeAttackRatio)
 {
 	if(!visitor || !defender || fallbackDanger == 0 || safeAttackRatio <= 0)
@@ -122,7 +196,7 @@ uint64_t calibrateDangerForVisitor(
 	if(!std::isfinite(defenderStrength) || defenderStrength <= 0)
 		return fallbackDanger;
 
-	const std::array<double, BATTLE_PREDICTION_FEATURES.size()> featureValues{{
+	const std::array<double, V2_BATTLE_PREDICTION_FEATURES.size()> v2FeatureValues{{
 		defenderHero ? 1.0 : 0.0,
 		std::log(attackerArmyStrength),
 		std::log(defenderArmyStrength),
@@ -137,13 +211,30 @@ uint64_t calibrateDangerForVisitor(
 		(defenderHero && defenderHero->hasSpellbook()) ? 1.0 : 0.0,
 	}};
 
-	double scoreWithoutRatio = 1.25491514231;
-	for(size_t index = 0; index < featureValues.size(); ++index)
-		scoreWithoutRatio += scaledFeature(featureValues[index], BATTLE_PREDICTION_FEATURES[index]);
-
-	const double requiredLogRatio = LOG_STRENGTH_RATIO.mean
-		+ LOG_STRENGTH_RATIO.scale * (logit(BATTLE_PREDICTION_SAFE_PROBABILITY) - scoreWithoutRatio) / LOG_STRENGTH_RATIO.coefficient;
-	const double requiredRatio = std::clamp(std::exp(requiredLogRatio), MIN_CALIBRATED_REQUIRED_RATIO, MAX_CALIBRATED_REQUIRED_RATIO);
+	double requiredRatio = requiredRatioForModel(V2_BATTLE_PREDICTION_INTERCEPT, V2_LOG_STRENGTH_RATIO, v2FeatureValues, V2_BATTLE_PREDICTION_FEATURES);
+	if(battlePredictionModel == BattlePredictionModel::V3)
+	{
+		const std::array<double, V3_BATTLE_PREDICTION_FEATURES.size()> v3FeatureValues{{
+			defenderHero ? 1.0 : 0.0,
+			std::log(attackerArmyStrength),
+			std::log(defenderArmyStrength),
+			std::log((stackCount(visitor) + 1.0) / (stackCount(defender) + 1.0)),
+			largestStackShare(visitor, attackerArmyStrength) - largestStackShare(defender, defenderArmyStrength),
+			primarySkill(visitor, PrimarySkill::ATTACK) - primarySkill(defenderHero, PrimarySkill::ATTACK),
+			primarySkill(visitor, PrimarySkill::DEFENSE) - primarySkill(defenderHero, PrimarySkill::DEFENSE),
+			primarySkill(visitor, PrimarySkill::SPELL_POWER) - primarySkill(defenderHero, PrimarySkill::SPELL_POWER),
+			primarySkill(visitor, PrimarySkill::KNOWLEDGE) - primarySkill(defenderHero, PrimarySkill::KNOWLEDGE),
+			heroLevel(visitor) - heroLevel(defenderHero),
+			manaRatio(visitor) - manaRatio(defenderHero),
+			currentMana(visitor) - currentMana(defenderHero),
+			manaLimit(visitor) - manaLimit(defenderHero),
+			visitor->hasSpellbook() ? 1.0 : 0.0,
+			(defenderHero && defenderHero->hasSpellbook()) ? 1.0 : 0.0,
+			combatSpellCount(visitor) - combatSpellCount(defenderHero),
+			std::log(heroStrengthOrOne(visitor) / heroStrengthOrOne(defenderHero)),
+		}};
+		requiredRatio = requiredRatioForModel(V3_BATTLE_PREDICTION_INTERCEPT, V3_LOG_STRENGTH_RATIO, v3FeatureValues, V3_BATTLE_PREDICTION_FEATURES);
+	}
 	const double adjustedDanger = defenderStrength * requiredRatio / safeAttackRatio;
 
 	if(!std::isfinite(adjustedDanger) || adjustedDanger <= 0)
@@ -161,7 +252,7 @@ uint64_t calibrateDangerForVisitor(
 	BattlePredictionModel battlePredictionModel,
 	float safeAttackRatio)
 {
-	if(battlePredictionModel != BattlePredictionModel::V2)
+	if(battlePredictionModel != BattlePredictionModel::V2 && battlePredictionModel != BattlePredictionModel::V3)
 		return fallbackDanger;
 
 	const auto * defender = dynamic_cast<const CArmedInstance *>(object);
@@ -172,7 +263,7 @@ uint64_t calibrateDangerForVisitor(
 		return fallbackDanger;
 
 	const auto * defenderHero = dynamic_cast<const CGHeroInstance *>(object);
-	return calibrateDangerForVisitor(visitor, defender, defenderHero, fallbackDanger, safeAttackRatio);
+	return calibrateDangerForVisitor(visitor, defender, defenderHero, fallbackDanger, battlePredictionModel, safeAttackRatio);
 }
 }
 
