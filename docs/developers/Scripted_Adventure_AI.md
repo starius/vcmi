@@ -1098,6 +1098,10 @@ Regression harness:
 - Done: nearby visible enemy pressure against owned heroes is exposed as `analysis.heroThreatAlerts`.
 - Done: owned hero records expose Nullkiller's main/scout role plus fighting and magic evaluator scores, so Lua
   does not need to re-infer hero roles from scratch.
+- Done: bounded Nullkiller analyzer exports include visible enemy threat tiles and visible locked-object clusters.
+  Threat tiles include only currently visible enemy heroes; clusters include only visible blockers and visible
+  blocked objects, with caps for trace size. These exports are passive: script input reads already prepared
+  Nullkiller analyzer state and does not recompute the planner as a side effect.
 - Partial: bounded Nullkiller task fragments are exposed through `ai:nullkillerTasks`, `ai:runNullkillerTask`,
   and `ai:nullkillerStep`. The bounded step now preserves Nullkiller script-task state across a scripted turn,
   returns structured execution outcomes, and can be restricted to granular behavior families such as defense,
@@ -1127,7 +1131,8 @@ Regression harness:
   adventure-spell routing remains partial: Lua gets default casts, owned-town targets, and nearby visible tile
   samples, while complex Dimension Door, Town Portal, boat, and unlock-chain planning should still use bounded
   Nullkiller tasks until richer analyzer exports exist.
-- Partial: full danger-map estimates are not exposed yet.
+- Partial: full danger-map estimates are not exposed intentionally; Lua gets capped visible-only enemy threat
+  tiles and visible blocker clusters, while hidden enemy reach remains private to avoid cheating.
 - Partial: MCP and scripted AI still duplicate some JSON assembly code; extraction can happen once the surface
   stabilizes.
 

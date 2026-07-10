@@ -90,6 +90,7 @@ public:
 	std::vector<const CGObjectInstance *> getNearbyObjects() const;
 	std::vector<const CGObjectInstance *> getFarObjects() const;
 	std::vector<std::shared_ptr<ObjectCluster>> getLockedClusters() const;
+	bool isClusterizationUpToDate() const { return isUpToDate && invalidated.empty(); }
 	const CGObjectInstance * getBlocker(const AIPath & path) const;
 	std::optional<const CGObjectInstance *> getBlocker(const AIPathNodeInfo & node) const;
 

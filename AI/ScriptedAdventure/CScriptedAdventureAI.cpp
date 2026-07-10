@@ -46,6 +46,8 @@
 #include "../../lib/spells/Problem.h"
 #include "../../lib/spells/adventure/AdventureSpellMechanics.h"
 #include "../../luascript/LuaAdventureScriptRunner.h"
+#include "../Nullkiller2/Analyzers/DangerHitMapAnalyzer.h"
+#include "../Nullkiller2/Analyzers/ObjectClusterizer.h"
 
 #include <algorithm>
 #include <cctype>
@@ -1410,6 +1412,29 @@ JsonNode jsonPositions(const FowTilesType & positions, size_t maxPositions)
 	return node;
 }
 
+std::vector<int3> visibleMapTiles(const std::shared_ptr<CCallback> & cc, PlayerColor playerID)
+{
+	std::vector<int3> result;
+	if(!cc)
+		return result;
+
+	const int3 mapSize = cc->getMapSize();
+	result.reserve(static_cast<size_t>(mapSize.x) * static_cast<size_t>(mapSize.y) * static_cast<size_t>(mapSize.z) / 4);
+	for(int32_t z = 0; z < mapSize.z; ++z)
+	{
+		for(int32_t x = 0; x < mapSize.x; ++x)
+		{
+			for(int32_t y = 0; y < mapSize.y; ++y)
+			{
+				const int3 position(x, y, z);
+				if(cc->isVisibleFor(position, playerID))
+					result.push_back(position);
+			}
+		}
+	}
+	return result;
+}
+
 JsonNode jsonPositions(const std::vector<int3> & positions)
 {
 	JsonNode node;
@@ -1487,6 +1512,40 @@ JsonNode jsonRisk(const CGHeroInstance * hero, uint64_t danger, bool safe)
 	node["risk"] = JsonNode(scriptRiskLevelName(riskLevel));
 	node["estimatedLoss"] = JsonNode(safe ? 0 : static_cast<int64_t>(danger));
 	return node;
+}
+
+bool hasVisibleThreatHero(const NK2AI::HitMapInfo & info, const std::shared_ptr<CCallback> & cc, PlayerColor player)
+{
+	if(!cc || !info.heroPtr.isVerified(false))
+		return false;
+
+	const CGHeroInstance * hero = info.heroPtr.getUnverified();
+	return hero && cc->isVisibleFor(hero, player);
+}
+
+JsonNode jsonVisibleHitMapInfo(const NK2AI::HitMapInfo & info, const std::shared_ptr<CCallback> & cc, PlayerColor player)
+{
+	JsonNode node;
+	const bool visible = hasVisibleThreatHero(info, cc, player);
+	node["hasVisibleThreat"] = JsonNode(visible);
+	if(!visible)
+		return node;
+
+	const CGHeroInstance * hero = info.heroPtr.getUnverified();
+	node["danger"] = JsonNode(static_cast<int64_t>(info.danger));
+	node["turn"] = JsonNode(static_cast<int32_t>(info.turn));
+	node["threat"] = JsonNode(static_cast<double>(info.threat));
+	node["value"] = JsonNode(info.value());
+	node["enemyHeroId"] = JsonNode(hero->id.getNum());
+	node["enemyHero"] = JsonNode(jsonText(hero->getNameTranslated()));
+	node["enemyPosition"] = jsonPosition(hero->visitablePos());
+	node["enemyStrength"] = JsonNode(static_cast<int64_t>(hero->getArmyStrength()));
+	return node;
+}
+
+bool hasVisibleThreat(const NK2AI::HitMapNode & node, const std::shared_ptr<CCallback> & cc, PlayerColor player)
+{
+	return hasVisibleThreatHero(node.fastestDanger, cc, player) || hasVisibleThreatHero(node.maximumDanger, cc, player);
 }
 
 int32_t questMissionId(const CQuest & quest)
@@ -4342,11 +4401,7 @@ JsonNode CScriptedAdventureAI::makeScriptInputState()
 			state["towns"].Vector().push_back(jsonTown(town, resources));
 	}
 
-	FowTilesType visibleTiles;
-	cc->getAllTiles(visibleTiles, playerID, -1, [](const TerrainTile * tile)
-	{
-		return tile != nullptr;
-	});
+	const std::vector<int3> visibleTiles = visibleMapTiles(cc, playerID);
 
 	state["map"]["visibleTilesCount"] = JsonNode(static_cast<int32_t>(visibleTiles.size()));
 	state["map"]["visibleTileSampleLimit"] = JsonNode(static_cast<int32_t>(maxVisibleTileSamples));
@@ -4419,11 +4474,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 
 	std::shared_lock gameStateLock(CGameState::mutex);
 	const ResourceSet resources = cc->getResourceAmount();
-	FowTilesType visibleTiles;
-	cc->getAllTiles(visibleTiles, playerID, -1, [](const TerrainTile * tile)
-	{
-		return tile != nullptr;
-	});
+	const std::vector<int3> visibleTiles = visibleMapTiles(cc, playerID);
 
 	std::set<int32_t> seenUpgradeArmies;
 	auto appendUpgradeOptions = [&](const CArmedInstance * army)
@@ -4785,6 +4836,9 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 	analysis["candidateLimits"]["spellTargetRadius"] = JsonNode(12);
 	analysis["candidateLimits"]["maxAdventureSpellOptions"] = JsonNode(64);
 	analysis["candidateLimits"]["maxSpellTargetsPerSpell"] = JsonNode(12);
+	analysis["candidateLimits"]["maxVisibleEnemyThreatTiles"] = JsonNode(128);
+	analysis["candidateLimits"]["maxLockedObjectClusters"] = JsonNode(32);
+	analysis["candidateLimits"]["maxLockedClusterObjects"] = JsonNode(16);
 	analysis["candidateLimits"]["maxUpdateEvents"] = JsonNode(static_cast<int32_t>(maxScriptUpdateJournal));
 	analysis["execution"]["validatesOwnership"] = JsonNode(true);
 	analysis["execution"]["validatesVisibility"] = JsonNode(true);
@@ -4801,13 +4855,22 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 		analysis["candidateFields"].Vector().push_back(JsonNode(field));
 	analysis["danger"]["candidateDangerSource"] = JsonNode("Nullkiller direct object/guard danger evaluator");
 	analysis["danger"]["enemyReachSource"] = JsonNode("visible enemy distance and strength alerts");
+	analysis["danger"]["visibleEnemyThreatTiles"].Vector();
+	analysis["danger"]["visibleEnemyThreatTileLimit"] = JsonNode(128);
+	analysis["danger"]["visibleEnemyThreatTileCount"] = JsonNode(0);
+	analysis["danger"]["visibleEnemyThreatTilesTruncated"] = JsonNode(false);
 	analysis["visibleEnemyHeroes"].Vector();
 	analysis["visibleEnemyTowns"].Vector();
 	analysis["defenseAlerts"].Vector();
 	analysis["heroThreatAlerts"].Vector();
+	analysis["lockedObjectClusters"].Vector();
+	analysis["lockedObjectClusterLimit"] = JsonNode(32);
+	analysis["lockedObjectClusterCount"] = JsonNode(0);
+	analysis["lockedObjectClustersTruncated"] = JsonNode(false);
 
 	std::shared_lock gameStateLock(CGameState::mutex);
 	const ResourceSet resources = cc->getResourceAmount();
+	const std::vector<int3> visibleTiles = visibleMapTiles(cc, playerID);
 	std::vector<const CGHeroInstance *> enemyHeroes;
 
 	for(const CGObjectInstance * object : cc->getAllVisitableObjs())
@@ -4825,6 +4888,108 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 		else if(const auto * enemyTown = dynamic_cast<const CGTownInstance *>(object))
 		{
 			analysis["visibleEnemyTowns"].Vector().push_back(jsonTown(enemyTown, resources));
+		}
+	}
+
+	if(nullkiller && nullkiller->dangerHitMap && nullkiller->objectClusterizer)
+	{
+		constexpr size_t maxVisibleEnemyThreatTiles = 128;
+		constexpr size_t maxLockedObjectClusters = 32;
+		constexpr size_t maxLockedClusterObjects = 16;
+		size_t visibleEnemyThreatTileCount = 0;
+		size_t visibleLockedClusterCount = 0;
+
+		std::unique_lock aiLock(nullkiller->aiStateMutex);
+		if(nullkiller->dangerHitMap->isHitMapUpToDate())
+		{
+			for(const int3 & position : visibleTiles)
+			{
+				if(!cc->isInTheMap(position) || !cc->isVisibleFor(position, playerID))
+					continue;
+
+				const NK2AI::HitMapNode & threat = nullkiller->dangerHitMap->getTileThreat(position);
+				if(!hasVisibleThreat(threat, cc, playerID))
+					continue;
+
+				++visibleEnemyThreatTileCount;
+				if(analysis["danger"]["visibleEnemyThreatTiles"].Vector().size() >= maxVisibleEnemyThreatTiles)
+				{
+					analysis["danger"]["visibleEnemyThreatTilesTruncated"] = JsonNode(true);
+					continue;
+				}
+
+				JsonNode tile;
+				tile["position"] = jsonPosition(position);
+				tile["fastest"] = jsonVisibleHitMapInfo(threat.fastestDanger, cc, playerID);
+				tile["maximum"] = jsonVisibleHitMapInfo(threat.maximumDanger, cc, playerID);
+				if(nullkiller->dangerHitMap->isTileOwnersUpToDate())
+				{
+					if(const CGTownInstance * closestTown = nullkiller->dangerHitMap->getClosestTown(position))
+					{
+						if(cc->isVisibleFor(closestTown, playerID))
+						{
+							tile["closestTownId"] = JsonNode(closestTown->id.getNum());
+							tile["closestTownOwnerId"] = JsonNode(closestTown->getOwner().getNum());
+							tile["closestTownPosition"] = jsonPosition(closestTown->visitablePos());
+						}
+					}
+				}
+				analysis["danger"]["visibleEnemyThreatTiles"].Vector().push_back(tile);
+			}
+			analysis["danger"]["visibleEnemyThreatTileCount"] = JsonNode(static_cast<int32_t>(visibleEnemyThreatTileCount));
+		}
+
+		if(nullkiller->objectClusterizer->isClusterizationUpToDate())
+		{
+			for(const std::shared_ptr<NK2AI::ObjectCluster> & cluster : nullkiller->objectClusterizer->getLockedClusters())
+			{
+				if(!cluster || !cluster->blocker || !cc->isVisibleFor(cluster->blocker, playerID))
+					continue;
+
+				JsonNode clusterNode;
+				clusterNode["blocker_id"] = JsonNode(cluster->blocker->id.getNum());
+				clusterNode["blocker"] = jsonMapObject(cluster->blocker, playerID, nullptr);
+				clusterNode["objects"].Vector();
+				clusterNode["objectLimit"] = JsonNode(static_cast<int32_t>(maxLockedClusterObjects));
+				clusterNode["objectsTruncated"] = JsonNode(false);
+
+				size_t visibleObjects = 0;
+				for(const auto & entry : cluster->objects)
+				{
+					const CGObjectInstance * object = cc->getObj(entry.first, false);
+					if(!object || !cc->isVisibleFor(object, playerID))
+						continue;
+
+					++visibleObjects;
+					if(clusterNode["objects"].Vector().size() >= maxLockedClusterObjects)
+					{
+						clusterNode["objectsTruncated"] = JsonNode(true);
+						continue;
+					}
+
+					const NK2AI::ClusterObjectInfo & info = entry.second;
+					JsonNode objectNode;
+					objectNode["object_id"] = JsonNode(object->id.getNum());
+					objectNode["object"] = jsonMapObject(object, playerID, nullptr);
+					objectNode["priority"] = JsonNode(static_cast<double>(info.priority));
+					objectNode["movementCost"] = JsonNode(static_cast<double>(info.movementCost));
+					objectNode["danger"] = JsonNode(static_cast<int64_t>(info.danger));
+					objectNode["turn"] = JsonNode(static_cast<int32_t>(info.turn));
+					clusterNode["objects"].Vector().push_back(objectNode);
+				}
+				clusterNode["visibleObjectCount"] = JsonNode(static_cast<int32_t>(visibleObjects));
+				if(visibleObjects == 0)
+					continue;
+
+				++visibleLockedClusterCount;
+				if(analysis["lockedObjectClusters"].Vector().size() >= maxLockedObjectClusters)
+				{
+					analysis["lockedObjectClustersTruncated"] = JsonNode(true);
+					continue;
+				}
+				analysis["lockedObjectClusters"].Vector().push_back(clusterNode);
+			}
+			analysis["lockedObjectClusterCount"] = JsonNode(static_cast<int32_t>(visibleLockedClusterCount));
 		}
 	}
 
