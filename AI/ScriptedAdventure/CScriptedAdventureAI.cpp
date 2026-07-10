@@ -1200,6 +1200,36 @@ std::string jsonPlayerColor(PlayerColor color)
 	return color.toString();
 }
 
+std::string playerRelationName(PlayerRelations relation)
+{
+	switch(relation)
+	{
+	case PlayerRelations::ENEMIES:
+		return "enemies";
+	case PlayerRelations::ALLIES:
+		return "allies";
+	case PlayerRelations::SAME_PLAYER:
+		return "same_player";
+	}
+	return "unknown";
+}
+
+std::string playerStatusName(EPlayerStatus status)
+{
+	switch(status)
+	{
+	case EPlayerStatus::WRONG:
+		return "wrong";
+	case EPlayerStatus::INGAME:
+		return "ingame";
+	case EPlayerStatus::LOSER:
+		return "loser";
+	case EPlayerStatus::WINNER:
+		return "winner";
+	}
+	return "unknown";
+}
+
 bool canExposeMarketDetails(const CGObjectInstance * object, PlayerColor player)
 {
 	return object->tempOwner == player
@@ -8845,13 +8875,45 @@ JsonNode CScriptedAdventureAI::makeScriptInputState()
 
 	if(const PlayerState * playerState = cc->getPlayerState(playerID, false))
 	{
+		const auto ownStatus = playerState->status;
 		state["player"]["team"] = JsonNode(playerState->team.getNum());
-		state["player"]["status"] = JsonNode(static_cast<int32_t>(playerState->status));
+		state["player"]["teamId"] = JsonNode(playerState->team.getNum());
+		state["player"]["status"] = JsonNode(static_cast<int32_t>(ownStatus));
+		state["player"]["statusId"] = JsonNode(static_cast<int32_t>(ownStatus));
+		state["player"]["statusName"] = JsonNode(playerStatusName(ownStatus));
 		state["resources"] = jsonResources(playerState->resources);
 	}
 	else
 	{
 		state["resources"] = jsonResources(cc->getResourceAmount());
+	}
+
+	state["players"].Vector();
+	for(PlayerColor color : PlayerColor::ALL_PLAYERS())
+	{
+		const auto playerStatus = cc->getPlayerStatus(color, false);
+		if(playerStatus == EPlayerStatus::WRONG)
+			continue;
+
+		const auto relation = cc->getPlayerRelations(playerID, color);
+		const PlayerState * playerState = cc->getPlayerState(color, false);
+		JsonNode playerNode;
+		playerNode["id"] = JsonNode(color.getNum());
+		playerNode["color"] = JsonNode(jsonPlayerColor(color));
+		playerNode["statusId"] = JsonNode(static_cast<int32_t>(playerStatus));
+		playerNode["status"] = JsonNode(playerStatusName(playerStatus));
+		playerNode["relationId"] = JsonNode(static_cast<int32_t>(relation));
+		playerNode["relation"] = JsonNode(playerRelationName(relation));
+		playerNode["self"] = JsonNode(relation == PlayerRelations::SAME_PLAYER);
+		playerNode["ally"] = JsonNode(relation == PlayerRelations::ALLIES || relation == PlayerRelations::SAME_PLAYER);
+		playerNode["enemy"] = JsonNode(relation == PlayerRelations::ENEMIES);
+		playerNode["detailsVisible"] = JsonNode(playerState != nullptr);
+		if(playerState)
+		{
+			playerNode["teamId"] = JsonNode(playerState->team.getNum());
+			playerNode["human"] = JsonNode(playerState->human);
+		}
+		state["players"].Vector().push_back(playerNode);
 	}
 
 	std::map<int32_t, NK2AI::HeroRole> heroRoles;

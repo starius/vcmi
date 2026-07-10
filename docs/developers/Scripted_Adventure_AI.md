@@ -167,6 +167,11 @@ Input:
 - `state.grail`: player-specific puzzle-map knowledge. `knownRatio` is visible to Lua, but the exact `position`
   is included only when the puzzle is fully revealed; partially revealed puzzle maps intentionally do not expose
   the hidden grail tile even though the client internally needs it for rendering.
+- `state.players`: public player status and diplomacy metadata. Each entry uses stable numeric ids for color,
+  status, and relation, plus trace-friendly labels and booleans for self/ally/enemy checks. Player-state details
+  such as team id and controller type are included only when the normal callback exposes that player state. This
+  table intentionally does not expose enemy resources, army strength, hero counts, town counts, or other hidden
+  intelligence.
 - `state.turn.queries`: typed pending dialog/window queries with query ids, stable `typeId` values, trace-friendly
   type labels, answer ids, and mode-specific numeric fields. Real server queries include `answerAction`,
   `nullkillerAnswerAction`, and
@@ -1819,6 +1824,10 @@ Regression harness:
   map leakage from the client-side `getGrailPos` callback.
 - Done: `state.calendar` now exposes the normal player-visible calendar breakdown in addition to the legacy
   absolute day, so scripts can reason about weeks/months without recomputing settings-dependent calendar math.
+- Done: Lua input now includes `state.players` with public player status/relation metadata for every valid player.
+  The binding uses numeric ids for script decisions, keeps labels as trace context, gates detailed player-state
+  fields through the normal callback access rules, and deliberately excludes enemy economy, army, hero-count, and
+  town-count data.
 - Done: after adding explicit `nullkiller_reset`, a 16-map, 1-day traced integration smoke completed all scenarios
   at the day limit with 16 `end_turn` outputs, 20 bounded `nullkiller_turn_slice` calls, 145 checked `visit_object`
   actions, 18 bounded query answers, zero failed checked actions, and zero fallback outputs.
