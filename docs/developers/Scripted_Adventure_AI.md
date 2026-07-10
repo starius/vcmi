@@ -136,6 +136,8 @@ Input:
 - `progress`: result of the previous plan execution, including executed, failed, and remaining actions.
 - `memory`: script-owned long-term context from previous calls/days.
 - current day/week/month and active player color under `state`.
+- `state.turn.queries`: typed pending dialog/window queries with query ids, stable type labels, answer ids, and
+  mode-specific numeric fields. This is the read-side model for Lua dialog callbacks.
 - `actionSpace`: currently legal or relevant high-level candidates.
 - `analysis`: host-provided derived facts such as reachability, danger, town build options, recruitment options,
   and object values.
@@ -875,6 +877,10 @@ Regression harness:
   resource-to-resource path, or `ai:marketTrade({...})` and its mode-specific wrappers for every native
   `EMarketMode`. Visible market objects expose their supported market modes; richer market-rate inspection is
   still a separate read-side improvement.
+- Script input now includes typed `state.turn.queries` records for level-up, blocking, teleport, object-selection,
+  tavern, hero-exchange, garrison, recruitment, university, and market dialogs. The current behavior still
+  auto-answers dialogs raised during direct script actions; changing selected dialogs to yield back to Lua is a
+  separate control-flow step.
 - Lua can now request checked primitive adventure actions for dismissing heroes, building boats, digging, and
   casting adventure spells. C++ validates ownership and visible target tiles before forwarding to the server.
 - `analysis.heroThreatAlerts` complements `analysis.defenseAlerts`, so scripts can respond to threatened roaming
@@ -1061,6 +1067,9 @@ Regression harness:
   helpers.
 - Done: exact army stack management, creature upgrades, formation/tactics changes, and town garrison-hero swaps
   are exposed through checked Lua facade methods.
+- Partial: pending dialog/window queries are exposed as typed read-side data under `state.turn.queries`. Scripts
+  can answer queries by id, but direct script actions still auto-answer dialogs until the control-flow handoff is
+  changed per dialog type.
 - Done: market operations are exposed through a coarse `nullkillerTrade` helper, an exact resource-resource
   helper, and a generic `marketTrade` action with wrappers for resource transfer, creature/resource sale,
   artifact purchase/sale/sacrifice, creature sacrifice, undead transformation, and university skill purchase.

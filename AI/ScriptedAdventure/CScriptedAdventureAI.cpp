@@ -696,12 +696,34 @@ public:
 	}
 };
 
+std::string componentTypeName(ComponentType type);
+
 JsonNode jsonPosition(const int3 & position)
 {
 	JsonNode node;
 	node["x"] = JsonNode(position.x);
 	node["y"] = JsonNode(position.y);
 	node["z"] = JsonNode(position.z);
+	return node;
+}
+
+JsonNode jsonComponent(const Component & component)
+{
+	JsonNode node;
+	node["typeId"] = JsonNode(static_cast<int32_t>(component.type));
+	node["type"] = JsonNode(componentTypeName(component.type));
+	node["subtypeId"] = JsonNode(component.subType.getNum());
+	if(component.value)
+		node["value"] = JsonNode(*component.value);
+	return node;
+}
+
+JsonNode jsonComponents(const std::vector<Component> & components)
+{
+	JsonNode node;
+	node.Vector();
+	for(const Component & component : components)
+		node.Vector().push_back(jsonComponent(component));
 	return node;
 }
 
@@ -928,6 +950,48 @@ std::string armyFormationName(EArmyFormation formation)
 		return "loose";
 	case EArmyFormation::TIGHT:
 		return "tight";
+	}
+	return "unknown";
+}
+
+std::string componentTypeName(ComponentType type)
+{
+	switch(type)
+	{
+	case ComponentType::NONE:
+		return "none";
+	case ComponentType::PRIM_SKILL:
+		return "primary_skill";
+	case ComponentType::SEC_SKILL:
+		return "secondary_skill";
+	case ComponentType::RESOURCE:
+		return "resource";
+	case ComponentType::RESOURCE_PER_DAY:
+		return "resource_per_day";
+	case ComponentType::CREATURE:
+		return "creature";
+	case ComponentType::ARTIFACT:
+		return "artifact";
+	case ComponentType::SPELL_SCROLL:
+		return "spell_scroll";
+	case ComponentType::MANA:
+		return "mana";
+	case ComponentType::EXPERIENCE:
+		return "experience";
+	case ComponentType::LEVEL:
+		return "level";
+	case ComponentType::SPELL:
+		return "spell";
+	case ComponentType::MORALE:
+		return "morale";
+	case ComponentType::LUCK:
+		return "luck";
+	case ComponentType::BUILDING:
+		return "building";
+	case ComponentType::HERO_PORTRAIT:
+		return "hero_portrait";
+	case ComponentType::FLAG:
+		return "flag";
 	}
 	return "unknown";
 }
@@ -1528,18 +1592,82 @@ bool CScriptedAdventureAI::isScriptActionAutoAnswerMode()
 	return scriptActionAutoAnswerMode;
 }
 
+void CScriptedAdventureAI::recordScriptQuery(QueryID queryID, const std::string & type, JsonNode data)
+{
+	if(queryID == QueryID(-1))
+		return;
+
+	data["query_id"] = JsonNode(queryID.getNum());
+	data["type"] = JsonNode(type);
+
+	std::lock_guard guard(scriptQueryMutex);
+	scriptQueries[queryID] = data;
+}
+
+void CScriptedAdventureAI::removeScriptQuery(QueryID queryID)
+{
+	std::lock_guard guard(scriptQueryMutex);
+	scriptQueries.erase(queryID);
+}
+
+JsonNode CScriptedAdventureAI::makeScriptQueries() const
+{
+	JsonNode node;
+	node.Vector();
+
+	std::lock_guard guard(scriptQueryMutex);
+	for(const auto & entry : scriptQueries)
+		node.Vector().push_back(entry.second);
+
+	return node;
+}
+
 void CScriptedAdventureAI::heroGotLevel(const CGHeroInstance * hero, PrimarySkill pskill, std::vector<SecondarySkill> & skills, QueryID queryID)
 {
+	JsonNode data;
+	if(hero)
+		data["hero_id"] = JsonNode(hero->id.getNum());
+	data["primary_skill_id"] = JsonNode(pskill.getNum());
+	data["skill_options"].Vector();
+	for(size_t index = 0; index < skills.size(); ++index)
+	{
+		JsonNode option;
+		option["answer"] = JsonNode(static_cast<int32_t>(index));
+		option["skill_id"] = JsonNode(skills[index].getNum());
+		data["skill_options"].Vector().push_back(option);
+	}
+	recordScriptQuery(queryID, "hero_level_up", data);
 	AIGateway::heroGotLevel(hero, pskill, skills, queryID);
 }
 
 void CScriptedAdventureAI::commanderGotLevel(const CCommanderInstance * commander, std::vector<ui32> skills, QueryID queryID)
 {
+	JsonNode data;
+	data["skill_options"].Vector();
+	for(size_t index = 0; index < skills.size(); ++index)
+	{
+		JsonNode option;
+		option["answer"] = JsonNode(static_cast<int32_t>(index));
+		option["skill_id"] = JsonNode(static_cast<int32_t>(skills[index]));
+		data["skill_options"].Vector().push_back(option);
+	}
+	recordScriptQuery(queryID, "commander_level_up", data);
 	AIGateway::commanderGotLevel(commander, skills, queryID);
 }
 
 void CScriptedAdventureAI::showBlockingDialog(const std::string & text, const std::vector<Component> & components, QueryID askID, const int soundID, bool selection, bool cancel, bool safeToAutoaccept)
 {
+	JsonNode data;
+	data["text"] = JsonNode(text);
+	data["sound_id"] = JsonNode(soundID);
+	data["selection"] = JsonNode(selection);
+	data["cancel"] = JsonNode(cancel);
+	data["safe_to_autoaccept"] = JsonNode(safeToAutoaccept);
+	data["components"] = jsonComponents(components);
+	for(size_t index = 0; index < data["components"].Vector().size(); ++index)
+		data["components"].Vector()[index]["answer"] = JsonNode(static_cast<int32_t>(index + 1));
+	recordScriptQuery(askID, "blocking_dialog", data);
+
 	if(isScriptActionAutoAnswerMode())
 	{
 		// Scripted actions are declarative. Keep required modal replies narrow here;
@@ -1559,6 +1687,22 @@ void CScriptedAdventureAI::showBlockingDialog(const std::string & text, const st
 
 void CScriptedAdventureAI::showTeleportDialog(const CGHeroInstance * hero, TeleportChannelID channel, TTeleportExitsList exits, bool impassable, QueryID askID)
 {
+	JsonNode data;
+	if(hero)
+		data["hero_id"] = JsonNode(hero->id.getNum());
+	data["channel_id"] = JsonNode(channel.getNum());
+	data["impassable"] = JsonNode(impassable);
+	data["exits"].Vector();
+	for(size_t index = 0; index < exits.size(); ++index)
+	{
+		JsonNode exit;
+		exit["answer"] = JsonNode(static_cast<int32_t>(index));
+		exit["object_id"] = JsonNode(exits[index].first.getNum());
+		exit["position"] = jsonPosition(exits[index].second);
+		data["exits"].Vector().push_back(exit);
+	}
+	recordScriptQuery(askID, "teleport_dialog", data);
+
 	if(!isScriptActionAutoAnswerMode())
 	{
 		AIGateway::showTeleportDialog(hero, channel, exits, impassable, askID);
@@ -1573,6 +1717,20 @@ void CScriptedAdventureAI::showTeleportDialog(const CGHeroInstance * hero, Telep
 
 void CScriptedAdventureAI::showMapObjectSelectDialog(QueryID askID, const Component & icon, const MetaString & title, const MetaString & description, const std::vector<ObjectInstanceID> & objects)
 {
+	JsonNode data;
+	data["icon"] = jsonComponent(icon);
+	data["title"] = JsonNode(title.toString());
+	data["description"] = JsonNode(description.toString());
+	data["objects"].Vector();
+	for(const ObjectInstanceID & objectID : objects)
+	{
+		JsonNode option;
+		option["answer"] = JsonNode(objectID.getNum());
+		option["object_id"] = JsonNode(objectID.getNum());
+		data["objects"].Vector().push_back(option);
+	}
+	recordScriptQuery(askID, "map_object_select", data);
+
 	if(!isScriptActionAutoAnswerMode())
 	{
 		AIGateway::showMapObjectSelectDialog(askID, icon, title, description, objects);
@@ -1653,11 +1811,22 @@ void CScriptedAdventureAI::heroVisitsTown(const CGHeroInstance * hero, const CGT
 
 void CScriptedAdventureAI::showTavernWindow(const CGObjectInstance * object, const CGHeroInstance * visitor, QueryID queryID)
 {
+	JsonNode data;
+	if(object)
+		data["object_id"] = JsonNode(object->id.getNum());
+	if(visitor)
+		data["visitor_hero_id"] = JsonNode(visitor->id.getNum());
+	recordScriptQuery(queryID, "tavern_window", data);
 	AIGateway::showTavernWindow(object, visitor, queryID);
 }
 
 void CScriptedAdventureAI::heroExchangeStarted(ObjectInstanceID hero1, ObjectInstanceID hero2, QueryID query)
 {
+	JsonNode data;
+	data["hero1_id"] = JsonNode(hero1.getNum());
+	data["hero2_id"] = JsonNode(hero2.getNum());
+	recordScriptQuery(query, "hero_exchange", data);
+
 	if(isScriptActionAutoAnswerMode())
 	{
 		// Native exchange handling may rearrange artifacts/army as a side effect.
@@ -1674,6 +1843,15 @@ void CScriptedAdventureAI::heroExchangeStarted(ObjectInstanceID hero1, ObjectIns
 
 void CScriptedAdventureAI::showGarrisonDialog(const CArmedInstance * up, const CGHeroInstance * down, bool removableUnits, QueryID queryID, const MetaString & customTitle)
 {
+	JsonNode data;
+	if(up)
+		data["upper_army_id"] = JsonNode(up->id.getNum());
+	if(down)
+		data["lower_hero_id"] = JsonNode(down->id.getNum());
+	data["removable_units"] = JsonNode(removableUnits);
+	data["custom_title"] = JsonNode(customTitle.toString());
+	recordScriptQuery(queryID, "garrison_dialog", data);
+
 	if(isScriptActionAutoAnswerMode())
 	{
 		(void)up;
@@ -1689,6 +1867,14 @@ void CScriptedAdventureAI::showGarrisonDialog(const CArmedInstance * up, const C
 
 void CScriptedAdventureAI::showRecruitmentDialog(const CGDwelling * dwelling, const CArmedInstance * dst, int level, QueryID queryID)
 {
+	JsonNode data;
+	if(dwelling)
+		data["dwelling_id"] = JsonNode(dwelling->id.getNum());
+	if(dst)
+		data["destination_id"] = JsonNode(dst->id.getNum());
+	data["level"] = JsonNode(level);
+	recordScriptQuery(queryID, "recruitment_dialog", data);
+
 	if(isScriptActionAutoAnswerMode())
 	{
 		(void)dwelling;
@@ -1703,11 +1889,23 @@ void CScriptedAdventureAI::showRecruitmentDialog(const CGDwelling * dwelling, co
 
 void CScriptedAdventureAI::showUniversityWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID)
 {
+	JsonNode data;
+	if(market)
+		data["market_id"] = JsonNode(market->getObjInstanceID().getNum());
+	if(visitor)
+		data["visitor_hero_id"] = JsonNode(visitor->id.getNum());
+	recordScriptQuery(queryID, "university_window", data);
 	AIGateway::showUniversityWindow(market, visitor, queryID);
 }
 
 void CScriptedAdventureAI::showMarketWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID)
 {
+	JsonNode data;
+	if(market)
+		data["market_id"] = JsonNode(market->getObjInstanceID().getNum());
+	if(visitor)
+		data["visitor_hero_id"] = JsonNode(visitor->id.getNum());
+	recordScriptQuery(queryID, "market_window", data);
 	AIGateway::showMarketWindow(market, visitor, queryID);
 }
 
@@ -1765,6 +1963,8 @@ void CScriptedAdventureAI::requestSent(const CPackForServer * pack, int requestI
 		if(earlyResult)
 		{
 			status.receivedAnswerConfirmation(requestID, *earlyResult);
+			if(*earlyResult)
+				removeScriptQuery(reply->qid);
 			std::lock_guard lock(queryReplyMutex);
 			queryReplyRequests.erase(requestID);
 		}
@@ -1802,7 +2002,11 @@ void CScriptedAdventureAI::requestRealized(PackageApplied * pa)
 		}
 
 		if(queryID)
+		{
 			status.receivedAnswerConfirmation(static_cast<int>(pa->requestID), pa->result);
+			if(pa->result)
+				removeScriptQuery(*queryID);
+		}
 	}
 	else
 	{
@@ -3247,6 +3451,7 @@ JsonNode CScriptedAdventureAI::makeScriptInputState()
 	state["player"]["color"] = JsonNode(playerID.toString());
 	state["turn"]["active"] = JsonNode(status.haveTurn());
 	state["turn"]["pendingQueries"] = JsonNode(status.getQueriesCount());
+	state["turn"]["queries"] = makeScriptQueries();
 	state["battle"]["state"] = JsonNode(battleStateName(status.getBattle()));
 	const int3 mapSize = cc->getMapSize();
 	state["map"]["width"] = JsonNode(mapSize.x);

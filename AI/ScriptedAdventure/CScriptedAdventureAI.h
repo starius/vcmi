@@ -126,6 +126,8 @@ private:
 	std::mutex autoAnswerMutex;
 	std::map<QueryID, int> pendingAutoAnswers;
 	bool scriptActionAutoAnswerMode = false;
+	mutable std::mutex scriptQueryMutex;
+	std::map<QueryID, JsonNode> scriptQueries;
 	std::vector<std::pair<int32_t, NK2AI::Goals::TTask>> nullkillerTaskHandles;
 	int32_t nextNullkillerTaskHandle = 1;
 
@@ -143,6 +145,9 @@ private:
 	void answerPendingAutoQueries();
 	void setScriptActionAutoAnswerMode(bool active);
 	bool isScriptActionAutoAnswerMode();
+	void recordScriptQuery(QueryID queryID, const std::string & type, JsonNode data);
+	void removeScriptQuery(QueryID queryID);
+	JsonNode makeScriptQueries() const;
 	JsonNode makeScriptInputState();
 	AI::AdventureScriptInput makeAdventureScriptInput(const JsonNode & progress);
 	JsonNode makeScriptActionSpace() const;
