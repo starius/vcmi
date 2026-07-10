@@ -1179,8 +1179,9 @@ Regression harness:
   reward dialog and resumes after Lua answers it by stable component ids.
 - Invalid or rejected actions are passed back to the script as `progress.failed` for bounded replanning. Nullkiller
   fallback remains for script failures, script-requested fallback, repeated failures, or exhausted script-call budget.
-- Remaining C++ expansion should focus on additional read-only candidates, especially Nullkiller task fragments,
-  blocker/unlock chains, and army-gathering options.
+- Further C++ expansion should be demand-driven: expose additional read-only analyzer fields when a Lua policy
+  needs them, while using bounded Nullkiller task fragments for native blocker/unlock chains, army gathering, and
+  pathfinder-owned decompositions.
 
 ## Milestones
 
@@ -1247,7 +1248,7 @@ Regression harness:
   Threat tiles include only currently visible enemy heroes; clusters include only visible blockers and visible
   blocked objects, with caps for trace size. These exports are passive: script input reads already prepared
   Nullkiller analyzer state and does not recompute the planner as a side effect.
-- Partial: bounded Nullkiller task fragments are exposed through `ai:nullkillerTasks`, `ai:runNullkillerTask`,
+- Done: bounded Nullkiller task fragments are exposed through `ai:nullkillerTasks`, `ai:runNullkillerTask`,
   `ai:nullkillerStep`, and capped `ai:nullkillerPass` / `ai:nullkillerAdventurePass` helpers. The bounded step
   now preserves Nullkiller script-task state across a scripted turn, returns structured execution outcomes, and
   can be restricted to granular behavior families such as defense, gather-army, exploration, building,
@@ -1255,8 +1256,8 @@ Regression harness:
   composition plans, hero-chain paths, cluster blockers, defense threats, upgrades, buildings, boats, and
   adventure spells. Single-query Nullkiller dialog handling is also exposed through `ai:nullkillerAnswerQuery`.
   The native priority-pass loop is exposed through `ai:nullkillerPriorityPass`.
-  This is still not full parity: scripts need richer direct access to remaining player choices before serious
-  script optimization should be treated as meaningful.
+  This closes the full-day delegation gap for native task families: Lua can choose, rank, and run bounded native
+  subroutines, then refresh visible state instead of handing Nullkiller the rest of the turn.
 - Done: Nullkiller path-node special actions are serialized with stable typed metadata, so Lua can identify and
   inspect native Dimension Door, Town Portal, boat, whirlpool, quest, adventure-cast, and composite path actions
   without relying on debug strings. The exposed action parameters use ids/numeric fields where possible and keep
@@ -1389,7 +1390,8 @@ Regression harness:
   defense pressure, and penalizes scout targets near visible enemy heroes.
 - Done: it consumes candidate risk/value fields, avoids unsafe object targets more aggressively, and can move a
   threatened hero away from a visible stronger enemy.
-- Partial: deeper defense policy still needs richer host analysis and higher-level defend/gather candidates.
+- Partial: deeper defense policy remains Lua policy/analyzer work. Bounded defense and gather-army subroutines are
+  available; richer host-side fields should be added only when concrete script ranking logic needs them.
 
 ### Milestone 8: Save/Load and Development Reload
 
@@ -1457,8 +1459,8 @@ The next high-value implementation steps are:
 - Keep adventure-spell optimization on the hybrid path: scripts should rank when to use native adventure
   spell-routing subroutines, then inspect returned task/path `specialAction` records, instead of attempting to
   recreate Nullkiller's pathfinder in Lua.
-- Close remaining Lua API parity gaps before tuning scripts: expose bounded Nullkiller helpers or checked facade
-  calls for any player-visible action/subroutine that still requires full-day `ai:nullkiller()` delegation.
+- Keep auditing Lua API parity before tuning scripts: if a concrete player-visible action or native subroutine
+  still requires full-day `ai:nullkiller()` delegation, add a checked facade or bounded helper first.
 - Expose any remaining Nullkiller analyzer data as read-only candidate fields only when a concrete script policy
   needs it; do not rebuild those analyses in Lua.
 - Expand the default Lua policy to rank and compose bounded Nullkiller candidates only after the API can express
