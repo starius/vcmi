@@ -1285,6 +1285,9 @@ Regression harness:
 - Contract: before optimizing a Lua policy, treat any required `ai:nullkiller()` / full-day fallback as a parity
   bug unless the script deliberately uses it as a safety escape. The preferred integration point is a checked
   action, read-only candidate/analyzer field, or bounded Nullkiller helper that returns control to Lua.
+- Bounded Nullkiller helpers that invoke native task decomposition, pathfinding, task execution, priority passes,
+  or resource trading use the same shared pathfinder-storage lock as native `Nullkiller::makeTurn`; add new native
+  subroutines at that primitive boundary rather than around higher-level Lua loops to avoid nested lock attempts.
 - Done: Nullkiller path-node special actions are serialized with stable typed metadata, so Lua can identify and
   inspect native Dimension Door, Town Portal, boat, whirlpool, quest, adventure-cast, and composite path actions
   without relying on debug strings. The exposed action parameters use ids/numeric fields where possible and keep
