@@ -134,6 +134,9 @@ Input:
   active/known for the player; inactive visible quest objects expose only active/completed flags.
 - `updates`: capped revisioned journal of recent visible changes. Scripts can store the last consumed revision
   in memory when they want delta processing.
+- `updates` also includes player-visible non-query windows such as generic info dialogs, shipyard dialogs,
+  hill-fort windows, and thieves-guild windows. Localized text is trace context only; stable component/object ids
+  are the script-facing data.
 - `opponentUpdates`: the same journal filtered to visible opponent-related changes.
 - `progress`: result of the previous plan execution, including executed, failed, and remaining actions.
 - `memory`: script-owned long-term context from previous calls/days.
@@ -1148,6 +1151,9 @@ Regression harness:
   native bounded handling for level-up skills, cautious yes/no prompts, teleport and map-object choices, hero
   exchanges, garrison pickup, dwelling recruitment, and simple window-closing dialogs without surrendering the
   rest of the day.
+- Done: player-visible non-query adventure windows are mirrored into the script update journal. This covers
+  generic info dialogs, shipyard dialogs, hill-fort windows, and thieves-guild windows, with stable component,
+  object, hero, and shipyard fields where available.
 - Done: market operations are exposed through a coarse `nullkillerTrade` helper, an exact resource-resource
   helper, and a generic `marketTrade` action with wrappers for resource transfer, creature/resource sale,
   artifact purchase/sale/sacrifice, creature sacrifice, undead transformation, and university skill purchase.

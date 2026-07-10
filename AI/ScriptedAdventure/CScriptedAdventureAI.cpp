@@ -789,6 +789,7 @@ public:
 };
 
 std::string componentTypeName(ComponentType type);
+std::string infoWindowModeName(EInfoWindowMode mode);
 std::string marketModeName(EMarketMode mode);
 
 JsonNode jsonPosition(const int3 & position)
@@ -1302,6 +1303,20 @@ std::string componentTypeName(ComponentType type)
 		return "hero_portrait";
 	case ComponentType::FLAG:
 		return "flag";
+	}
+	return "unknown";
+}
+
+std::string infoWindowModeName(EInfoWindowMode mode)
+{
+	switch(mode)
+	{
+	case EInfoWindowMode::AUTO:
+		return "auto";
+	case EInfoWindowMode::MODAL:
+		return "modal";
+	case EInfoWindowMode::INFO:
+		return "info";
 	}
 	return "unknown";
 }
@@ -3002,6 +3017,40 @@ void CScriptedAdventureAI::showTavernWindow(const CGObjectInstance * object, con
 	AIGateway::showTavernWindow(object, visitor, queryID);
 }
 
+void CScriptedAdventureAI::showThievesGuildWindow(const CGObjectInstance * obj)
+{
+	JsonNode data;
+	if(obj)
+	{
+		data["object_id"] = JsonNode(obj->id.getNum());
+		if(cc && cc->isVisibleFor(obj, playerID))
+			data["object"] = jsonMapObject(obj, playerID, nullptr);
+	}
+	appendScriptUpdate("thieves_guild_window", data, obj ? isOpponent(obj->tempOwner) : false);
+
+	AIGateway::showThievesGuildWindow(obj);
+}
+
+void CScriptedAdventureAI::showShipyardDialog(const IShipyard * shipyard)
+{
+	JsonNode data;
+	const auto * object = dynamic_cast<const CGObjectInstance *>(shipyard);
+	if(object)
+	{
+		data["shipyard_id"] = JsonNode(object->id.getNum());
+		if(cc && cc->isVisibleFor(object, playerID))
+			data["object"] = jsonMapObject(object, playerID, nullptr);
+		if(cc)
+		{
+			const bool enemy = cc->getPlayerRelations(playerID, object->tempOwner) == PlayerRelations::ENEMIES;
+			data["shipyard"] = jsonShipyardOption(object, shipyard, cc->getResourceAmount(), enemy);
+		}
+	}
+	appendScriptUpdate("shipyard_dialog", data, object ? isOpponent(object->tempOwner) : false);
+
+	AIGateway::showShipyardDialog(shipyard);
+}
+
 void CScriptedAdventureAI::heroExchangeStarted(ObjectInstanceID hero1, ObjectInstanceID hero2, QueryID query)
 {
 	JsonNode data;
@@ -3072,6 +3121,39 @@ void CScriptedAdventureAI::showRecruitmentDialog(const CGDwelling * dwelling, co
 	}
 
 	AIGateway::showRecruitmentDialog(dwelling, dst, level, queryID);
+}
+
+void CScriptedAdventureAI::showHillFortWindow(const CGObjectInstance * object, const CGHeroInstance * visitor)
+{
+	JsonNode data;
+	if(object)
+	{
+		data["object_id"] = JsonNode(object->id.getNum());
+		if(cc && cc->isVisibleFor(object, playerID))
+			data["object"] = jsonMapObject(object, playerID, visitor);
+	}
+	if(visitor)
+	{
+		data["visitor_hero_id"] = JsonNode(visitor->id.getNum());
+		if(cc && cc->isVisibleFor(visitor, playerID))
+			data["visitorHero"] = jsonHero(visitor, visitor->tempOwner == playerID);
+	}
+	appendScriptUpdate("hill_fort_window", data, (object && isOpponent(object->tempOwner)) || (visitor && isOpponent(visitor->tempOwner)));
+
+	AIGateway::showHillFortWindow(object, visitor);
+}
+
+void CScriptedAdventureAI::showInfoDialog(EInfoWindowMode type, const std::string & text, const std::vector<Component> & components, int soundID)
+{
+	JsonNode data;
+	data["modeId"] = JsonNode(static_cast<int32_t>(type));
+	data["mode"] = JsonNode(infoWindowModeName(type));
+	data["text"] = JsonNode(jsonText(text));
+	data["sound_id"] = JsonNode(soundID);
+	data["components"] = jsonComponents(components);
+	appendScriptUpdate("info_dialog", data, false);
+
+	AIGateway::showInfoDialog(type, text, components, soundID);
 }
 
 void CScriptedAdventureAI::showUniversityWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID)

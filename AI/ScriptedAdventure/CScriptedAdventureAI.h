@@ -48,9 +48,13 @@ public:
 	void heroCreated(const CGHeroInstance * hero) override;
 	void heroVisitsTown(const CGHeroInstance * hero, const CGTownInstance * town) override;
 	void showTavernWindow(const CGObjectInstance * object, const CGHeroInstance * visitor, QueryID queryID) override;
+	void showThievesGuildWindow(const CGObjectInstance * obj) override;
+	void showShipyardDialog(const IShipyard * obj) override;
 	void heroExchangeStarted(ObjectInstanceID hero1, ObjectInstanceID hero2, QueryID query) override;
 	void showGarrisonDialog(const CArmedInstance * up, const CGHeroInstance * down, bool removableUnits, QueryID queryID, const MetaString & customTitle) override;
 	void showRecruitmentDialog(const CGDwelling * dwelling, const CArmedInstance * dst, int level, QueryID queryID) override;
+	void showHillFortWindow(const CGObjectInstance * object, const CGHeroInstance * visitor) override;
+	void showInfoDialog(EInfoWindowMode type, const std::string & text, const std::vector<Component> & components, int soundID) override;
 	void showUniversityWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID) override;
 	void showMarketWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID) override;
 	void askToAssembleArtifact(const ArtifactLocation & destination) override;
