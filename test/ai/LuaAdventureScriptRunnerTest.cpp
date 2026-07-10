@@ -780,6 +780,37 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallNullkillerArmyFormationHe
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallNullkillerTownCreaturePickup)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				ai:nullkillerMoveCreaturesToHero(16)
+				return ai:output("end_turn", "native town creature pickup")
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:nullkiller-town-creature-pickup", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 1);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_move_creatures_to_hero");
+	EXPECT_EQ(commands[0]["payload"]["town_id"].Integer(), 16);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteActionSpaceOptions)
 {
 	const std::string source = R"lua(

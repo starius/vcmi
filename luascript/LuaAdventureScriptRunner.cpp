@@ -771,6 +771,15 @@ function ai:nullkillerRecruitCreatures(sourceId, destinationId)
 	return self:execute(action)
 end
 
+function ai:nullkillerMoveCreaturesToHero(townId)
+	local action = copyFields(townId)
+	if type(townId) ~= "table" then
+		action.town_id = townId
+	end
+	action.type = "nullkiller_move_creatures_to_hero"
+	return self:execute(action)
+end
+
 function ai:nullkillerAddSingleCreatureStacks(heroId)
 	local action = copyFields(heroId)
 	if type(heroId) ~= "table" then
