@@ -287,4 +287,70 @@ function Script.planDay(input)
     return { status = "need_replan", memory = memory, actions = actions, intent = memory.lastIntent, confidence = 0.5 }
 end
 
+local function firstPendingQuery(input)
+    local queries = input
+        and input.state
+        and input.state.turn
+        and input.state.turn.queries
+
+    if type(queries) == "table" then
+        return queries[1]
+    end
+end
+
+local function commandLimit(input)
+    local limits = (input and input.limits) or {}
+    return math.max(1, tonumber(limits.maxScriptCallsPerTurn or limits.maxActions or 8) or 8)
+end
+
+function Script.runDay(ai, input)
+    -- Imperative compatibility path for this profile. The policy still uses
+    -- the readable planDay scorer, but every chosen action is now executed as a
+    -- checked host call with refresh/yield points between side effects.
+    local current = input or {}
+    local commands = 0
+    local limit = commandLimit(current)
+
+    while commands < limit do
+        local query = firstPendingQuery(current)
+        if query then
+            ai:nullkillerAnswerQuery(query, 0)
+            commands = commands + 1
+            current = ai:refresh()
+            current.memory = ai:memory()
+        else
+            local output = Script.planDay(current)
+            ai:setMemory(output.memory or ai:memory())
+
+            if output.status == "fallback" then
+                return ai:nullkiller(output.intent)
+            end
+
+            local actions = output.actions or {}
+            if #actions == 0 then
+                ai:endTurn()
+                return ai:output("end_turn", output.intent, output.confidence)
+            end
+
+            for _, action in ipairs(actions) do
+                if action.type == "end_turn" then
+                    ai:endTurn()
+                    return ai:output("end_turn", output.intent, output.confidence)
+                end
+
+                ai:execute(action)
+                commands = commands + 1
+                current = ai:refresh()
+                current.memory = ai:memory()
+
+                if commands >= limit or firstPendingQuery(current) then
+                    break
+                end
+            end
+        end
+    end
+
+    return ai:nullkiller("explorer profile reached its imperative command budget")
+end
+
 return Script

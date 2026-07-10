@@ -1578,6 +1578,9 @@ Regression harness:
   calls directly, refreshes visible state after side effects, answers pending queries, and uses capped bounded
   Nullkiller turn slices before delegating the remaining turn. The older `planDay(input)` path remains only as a
   compatibility shim for fixtures and legacy callers.
+- Done: opt-in personality profiles `aggressiveAdventure.lua`, `economyAdventure.lua`, and `explorerAdventure.lua`
+  now expose imperative `runDay(ai, input)` wrappers. Their legacy `planDay(input)` scorers remain as readable
+  policy cores, but active execution goes through checked host calls with refresh/query yield points.
 - Done: it assigns a main hero, tracks consumed opponent-update revisions, prioritizes recruitment under strong
   defense pressure, and penalizes scout targets near visible enemy heroes.
 - Done: it consumes candidate risk/value fields, avoids unsafe object targets more aggressively, and can move a

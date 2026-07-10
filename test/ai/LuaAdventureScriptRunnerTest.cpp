@@ -1686,6 +1686,37 @@ TEST(LuaAdventureScriptRunnerTest, BundledAdventureScriptVariantsRun)
 	}
 }
 
+TEST(LuaAdventureScriptRunnerTest, BundledPersonalityScriptsRunImperatively)
+{
+	const std::vector<std::string> scripts = {
+		"scripts/ai/aggressiveAdventure.lua",
+		"scripts/ai/economyAdventure.lua",
+		"scripts/ai/explorerAdventure.lua"
+	};
+
+	for(const std::string & script : scripts)
+	{
+		SCOPED_TRACE(script);
+		scripting::LuaAdventureScriptRunner runner(script, readAdventureScript(script));
+		std::vector<JsonNode> commands;
+
+		const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
+		{
+			commands.push_back(command);
+
+			JsonNode response;
+			response["ok"] = JsonNode(true);
+			response["result"]["ok"] = JsonNode(true);
+			response["result"]["type"] = command["payload"]["type"];
+			return response;
+		});
+
+		ASSERT_EQ(commands.size(), 1);
+		EXPECT_EQ(commands[0]["payload"]["type"].String(), "end_turn");
+		EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	}
+}
+
 TEST(LuaAdventureScriptRunnerTest, DefaultAdventureTriesBoundedNullkillerTurnSliceBeforeFallback)
 {
 	scripting::LuaAdventureScriptRunner runner(
