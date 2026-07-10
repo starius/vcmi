@@ -869,6 +869,95 @@ NK2AI::ScriptTaskSearchMode readNullkillerTaskSearchMode(const JsonNode & node, 
 	throw std::invalid_argument("Unsupported Nullkiller task search mode: " + mode);
 }
 
+NK2AI::HeroLockedReason readNullkillerHeroLockedReason(const JsonNode & node)
+{
+	const int32_t reason = readInteger(node, "reason_id", static_cast<int32_t>(NK2AI::HeroLockedReason::DEFENCE));
+	switch(reason)
+	{
+	case static_cast<int32_t>(NK2AI::HeroLockedReason::STARTUP):
+		return NK2AI::HeroLockedReason::STARTUP;
+	case static_cast<int32_t>(NK2AI::HeroLockedReason::DEFENCE):
+		return NK2AI::HeroLockedReason::DEFENCE;
+	case static_cast<int32_t>(NK2AI::HeroLockedReason::HERO_CHAIN):
+		return NK2AI::HeroLockedReason::HERO_CHAIN;
+	default:
+		throw std::invalid_argument("Unsupported Nullkiller hero lock reason id");
+	}
+}
+
+std::string nullkillerHeroLockedReasonName(NK2AI::HeroLockedReason reason)
+{
+	switch(reason)
+	{
+	case NK2AI::HeroLockedReason::NOT_LOCKED:
+		return "none";
+	case NK2AI::HeroLockedReason::STARTUP:
+		return "startup";
+	case NK2AI::HeroLockedReason::DEFENCE:
+		return "defense";
+	case NK2AI::HeroLockedReason::HERO_CHAIN:
+		return "hero_chain";
+	default:
+		return "unknown";
+	}
+}
+
+ResourceSet readResourceAmounts(const JsonNode & node, const std::string & field)
+{
+	const JsonNode & resources = hasField(node, field) ? node[field] : node;
+	ResourceSet result;
+
+	if(resources.isVector())
+	{
+		for(size_t index = 0; index < resources.Vector().size(); ++index)
+		{
+			if(index >= GameConstants::RESOURCE_QUANTITY)
+				throw std::invalid_argument("Too many resource amounts in " + field);
+
+			if(resources.Vector()[index].isStruct())
+			{
+				const int32_t resourceID = readInteger(resources.Vector()[index], "resource_id");
+				if(resourceID < 0 || resourceID >= static_cast<int32_t>(GameConstants::RESOURCE_QUANTITY))
+					throw std::invalid_argument("Invalid resource id in " + field);
+				const int32_t amount = readInteger(resources.Vector()[index], "amount");
+				if(amount < 0)
+					throw std::invalid_argument("Resource lock amount must be non-negative");
+				result[GameResID(resourceID)] += amount;
+			}
+			else
+			{
+				const int32_t amount = readIntegerValue(resources.Vector()[index], field + "[" + std::to_string(index) + "]");
+				if(amount < 0)
+					throw std::invalid_argument("Resource lock amount must be non-negative");
+				result[GameResID(static_cast<int32_t>(index))] = amount;
+			}
+		}
+		return result;
+	}
+
+	if(resources.isStruct())
+	{
+		if(hasField(resources, "resource_entries"))
+			return readResourceAmounts(resources, "resource_entries");
+		if(hasField(resources, "resources"))
+			return readResourceAmounts(resources, "resources");
+
+		for(int32_t resourceID = 0; resourceID < static_cast<int32_t>(GameConstants::RESOURCE_QUANTITY); ++resourceID)
+		{
+			const std::string fieldName = std::to_string(resourceID);
+			if(!hasField(resources, fieldName))
+				continue;
+			const int32_t amount = readInteger(resources, fieldName);
+			if(amount < 0)
+				throw std::invalid_argument("Resource lock amount must be non-negative");
+			result[GameResID(resourceID)] = amount;
+		}
+		return result;
+	}
+
+	throw std::invalid_argument("Resource amounts must be a vector or object: " + field);
+}
+
 std::optional<std::string> readEnvironmentString(const char * name)
 {
 	const char * value = std::getenv(name);
@@ -6359,6 +6448,63 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 			throw std::invalid_argument("No creature stack at " + label + " slot");
 	};
 
+	if(type == "nullkiller_lock_resources")
+	{
+		const ResourceSet resources = readResourceAmounts(action, "resources");
+		ResourceSet lockedResources;
+		ResourceSet freeResources;
+		{
+			std::shared_lock gameStateLock(CGameState::mutex);
+			std::unique_lock aiLock(nullkiller->aiStateMutex);
+			nullkiller->lockResources(resources);
+			lockedResources = nullkiller->getLockedResources();
+			freeResources = nullkiller->getFreeResources();
+		}
+
+		actionResult["ok"] = JsonNode(true);
+		actionResult["resources"] = jsonResources(resources);
+		actionResult["lockedResources"] = jsonResources(lockedResources);
+		actionResult["freeResources"] = jsonResources(freeResources);
+		return true;
+	}
+
+	if(type == "nullkiller_lock_hero")
+	{
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+		if(!hero || hero->tempOwner != playerID || !cc->isVisibleFor(hero, playerID))
+			throw std::invalid_argument("Unknown hero, hero is not visible, or hero is not owned by scripted AI");
+
+		const NK2AI::HeroLockedReason reason = readNullkillerHeroLockedReason(action);
+		{
+			std::unique_lock aiLock(nullkiller->aiStateMutex);
+			nullkiller->lockHero(hero, reason);
+		}
+
+		actionResult["ok"] = JsonNode(true);
+		actionResult["hero_id"] = JsonNode(hero->id.getNum());
+		actionResult["reasonId"] = JsonNode(static_cast<int32_t>(reason));
+		actionResult["reason"] = JsonNode(nullkillerHeroLockedReasonName(reason));
+		return true;
+	}
+
+	if(type == "nullkiller_unlock_hero")
+	{
+		const CGHeroInstance * hero = cc->getHero(ObjectInstanceID(readInteger(action, "hero_id")));
+		if(!hero || hero->tempOwner != playerID || !cc->isVisibleFor(hero, playerID))
+			throw std::invalid_argument("Unknown hero, hero is not visible, or hero is not owned by scripted AI");
+
+		{
+			std::unique_lock aiLock(nullkiller->aiStateMutex);
+			nullkiller->unlockHero(hero);
+		}
+
+		actionResult["ok"] = JsonNode(true);
+		actionResult["hero_id"] = JsonNode(hero->id.getNum());
+		actionResult["reasonId"] = JsonNode(static_cast<int32_t>(NK2AI::HeroLockedReason::NOT_LOCKED));
+		actionResult["reason"] = JsonNode(nullkillerHeroLockedReasonName(NK2AI::HeroLockedReason::NOT_LOCKED));
+		return true;
+	}
+
 	if(type == "nullkiller_trade")
 	{
 		bool traded = false;
@@ -8198,7 +8344,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["acceptedActionTypes"].Vector();
 	for(const std::string & type : AI::acceptedPlanActionTypes())
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "prepare_hero", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "erase_transition_artifact", "swap_creatures", "merge_stacks", "merge_or_swap_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "set_town_name", "swap_garrison_hero", "nullkiller_trade", "nullkiller_priority_pass", "nullkiller_turn_slice", "nullkiller_build_army", "nullkiller_upgrade_army", "nullkiller_recruit_creatures", "nullkiller_move_creatures_to_hero", "nullkiller_dismiss_weak_hero", "nullkiller_optimize_artifacts", "nullkiller_add_single_creature_stacks", "nullkiller_rearrange_for_whirlpool", "nullkiller_rearrange_for_siege", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_pass", "nullkiller_answer_query", "nullkiller_object_interaction" })
+	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "prepare_hero", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "erase_transition_artifact", "swap_creatures", "merge_stacks", "merge_or_swap_stacks", "split_stack", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "set_town_name", "swap_garrison_hero", "nullkiller_lock_resources", "nullkiller_lock_hero", "nullkiller_unlock_hero", "nullkiller_trade", "nullkiller_priority_pass", "nullkiller_turn_slice", "nullkiller_build_army", "nullkiller_upgrade_army", "nullkiller_recruit_creatures", "nullkiller_move_creatures_to_hero", "nullkiller_dismiss_weak_hero", "nullkiller_optimize_artifacts", "nullkiller_add_single_creature_stacks", "nullkiller_rearrange_for_whirlpool", "nullkiller_rearrange_for_siege", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_pass", "nullkiller_answer_query", "nullkiller_object_interaction" })
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 
 	actionSpace["buildOptions"].Vector();

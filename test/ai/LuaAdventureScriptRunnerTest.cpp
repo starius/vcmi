@@ -883,6 +883,60 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallNullkillerArtifactOptimiz
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanConstrainNullkillerPlanner)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				ai:nullkillerLockResources({ 0, 0, 0, 0, 0, 0, 2500 })
+				ai:nullkillerLockResources({
+					resource_entries = {
+						{ resource_id = ai.resourceIds.gold, amount = 500 },
+						{ resource_id = ai.resourceIds.wood, amount = 5 }
+					}
+				})
+				ai:nullkillerLockHero(17)
+				ai:nullkillerLockHero({ hero_id = 18, reason_id = ai.nullkillerHeroLockReasons.heroChain })
+				ai:nullkillerUnlockHero(17)
+				return ai:output("end_turn", "constrained native planner")
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:nullkiller-planner-constraints", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 5);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_lock_resources");
+	ASSERT_TRUE(commands[0]["payload"]["resources"].isVector());
+	ASSERT_EQ(commands[0]["payload"]["resources"].Vector().size(), 7);
+	EXPECT_EQ(commands[0]["payload"]["resources"].Vector()[6].Integer(), 2500);
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "nullkiller_lock_resources");
+	ASSERT_TRUE(commands[1]["payload"]["resource_entries"].isVector());
+	EXPECT_EQ(commands[1]["payload"]["resource_entries"].Vector()[0]["resource_id"].Integer(), 6);
+	EXPECT_EQ(commands[1]["payload"]["resource_entries"].Vector()[0]["amount"].Integer(), 500);
+	EXPECT_EQ(commands[2]["payload"]["type"].String(), "nullkiller_lock_hero");
+	EXPECT_EQ(commands[2]["payload"]["hero_id"].Integer(), 17);
+	EXPECT_EQ(commands[2]["payload"]["reason_id"].Integer(), 2);
+	EXPECT_EQ(commands[3]["payload"]["type"].String(), "nullkiller_lock_hero");
+	EXPECT_EQ(commands[3]["payload"]["hero_id"].Integer(), 18);
+	EXPECT_EQ(commands[3]["payload"]["reason_id"].Integer(), 3);
+	EXPECT_EQ(commands[4]["payload"]["type"].String(), "nullkiller_unlock_hero");
+	EXPECT_EQ(commands[4]["payload"]["hero_id"].Integer(), 17);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteActionSpaceOptions)
 {
 	const std::string source = R"lua(

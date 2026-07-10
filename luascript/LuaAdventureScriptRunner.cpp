@@ -227,6 +227,13 @@ ai.nullkillerTaskModes = {
 	startup = 12
 }
 
+ai.nullkillerHeroLockReasons = {
+	none = 0,
+	startup = 1,
+	defense = 2,
+	heroChain = 3
+}
+
 ai.adventureSpellKinds = {
 	unknown = 0,
 	generic = 1,
@@ -392,6 +399,34 @@ function ai:nullkillerObjectInteraction(heroId, objectId)
 end
 
 ai.nullkillerInteract = ai.nullkillerObjectInteraction
+
+function ai:nullkillerLockResources(resources)
+	local action = copyFields(resources)
+	if type(resources) ~= "table" or (resources.resources == nil and resources.resource_entries == nil) then
+		action = { resources = resources }
+	end
+	action.type = "nullkiller_lock_resources"
+	return self:execute(action)
+end
+
+function ai:nullkillerLockHero(heroId, reasonId)
+	local action = copyFields(heroId)
+	if type(heroId) ~= "table" then
+		action.hero_id = heroId
+		action.reason_id = reasonId or ai.nullkillerHeroLockReasons.defense
+	end
+	action.type = "nullkiller_lock_hero"
+	return self:execute(action)
+end
+
+function ai:nullkillerUnlockHero(heroId)
+	local action = copyFields(heroId)
+	if type(heroId) ~= "table" then
+		action.hero_id = heroId
+	end
+	action.type = "nullkiller_unlock_hero"
+	return self:execute(action)
+end
 
 function ai:output(status, intent, confidence)
 	return {

@@ -307,6 +307,11 @@ The `ai` facade:
   currently visiting or standing at a visible object, then return control to Lua. This covers bounded native
   handling such as owned-town creature pickup, opportunistic spellbook purchase for a main hero, and hill-fort
   upgrades without delegating the rest of the day.
+- `ai:nullkillerLockResources(resources)`, `ai:nullkillerLockHero(heroId, reasonId?)`, and
+  `ai:nullkillerUnlockHero(heroId)`: constrain later bounded Nullkiller candidate generation and helper calls
+  without changing game state or delegating the day. Resources should be passed either as a 7-item amount vector
+  in stable resource-id order or as `{ resource_id, amount }` entries. Hero lock reason ids are exposed as
+  `ai.nullkillerHeroLockReasons`; the default is `defense`.
 - `ai:output(status, intent, confidence)`: return final status plus current memory.
 
 Output from `runDay`:
@@ -1250,6 +1255,11 @@ Regression harness:
   task left. This confirms the Lua coroutine can call native Nullkiller task fragments and regain control, while
   also showing the next API gap: failed or exhausted native task searches should provide richer replan/try-next
   details to Lua.
+- Lua can now apply current-turn Nullkiller planner constraints before calling bounded native helpers:
+  resource locks preserve strategic reserves for later candidate generation and hero locks keep a selected owned
+  hero out of subsequent native task searches. These are AI-planner constraints only; they do not mutate game
+  state and are reset by the normal per-turn Nullkiller script-task state reset unless Lua records and reapplies
+  the intent from script memory.
 - The same debugging pass found two opposite modal-query hazards. First, Lua-owned `visit_object` actions could
   leave clients asleep on a stale modal query, for example a garrison dialog opened by movement, so scripted query
   replies are now always sent asynchronously. Second, delegating rich modal callbacks to Nullkiller during a
@@ -1385,6 +1395,9 @@ Regression harness:
 - Bounded Nullkiller helpers that invoke native task decomposition, pathfinding, task execution, priority passes,
   or resource trading use the same shared pathfinder-storage lock as native `Nullkiller::makeTurn`; add new native
   subroutines at that primitive boundary rather than around higher-level Lua loops to avoid nested lock attempts.
+- Done: Lua can set current-turn Nullkiller planner constraints through bounded resource and hero locks, then
+  call native task candidates, steps, passes, or turn slices with those constraints still in force. This is the
+  script-side counterpart to Nullkiller's native `SaveResources` and `StayAtTown` planner effects.
 - Done: Nullkiller path-node special actions are serialized with stable typed metadata, so Lua can identify and
   inspect native Dimension Door, Town Portal, boat, whirlpool, quest, adventure-cast, and composite path actions
   without relying on debug strings. The exposed action parameters use ids/numeric fields where possible and keep
