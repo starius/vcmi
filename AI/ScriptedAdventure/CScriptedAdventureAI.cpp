@@ -1086,6 +1086,23 @@ public:
 	}
 };
 
+bool usesSynchronousNativeAiRequests(const std::string & actionType)
+{
+	if(actionType == "pick_best_creatures"
+		|| actionType == "pick_best_artifacts"
+		|| actionType == "prepare_hero")
+		return true;
+
+	if(actionType == "nullkiller_tasks"
+		|| actionType == "nullkiller_lock_resources"
+		|| actionType == "nullkiller_lock_hero"
+		|| actionType == "nullkiller_unlock_hero"
+		|| actionType == "nullkiller_answer_query")
+		return false;
+
+	return actionType.starts_with("nullkiller_");
+}
+
 std::string componentTypeName(ComponentType type);
 std::string infoWindowModeName(EInfoWindowMode mode);
 std::string marketModeName(EMarketMode mode);
@@ -4174,7 +4191,18 @@ void CScriptedAdventureAI::yourTurn(QueryID queryID)
 	asyncTasks->run([this]()
 	{
 		ScopedThreadName guard("ScriptedAdventureAI::makingTurn");
+		std::lock_guard turnLock(scriptedTurnMutex);
+		if(!status.haveTurn())
+		{
+			logAi->debug("ScriptedAdventureAI skipped stale turn task because the turn is already over.");
+			return;
+		}
 		status.waitTillFree();
+		if(!status.haveTurn())
+		{
+			logAi->debug("ScriptedAdventureAI skipped stale turn task because the turn is already over.");
+			return;
+		}
 		makeScriptedTurn();
 	});
 }
@@ -6393,8 +6421,8 @@ bool CScriptedAdventureAI::tryMakeImperativeScriptedTurn(scripting::LuaAdventure
 
 bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode & actionResult)
 {
-	ScopedCallbackWaitMode nonBlockingCallback(cc, false);
 	const std::string type = readString(action, "type");
+	ScopedCallbackWaitMode callbackWaitMode(cc, usesSynchronousNativeAiRequests(type));
 	actionResult["type"] = JsonNode(type);
 	struct AutoAnswerModeGuard
 	{
@@ -8170,6 +8198,8 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		});
 		actionResult["request"] = jsonRequestWaitResult(request);
 		actionResult["ok"] = JsonNode(request.applied);
+		if(request.applied)
+			status.madeTurn();
 		if(!request.applied)
 			actionResult["error"] = JsonNode(request.realized ? "End turn request was rejected by server" : "End turn request was not realized by server");
 		return false;

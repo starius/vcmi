@@ -159,6 +159,7 @@ private:
 	std::deque<JsonNode> scriptUpdateJournal;
 	uint64_t scriptUpdateRevision = 0;
 	size_t maxScriptUpdateJournal = 256;
+	std::mutex scriptedTurnMutex;
 	std::mutex requestMutex;
 	std::condition_variable requestCv;
 	std::optional<PendingRequest> pendingRequest;

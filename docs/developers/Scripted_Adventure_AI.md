@@ -657,6 +657,17 @@ Current bounded subroutine surface:
   The bundled default Lua policy treats a trade-only slice as end-of-day cleanup rather than a reason to request
   more slices, because repeated small resource trades can otherwise dominate the command budget without adding
   new adventure decisions.
+- Bounded native helper loops run their internal server requests in synchronous-realization mode. Lua still
+  regains control after the helper returns or pauses for a query, but native helper loops do not queue follow-up
+  build, movement, trade, or artifact requests before the previous request has been accepted or rejected by the
+  server. Query-answer helpers and explicit `end_turn` stay on the normal query/request-confirmation path instead
+  of blocking inside request send.
+- After an explicit `end_turn` request is accepted by the server, `ScriptedAdventureAI` marks its local AI status
+  as no longer owning the turn. This prevents the script runner from calling the inherited Nullkiller `endTurn()`
+  loop a second time after the server has already advanced the active player.
+- The cached Lua script instance is single-threaded. `ScriptedAdventureAI` serializes its asynchronous turn tasks
+  before entering `runDay`, and stale duplicate turn tasks exit if the turn already ended, including before
+  waiting on any old query or movement blocker.
 - Lua exposes numeric constants for stable host ids used by the strategic contract:
   `ai.buildingKinds`, `ai.objectKinds`, `ai.armyTransferKinds`, `ai.queryTypes`, `ai.pathActions`, `ai.threatLevels`,
   `ai.riskLevels`, `ai.specialActionKinds`, `ai.adventureSpellKinds`, `ai.nullkillerStepOutcomes`,

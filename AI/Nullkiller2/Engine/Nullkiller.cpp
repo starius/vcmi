@@ -47,11 +47,6 @@ bool scriptCanSeeObject(const Nullkiller & owner, ObjectInstanceID objectID)
 	return object && (object->tempOwner == owner.playerID || owner.cc->isVisibleFor(object, owner.playerID));
 }
 
-bool scriptCanSeeObject(const Nullkiller & owner, const CGObjectInstance * object)
-{
-	return object && (object->tempOwner == owner.playerID || (owner.cc && owner.cc->isVisibleFor(object, owner.playerID)));
-}
-
 bool objectStillExists(const Nullkiller & owner, ObjectInstanceID objectID)
 {
 	return owner.cc && owner.cc->getObj(objectID, false);
@@ -109,10 +104,7 @@ Nullkiller::ScriptVisibleOnlyScope::ScriptVisibleOnlyScope(Nullkiller & owner_)
 				iter->second->passability = TeleportChannel::IMPASSABLE;
 		}
 
-		std::erase_if(owner.memory->knownSubterraneanGates, [&](const auto & entry)
-		{
-			return !scriptCanSeeObject(owner, entry.first) || !scriptCanSeeObject(owner, entry.second);
-		});
+		owner.memory->knownSubterraneanGates.clear();
 	}
 
 	owner.openMap = false;
@@ -154,11 +146,9 @@ Nullkiller::ScriptVisibleOnlyScope::~ScriptVisibleOnlyScope()
 				channel->passability = previousChannel.passability;
 		}
 
-		for(const auto & [entrance, exit] : previousSubterraneanGates)
-		{
-			if(entrance && exit && (!scriptCanSeeObject(owner, entrance) || !scriptCanSeeObject(owner, exit)))
-				owner.memory->knownSubterraneanGates[entrance] = exit;
-		}
+		const auto scopedSubterraneanGates = std::move(owner.memory->knownSubterraneanGates);
+		owner.memory->knownSubterraneanGates = previousSubterraneanGates;
+		owner.memory->knownSubterraneanGates.insert(scopedSubterraneanGates.begin(), scopedSubterraneanGates.end());
 	}
 
 	owner.openMap = previousOpenMap;
