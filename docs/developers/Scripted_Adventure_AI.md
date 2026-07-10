@@ -174,6 +174,11 @@ Input:
 - `analysis.nullkiller.economy`: read-only native economy analysis derived from owned objects, owned towns, and
   current resources. It includes daily income, gold pressure, missing resources now/total, and free resources after
   planned development costs.
+- `analysis.nullkiller.heroRecruitment`: read-only native hero-cap and recruitability analysis. It includes owned
+  hero counts, town count, Nullkiller's effective roaming cap, engine on-map/total hero caps, whether the cap is
+  reached, whether any owned town can recruit, and per-owned-town recruitability records. Per-town
+  `blockedReasonId` values are stable numeric ids: `0` none, `1` no free tavern slot, `2` not enough gold, `3`
+  hero cap reached, `4` no available heroes.
 - `limits`: time, action count, max candidates, and max memory size limits for this call.
 
 The `ai` facade:
@@ -603,6 +608,9 @@ Current bounded subroutine surface:
   native features. `analysis.nullkiller.state` exposes current bounded-planner state such as scan depth,
   open-map/object-graph flags, pathfinder storage misses, locked resources, and free resources. Scripts can use
   these fields to align policy with native Nullkiller without hard-coding engine constants.
+- `analysis.nullkiller.heroRecruitment` exposes `HeroManager`'s read-only hero-cap and recruitability view using
+  stable numeric ids. Lua policy can decide when to prefer `hire_hero`, bounded `recruit_hero` subroutines, or no
+  hire attempt without duplicating Nullkiller's cap checks.
 - Script-facing bounded Nullkiller candidate generation does not invoke Nullkiller's map-reveal helper. Candidate
   task handles may still be opaque native planner handles, but the JSON surface only exposes target object ids,
   affected object ids, goal tiles, and detailed path nodes when the referenced objects/tiles are visible or owned
@@ -1334,6 +1342,10 @@ Regression harness:
 - Done: `analysis.nullkiller.economy` exposes Nullkiller's build-analyzer economy summary: daily income, gold
   pressure, missing resources, and free resources after planned development costs. These are derived from
   player-owned objects/towns and current resources, not hidden map data.
+- Done: `analysis.nullkiller.heroRecruitment` exposes Nullkiller's hero-cap and recruitability analysis, including
+  owned hero counts, cap state, recruitable owned towns, available hero type ids, and stable numeric blocker ids.
+  This lets Lua make hire/defer decisions with the same native constraints while still executing only checked
+  `hire_hero` actions or bounded Nullkiller recruitment subroutines.
 - Done: known quest requirements are exposed on visible quest objects and current quest-log entries using stable
   ids without revealing inactive quest internals. Lua can reason about known blockers, while still using movement
   actions or bounded Nullkiller tasks for actual unlock-chain execution.

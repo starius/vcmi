@@ -8891,6 +8891,68 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 		analysis["nullkiller"]["state"]["pathfinderTurnStorageMisses"] = JsonNode(nullkiller->pathfinderTurnStorageMisses.load());
 		analysis["nullkiller"]["state"]["lockedResources"] = jsonResources(nullkiller->getLockedResources());
 		analysis["nullkiller"]["state"]["freeResources"] = jsonResources(nullkiller->getFreeResources());
+		if(nullkiller->heroManager)
+		{
+			nullkiller->heroManager->update();
+			const int32_t heroCount = cc->getHeroCount(playerID, false);
+			const int32_t heroCountIncludingGarrisoned = cc->getHeroCount(playerID, true);
+			const int32_t townCount = cc->howManyTowns();
+			int32_t roamingPolicyCap = settings.getMaxRoamingHeroes();
+			if(settings.getMaxRoamingHeroesPerTown() > 0)
+				roamingPolicyCap += townCount * settings.getMaxRoamingHeroesPerTown();
+
+			JsonNode & recruitment = analysis["nullkiller"]["heroRecruitment"];
+			recruitment["heroCount"] = JsonNode(heroCount);
+			recruitment["heroCountIncludingGarrisoned"] = JsonNode(heroCountIncludingGarrisoned);
+			recruitment["townCount"] = JsonNode(townCount);
+			recruitment["roamingPolicyCap"] = JsonNode(roamingPolicyCap);
+			recruitment["onMapCap"] = JsonNode(cc->getSettings().getInteger(EGameSettings::HEROES_PER_PLAYER_ON_MAP_CAP));
+			recruitment["totalCap"] = JsonNode(cc->getSettings().getInteger(EGameSettings::HEROES_PER_PLAYER_TOTAL_CAP));
+			recruitment["heroCapReached"] = JsonNode(nullkiller->heroManager->heroCapReached(false));
+			recruitment["heroCapReachedIncludingGarrisoned"] = JsonNode(nullkiller->heroManager->heroCapReached(true));
+			recruitment["canRecruitAnyHero"] = JsonNode(nullkiller->heroManager->canRecruitHero());
+			recruitment["towns"].Vector();
+			recruitment["recruitableTownIds"].Vector();
+
+			for(const CGTownInstance * town : cc->getTownsInfo())
+			{
+				if(!town || town->tempOwner != playerID)
+					continue;
+
+				const bool hasFreeTavern = NK2AI::townHasFreeTavern(town);
+				const bool enoughGold = cc->getResourceAmount(EGameResID::GOLD) >= GameConstants::HERO_GOLD_COST;
+				const bool heroCapReached = nullkiller->heroManager->heroCapReached();
+				std::vector<const CGHeroInstance *> availableHeroes = cc->getAvailableHeroes(town);
+				const bool canRecruitHero = nullkiller->heroManager->canRecruitHero(town);
+
+				int32_t blockedReasonId = 0;
+				if(!hasFreeTavern)
+					blockedReasonId = 1;
+				else if(!enoughGold)
+					blockedReasonId = 2;
+				else if(heroCapReached)
+					blockedReasonId = 3;
+				else if(availableHeroes.empty())
+					blockedReasonId = 4;
+
+				JsonNode townNode;
+				townNode["town_id"] = JsonNode(town->id.getNum());
+				townNode["hasFreeTavern"] = JsonNode(hasFreeTavern);
+				townNode["availableHeroCount"] = JsonNode(static_cast<int32_t>(availableHeroes.size()));
+				townNode["availableHeroTypeIds"].Vector();
+				for(const CGHeroInstance * availableHero : availableHeroes)
+				{
+					if(availableHero)
+						townNode["availableHeroTypeIds"].Vector().push_back(JsonNode(availableHero->getHeroTypeID().getNum()));
+				}
+				townNode["canRecruitHero"] = JsonNode(canRecruitHero);
+				townNode["blockedReasonId"] = JsonNode(canRecruitHero ? 0 : blockedReasonId);
+				if(canRecruitHero)
+					recruitment["recruitableTownIds"].Vector().push_back(JsonNode(town->id.getNum()));
+				recruitment["towns"].Vector().push_back(townNode);
+			}
+			recruitment["recruitableTownCount"] = JsonNode(static_cast<int32_t>(recruitment["recruitableTownIds"].Vector().size()));
+		}
 		if(nullkiller->buildAnalyzer)
 		{
 			nullkiller->buildAnalyzer->update();
