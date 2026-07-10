@@ -1280,6 +1280,9 @@ Regression harness:
   without handing over the rest of the day.
   This closes the full-day delegation gap for native task families: Lua can choose, rank, and run bounded native
   subroutines, then refresh visible state instead of handing Nullkiller the rest of the turn.
+- Contract: before optimizing a Lua policy, treat any required `ai:nullkiller()` / full-day fallback as a parity
+  bug unless the script deliberately uses it as a safety escape. The preferred integration point is a checked
+  action, read-only candidate/analyzer field, or bounded Nullkiller helper that returns control to Lua.
 - Done: Nullkiller path-node special actions are serialized with stable typed metadata, so Lua can identify and
   inspect native Dimension Door, Town Portal, boat, whirlpool, quest, adventure-cast, and composite path actions
   without relying on debug strings. The exposed action parameters use ids/numeric fields where possible and keep
@@ -1491,7 +1494,9 @@ The next high-value implementation steps are:
   spell-routing subroutines, then inspect returned task/path `specialAction` records, instead of attempting to
   recreate Nullkiller's pathfinder in Lua.
 - Keep auditing Lua API parity before tuning scripts: if a concrete player-visible action or native subroutine
-  still requires full-day `ai:nullkiller()` delegation, add a checked facade or bounded helper first.
+  still requires full-day `ai:nullkiller()` delegation, treat that as an API gap and add a checked facade or
+  bounded helper first. Full-day fallback should remain a safety/conservatism path, not the normal way to access
+  Nullkiller competence.
 - Expose any remaining Nullkiller analyzer data as read-only candidate fields only when a concrete script policy
   needs it; do not rebuild those analyses in Lua.
 - Expand the default Lua policy to rank and compose bounded Nullkiller candidates only after the API can express

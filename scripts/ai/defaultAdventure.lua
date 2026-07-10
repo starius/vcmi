@@ -1222,10 +1222,9 @@ function Script.planDay(input)
         }
     end
 
-    -- No high-confidence scripted action remains. The current script interface
-    -- still cannot express Nullkiller's full task graph, especially multi-hero
-    -- chaining and deeper blocker plans. Delegating the remainder preserves
-    -- those capabilities instead of ending with useful but unsupported work.
+    -- No high-confidence scripted action remains. Prefer bounded Nullkiller
+    -- turn slices from the imperative loop before using this full-day escape
+    -- hatch; full fallback should mean safety/conservatism, not a missing API.
     return {
         status = "fallback",
         memory = memory,
