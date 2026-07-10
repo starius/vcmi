@@ -526,9 +526,11 @@ Current bounded subroutine surface:
   university, and market dialogs reuse the same hire, recruit, army, and market-detail payloads exposed in normal
   action-space snapshots.
 - University and market dialog records include `modeDetails` and `skillOptions` entries. `skillOptions` provide
-  stable `skill_id`, affordability/learnability flags, gold cost, and a ready checked `market_trade` `planAction`
-  for buying a secondary skill; scripts should use these fields instead of parsing dialog text. Market dialogs
-  with a visiting hero also include `altarOptions`, which expose legal artifact/creature sacrifice candidates,
+  stable `skill_id`, affordability/learnability flags, gold cost, Nullkiller's advisory `nullkillerSkillScore`
+  when the visitor is owned, and a ready checked `market_trade` `planAction` for buying a secondary skill;
+  scripts should use these fields instead of parsing dialog text. Level-up skill choices expose the same stable
+  skill identifiers plus Nullkiller skill score/preferred-choice fields when the leveling hero is owned. Market
+  dialogs with a visiting hero also include `altarOptions`, which expose legal artifact/creature sacrifice candidates,
   expected experience, staged altar contents, and ready action/action-sequence payloads. Artifact options model
   the native UI explicitly: a `swap_artifacts` or `bulk_move_artifacts` staging action must happen before the
   `market_trade` sacrifice action can consume those artifact instance ids.
@@ -1295,6 +1297,9 @@ Regression harness:
 - Done: university and market dialog queries now expose stable mode/item details and buy-skill options with
   checked `market_trade` actions, closing one read-side gap for player-choice dialogs without changing native
   trade validation.
+- Done: hero level-up and university/market skill choices expose Nullkiller's advisory secondary-skill scores
+  for owned heroes, letting Lua rank skills with native policy data instead of delegating the whole dialog or
+  parsing localized text.
 - Done: Lua can ask Nullkiller to answer a single pending query through `ai:nullkillerAnswerQuery`, preserving
   native bounded handling for level-up skills, cautious yes/no prompts, teleport and map-object choices, hero
   exchanges, garrison pickup, dwelling recruitment, and simple window-closing dialogs without surrendering the

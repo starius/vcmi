@@ -1035,7 +1035,8 @@ JsonNode jsonMarketSkillOption(
 	const CGHeroInstance * visitor,
 	SecondarySkill skillID,
 	const ResourceSet & resources,
-	const IGameSettings & settings)
+	const IGameSettings & settings,
+	const NK2AI::HeroManager * heroManager = nullptr)
 {
 	const int32_t goldCost = settings.getInteger(EGameSettings::MARKETS_UNIVERSITY_GOLD_COST);
 	const bool alreadyKnown = visitor && visitor->getSecSkillLevel(skillID) != 0;
@@ -1058,6 +1059,8 @@ JsonNode jsonMarketSkillOption(
 	node["canLearnAny"] = JsonNode(canLearnAny);
 	node["canLearn"] = JsonNode(canLearn);
 	node["buyable"] = JsonNode(visitor && !alreadyKnown && canLearnAny && canLearn && affordable);
+	if(visitor && heroManager)
+		node["nullkillerSkillScore"].Float() = heroManager->evaluateSecSkill(skillID, visitor);
 	node["planAction"]["type"] = JsonNode("market_trade");
 	node["planAction"]["market_id"] = JsonNode(market->getObjInstanceID().getNum());
 	node["planAction"]["mode_id"] = JsonNode(static_cast<int32_t>(EMarketMode::RESOURCE_SKILL));
@@ -1071,7 +1074,8 @@ JsonNode jsonMarketSkillOptions(
 	const IMarket * market,
 	const CGHeroInstance * visitor,
 	const ResourceSet & resources,
-	const IGameSettings & settings)
+	const IGameSettings & settings,
+	const NK2AI::HeroManager * heroManager = nullptr)
 {
 	JsonNode node;
 	node.Vector();
@@ -1082,7 +1086,7 @@ JsonNode jsonMarketSkillOptions(
 	{
 		const SecondarySkill skillID = item.as<SecondarySkill>();
 		if(skillID.hasValue())
-			node.Vector().push_back(jsonMarketSkillOption(market, visitor, skillID, resources, settings));
+			node.Vector().push_back(jsonMarketSkillOption(market, visitor, skillID, resources, settings, heroManager));
 	}
 
 	return node;
@@ -3837,12 +3841,34 @@ void CScriptedAdventureAI::heroGotLevel(const CGHeroInstance * hero, PrimarySkil
 		data["hero_id"] = JsonNode(hero->id.getNum());
 	data["primary_skill_id"] = JsonNode(pskill.getNum());
 	data["skill_options"].Vector();
+
+	std::vector<std::optional<float>> nullkillerSkillScores(skills.size());
+	int nullkillerSelectedIndex = -1;
+	if(hero && hero->tempOwner == playerID && nullkiller && nullkiller->heroManager)
+	{
+		std::unique_lock aiLock(nullkiller->aiStateMutex);
+		nullkiller->heroManager->update();
+		nullkillerSelectedIndex = nullkiller->heroManager->selectBestSkillIndex(NK2AI::HeroPtr(hero, cc.get()), skills);
+		for(size_t index = 0; index < skills.size(); ++index)
+			nullkillerSkillScores[index] = nullkiller->heroManager->evaluateSecSkill(skills[index], hero);
+	}
+
 	for(size_t index = 0; index < skills.size(); ++index)
 	{
 		JsonNode option;
 		option["answer"] = JsonNode(static_cast<int32_t>(index));
 		option["skill_id"] = JsonNode(skills[index].getNum());
+		option["skillIdentifier"] = JsonNode(stableIdentifier(skills[index]));
+		option["level"] = JsonNode(1);
+		if(nullkillerSkillScores[index])
+			option["nullkillerSkillScore"].Float() = *nullkillerSkillScores[index];
+		option["nullkillerPreferred"] = JsonNode(nullkillerSelectedIndex == static_cast<int>(index));
 		data["skill_options"].Vector().push_back(option);
+	}
+	if(nullkillerSelectedIndex >= 0 && nullkillerSelectedIndex < static_cast<int>(skills.size()))
+	{
+		data["nullkillerSelectedSkillIndex"] = JsonNode(nullkillerSelectedIndex);
+		data["nullkillerSelectedAnswer"] = JsonNode(nullkillerSelectedIndex);
 	}
 	recordScriptQuery(queryID, "hero_level_up", data);
 	if(isScriptActionAutoAnswerMode())
@@ -4462,7 +4488,16 @@ void CScriptedAdventureAI::showUniversityWindow(const IMarket * market, const CG
 		data["visitor_hero_id"] = JsonNode(visitor->id.getNum());
 		data["visitorHero"] = jsonHero(visitor);
 	}
-	data["skillOptions"] = jsonMarketSkillOptions(market, visitor, cc->getResourceAmount(), cc->getSettings());
+	if(visitor && visitor->tempOwner == playerID && nullkiller && nullkiller->heroManager)
+	{
+		std::unique_lock aiLock(nullkiller->aiStateMutex);
+		nullkiller->heroManager->update();
+		data["skillOptions"] = jsonMarketSkillOptions(market, visitor, cc->getResourceAmount(), cc->getSettings(), nullkiller->heroManager.get());
+	}
+	else
+	{
+		data["skillOptions"] = jsonMarketSkillOptions(market, visitor, cc->getResourceAmount(), cc->getSettings());
+	}
 	recordScriptQuery(queryID, "university_window", data);
 	if(isScriptActionAutoAnswerMode())
 	{
@@ -4535,7 +4570,16 @@ void CScriptedAdventureAI::showMarketWindow(const IMarket * market, const CGHero
 		data["visitorHero"] = jsonHero(visitor);
 	}
 	data["altarOptions"] = jsonMarketAltarOptions(market, visitor);
-	data["skillOptions"] = jsonMarketSkillOptions(market, visitor, cc->getResourceAmount(), cc->getSettings());
+	if(visitor && visitor->tempOwner == playerID && nullkiller && nullkiller->heroManager)
+	{
+		std::unique_lock aiLock(nullkiller->aiStateMutex);
+		nullkiller->heroManager->update();
+		data["skillOptions"] = jsonMarketSkillOptions(market, visitor, cc->getResourceAmount(), cc->getSettings(), nullkiller->heroManager.get());
+	}
+	else
+	{
+		data["skillOptions"] = jsonMarketSkillOptions(market, visitor, cc->getResourceAmount(), cc->getSettings());
+	}
 	recordScriptQuery(queryID, "market_window", data);
 	if(isScriptActionAutoAnswerMode())
 	{
