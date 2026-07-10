@@ -1,0 +1,61 @@
+{
+	"name": "aggressive-building-kind-id",
+	"script": "scripts/ai/aggressiveAdventure.lua",
+	"input": {
+		"state": {
+			"resources": {
+				"gold": 5000
+			}
+		},
+		"memory": {
+			"version": 1,
+			"profile": "aggressive"
+		},
+		"actionSpace": {
+			"buildOptions": [
+				{
+					"building": "utility one",
+					"building_id": 16,
+					"buildingKindId": 8,
+					"town_id": 42,
+					"cost": {
+						"gold": 1000
+					},
+					"planAction": {
+						"type": "build",
+						"town_id": 42,
+						"building_id": 16
+					}
+				},
+				{
+					"building": "utility two",
+					"building_id": 37,
+					"buildingKindId": 11,
+					"buildingLevel": 1,
+					"town_id": 42,
+					"cost": {
+						"gold": 1000
+					},
+					"planAction": {
+						"type": "build",
+						"town_id": 42,
+						"building_id": 37
+					}
+				}
+			]
+		}
+	},
+	"expect": {
+		"status": "need_replan",
+		"firstAction": {
+			"type": "build",
+			"building_id": 37
+		},
+		"actionsDoNotContain": [
+			{
+				"type": "build",
+				"building_id": 16
+			}
+		]
+	}
+}

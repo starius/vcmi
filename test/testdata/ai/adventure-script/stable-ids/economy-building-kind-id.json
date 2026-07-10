@@ -1,0 +1,67 @@
+{
+	"name": "economy-building-kind-id",
+	"script": "scripts/ai/economyAdventure.lua",
+	"input": {
+		"state": {
+			"resources": {
+				"gold": 5000
+			}
+		},
+		"memory": {
+			"version": 1,
+			"profile": "economy"
+		},
+		"actionSpace": {
+			"buildOptions": [
+				{
+					"building": "option one",
+					"building_id": 14,
+					"buildingKindId": 6,
+					"town_id": 42,
+					"cost": {
+						"gold": 1000
+					},
+					"income": {
+						"gold": 0
+					},
+					"planAction": {
+						"type": "build",
+						"town_id": 42,
+						"building_id": 14
+					}
+				},
+				{
+					"building": "option two",
+					"building_id": 12,
+					"buildingKindId": 5,
+					"buildingLevel": 3,
+					"town_id": 42,
+					"cost": {
+						"gold": 1000
+					},
+					"income": {
+						"gold": 0
+					},
+					"planAction": {
+						"type": "build",
+						"town_id": 42,
+						"building_id": 12
+					}
+				}
+			]
+		}
+	},
+	"expect": {
+		"status": "need_replan",
+		"firstAction": {
+			"type": "build",
+			"building_id": 12
+		},
+		"actionsDoNotContain": [
+			{
+				"type": "build",
+				"building_id": 14
+			}
+		]
+	}
+}

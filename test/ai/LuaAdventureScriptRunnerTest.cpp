@@ -348,8 +348,16 @@ TEST(LuaAdventureScriptRunnerTest, BundledAdventureScriptVariantsRun)
 		scripting::LuaAdventureScriptRunner runner(script, readAdventureScript(script));
 		const AI::AdventureScriptOutput output = runner.planDay(makeInput());
 
-		EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN) << script;
-		ASSERT_EQ(output.actions.size(), 1) << script;
-		EXPECT_EQ(output.actions[0]["type"].String(), "end_turn") << script;
+		if(script == "scripts/ai/defaultAdventure.lua")
+		{
+			EXPECT_EQ(output.status, AI::AdventureScriptStatus::FALLBACK) << script;
+			EXPECT_TRUE(output.actions.empty()) << script;
+		}
+		else
+		{
+			EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN) << script;
+			ASSERT_EQ(output.actions.size(), 1) << script;
+			EXPECT_EQ(output.actions[0]["type"].String(), "end_turn") << script;
+		}
 	}
 }

@@ -151,6 +151,8 @@ Planner input should expose stable machine fields for every meaningful concept:
 - map object `typeId`/`subtypeId` plus host-provided `kindId` categories such as resource, mine, artifact,
   town, creature bank, dwelling, monster, teleport, shrine, market, and quest
 - town building `building_id` plus host-provided `buildingKindId`, `buildingLevel`, and `buildingUpgrade`
+- path metadata `pathActionId`, `layerId`, coordinates, movement cost, and teleport flags
+- danger and threat metadata as numeric fields such as `riskId`, `danger`, `dangerRatio`, and alert `levelId`
 - optional stable ASCII identifiers such as object JSON keys for traces and external tooling
 
 Lua policies should prefer the integer kind/id fields. Stable ASCII identifiers are acceptable for tools and
@@ -739,12 +741,12 @@ Regression harness:
   validation, pathfinding, and fallback while Lua only returns plans.
 - Script memory persistence uses the existing `PlayerState::playerLocalSettings` serialized JSON, namespaced
   under `scriptedAdventureAI`. This avoids adding AI-private strategy memory to authoritative game-rule objects.
-- Candidate actions now carry read-only explanation fields: `reason`, `value`, `risk`, `safe`, `danger`,
+- Candidate actions now carry read-only explanation fields: `reason`, `value`, `riskId`, `risk`, `safe`, `danger`,
   `dangerRatio`, `estimatedLoss`, and `blockedBy`. Scripts can score these fields and traces can summarize them.
 - Candidate actions expose stable machine identifiers for policy decisions. Map objects provide numeric
   `typeId`/`subtypeId` plus `kindId`; town build options provide `building_id`, `buildingKindId`,
-  `buildingLevel`, and `buildingUpgrade`. Localized display strings remain useful in traces but are not part of
-  the strategic contract.
+  `buildingLevel`, and `buildingUpgrade`; paths provide `pathActionId`; visible threat alerts provide `levelId`.
+  Localized display strings remain useful in traces but are not part of the strategic contract.
 - Candidate actions now include `hire_hero` and `transfer_army` for two previously missing Nullkiller-level
   capabilities: adding tavern heroes and concentrating or reinforcing armies through the normal server-validated
   request path. Their candidate generation is controlled by `experimentalSupportActions` in
@@ -786,6 +788,11 @@ Regression harness:
   corpus it also lost 10/10, but averaged 50.5 loss day, which means the default script is still oversteering
   Nullkiller in some openings. A no-object-routing experiment averaged 47.8 and was rejected. Future candidates
   should beat the all-fallback control before promotion.
+- Stable-id hardening removed the remaining strategic dependency on display strings in bundled Lua policies and
+  added `scripts/ai/rmgSmallUndergroundNoWater10.json` as the reusable small, two-level, no-water fixed-seed
+  corpus. A fresh run on that corpus still lost 10/10 to Nullkiller2, with average loss day 49.3, min 21, max 108.
+  The result improves the previous default-script average, but still trails the all-fallback control; the next
+  behavioral target is reducing oversteering rather than more identifier cleanup.
 - `scripts/ai/runAdventureAIBatch.py` terminates a stale client process after a terminal game outcome has appeared
   in stdout and a short grace period has elapsed. This keeps unattended evaluation batches from hanging while still
   recording the completed outcome and traces.
@@ -909,6 +916,9 @@ Regression harness:
 - Done: `vcmiclient --testdays N` stops `--testmap`/`--testsave` benchmark runs after N completed adventure days.
 - Done: first seeded script-loop policy iteration ran end-to-end and rejected a safe but non-improving exploration
   candidate, leaving the champion script unchanged.
+- Done: stable-id hardening now covers default, aggressive, economy, and explorer Lua policies. Host path actions,
+  risk labels, and threat-alert levels have numeric IDs, with display strings retained only for traces and legacy
+  fixture compatibility.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus, then add
   engine-level explored-area and map-control deltas.
 

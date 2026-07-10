@@ -167,6 +167,25 @@ local TransferKind = {
     reinforceTown = 2
 }
 
+local ThreatLevel = {
+    watch = 1,
+    high = 2,
+    critical = 3
+}
+
+local PathAction = {
+    unknown = 0,
+    embark = 1,
+    disembark = 2,
+    normal = 3,
+    battle = 4,
+    visit = 5,
+    blockingVisit = 6,
+    teleportNormal = 7,
+    teleportBlockingVisit = 8,
+    teleportBattle = 9
+}
+
 -- Raw engine IDs are kept as compatibility fallbacks for older traces/tests
 -- that do not yet include host-provided kind IDs.
 local Building = {
@@ -243,10 +262,80 @@ local function copyAction(action)
     return result
 end
 
--- Normalize labels before substring checks. The host sends object/building names
--- mostly for policy readability, so string matching is deliberately forgiving.
+-- Normalize legacy labels only as a fallback for old traces or hand-written
+-- fixtures. Current host input exposes numeric ids for policy decisions.
 local function text(value)
     return string.lower(tostring(value or ""))
+end
+
+local function pressureFromAlert(alert)
+    local level = tonumber(alert and (alert.levelId or alert.level_id) or nil)
+    if level then
+        if level >= ThreatLevel.critical then
+            return Pressure.critical
+        end
+        if level >= ThreatLevel.high then
+            return Pressure.high
+        end
+        if level >= ThreatLevel.watch then
+            return Pressure.low
+        end
+        return Pressure.none
+    end
+
+    local label = text(alert and alert.level)
+    if label == "critical" then
+        return Pressure.critical
+    end
+    if label == "high" then
+        return Pressure.high
+    end
+    if label ~= "" then
+        return Pressure.low
+    end
+    return Pressure.none
+end
+
+local function pathActionId(path)
+    local action = tonumber(path and (path.pathActionId or path.path_action_id) or nil)
+    if action then
+        return action
+    end
+
+    local label = text(path and path.pathAction)
+    if label == "embark" then
+        return PathAction.embark
+    end
+    if label == "disembark" then
+        return PathAction.disembark
+    end
+    if label == "normal" then
+        return PathAction.normal
+    end
+    if label == "battle" then
+        return PathAction.battle
+    end
+    if label == "visit" then
+        return PathAction.visit
+    end
+    if label == "blocking_visit" then
+        return PathAction.blockingVisit
+    end
+    if label == "teleport_normal" then
+        return PathAction.teleportNormal
+    end
+    if label == "teleport_blocking_visit" then
+        return PathAction.teleportBlockingVisit
+    end
+    if label == "teleport_battle" then
+        return PathAction.teleportBattle
+    end
+    return PathAction.unknown
+end
+
+local function isBattlePath(path)
+    local action = pathActionId(path)
+    return action == PathAction.battle or action == PathAction.teleportBattle
 end
 
 local function buildingId(option)
@@ -460,14 +549,7 @@ end
 local function defensePressure(input)
     local pressure = Pressure.none
     for _, alert in ipairs(asArray(input.analysis and input.analysis.defenseAlerts)) do
-        local level = text(alert.level)
-        if level == "critical" then
-            pressure = math.max(pressure, Pressure.critical)
-        elseif level == "high" then
-            pressure = math.max(pressure, Pressure.high)
-        else
-            pressure = math.max(pressure, Pressure.low)
-        end
+        pressure = math.max(pressure, pressureFromAlert(alert))
     end
     return pressure
 end
@@ -477,14 +559,7 @@ end
 local function heroThreatPressure(input)
     local pressure = Pressure.none
     for _, alert in ipairs(asArray(input.analysis and input.analysis.heroThreatAlerts)) do
-        local level = text(alert.level)
-        if level == "critical" then
-            pressure = math.max(pressure, Pressure.critical)
-        elseif level == "high" then
-            pressure = math.max(pressure, Pressure.high)
-        else
-            pressure = math.max(pressure, Pressure.low)
-        end
+        pressure = math.max(pressure, pressureFromAlert(alert))
     end
     return pressure
 end
@@ -886,7 +961,7 @@ local function scoreObject(target, memory, input)
     if kind == ObjectKind.mine then
         score = score + Score.object.mineBonus + Score.object.repeatedMineWordBonus
     end
-    if path.pathAction == "battle" or path.pathAction == "teleport_battle" then
+    if isBattlePath(path) then
         if role == "main" then
             score = score - Score.object.battleMainPenalty
         else
@@ -938,7 +1013,7 @@ local function chooseEscapeMove(input)
                         improvesDistance = true
                     end
                 end
-                if text(threat.level) == "critical" then
+                if pressureFromAlert(threat) >= Pressure.critical then
                     score = score + Score.escape.criticalThreatBonus
                 end
             end

@@ -32,6 +32,29 @@ local Score = {
     }
 }
 
+local BuildingKind = {
+    unknown = 0,
+    mageGuild = 1,
+    tavern = 2
+}
+
+local ObjectKind = {
+    unknown = 0,
+    treasure = 1,
+    resource = 2,
+    artifact = 4,
+    teleport = 10,
+    visitBonus = 12,
+    quest = 14
+}
+
+local PathAction = {
+    unknown = 0,
+    normal = 3,
+    battle = 4,
+    teleportBattle = 9
+}
+
 -- Accept missing optional arrays as empty arrays.
 local function array(value)
     if type(value) == "table" then
@@ -50,9 +73,42 @@ local function copy(action)
     return result
 end
 
--- Normalize object/building names for simple profile-specific substring checks.
+-- Normalize labels only as a compatibility fallback for old traces. Current
+-- host input exposes integer kind ids for scoring.
 local function lower(value)
     return string.lower(tostring(value or ""))
+end
+
+local function buildingKindId(option)
+    return tonumber(option and (option.buildingKindId or option.building_kind_id) or 0) or 0
+end
+
+local function objectKindId(object)
+    return tonumber(object and (object.kindId or object.objectKindId or object.kind_id) or 0) or 0
+end
+
+local function pathActionId(path)
+    local action = tonumber(path and (path.pathActionId or path.path_action_id) or nil)
+    if action then
+        return action
+    end
+
+    local label = lower(path and path.pathAction)
+    if label == "normal" then
+        return PathAction.normal
+    end
+    if label == "battle" then
+        return PathAction.battle
+    end
+    if label == "teleport_battle" then
+        return PathAction.teleportBattle
+    end
+    return PathAction.unknown
+end
+
+local function isBattlePath(path)
+    local action = pathActionId(path)
+    return action == PathAction.battle or action == PathAction.teleportBattle
 end
 
 -- Reset memory when a different profile or version produced the stored data.
@@ -96,7 +152,8 @@ end
 local function scoreTarget(target, memory)
     local object = target.object or {}
     local path = target.path or {}
-    local words = lower((object.name or "") .. " " .. (object.type or "") .. " " .. (object.hoverText or ""))
+    local kind = objectKindId(object)
+    local words = kind == ObjectKind.unknown and lower((object.name or "") .. " " .. (object.type or "") .. " " .. (object.hoverText or "")) or ""
     local objectId = tostring(object.id or "")
     local score = Score.target.base - (tonumber(path.cost or 0) or 0) * Score.target.pathCost
 
@@ -106,18 +163,29 @@ local function scoreTarget(target, memory)
     if memory.blockedTargets[objectId] then
         score = score - memory.blockedTargets[objectId] * Score.target.blockedPenalty
     end
-    if path.pathAction == "battle" or path.pathAction == "teleport_battle" then
+    if isBattlePath(path) then
         score = score - Score.target.battlePenalty
     end
     -- Exploration markers and map-transition words are the main purpose of this
     -- profile, so they outrank ordinary resources.
-    if words:find("obelisk", 1, true) or words:find("subterranean", 1, true) or words:find("monolith", 1, true) then
+    if kind == ObjectKind.teleport
+        or kind == ObjectKind.quest
+        or kind == ObjectKind.visitBonus
+        or words:find("obelisk", 1, true)
+        or words:find("subterranean", 1, true)
+        or words:find("monolith", 1, true)
+    then
         score = score + Score.target.explorationObjectBonus
     end
-    if words:find("treasure", 1, true) or words:find("chest", 1, true) or words:find("artifact", 1, true) then
+    if kind == ObjectKind.treasure
+        or kind == ObjectKind.artifact
+        or words:find("treasure", 1, true)
+        or words:find("chest", 1, true)
+        or words:find("artifact", 1, true)
+    then
         score = score + Score.target.treasureOrArtifactBonus
     end
-    if words:find("resource", 1, true) or words:find("gold", 1, true) then
+    if kind == ObjectKind.resource or words:find("resource", 1, true) or words:find("gold", 1, true) then
         score = score + Score.target.resourceOrGoldBonus
     end
     if path.isTeleportAction then
@@ -152,7 +220,7 @@ local function bestMove(input)
             local destination = path.destination or {}
             local score = (tonumber(destination.x or 0) or 0) + (tonumber(destination.y or 0) or 0)
             score = score - (tonumber(path.cost or 0) or 0) * Score.move.pathCost
-            if path.pathAction ~= "normal" then
+            if pathActionId(path) ~= PathAction.normal then
                 score = score - Score.move.nonNormalPathPenalty
             end
             if not bestScore or score > bestScore then
@@ -168,8 +236,14 @@ end
 -- the default/economy policies.
 local function bestBuild(input)
     for _, option in ipairs(array(input.actionSpace and input.actionSpace.buildOptions)) do
-        local name = lower(option.building)
-        if option.planAction and (name:find("tavern", 1, true) or name:find("mage guild", 1, true)) then
+        local kind = buildingKindId(option)
+        local name = kind == BuildingKind.unknown and lower(option.building) or ""
+        if option.planAction
+            and (kind == BuildingKind.tavern
+                or kind == BuildingKind.mageGuild
+                or name:find("tavern", 1, true)
+                or name:find("mage guild", 1, true))
+        then
             return option
         end
     end

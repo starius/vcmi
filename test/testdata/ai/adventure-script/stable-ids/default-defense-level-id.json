@@ -1,0 +1,77 @@
+{
+	"name": "default-defense-level-id",
+	"script": "scripts/ai/defaultAdventure.lua",
+	"input": {
+		"state": {
+			"day": 5,
+			"resources": {
+				"gold": 5000
+			}
+		},
+		"memory": {
+			"version": 1
+		},
+		"analysis": {
+			"defenseAlerts": [
+				{
+					"levelId": 3,
+					"level": "watch",
+					"town_id": 42
+				}
+			]
+		},
+		"actionSpace": {
+			"buildOptions": [
+				{
+					"building_id": 12,
+					"buildingKindId": 5,
+					"buildingLevel": 3,
+					"town_id": 42,
+					"cost": {
+						"gold": 2500
+					},
+					"income": {
+						"gold": 1000
+					},
+					"planAction": {
+						"type": "build",
+						"town_id": 42,
+						"building_id": 12
+					}
+				}
+			],
+			"recruitOptions": [
+				{
+					"town_id": 42,
+					"level": 4,
+					"amount": 6,
+					"creature_id": 23,
+					"cost": {
+						"gold": 1200
+					},
+					"planAction": {
+						"type": "recruit",
+						"source_id": 42,
+						"destination_id": 42,
+						"level": 4,
+						"creature_id": 23,
+						"amount": 6
+					}
+				}
+			]
+		}
+	},
+	"expect": {
+		"status": "need_replan",
+		"firstAction": {
+			"type": "recruit",
+			"creature_id": 23
+		},
+		"actionsDoNotContain": [
+			{
+				"type": "build",
+				"building_id": 12
+			}
+		]
+	}
+}

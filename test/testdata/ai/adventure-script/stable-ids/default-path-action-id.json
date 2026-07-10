@@ -1,0 +1,82 @@
+{
+	"name": "default-path-action-id",
+	"script": "scripts/ai/defaultAdventure.lua",
+	"input": {
+		"state": {
+			"day": 3,
+			"heroes": [
+				{
+					"id": 1,
+					"level": 1,
+					"army": [
+						{
+							"count": 10
+						}
+					]
+				}
+			]
+		},
+		"memory": {
+			"version": 1
+		},
+		"actionSpace": {
+			"reachableObjects": [
+				{
+					"hero_id": 1,
+					"object": {
+						"id": 10,
+						"kindId": 2,
+						"typeId": 79
+					},
+					"path": {
+						"cost": 0,
+						"pathActionId": 4,
+						"pathAction": "normal",
+						"isTeleportAction": false
+					},
+					"safe": true,
+					"value": 0,
+					"planAction": {
+						"type": "visit_object",
+						"hero_id": 1,
+						"object_id": 10
+					}
+				},
+				{
+					"hero_id": 1,
+					"object": {
+						"id": 20,
+						"kindId": 2,
+						"typeId": 79
+					},
+					"path": {
+						"cost": 0.1,
+						"pathActionId": 3,
+						"pathAction": "battle",
+						"isTeleportAction": false
+					},
+					"safe": true,
+					"value": 0,
+					"planAction": {
+						"type": "visit_object",
+						"hero_id": 1,
+						"object_id": 20
+					}
+				}
+			]
+		}
+	},
+	"expect": {
+		"status": "need_replan",
+		"firstAction": {
+			"type": "visit_object",
+			"object_id": 20
+		},
+		"actionsDoNotContain": [
+			{
+				"type": "visit_object",
+				"object_id": 10
+			}
+		]
+	}
+}

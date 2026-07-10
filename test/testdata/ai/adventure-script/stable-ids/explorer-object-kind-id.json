@@ -1,0 +1,65 @@
+{
+	"name": "explorer-object-kind-id",
+	"script": "scripts/ai/explorerAdventure.lua",
+	"input": {
+		"memory": {
+			"version": 1,
+			"profile": "explorer"
+		},
+		"actionSpace": {
+			"reachableObjects": [
+				{
+					"object": {
+						"id": 10,
+						"kindId": 2,
+						"typeId": 79,
+						"name": "candidate one"
+					},
+					"path": {
+						"cost": 0,
+						"pathActionId": 3,
+						"pathAction": "normal",
+						"isTeleportAction": false
+					},
+					"planAction": {
+						"type": "visit_object",
+						"hero_id": 1,
+						"object_id": 10
+					}
+				},
+				{
+					"object": {
+						"id": 20,
+						"kindId": 10,
+						"typeId": 44,
+						"name": "candidate two"
+					},
+					"path": {
+						"cost": 0.1,
+						"pathActionId": 3,
+						"pathAction": "normal",
+						"isTeleportAction": true
+					},
+					"planAction": {
+						"type": "visit_object",
+						"hero_id": 1,
+						"object_id": 20
+					}
+				}
+			]
+		}
+	},
+	"expect": {
+		"status": "need_replan",
+		"firstAction": {
+			"type": "visit_object",
+			"object_id": 20
+		},
+		"actionsDoNotContain": [
+			{
+				"type": "visit_object",
+				"object_id": 10
+			}
+		]
+	}
+}

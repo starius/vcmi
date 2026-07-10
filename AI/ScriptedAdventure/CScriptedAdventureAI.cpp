@@ -98,6 +98,23 @@ enum class ScriptArmyTransferKind : int32_t
 	REINFORCE_TOWN = 2
 };
 
+enum class ScriptThreatLevel : int32_t
+{
+	UNKNOWN = 0,
+	WATCH = 1,
+	HIGH = 2,
+	CRITICAL = 3
+};
+
+enum class ScriptRiskLevel : int32_t
+{
+	NONE = 0,
+	ACCEPTABLE = 1,
+	RISKY = 2,
+	HIGH = 3,
+	CRITICAL = 4
+};
+
 const char * scriptBuildingKindName(ScriptBuildingKind kind)
 {
 	switch(kind)
@@ -178,6 +195,40 @@ const char * scriptArmyTransferKindName(ScriptArmyTransferKind kind)
 		return "gather_to_hero";
 	case ScriptArmyTransferKind::REINFORCE_TOWN:
 		return "reinforce_town";
+	default:
+		return "unknown";
+	}
+}
+
+const char * scriptThreatLevelName(ScriptThreatLevel level)
+{
+	switch(level)
+	{
+	case ScriptThreatLevel::WATCH:
+		return "watch";
+	case ScriptThreatLevel::HIGH:
+		return "high";
+	case ScriptThreatLevel::CRITICAL:
+		return "critical";
+	default:
+		return "unknown";
+	}
+}
+
+const char * scriptRiskLevelName(ScriptRiskLevel level)
+{
+	switch(level)
+	{
+	case ScriptRiskLevel::NONE:
+		return "none";
+	case ScriptRiskLevel::ACCEPTABLE:
+		return "acceptable";
+	case ScriptRiskLevel::RISKY:
+		return "risky";
+	case ScriptRiskLevel::HIGH:
+		return "high";
+	case ScriptRiskLevel::CRITICAL:
+		return "critical";
 	default:
 		return "unknown";
 	}
@@ -679,6 +730,11 @@ std::string pathActionName(EPathNodeAction action)
 	return "unknown";
 }
 
+int32_t scriptPathActionId(EPathNodeAction action)
+{
+	return static_cast<int32_t>(action);
+}
+
 std::string movementResultName(TryMoveHero::EResult result)
 {
 	switch(result)
@@ -747,35 +803,47 @@ JsonNode jsonPathNode(const CGPathNode & pathNode)
 	node["turns"] = JsonNode(static_cast<int32_t>(pathNode.turns));
 	node["movementRemaining"] = JsonNode(pathNode.moveRemains);
 	node["cost"].Float() = pathNode.cost;
+	node["pathActionId"] = JsonNode(scriptPathActionId(pathNode.action));
 	node["pathAction"] = JsonNode(pathActionName(pathNode.action));
 	node["isTeleportAction"] = JsonNode(pathNode.isTeleportAction());
 	return node;
 }
 
-std::string riskLabel(uint64_t danger, double dangerRatio, bool safe)
+ScriptRiskLevel scriptRiskLevel(uint64_t danger, double dangerRatio, bool safe)
 {
 	if(danger == 0)
-		return "none";
+		return ScriptRiskLevel::NONE;
 	if(safe)
-		return "acceptable";
+		return ScriptRiskLevel::ACCEPTABLE;
 	if(dangerRatio >= 1.5)
-		return "critical";
+		return ScriptRiskLevel::CRITICAL;
 	if(dangerRatio >= 1.0)
-		return "high";
-	return "risky";
+		return ScriptRiskLevel::HIGH;
+	return ScriptRiskLevel::RISKY;
+}
+
+ScriptThreatLevel scriptThreatLevel(double strengthRatio)
+{
+	if(strengthRatio >= 1.5)
+		return ScriptThreatLevel::CRITICAL;
+	if(strengthRatio >= 1.0)
+		return ScriptThreatLevel::HIGH;
+	return ScriptThreatLevel::WATCH;
 }
 
 JsonNode jsonRisk(const CGHeroInstance * hero, uint64_t danger, bool safe)
 {
 	const int64_t heroStrength = hero ? static_cast<int64_t>(hero->getArmyStrength()) : 0;
 	const double dangerRatio = static_cast<double>(danger) / std::max(1.0, static_cast<double>(heroStrength));
+	const ScriptRiskLevel riskLevel = scriptRiskLevel(danger, dangerRatio, safe);
 
 	JsonNode node;
 	node["danger"] = JsonNode(static_cast<int64_t>(danger));
 	node["heroStrength"] = JsonNode(heroStrength);
 	node["dangerRatio"] = JsonNode(dangerRatio);
 	node["safe"] = JsonNode(safe);
-	node["risk"] = JsonNode(riskLabel(danger, dangerRatio, safe));
+	node["riskId"] = JsonNode(static_cast<int32_t>(riskLevel));
+	node["risk"] = JsonNode(scriptRiskLevelName(riskLevel));
 	node["estimatedLoss"] = JsonNode(safe ? 0 : static_cast<int64_t>(danger));
 	return node;
 }
@@ -2142,7 +2210,7 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 	analysis["scriptMemory"]["persistedInPlayerLocalSettings"] = JsonNode(true);
 	analysis["scriptMemory"]["localStateKey"] = JsonNode(SCRIPT_MEMORY_LOCAL_STATE_KEY);
 	analysis["candidateFields"].Vector();
-	for(const char * field : { "reason", "value", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "kindId", "buildingKindId", "transferKindId" })
+	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "kindId", "buildingKindId", "transferKindId", "pathActionId", "levelId" })
 		analysis["candidateFields"].Vector().push_back(JsonNode(field));
 	analysis["danger"]["candidateDangerSource"] = JsonNode("Nullkiller direct object/guard danger evaluator");
 	analysis["danger"]["enemyReachSource"] = JsonNode("visible enemy distance and strength alerts");
@@ -2192,14 +2260,11 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 
 			const int64_t enemyStrength = static_cast<int64_t>(enemyHero->getArmyStrength());
 			const double strengthRatio = static_cast<double>(enemyStrength) / std::max(1.0, static_cast<double>(townStrength));
-			std::string level = "watch";
-			if(strengthRatio >= 1.5)
-				level = "critical";
-			else if(strengthRatio >= 1.0)
-				level = "high";
+			const ScriptThreatLevel level = scriptThreatLevel(strengthRatio);
 
 			JsonNode alert;
-			alert["level"] = JsonNode(level);
+			alert["levelId"] = JsonNode(static_cast<int32_t>(level));
+			alert["level"] = JsonNode(scriptThreatLevelName(level));
 			alert["town_id"] = JsonNode(town->id.getNum());
 			alert["town"] = JsonNode(jsonText(town->getNameTranslated()));
 			alert["townPosition"] = jsonPosition(town->visitablePos());
@@ -2232,14 +2297,11 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 
 			const int64_t enemyStrength = static_cast<int64_t>(enemyHero->getArmyStrength());
 			const double strengthRatio = static_cast<double>(enemyStrength) / std::max(1.0, static_cast<double>(heroStrength));
-			std::string level = "watch";
-			if(strengthRatio >= 1.5)
-				level = "critical";
-			else if(strengthRatio >= 1.0)
-				level = "high";
+			const ScriptThreatLevel level = scriptThreatLevel(strengthRatio);
 
 			JsonNode alert;
-			alert["level"] = JsonNode(level);
+			alert["levelId"] = JsonNode(static_cast<int32_t>(level));
+			alert["level"] = JsonNode(scriptThreatLevelName(level));
 			alert["hero_id"] = JsonNode(hero->id.getNum());
 			alert["hero"] = JsonNode(jsonText(hero->getNameTranslated()));
 			alert["heroPosition"] = jsonPosition(hero->visitablePos());

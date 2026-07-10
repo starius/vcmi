@@ -47,6 +47,37 @@ local Score = {
     }
 }
 
+local BuildingKind = {
+    unknown = 0,
+    mageGuild = 1,
+    tavern = 2,
+    shipyard = 3,
+    fortification = 4,
+    hall = 5,
+    market = 6,
+    resourceSilo = 7,
+    blacksmith = 8,
+    special = 9,
+    horde = 10,
+    dwelling = 11,
+    grail = 12,
+    ship = 13
+}
+
+local ObjectKind = {
+    unknown = 0,
+    treasure = 1,
+    resource = 2,
+    mine = 3
+}
+
+local PathAction = {
+    unknown = 0,
+    normal = 3,
+    battle = 4,
+    teleportBattle = 9
+}
+
 -- Optional arrays are common in reduced fixtures; treat nil as empty.
 local function array(value)
     if type(value) == "table" then
@@ -65,7 +96,8 @@ local function copy(action)
     return result
 end
 
--- Case-insensitive name matching keeps this profile easy to tune from traces.
+-- Case-insensitive labels are used only as a compatibility fallback. Current
+-- host input provides integer ids for strategic decisions.
 local function lower(value)
     return string.lower(tostring(value or ""))
 end
@@ -77,6 +109,42 @@ local function resource(resources, name)
         return 0
     end
     return tonumber(resources[name] or 0) or 0
+end
+
+local function buildingKindId(option)
+    return tonumber(option and (option.buildingKindId or option.building_kind_id) or 0) or 0
+end
+
+local function buildingLevel(option)
+    return tonumber(option and (option.buildingLevel or option.building_level) or 0) or 0
+end
+
+local function objectKindId(object)
+    return tonumber(object and (object.kindId or object.objectKindId or object.kind_id) or 0) or 0
+end
+
+local function pathActionId(path)
+    local action = tonumber(path and (path.pathActionId or path.path_action_id) or nil)
+    if action then
+        return action
+    end
+
+    local label = lower(path and path.pathAction)
+    if label == "normal" then
+        return PathAction.normal
+    end
+    if label == "battle" then
+        return PathAction.battle
+    end
+    if label == "teleport_battle" then
+        return PathAction.teleportBattle
+    end
+    return PathAction.unknown
+end
+
+local function isBattlePath(path)
+    local action = pathActionId(path)
+    return action == PathAction.battle or action == PathAction.teleportBattle
 end
 
 -- Economy memory is profile-tagged. Reusing memory from another policy could
@@ -119,28 +187,34 @@ local function markProgress(memory, progress)
 end
 
 local function scoreBuild(option, input)
-    local name = lower(option.building)
+    local kind = buildingKindId(option)
+    local level = buildingLevel(option)
+    local name = kind == BuildingKind.unknown and lower(option.building) or ""
     local gold = resource(input.state and input.state.resources, "gold")
     local score = Score.build.base + resource(option.income, "gold") * Score.build.incomeGold - resource(option.cost, "gold") * Score.build.goldCost
 
     -- Income chain milestones dominate this profile because their benefit
     -- compounds over the rest of the map.
-    if name:find("town hall", 1, true) then
+    if (kind == BuildingKind.hall and level == 2) or name:find("town hall", 1, true) then
         score = score + Score.build.townHall
     end
-    if name:find("city hall", 1, true) then
+    if (kind == BuildingKind.hall and level == 3) or name:find("city hall", 1, true) then
         score = score + Score.build.cityHall
     end
-    if name:find("capitol", 1, true) then
+    if (kind == BuildingKind.hall and level >= 4) or name:find("capitol", 1, true) then
         score = score + Score.build.capitol
     end
-    if name:find("market", 1, true) or name:find("resource", 1, true) then
+    if kind == BuildingKind.market
+        or kind == BuildingKind.resourceSilo
+        or name:find("market", 1, true)
+        or name:find("resource", 1, true)
+    then
         score = score + Score.build.marketOrResource
     end
-    if name:find("dwelling", 1, true) and gold >= Threshold.goldForDwellingAfterEconomy then
+    if (kind == BuildingKind.dwelling or name:find("dwelling", 1, true)) and gold >= Threshold.goldForDwellingAfterEconomy then
         score = score + Score.build.dwellingWithSurplus
     end
-    if name:find("castle", 1, true) or name:find("citadel", 1, true) then
+    if kind == BuildingKind.fortification or name:find("castle", 1, true) or name:find("citadel", 1, true) then
         score = score + Score.build.castleOrCitadel
     end
     return score
@@ -188,7 +262,8 @@ end
 local function scoreTarget(target, memory)
     local object = target.object or {}
     local path = target.path or {}
-    local words = lower((object.name or "") .. " " .. (object.type or "") .. " " .. (object.hoverText or ""))
+    local kind = objectKindId(object)
+    local words = kind == ObjectKind.unknown and lower((object.name or "") .. " " .. (object.type or "") .. " " .. (object.hoverText or "")) or ""
     local objectKey = tostring(object.id or "")
     local score = Score.target.base - (tonumber(path.cost or 0) or 0) * Score.target.pathCost
 
@@ -197,13 +272,22 @@ local function scoreTarget(target, memory)
     end
 
     -- Mines and resource pickups are the core movement targets for this policy.
-    if words:find("mine", 1, true) or words:find("sawmill", 1, true) or words:find("ore pit", 1, true) then
+    if kind == ObjectKind.mine
+        or words:find("mine", 1, true)
+        or words:find("sawmill", 1, true)
+        or words:find("ore pit", 1, true)
+    then
         score = score + Score.target.mineBonus
     end
-    if words:find("gold", 1, true) or words:find("resource", 1, true) or words:find("campfire", 1, true) then
+    if kind == ObjectKind.resource
+        or kind == ObjectKind.treasure
+        or words:find("gold", 1, true)
+        or words:find("resource", 1, true)
+        or words:find("campfire", 1, true)
+    then
         score = score + Score.target.resourceBonus
     end
-    if path.pathAction == "battle" or path.pathAction == "teleport_battle" then
+    if isBattlePath(path) then
         score = score - Score.target.battlePenalty
     end
     if path.isTeleportAction then
