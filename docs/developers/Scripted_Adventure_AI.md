@@ -2103,6 +2103,17 @@ Regression harness:
   high/critical defense-pressure miss and one terminal native action interruption, both on seed `16`, which won
   in the traced rerun. The remaining actual losses need stronger loss-specific trace heuristics than generic
   "candidate existed at end turn".
+- Done: compared the same current loss/idle bucket against the all-fallback Lua control. Full fallback won seeds
+  `08` and `16`, but lost `01`, `05`, `07`, `14`, and `15`. Treat `08`/`16` as bounded-helper parity targets,
+  while the other five are hard red-side/Nullkiller-policy losses unless a later trace shows a script-specific
+  regression.
+- Rejected / not promoted: day-start `ai:nullkillerReset()` matched a plausible native parity invariant and passed
+  56/56 Lua runner tests, but validation regressed. A focused run on the current loss/idle bucket won seed `16`
+  while still losing `01`, `05`, `07`, and `15` and idling on `08` and `14`
+  (`/root/script-ai-runs/bounded-reset-focused-20260711-114109`). The full 16-map run regressed from the current
+  9 Lua wins / 5 Nullkiller2 wins / 2 idles baseline to 7 Lua wins / 7 Nullkiller2 wins / 2 idles
+  (`/root/script-ai-runs/bounded-reset-full16-20260711-114938`). Do not promote this without a narrower
+  state-reset design or stronger evidence.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions
