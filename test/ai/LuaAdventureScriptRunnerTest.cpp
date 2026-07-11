@@ -2098,6 +2098,10 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeTryHelpersReturnStructuredHostError
 				local execute = ai:tryExecute({ type = "build", town_id = 7, building_id = 12 })
 				local refresh = ai:tryRefresh()
 				local option = ai:tryRunOption({})
+				local call = ai:tryCall(function(value)
+					return { echoed = value }
+				end, 17)
+				local invalidCall = ai:tryCall("not a function")
 				return {
 					status = "end_turn",
 					memory = {
@@ -2109,7 +2113,11 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeTryHelpersReturnStructuredHostError
 						refreshOk = refresh.ok,
 						refreshDay = refresh.input.state.day,
 						optionOk = option.ok,
-						optionError = option.error
+						optionError = option.error,
+						callOk = call.ok,
+						callEcho = call.result.echoed,
+						invalidCallOk = invalidCall.ok,
+						invalidCallError = invalidCall.error
 					},
 					actions = {}
 				}
@@ -2158,6 +2166,10 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeTryHelpersReturnStructuredHostError
 	EXPECT_EQ(output.memory["refreshDay"].Integer(), 5);
 	EXPECT_FALSE(output.memory["optionOk"].Bool());
 	EXPECT_NE(output.memory["optionError"].String().find("missing action field"), std::string::npos);
+	EXPECT_TRUE(output.memory["callOk"].Bool());
+	EXPECT_EQ(output.memory["callEcho"].Integer(), 17);
+	EXPECT_FALSE(output.memory["invalidCallOk"].Bool());
+	EXPECT_NE(output.memory["invalidCallError"].String().find("expects a function"), std::string::npos);
 }
 
 TEST(LuaAdventureScriptRunnerTest, BoundedNullkillerControlEndsTurnWhenNativeSliceIsIdle)

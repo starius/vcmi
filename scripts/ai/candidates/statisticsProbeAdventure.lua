@@ -78,14 +78,14 @@ function Script.runDay(ai, input)
     memory.statisticsRequests = memory.statisticsRequests + 1
     ai:setMemory(memory)
 
-    local ok, result = pcall(function()
+    local request = ai:tryCall(function()
         return ai:requestStatistic()
     end)
 
-    if not ok then
-        memory.lastStatisticError = tostring(result)
+    if not request.ok then
+        memory.lastStatisticError = request.error
         ai:setMemory(memory)
-        error("statistics probe failed: " .. tostring(result), 0)
+        error("statistics probe failed: " .. tostring(request.error), 0)
     end
 
     local refreshed = ai:refresh()

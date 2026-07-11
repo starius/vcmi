@@ -132,12 +132,19 @@ function ai:execute(action)
 	return response.result or response
 end
 
-local function protectedHostCall(fn)
-	local ok, result = pcall(fn)
+local function protectedHostCall(fn, ...)
+	local ok, result = pcall(fn, ...)
 	if ok then
 		return { ok = true, result = result }
 	end
 	return { ok = false, error = tostring(result) }
+end
+
+function ai:tryCall(fn, ...)
+	if type(fn) ~= "function" then
+		return { ok = false, error = "ai:tryCall expects a function" }
+	end
+	return protectedHostCall(fn, ...)
 end
 
 function ai:tryExecute(action)

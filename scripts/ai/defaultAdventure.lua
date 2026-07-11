@@ -1319,7 +1319,7 @@ function Script.runDay(ai, input)
     local function runBoundedNullkillerTurnSlice()
         local remainingCommands = math.max(1, commandLimit - commands)
         local maxPasses = math.min(NativeNullkiller.maxTurnSlicePasses, remainingCommands)
-        local ok, result = pcall(function()
+        local attempt = ai:tryCall(function()
             return ai:nullkillerTurnSlice({
                 max_passes = maxPasses,
                 max_candidates = NativeNullkiller.maxCandidates,
@@ -1328,13 +1328,14 @@ function Script.runDay(ai, input)
         end)
         commands = commands + 1
 
-        if not ok then
+        if not attempt.ok then
             local memory = ai:memory()
-            memory.lastNullkillerTurnSliceError = tostring(result)
+            memory.lastNullkillerTurnSliceError = attempt.error
             ai:setMemory(memory)
-            error("bounded Nullkiller turn slice failed: " .. tostring(result), 0)
+            error("bounded Nullkiller turn slice failed: " .. tostring(attempt.error), 0)
         end
 
+        local result = attempt.result or {}
         if result.shouldStopTurn == true or (tonumber(result.adventureStopTurnSteps or 0) or 0) > 0 then
             ai:endTurn()
             return false, ai:output("end_turn", "bounded Nullkiller turn slice accepted native stop-turn signal", Confidence.idle)
@@ -1399,22 +1400,21 @@ function Script.runDay(ai, input)
                 local shouldReplan = false
                 local executedAny = false
                 for _, action in ipairs(output.actions or {}) do
-                    local ok, result = pcall(function()
-                        return ai:execute(action)
-                    end)
+                    local attempt = ai:tryExecute(action)
 
                     commands = commands + 1
                     executedAny = true
                     refreshAfterCommand()
-                    if not ok then
+                    if not attempt.ok then
                         failures = failures + 1
                         local memory = ai:memory()
-                        memory.lastActionError = tostring(result)
+                        memory.lastActionError = attempt.error
                         ai:setMemory(memory)
                         shouldReplan = true
                         break
                     end
 
+                    local result = attempt.result
                     if type(result) == "table" and result.stop then
                         shouldReplan = true
                         break

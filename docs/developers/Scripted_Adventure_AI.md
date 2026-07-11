@@ -233,7 +233,7 @@ The `ai` facade:
   Action dispatch accepts stable numeric `type_id` values from `ai.actionTypeIds`, with the legacy string `type`
   kept for traces and compatibility. When both are present, the host verifies that the id and string agree. Camel-case
   `typeId` remains read-side metadata for objects, queries, and action-space records, not an action dispatch field.
-- `ai:tryExecute(action)`, `ai:tryRunAction(action)`, `ai:tryRunOption(option, actionField?)`,
+- `ai:tryCall(function, ...)`, `ai:tryExecute(action)`, `ai:tryRunAction(action)`, `ai:tryRunOption(option, actionField?)`,
   `ai:tryInspect(request)`, and `ai:tryRefresh()`: structured wrappers around the same checked host calls. They
   return `{ ok = true, result = ... }` on success, or `{ ok = false, error = "..." }` when the host rejects the
   request or the local facade validation fails. These helpers are for recoverable probes and fallback decisions;

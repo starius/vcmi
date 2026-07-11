@@ -73,19 +73,19 @@ function Script.runDay(ai, input)
     local stepsToday = 0
 
     while stepsToday < stepLimit and turnIsActive(current) do
-        local ok, result = pcall(function()
+        local attempt = ai:tryCall(function()
             return ai:nullkillerStep("all", MaxCandidatesPerStep, MaxTaskAttemptsPerStep)
         end)
         stepsToday = stepsToday + 1
         memory.totalNullkillerSteps = memory.totalNullkillerSteps + 1
 
-        if not ok then
-            memory.lastNullkillerStepError = tostring(result)
+        if not attempt.ok then
+            memory.lastNullkillerStepError = attempt.error
             ai:setMemory(memory)
-            error("bounded Nullkiller task failed: " .. tostring(result), 0)
+            error("bounded Nullkiller task failed: " .. tostring(attempt.error), 0)
         end
 
-        result = result or {}
+        local result = attempt.result or {}
         if not result.didExecute then
             -- Native Nullkiller can sometimes learn from a failed candidate by
             -- locking the involved hero or widening scan depth. In that case
