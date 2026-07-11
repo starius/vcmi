@@ -5943,10 +5943,22 @@ bool CScriptedAdventureAI::executeNullkillerTaskAction(const JsonNode & action, 
 bool CScriptedAdventureAI::executeNullkillerQueryAction(const JsonNode & action, JsonNode & actionResult)
 {
 	const QueryID queryID(readInteger(action, "query_id"));
+	const bool allowExpired = readBool(action, "allow_expired", false);
+	if(allowExpired && status.getQueriesCount() <= 0)
+	{
+		removeScriptQuery(queryID);
+		actionResult["query_id"] = JsonNode(queryID.getNum());
+		actionResult["handledByNullkiller"] = JsonNode(false);
+		actionResult["expired"] = JsonNode(true);
+		actionResult["pendingQueries"] = JsonNode(0);
+		actionResult["ok"] = JsonNode(true);
+		return true;
+	}
+
 	const std::optional<JsonNode> query = getScriptQuery(queryID);
 	if(!query)
 	{
-		if(readBool(action, "allow_expired", false))
+		if(allowExpired)
 		{
 			actionResult["query_id"] = JsonNode(queryID.getNum());
 			actionResult["handledByNullkiller"] = JsonNode(false);

@@ -1921,6 +1921,13 @@ Regression harness:
   completed all five without an idle timeout. The rerun outcomes were two red losses (`02`, `04`) and three red wins
   (`08`, `10`, `12`), finishing in roughly 43-107 seconds. Treat the earlier battle-creation stalls as
   nondeterministic/timing-sensitive until a future diagnostic batch captures a fresh `stdoutTailSignature`.
+- Done: a fresh 16-game no-trace batch with 16 parallel jobs and a 120-second idle timeout produced 6 red wins, 7
+  red losses, and 3 idle timeouts. The timeout signatures were `battle_ai_creation` for seed `05` and
+  `battle_ai_creation_invalid_stack` for seeds `08` and `10`; seed `08` also logged a stale `QueryReply` attempt
+  after the host reported no pending queries. Bounded Nullkiller query answering now treats `allow_expired` plus
+  zero pending AI-status queries as a successful no-op and clears the stale script query cache entry instead of
+  sending a server reply. A focused seed `08` rerun after this guard no longer emitted stale-query server errors,
+  but still idle-timed-out at a pure `battle_ai_creation` signature.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions
