@@ -456,7 +456,42 @@ class ImperativeTraceSummaryTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            output_path = root / "player-red-day-1-event-2-imperative-output.json"
+            start_path = root / "player-red-day-1-event-2-imperative-command-start.json"
+            start_path.write_text(
+                json.dumps(
+                    {
+                        "label": "imperative-command-start",
+                        "player": "red",
+                        "script": "ai/defaultAdventure.lua",
+                        "payload": {
+                            "commandIndex": 1,
+                            "command": {
+                                "kind": "execute",
+                                "payload": {"type": "move_hero", "hero_id": 5},
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            refresh_path = root / "player-red-day-1-event-3-imperative-command.json"
+            refresh_path.write_text(
+                json.dumps(
+                    {
+                        "label": "imperative-command",
+                        "player": "red",
+                        "script": "ai/defaultAdventure.lua",
+                        "payload": {
+                            "commandIndex": 1,
+                            "command": {"kind": "refresh"},
+                            "response": {"ok": True, "input": {"state": {}}},
+                            "progress": {"executed": [], "failed": [], "remaining": []},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            output_path = root / "player-red-day-1-event-4-imperative-output.json"
             output_path.write_text(
                 json.dumps(
                     {
@@ -475,14 +510,18 @@ class ImperativeTraceSummaryTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            summary = summarize([input_path, command_path, output_path])
+            summary = summarize([input_path, command_path, start_path, refresh_path, output_path])
 
         self.assertEqual(summary["labels"]["imperative-input"], 1)
-        self.assertEqual(summary["labels"]["imperative-command"], 1)
+        self.assertEqual(summary["labels"]["imperative-command"], 2)
+        self.assertEqual(summary["labels"]["imperative-command-start"], 1)
         self.assertEqual(summary["labels"]["imperative-output"], 1)
         self.assertEqual(summary["output_statuses"]["fallback"], 1)
         self.assertEqual(summary["requested_actions"]["build"], 1)
+        self.assertNotIn("move_hero", summary["requested_actions"])
         self.assertEqual(summary["executed_actions"]["build"], 1)
+        self.assertEqual(summary["progress"]["imperative_execute_started"], 1)
+        self.assertEqual(summary["progress"]["imperative_refresh"], 1)
         self.assertEqual(summary["output_intents"]["delegate"], 1)
 
     def test_imperative_output_progress_suppresses_false_idle_and_stopped_mistakes(self) -> None:

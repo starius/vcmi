@@ -2125,6 +2125,10 @@ Regression harness:
   9 Lua wins / 5 Nullkiller2 wins / 2 idles baseline to 7 Lua wins / 7 Nullkiller2 wins / 2 idles
   (`/root/script-ai-runs/bounded-reset-full16-20260711-114938`). Do not promote this without a narrower
   state-reset design or stronger evidence.
+- Done: imperative traces now write an `imperative-command-start` event before each yielded host command and include
+  completed `refresh` commands in normal `imperative-command` traces. This closes the trace blind spot seen in seed
+  `08`, where the last completed native slice was productive but the following untraced refresh/continuation path
+  idled before another executable command appeared.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions

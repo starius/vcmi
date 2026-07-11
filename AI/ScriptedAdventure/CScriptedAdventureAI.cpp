@@ -7086,10 +7086,27 @@ bool CScriptedAdventureAI::tryMakeImperativeScriptedTurn(scripting::LuaAdventure
 		try
 		{
 			const std::string kind = readString(command, "kind");
+			if(scriptConfig.trace)
+			{
+				JsonNode trace;
+				trace["commandIndex"] = JsonNode(static_cast<int32_t>(commandIndex));
+				trace["command"] = command;
+				writeTraceEvent("imperative-command-start", trace);
+			}
+
 			if(kind == "refresh")
 			{
 				nullkillerTaskHandles.clear();
 				response["input"] = makeAdventureScriptInput(progress).toJson();
+				if(scriptConfig.trace)
+				{
+					JsonNode trace;
+					trace["commandIndex"] = JsonNode(static_cast<int32_t>(commandIndex));
+					trace["command"] = command;
+					trace["response"] = response;
+					trace["progress"] = progress;
+					writeTraceEvent("imperative-command", trace);
+				}
 				return response;
 			}
 
@@ -7099,6 +7116,7 @@ bool CScriptedAdventureAI::tryMakeImperativeScriptedTurn(scripting::LuaAdventure
 				if(scriptConfig.trace)
 				{
 					JsonNode trace;
+					trace["commandIndex"] = JsonNode(static_cast<int32_t>(commandIndex));
 					trace["command"] = command;
 					trace["response"] = response;
 					trace["progress"] = progress;

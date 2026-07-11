@@ -1017,6 +1017,9 @@ def summarize(files: list[Path], max_mistakes: int = 100) -> dict[str, Any]:
             if output.get("intent"):
                 output_intents[str(output["intent"])] += 1
             count_actions(requested_actions, output.get("actions"))
+        elif label == "imperative-command-start":
+            command = as_dict(payload.get("command"))
+            progress_counts[f"imperative_{command.get('kind', '<missing>')}_started"] += 1
         elif label == "imperative-command":
             command = as_dict(payload.get("command"))
             response = as_dict(payload.get("response"))
