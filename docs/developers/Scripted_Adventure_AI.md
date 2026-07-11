@@ -1781,10 +1781,10 @@ Regression harness:
 - Done: `scripts/ai/auditAdventureActionSurface.py` parses the current `CPackForServer` request headers and verifies
   that every strategic adventure request packet has at least one registered Lua action. It also compares the C++
   `scriptActionTypeRegistry()` against Lua's `ai.actionTypeIdsByName` table, so the stable integer action API cannot
-  silently drift between host and script. The only intentional packet exclusions are session/UI or non-adventure
-  packets: pause, save, chat/message, client-ready handshake, player-local UI state, and raw battle `MakeAction`
-  packets. Battle control remains delegated to BattleAI with the separate retreat/surrender callback available to
-  adventure Lua.
+  silently drift between host and script, and checks that every registered host action is emitted by at least one Lua
+  facade wrapper. The only intentional packet exclusions are session/UI or non-adventure packets: pause, save,
+  chat/message, client-ready handshake, player-local UI state, and raw battle `MakeAction` packets. Battle control
+  remains delegated to BattleAI with the separate retreat/surrender callback available to adventure Lua.
 - Partial: full danger-map estimates are not exposed intentionally; Lua gets capped visible-only enemy threat
   tiles and visible blocker clusters, while hidden enemy reach remains private to avoid cheating.
 - Partial: MCP and scripted AI still duplicate some JSON assembly code; extraction can happen once the surface

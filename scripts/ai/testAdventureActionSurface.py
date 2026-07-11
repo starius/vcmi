@@ -26,9 +26,12 @@ class AdventureActionSurfaceAuditTest(unittest.TestCase):
         self.assertEqual(result["missingLuaActionIds"], {})
         self.assertEqual(result["extraLuaActionIds"], {})
         self.assertEqual(result["mismatchedLuaActionIds"], {})
+        self.assertEqual(result["missingLuaFacadeActions"], [])
+        self.assertEqual(result["extraLuaFacadeActions"], [])
         self.assertGreaterEqual(result["coveredPackCount"], 30)
         self.assertGreaterEqual(result["registeredActionCount"], 50)
         self.assertGreaterEqual(result["luaActionIdCount"], 50)
+        self.assertGreaterEqual(result["luaFacadeActionCount"], 50)
 
 
 if __name__ == "__main__":

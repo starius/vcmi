@@ -15,6 +15,7 @@ ACTION_RE = re.compile(r"\{\s*\d+\s*,\s*\"([^\"]+)\"\s*\}")
 ACTION_ID_RE = re.compile(r"\{\s*(\d+)\s*,\s*\"([^\"]+)\"\s*\}")
 LUA_ACTION_ID_RE = re.compile(r"^\s*([A-Za-z]\w*)\s*=\s*(\d+)\s*,?\s*$")
 LUA_ACTION_NAME_RE = re.compile(r"^\s*([A-Za-z]\w*)\s*=\s*ai\.actionTypeIds\.([A-Za-z]\w*)\s*,?\s*$")
+LUA_ACTION_LITERAL_RE = re.compile(r"\btype\s*=\s*\"([a-z_]+)\"")
 
 PACK_HEADERS = (
     "lib/networkPacks/PacksForServer.h",
@@ -132,11 +133,17 @@ def lua_action_ids(repo_root: Path) -> dict[str, int]:
     return result
 
 
+def lua_facade_action_types(repo_root: Path) -> set[str]:
+    text = (repo_root / "luascript/LuaAdventureScriptRunner.cpp").read_text(encoding="utf-8")
+    return set(LUA_ACTION_LITERAL_RE.findall(text))
+
+
 def audit(repo_root: Path) -> dict[str, Any]:
     packs = pack_for_server_types(repo_root)
     actions = registered_action_types(repo_root)
     cpp_action_ids = registered_action_ids(repo_root)
     lua_ids = lua_action_ids(repo_root)
+    lua_facades = lua_facade_action_types(repo_root)
 
     missing_classifications = sorted(
         pack
@@ -168,6 +175,8 @@ def audit(repo_root: Path) -> dict[str, Any]:
         for action in sorted(cpp_action_ids.keys() & lua_ids.keys())
         if cpp_action_ids[action] != lua_ids[action]
     }
+    missing_lua_facade_actions = sorted(actions - lua_facades)
+    extra_lua_facade_actions = sorted(lua_facades - actions)
 
     return {
         "ok": (
@@ -177,18 +186,23 @@ def audit(repo_root: Path) -> dict[str, Any]:
             and not missing_lua_action_ids
             and not extra_lua_action_ids
             and not mismatched_lua_action_ids
+            and not missing_lua_facade_actions
+            and not extra_lua_facade_actions
         ),
         "packCount": len(packs),
         "coveredPackCount": len(PACK_ACTION_COVERAGE),
         "excludedPackCount": len(INTENTIONAL_EXCLUSIONS),
         "registeredActionCount": len(actions),
         "luaActionIdCount": len(lua_ids),
+        "luaFacadeActionCount": len(lua_facades),
         "missingPackClassifications": missing_classifications,
         "stalePackClassifications": stale_classifications,
         "missingRegisteredActions": missing_registered_actions,
         "missingLuaActionIds": missing_lua_action_ids,
         "extraLuaActionIds": extra_lua_action_ids,
         "mismatchedLuaActionIds": mismatched_lua_action_ids,
+        "missingLuaFacadeActions": missing_lua_facade_actions,
+        "extraLuaFacadeActions": extra_lua_facade_actions,
         "intentionalExclusions": INTENTIONAL_EXCLUSIONS,
     }
 
