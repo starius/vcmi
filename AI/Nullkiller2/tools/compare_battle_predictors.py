@@ -40,6 +40,7 @@ TEST_DAY_LIMIT_RE = re.compile(r"\bReached test day limit\b")
 RUNTIME_SIMULATION_STATS_RE = re.compile(
 	r"Runtime battle simulation stats for player \d+ \(([^)]+)\): "
 	r"requests (\d+), complete (\d+), incomplete (\d+), safe (\d+), rejected (\d+)"
+	r"(?:, invalid (\d+), not available (\d+))?"
 )
 
 RUNTIME_SIMULATION_FIELDS = [
@@ -48,6 +49,8 @@ RUNTIME_SIMULATION_FIELDS = [
 	"incomplete",
 	"safe",
 	"rejected",
+	"invalid",
+	"notAvailable",
 ]
 
 ADJUDICATION_FIELDS = [
@@ -507,6 +510,8 @@ def parse_run_logs(task: GameTask) -> tuple[bool, str | None, str | None, bool, 
 						"incomplete": int(stats_match.group(4)),
 						"safe": int(stats_match.group(5)),
 						"rejected": int(stats_match.group(6)),
+						"invalid": int(stats_match.group(7) or 0),
+						"notAvailable": int(stats_match.group(8) or 0),
 					},
 				)
 

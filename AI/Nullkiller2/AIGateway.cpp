@@ -46,12 +46,15 @@ namespace NK2AI
 namespace
 {
 constexpr int64_t RUNTIME_SIMULATION_GAME_SEED = 0;
+constexpr uint64_t MAX_RUNTIME_SIMULATION_INCOMPLETE_WARNINGS = 25;
 
 struct RuntimeBattleSimulationStats
 {
 	uint64_t requests = 0;
 	uint64_t complete = 0;
 	uint64_t incomplete = 0;
+	uint64_t invalidRequest = 0;
+	uint64_t notAvailable = 0;
 	uint64_t safe = 0;
 	uint64_t rejected = 0;
 };
@@ -59,6 +62,8 @@ struct RuntimeBattleSimulationStats
 std::atomic<uint64_t> runtimeBattleSimulationRequests{0};
 std::atomic<uint64_t> runtimeBattleSimulationComplete{0};
 std::atomic<uint64_t> runtimeBattleSimulationIncomplete{0};
+std::atomic<uint64_t> runtimeBattleSimulationInvalidRequest{0};
+std::atomic<uint64_t> runtimeBattleSimulationNotAvailable{0};
 std::atomic<uint64_t> runtimeBattleSimulationSafe{0};
 std::atomic<uint64_t> runtimeBattleSimulationRejected{0};
 
@@ -77,12 +82,43 @@ const char * runtimeSimulationStatusName(BattleOutcomeSimulationStatus status)
 	return "unknown";
 }
 
+const char * pathNodeActionName(EPathNodeAction action)
+{
+	switch(action)
+	{
+		case EPathNodeAction::UNKNOWN:
+			return "unknown";
+		case EPathNodeAction::EMBARK:
+			return "embark";
+		case EPathNodeAction::DISEMBARK:
+			return "disembark";
+		case EPathNodeAction::NORMAL:
+			return "normal";
+		case EPathNodeAction::BATTLE:
+			return "battle";
+		case EPathNodeAction::VISIT:
+			return "visit";
+		case EPathNodeAction::BLOCKING_VISIT:
+			return "blocking visit";
+		case EPathNodeAction::TELEPORT_NORMAL:
+			return "teleport normal";
+		case EPathNodeAction::TELEPORT_BLOCKING_VISIT:
+			return "teleport blocking visit";
+		case EPathNodeAction::TELEPORT_BATTLE:
+			return "teleport battle";
+	}
+
+	return "unknown";
+}
+
 RuntimeBattleSimulationStats runtimeBattleSimulationStatsSnapshot()
 {
 	return RuntimeBattleSimulationStats{
 		runtimeBattleSimulationRequests.load(std::memory_order_relaxed),
 		runtimeBattleSimulationComplete.load(std::memory_order_relaxed),
 		runtimeBattleSimulationIncomplete.load(std::memory_order_relaxed),
+		runtimeBattleSimulationInvalidRequest.load(std::memory_order_relaxed),
+		runtimeBattleSimulationNotAvailable.load(std::memory_order_relaxed),
 		runtimeBattleSimulationSafe.load(std::memory_order_relaxed),
 		runtimeBattleSimulationRejected.load(std::memory_order_relaxed)
 	};
@@ -96,6 +132,8 @@ RuntimeBattleSimulationStats runtimeBattleSimulationStatsDelta(
 		after.requests - before.requests,
 		after.complete - before.complete,
 		after.incomplete - before.incomplete,
+		after.invalidRequest - before.invalidRequest,
+		after.notAvailable - before.notAvailable,
 		after.safe - before.safe,
 		after.rejected - before.rejected
 	};
@@ -107,14 +145,16 @@ void logRuntimeBattleSimulationStats(PlayerColor playerID, const RuntimeBattleSi
 		return;
 
 	logAi->info(
-		"Runtime battle simulation stats for player %d (%s): requests %llu, complete %llu, incomplete %llu, safe %llu, rejected %llu",
+		"Runtime battle simulation stats for player %d (%s): requests %llu, complete %llu, incomplete %llu, safe %llu, rejected %llu, invalid %llu, not available %llu",
 		playerID,
 		playerID.toString(),
 		static_cast<unsigned long long>(stats.requests),
 		static_cast<unsigned long long>(stats.complete),
 		static_cast<unsigned long long>(stats.incomplete),
 		static_cast<unsigned long long>(stats.safe),
-		static_cast<unsigned long long>(stats.rejected));
+		static_cast<unsigned long long>(stats.rejected),
+		static_cast<unsigned long long>(stats.invalidRequest),
+		static_cast<unsigned long long>(stats.notAvailable));
 }
 
 bool movementActionMayStartBattle(EPathNodeAction action)
@@ -182,7 +222,9 @@ const CGObjectInstance * chooseBattleSimulationTarget(
 bool runtimeBattleSimulationRejectsVisit(
 	const AIGateway & aiGw,
 	const CGHeroInstance * hero,
-	const CGObjectInstance * target)
+	const CGObjectInstance * target,
+	const int3 & tile,
+	EPathNodeAction action)
 {
 	if(!hero || !target || !aiGw.nullkiller || !aiGw.cc)
 		return false;
@@ -203,16 +245,33 @@ bool runtimeBattleSimulationRejectsVisit(
 		thresholds);
 	if(simulation.status != BattleOutcomeSimulationStatus::COMPLETE || simulation.sampleCount < sampleCount)
 	{
-		static std::once_flag warningLogged;
-		std::call_once(warningLogged, [&]()
+		const auto incompleteCount = runtimeBattleSimulationIncomplete.fetch_add(1, std::memory_order_relaxed) + 1;
+		if(simulation.status == BattleOutcomeSimulationStatus::INVALID_REQUEST)
+			runtimeBattleSimulationInvalidRequest.fetch_add(1, std::memory_order_relaxed);
+		else if(simulation.status == BattleOutcomeSimulationStatus::NOT_AVAILABLE)
+			runtimeBattleSimulationNotAvailable.fetch_add(1, std::memory_order_relaxed);
+
+		if(incompleteCount <= MAX_RUNTIME_SIMULATION_INCOMPLETE_WARNINGS)
 		{
 			logAi->warn(
-				"Runtime battle simulation is enabled but did not return enough samples: status %s, samples %lld/%d. Final battle-visit safety gate will use static danger for checks where simulation does not return a complete result.",
+				"Runtime battle simulation incomplete for %s visiting %s: action %s, tile %s, target id %d, type %d/%d, target tile %s, status %s, samples %lld/%d. Final battle-visit safety gate will use static danger.",
+				hero->getNameTranslated().c_str(),
+				target->getObjectName().c_str(),
+				pathNodeActionName(action),
+				tile.toString().c_str(),
+				target->id.getNum(),
+				target->ID.getNum(),
+				target->subID.getNum(),
+				target->visitablePos().toString().c_str(),
 				runtimeSimulationStatusName(simulation.status),
 				static_cast<long long>(simulation.sampleCount),
 				sampleCount);
-		});
-		runtimeBattleSimulationIncomplete.fetch_add(1, std::memory_order_relaxed);
+		}
+		else if(incompleteCount == MAX_RUNTIME_SIMULATION_INCOMPLETE_WARNINGS + 1)
+		{
+			logAi->warn(
+				"Further runtime battle simulation incomplete warnings are suppressed. Aggregate stats will still be logged at turn end.");
+		}
 		return false;
 	}
 
@@ -1399,7 +1458,7 @@ bool AIGateway::moveHeroToTile(const int3 dst, const HeroPtr & heroPtr)
 				bool rejectedByRuntimeSimulation = false;
 				{
 					auto unlock = vstd::makeUnlockSharedGuard(CGameState::mutex);
-					rejectedByRuntimeSimulation = runtimeBattleSimulationRejectsVisit(*this, heroPtr.get(), battleTarget);
+					rejectedByRuntimeSimulation = runtimeBattleSimulationRejectsVisit(*this, heroPtr.get(), battleTarget, endpos, nextAction);
 				}
 				if(rejectedByRuntimeSimulation)
 					throw cannotFulfillGoalException("Runtime battle simulation rejected battle visit.");
