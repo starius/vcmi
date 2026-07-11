@@ -157,6 +157,9 @@ function ai:refresh()
 		error(hostError(response), 2)
 	end
 	self.input = response.input or self.input
+	if self.updateActionTypeIdsFromActionSpace then
+		self:updateActionTypeIdsFromActionSpace()
+	end
 	return self.input
 end
 
@@ -561,6 +564,21 @@ ai.actionTypeIdsByName = {
 	nullkiller_answer_query = ai.actionTypeIds.nullkillerAnswerQuery,
 	nullkiller_object_interaction = ai.actionTypeIds.nullkillerObjectInteraction
 }
+
+function ai:updateActionTypeIdsFromActionSpace()
+	local actionSpace = self:actionSpace() or {}
+	for _, action in ipairs(actionSpace.acceptedActions or {}) do
+		if type(action) == "table" and type(action.type) == "string" then
+			local typeId = action.type_id or action.typeId
+			if type(typeId) == "number" then
+				self.actionTypeIdsByName[action.type] = typeId
+			end
+		end
+	end
+	return self.actionTypeIdsByName
+end
+
+ai:updateActionTypeIdsFromActionSpace()
 
 ai.pathActions = {
 	unknown = 0,

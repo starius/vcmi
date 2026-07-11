@@ -1113,6 +1113,65 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanUseNumericActionTypeIds)
 	EXPECT_EQ(*output.intent, "used numeric action ids");
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayUsesHostAdvertisedActionTypeIds)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				ai:nullkillerReset()
+				ai:refresh()
+				ai:nullkillerReset()
+				return ai:output("end_turn", "used host action ids")
+			end
+		}
+	)lua";
+
+	AI::AdventureScriptInput input = makeInput();
+	input.actionSpace["acceptedActions"].Vector();
+	JsonNode firstAction;
+	firstAction["type"] = JsonNode("nullkiller_reset");
+	firstAction["typeId"] = JsonNode(9001);
+	input.actionSpace["acceptedActions"].Vector().push_back(firstAction);
+
+	AI::AdventureScriptInput refreshedInput = input;
+	refreshedInput.actionSpace["acceptedActions"].Vector().clear();
+	JsonNode refreshedAction;
+	refreshedAction["type"] = JsonNode("nullkiller_reset");
+	refreshedAction["typeId"] = JsonNode(9002);
+	refreshedInput.actionSpace["acceptedActions"].Vector().push_back(refreshedAction);
+
+	scripting::LuaAdventureScriptRunner runner("test:host-action-type-ids", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		if(command["kind"].String() == "refresh")
+		{
+			response["input"] = refreshedInput.toJson();
+		}
+		else
+		{
+			response["result"]["ok"] = JsonNode(true);
+			response["result"]["type"] = command["payload"]["type"];
+		}
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 3);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_reset");
+	EXPECT_EQ(commands[0]["payload"]["type_id"].Integer(), 9001);
+	EXPECT_EQ(commands[1]["kind"].String(), "refresh");
+	EXPECT_EQ(commands[2]["payload"]["type"].String(), "nullkiller_reset");
+	EXPECT_EQ(commands[2]["payload"]["type_id"].Integer(), 9002);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "used host action ids");
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeFacadeCoversAdvertisedActionTypeIds)
 {
 	const std::string source = R"lua(

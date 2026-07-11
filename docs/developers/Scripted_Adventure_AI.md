@@ -1880,6 +1880,9 @@ Regression harness:
 - Done: `actionSpace.acceptedActions` is generated from the stable C++ script-action id registry. New checked
   actions now become advertised through the same authoritative table that validates `type_id`, reducing string/id
   drift across C++, Lua, traces, and tests.
+- Done: the imperative Lua facade refreshes its `type` to `type_id` mapping from host-provided
+  `actionSpace.acceptedActions`, including after `ai:refresh()`. The hardcoded Lua ids remain a compatibility
+  fallback, but normal play now uses the host-advertised integer action contract.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions
