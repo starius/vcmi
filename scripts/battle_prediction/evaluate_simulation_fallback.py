@@ -24,6 +24,7 @@ from evaluate_nullkiller_predictor import (
     feature_vector,
     fit_logistic,
     iter_json_lines,
+    load_shard_manifest,
     shard_setup_key,
     setup_key,
     split_groups,
@@ -78,6 +79,11 @@ def parse_args() -> argparse.Namespace:
         choices=("setup", "shard"),
         default="setup",
         help="Group repeated rows by full setup features or by generated shard metadata. Use shard for generated repeated-simulation datasets.",
+    )
+    parser.add_argument(
+        "--complete-shards-only",
+        action="store_true",
+        help="With --group-key shard, keep only shard groups whose row count matches manifest.jsonl.",
     )
     parser.add_argument("--min-group-size", type=int, default=4)
     parser.add_argument("--test-fraction", type=float, default=0.25)
@@ -152,6 +158,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--require-fallback-sample-count is required with --min/--max-fallback-* gates")
     if args.require_fallback_sample_count is not None and args.require_fallback_sample_count <= 0:
         parser.error("--require-fallback-sample-count must be positive")
+    if args.complete_shards_only and args.group_key != "shard":
+        parser.error("--complete-shards-only requires --group-key shard")
     for option_name in (
         "min_fallback_accuracy50",
         "min_fallback_safety_accuracy",
@@ -223,6 +231,17 @@ def split_replay_groups(groups: list[ReplayGroup], test_fraction: float) -> tupl
     keyed = {group.key: group for group in groups}
     train_groups, test_groups = split_groups([group.to_group() for group in groups], test_fraction)
     return [keyed[group.key] for group in train_groups], [keyed[group.key] for group in test_groups]
+
+
+def filter_complete_shard_replay_groups(groups: list[ReplayGroup], manifest: dict[int, int]) -> list[ReplayGroup]:
+    result = []
+    for group in groups:
+        shard_index = group.row.get("shardIndex")
+        if shard_index is None:
+            continue
+        if manifest.get(int(shard_index)) == group.count:
+            result.append(group)
+    return result
 
 
 def win_rate(rows: list[dict[str, Any]]) -> float:
@@ -518,6 +537,11 @@ def main() -> int:
     if safe_wilson_threshold is None:
         safe_wilson_threshold = args.safe_probability
     replay_groups, schema_counts, rows = load_replay_groups(args.dataset, args.group_key)
+    if args.complete_shards_only:
+        manifest = load_shard_manifest(args.dataset)
+        if not manifest:
+            raise SystemExit("--complete-shards-only requires manifest.jsonl in the dataset")
+        replay_groups = filter_complete_shard_replay_groups(replay_groups, manifest)
     replay_groups = [
         group
         for group in replay_groups
