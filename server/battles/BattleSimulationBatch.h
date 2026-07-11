@@ -31,6 +31,7 @@ struct BattleSimulationSummary
 	void recordWinner(BattleSide winner);
 	bool hasSamples() const;
 	double attackerWinRate() const;
+	double attackerWilsonLowerBound(double z = 1.959963984540054) const;
 	bool attackerWonAllSamples() const;
 	bool defenderWonAllSamples() const;
 };
