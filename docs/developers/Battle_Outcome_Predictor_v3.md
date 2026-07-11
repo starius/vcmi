@@ -425,14 +425,65 @@ vcmibattlesim \
   --skip-complete-shards
 ```
 
-Current live remote run:
+Current live remote schema4 run:
 
 - output: `/root/vcmi-nk-ratio-results/schema4-mmai-town-hero-20k-20260711`
 - PID: `248953`
 - started after a 4-row schema4 smoke passed strict validation with 4/4 MMAI-initialized shard logs and 0 fallback lines
 - early live shards `00000` through `00007` parsed `mmai` and initialized both MMAI side models
+- this run predates schema5 and does not contain `townPreMergeState`
 
-Then validate and inspect the model failures:
+Current live remote schema5 run:
+
+- source/build: `/root/vcmi-schema5-src` and `/root/vcmi-schema5-build`, source revision marker `eb84381e6`
+- output: `/root/vcmi-nk-ratio-results/schema5-mmai-town-hero-20k-20260711`
+- PID: `256258`
+- started after a 4-row schema5 smoke passed strict validation with 4/4 MMAI-initialized shard logs, 0 fallback lines, and `townPreMergeState` present in every row
+- initial partial validation on the live run passed with 8/8 schema5 town-hero rows, 8/8 pre-merge snapshots, rich fields present, and 0 MMAI fallback lines
+- shard clients currently exit 139 after writing their complete rows and cleanly logging `Client stopped`; `vcmibattlesim` accepts the shard when the row count is complete. Treat this as a shutdown issue to investigate separately, not as invalid MMAI label evidence by itself.
+
+Then validate and inspect the schema5 model failures:
+
+```bash
+python3 scripts/battle_prediction/validate_battle_dataset.py \
+  /root/vcmi-nk-ratio-results/schema5-mmai-town-hero-20k-20260711 \
+  --expected-rows 20000 \
+  --expected-schema 5 \
+  --expected-shards 400 \
+  --expected-shard-size 50 \
+  --group-key shard \
+  --expected-groups 400 \
+  --require-complete-shards \
+  --require-battle-types town-hero \
+  --require-no-mmai-fallback \
+  --require-mmai-initialized \
+  --require-schema3-rich-fields
+
+python3 scripts/battle_prediction/evaluate_nullkiller_predictor.py \
+  /root/vcmi-nk-ratio-results/schema5-mmai-town-hero-20k-20260711 \
+  --scope town \
+  --group-key shard \
+  --l2 0.03 \
+  --print-near-even 40 \
+  --print-worst 40 \
+  --print-v3-false-safe 40 \
+  --print-v3-false-unsafe 40 \
+  --print-town-deployable-false-safe 40 \
+  --print-town-deployable-false-unsafe 40 \
+  --town-deployable-safe-probability 0.62
+
+python3 scripts/battle_prediction/analyze_v3_failure_segments.py \
+  /root/vcmi-nk-ratio-results/schema5-mmai-town-hero-20k-20260711 \
+  --scope town \
+  --group-key shard \
+  --predictor cxx-v3 \
+  --actual-min 0.25 \
+  --actual-max 0.75 \
+  --error-min 0.25 \
+  --print-groups 40
+```
+
+The schema4 run can still be validated and inspected for wall-state-only evidence:
 
 ```bash
 python3 scripts/battle_prediction/validate_battle_dataset.py \
