@@ -65,6 +65,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("dataset", help="Dataset directory, .jsonl, .jsonl.gz, or .tar.gz archive")
     parser.add_argument("--safe-ratio", type=float, default=SAFE_ATTACK_RATIO)
+    parser.add_argument(
+        "--group-key",
+        choices=["setup", "shard"],
+        default="setup",
+        help="Group repeated rows by full setup features or by generated shard metadata. Use shard for generated repeated-simulation datasets.",
+    )
     parser.add_argument("--min-group-size", type=int, default=1)
     parser.add_argument("--test-fraction", type=float, default=0.25)
     parser.add_argument("--epochs", type=int, default=2500)
@@ -343,6 +349,30 @@ def town_damage_midpoint(row: dict[str, Any], key: str) -> float:
     return (float(damage.get("min") or 0.0) + float(damage.get("max") or 0.0)) / 2.0
 
 
+def town_initial_wall_state(row: dict[str, Any], key: str) -> float:
+    wall_state = row.get("initialWallState")
+    if isinstance(wall_state, dict) and wall_state.get(key) is not None:
+        return float(wall_state.get(key) or 0.0)
+
+    # Schema 3 did not persist the pre-battle wall state. Derive the same coarse
+    # planner-visible state from fortifications so older datasets remain usable.
+    if key == "keep":
+        return town_fortification(row, "citadelHealth")
+    if key in ("bottomTower", "upperTower"):
+        return town_fortification(row, "lowerTowerHealth" if key == "bottomTower" else "upperTowerHealth")
+    if key == "gate":
+        return 2.0 if town_feature(row, "fortLevel") > 0.0 else 0.0
+    if key == "gateState":
+        return 1.0 if town_feature(row, "fortLevel") > 0.0 else 0.0
+    if key in ("bottomWall", "belowGate", "overGate", "upperWall"):
+        return town_fortification(row, "wallsHealth")
+    return 0.0
+
+
+def town_initial_wall_total(row: dict[str, Any]) -> float:
+    return sum(town_initial_wall_state(row, key) for key in ("bottomWall", "belowGate", "overGate", "upperWall"))
+
+
 def feature_vector(row: dict[str, Any]) -> list[float]:
     attacker = max(side_strength(row, "attacker"), EPSILON)
     defender = max(side_strength(row, "defender"), EPSILON)
@@ -545,6 +575,85 @@ def town_deployable_feature_vector(row: dict[str, Any]) -> list[float]:
     return values
 
 
+def town_rich_deployable_feature_vector(row: dict[str, Any]) -> list[float]:
+    values = town_deployable_feature_vector(row)
+    attacker = max(side_strength(row, "attacker"), EPSILON)
+    defender = max(side_strength(row, "defender"), EPSILON)
+    attacker_rich = army_rich_stats(row, "attacker")
+    defender_rich = army_rich_stats(row, "defender")
+    attacker_hero = row.get("attackerHero")
+    defender_hero = row.get("defenderHero")
+
+    fort_level = town_feature(row, "fortLevel")
+    mage_guild_level = town_feature(row, "mageGuildLevel")
+    has_moat = town_fortification(row, "hasMoat")
+    wall_total = town_initial_wall_total(row)
+    tower_total = town_initial_wall_state(row, "bottomTower") + town_initial_wall_state(row, "upperTower")
+    keep_health = town_initial_wall_state(row, "keep")
+    gate_health = town_initial_wall_state(row, "gate")
+    gate_state = town_initial_wall_state(row, "gateState")
+    attacker_flying = attacker_rich["flying_share"]
+    attacker_shooter = attacker_rich["shooter_share"]
+    attacker_spellcaster = attacker_rich["spellcaster_share"]
+    attacker_no_retaliation = attacker_rich["blocksRetaliation_share"]
+    defender_shooter = defender_rich["shooter_share"]
+    defender_spellcaster = defender_rich["spellcaster_share"]
+    defender_magic_resistance = defender_rich["magic_resistance_avg"]
+    spell_power_diff = primary(attacker_hero, 2) - primary(defender_hero, 2)
+    current_mana_diff = raw_mana(attacker_hero) - raw_mana(defender_hero)
+    spell_count_diff = combat_spell_count(attacker_hero) - combat_spell_count(defender_hero)
+    log_strength_ratio = math.log(attacker / defender)
+
+    values.extend([
+        min(attacker_rich["available"], defender_rich["available"]),
+        math.log1p(attacker_rich["hp"]) - math.log1p(defender_rich["hp"]),
+        math.log1p(attacker_rich["damage"]) - math.log1p(defender_rich["damage"]),
+        math.log((attacker_rich["damage"] + 1.0) / (attacker_rich["hp"] + 1.0))
+        - math.log((defender_rich["damage"] + 1.0) / (defender_rich["hp"] + 1.0)),
+        attacker_rich["attack_avg"] - defender_rich["attack_avg"],
+        attacker_rich["defense_avg"] - defender_rich["defense_avg"],
+        attacker_rich["speed_avg"] - defender_rich["speed_avg"],
+        attacker_rich["max_speed"] - defender_rich["max_speed"],
+        attacker_rich["shooter_share"] - defender_rich["shooter_share"],
+        attacker_rich["flying_share"] - defender_rich["flying_share"],
+        attacker_rich["blocksRetaliation_share"] - defender_rich["blocksRetaliation_share"],
+        attacker_rich["unlimitedRetaliations_share"] - defender_rich["unlimitedRetaliations_share"],
+        attacker_rich["additionalAttack_share"] - defender_rich["additionalAttack_share"],
+        attacker_rich["returnAfterStrike_share"] - defender_rich["returnAfterStrike_share"],
+        attacker_rich["area_attack_share"] - defender_rich["area_attack_share"],
+        attacker_rich["spellAfterAttack_share"] - defender_rich["spellAfterAttack_share"],
+        attacker_rich["spellcaster_share"] - defender_rich["spellcaster_share"],
+        attacker_rich["magic_resistance_avg"] - defender_rich["magic_resistance_avg"],
+        attacker_rich["level_spell_immunity_avg"] - defender_rich["level_spell_immunity_avg"],
+        attacker_rich["spell_damage_reduction_avg"] - defender_rich["spell_damage_reduction_avg"],
+        attacker_rich["spell_immunity_share"] - defender_rich["spell_immunity_share"],
+        attacker_rich["non_living_or_undead_share"] - defender_rich["non_living_or_undead_share"],
+        wall_total,
+        keep_health,
+        tower_total,
+        gate_health,
+        gate_state,
+        log_strength_ratio * fort_level,
+        log_strength_ratio * has_moat,
+        attacker_flying * fort_level,
+        attacker_flying * has_moat,
+        attacker_flying * wall_total,
+        attacker_shooter * fort_level,
+        attacker_shooter * tower_total,
+        attacker_spellcaster * mage_guild_level,
+        attacker_spellcaster * current_mana_diff,
+        attacker_no_retaliation * fort_level,
+        defender_shooter * tower_total,
+        defender_shooter * keep_health,
+        defender_spellcaster * mage_guild_level,
+        defender_magic_resistance * spell_power_diff,
+        spell_power_diff * mage_guild_level,
+        current_mana_diff * mage_guild_level,
+        spell_count_diff * mage_guild_level,
+    ])
+    return values
+
+
 FEATURE_NAMES = [
     "log_strength_ratio",
     "hero_vs_hero",
@@ -660,6 +769,55 @@ TOWN_DEPLOYABLE_FEATURE_NAMES = [
 ] + [f"town_faction_{index}" for index in range(TOWN_FACTION_BUCKETS)]
 TOWN_DEPLOYABLE_FEATURE_NAMES += [f"terrain_{index}" for index in range(TOWN_TERRAIN_BUCKETS)]
 TOWN_DEPLOYABLE_FEATURE_NAMES += [f"battlefield_{index}" for index in range(TOWN_BATTLEFIELD_BUCKETS)]
+
+TOWN_RICH_DEPLOYABLE_EXTRA_NAMES = [
+    "creature_stats_available",
+    "total_hp_log_diff",
+    "total_damage_log_diff",
+    "damage_per_hp_log_diff",
+    "base_attack_weighted_diff",
+    "base_defense_weighted_diff",
+    "speed_weighted_diff",
+    "max_speed_diff",
+    "shooter_power_share_diff",
+    "flying_power_share_diff",
+    "blocks_retaliation_share_diff",
+    "unlimited_retaliations_share_diff",
+    "additional_attack_share_diff",
+    "return_after_strike_share_diff",
+    "area_attack_share_diff",
+    "spell_after_attack_share_diff",
+    "spellcaster_share_diff",
+    "magic_resistance_avg_diff",
+    "level_spell_immunity_avg_diff",
+    "spell_damage_reduction_avg_diff",
+    "spell_immunity_share_diff",
+    "non_living_or_undead_share_diff",
+    "initial_wall_total",
+    "initial_keep_health",
+    "initial_tower_health",
+    "initial_gate_health",
+    "initial_gate_state",
+    "log_strength_ratio_x_fort_level",
+    "log_strength_ratio_x_moat",
+    "attacker_flying_share_x_fort_level",
+    "attacker_flying_share_x_moat",
+    "attacker_flying_share_x_initial_wall_total",
+    "attacker_shooter_share_x_fort_level",
+    "attacker_shooter_share_x_initial_tower_health",
+    "attacker_spellcaster_share_x_mage_guild_level",
+    "attacker_spellcaster_share_x_current_mana_diff",
+    "attacker_no_retaliation_share_x_fort_level",
+    "defender_shooter_share_x_initial_tower_health",
+    "defender_shooter_share_x_initial_keep_health",
+    "defender_spellcaster_share_x_mage_guild_level",
+    "defender_magic_resistance_avg_x_spell_power_diff",
+    "spell_power_diff_x_mage_guild_level",
+    "current_mana_diff_x_mage_guild_level",
+    "combat_spell_count_diff_x_mage_guild_level",
+]
+
+TOWN_RICH_DEPLOYABLE_FEATURE_NAMES = TOWN_DEPLOYABLE_FEATURE_NAMES + TOWN_RICH_DEPLOYABLE_EXTRA_NAMES
 
 
 def army_power_by_creature(row: dict[str, Any], side: str) -> dict[int, float]:
@@ -810,6 +968,19 @@ def setup_key(row: dict[str, Any]) -> str:
     return json.dumps(stable, sort_keys=True, separators=(",", ":"))
 
 
+def shard_setup_key(row: dict[str, Any]) -> str:
+    if row.get("shardIndex") is None or row.get("globalSeed") is None:
+        return setup_key(row)
+
+    stable = {
+        "globalSeed": row.get("globalSeed"),
+        "shardIndex": row.get("shardIndex"),
+        "shardSeed": row.get("shardSeed"),
+        "battleType": battle_type(row),
+    }
+    return json.dumps(stable, sort_keys=True, separators=(",", ":"))
+
+
 def casualty_power(row: dict[str, Any], side: str) -> float:
     by_creature: dict[int, list[float]] = defaultdict(lambda: [0.0, 0.0])
     for stack in row.get(f"{side}Army") or []:
@@ -828,14 +999,14 @@ def casualty_power(row: dict[str, Any], side: str) -> float:
     return result
 
 
-def load_groups(path: str) -> tuple[list[Group], Counter, int]:
+def load_groups(path: str, group_key: str = "setup") -> tuple[list[Group], Counter, int]:
     groups: dict[str, Group] = {}
     schema_counts: Counter = Counter()
     rows = 0
     for row in iter_json_lines(path):
         rows += 1
         schema_counts[row.get("schema", 1)] += 1
-        key = setup_key(row)
+        key = shard_setup_key(row) if group_key == "shard" else setup_key(row)
         group = groups.setdefault(key, Group(key=key, row=row))
         group.count += 1
         group.attacker_wins += row.get("winner") == "attacker"
@@ -1405,7 +1576,7 @@ def top_model_features(model: LogisticModel, names: list[str], limit: int) -> li
 def main() -> int:
     args = parse_args()
     town_danger_factors = parse_float_list(args.town_danger_factors)
-    groups, schema_counts, row_count = load_groups(args.dataset)
+    groups, schema_counts, row_count = load_groups(args.dataset, args.group_key)
     groups = [
         group
         for group in groups
@@ -1417,6 +1588,7 @@ def main() -> int:
     ratio_model = fit_logistic(train, args.epochs, args.learning_rate, args.l2, ratio_feature_vector) if train and fit_models else None
     v3_compatible_model = fit_logistic(train, args.epochs, args.learning_rate, args.l2, v3_compatible_feature_vector) if train and fit_models else None
     town_deployable_model = fit_logistic(train, args.epochs, args.learning_rate, args.l2, town_deployable_feature_vector) if train and fit_models else None
+    town_rich_deployable_model = fit_logistic(train, args.epochs, args.learning_rate, args.l2, town_rich_deployable_feature_vector) if train and fit_models else None
     composition_features: FeatureFunction | None = None
     composition_names: list[str] = []
     composition_model: LogisticModel | None = None
@@ -1432,6 +1604,7 @@ def main() -> int:
     metrics: dict[str, Any] = {
         "dataset": args.dataset,
         "scope": args.scope,
+        "group_key": args.group_key,
         "input_rows": row_count,
         "rows_after_filter": sum(group.count for group in groups),
         "schema_counts": dict(schema_counts),
@@ -1464,13 +1637,15 @@ def main() -> int:
             ],
         }
 
-    if full_model and ratio_model and v3_compatible_model and town_deployable_model:
+    if full_model and ratio_model and v3_compatible_model and town_deployable_model and town_rich_deployable_model:
         ratio_train = summarize_predictions(train, args.safe_ratio, ratio_model)
         ratio_test = summarize_predictions(test, args.safe_ratio, ratio_model)
         v3_compatible_train = summarize_predictions(train, args.safe_ratio, v3_compatible_model)
         v3_compatible_test = summarize_predictions(test, args.safe_ratio, v3_compatible_model)
         town_deployable_train = summarize_predictions(train, args.safe_ratio, town_deployable_model)
         town_deployable_test = summarize_predictions(test, args.safe_ratio, town_deployable_model)
+        town_rich_deployable_train = summarize_predictions(train, args.safe_ratio, town_rich_deployable_model)
+        town_rich_deployable_test = summarize_predictions(test, args.safe_ratio, town_rich_deployable_model)
         skill_spell_train = summarize_predictions(train, args.safe_ratio, skill_spell_model) if skill_spell_model else None
         skill_spell_test = summarize_predictions(test, args.safe_ratio, skill_spell_model) if skill_spell_model else None
         composition_train = summarize_predictions(train, args.safe_ratio, composition_model) if composition_model else None
@@ -1499,6 +1674,14 @@ def main() -> int:
             "model_accuracy": town_deployable_test["model_accuracy"],
             "model_brier": town_deployable_test["model_brier"],
         }
+        metrics["town_rich_deployable_train"] = {
+            "model_accuracy": town_rich_deployable_train["model_accuracy"],
+            "model_brier": town_rich_deployable_train["model_brier"],
+        }
+        metrics["town_rich_deployable_test"] = {
+            "model_accuracy": town_rich_deployable_test["model_accuracy"],
+            "model_brier": town_rich_deployable_test["model_brier"],
+        }
         if skill_spell_train and skill_spell_test and skill_spell_model:
             metrics["skill_spell_train"] = {
                 "model_accuracy": skill_spell_train["model_accuracy"],
@@ -1525,6 +1708,7 @@ def main() -> int:
         metrics["ratio_logistic_model"] = serialize_model(ratio_model, RATIO_FEATURE_NAMES)
         metrics["v3_compatible_model"] = serialize_model(v3_compatible_model, V3_COMPATIBLE_FEATURE_NAMES)
         metrics["town_deployable_model"] = serialize_model(town_deployable_model, TOWN_DEPLOYABLE_FEATURE_NAMES)
+        metrics["town_rich_deployable_model"] = serialize_model(town_rich_deployable_model, TOWN_RICH_DEPLOYABLE_FEATURE_NAMES)
         if skill_spell_model:
             metrics["skill_spell_model"] = serialize_model(skill_spell_model, skill_spell_names)
         metrics["thresholds"] = {
@@ -1534,6 +1718,8 @@ def main() -> int:
             "ratio_test": threshold_summary(test, ratio_model),
             "town_deployable_train": threshold_summary(train, town_deployable_model),
             "town_deployable_test": threshold_summary(test, town_deployable_model),
+            "town_rich_deployable_train": threshold_summary(train, town_rich_deployable_model),
+            "town_rich_deployable_test": threshold_summary(test, town_rich_deployable_model),
         }
         if skill_spell_model:
             metrics["thresholds"]["skill_spell_train"] = threshold_summary(train, skill_spell_model)
@@ -1547,6 +1733,7 @@ def main() -> int:
         if args.print_worst > 0:
             metrics["worst_model_errors"] = worst_model_groups(groups, args.print_worst, full_model, args.safe_ratio)
             metrics["worst_town_deployable_errors"] = worst_model_groups(groups, args.print_worst, town_deployable_model, args.safe_ratio)
+            metrics["worst_town_rich_deployable_errors"] = worst_model_groups(groups, args.print_worst, town_rich_deployable_model, args.safe_ratio)
             metrics["worst_v3_errors"] = worst_v3_groups(groups, args.print_worst, args.safe_ratio)
         if args.print_v3_false_safe > 0:
             metrics["v3_false_safe_groups"] = v3_false_safe_groups(groups, args.print_v3_false_safe, args.safe_ratio)
@@ -1574,6 +1761,7 @@ def main() -> int:
     else:
         print(f"rows: {row_count}")
         print(f"scope: {args.scope}")
+        print(f"group key: {args.group_key}")
         print(f"rows after filter: {metrics['rows_after_filter']}")
         print(f"schemas: {dict(schema_counts)}")
         print(f"groups after filter: {len(groups)}")
@@ -1619,6 +1807,12 @@ def main() -> int:
                     "  town-deployable-fitted "
                     f"accuracy={town_deployable_summary['model_accuracy']:.4f} "
                     f"brier={town_deployable_summary['model_brier']:.4f}"
+                )
+                town_rich_deployable_summary = metrics[f"town_rich_deployable_{name}"]
+                print(
+                    "  town-rich-deployable-fitted "
+                    f"accuracy={town_rich_deployable_summary['model_accuracy']:.4f} "
+                    f"brier={town_rich_deployable_summary['model_brier']:.4f}"
                 )
                 if "skill_spell_train" in metrics:
                     skill_spell_summary = metrics[f"skill_spell_{name}"]
@@ -1701,6 +1895,14 @@ def main() -> int:
                     f"{item['name']}: coefficient={item['coefficient']:.12g} "
                     f"mean={item['mean']:.12g} scale={item['scale']:.12g}"
                 )
+            print("town-rich-deployable model:")
+            print(f"  intercept={town_rich_deployable_model.intercept:.12g}")
+            for item in metrics["town_rich_deployable_model"]["features"]:
+                print(
+                    "  "
+                    f"{item['name']}: coefficient={item['coefficient']:.12g} "
+                    f"mean={item['mean']:.12g} scale={item['scale']:.12g}"
+                )
             if "skill_spell_feature_count" in metrics:
                 print(f"skill/spell model: features={metrics['skill_spell_feature_count']}")
                 print("skill/spell top features:")
@@ -1746,6 +1948,7 @@ def main() -> int:
             if args.print_worst > 0:
                 print_group_report("worst fitted-model errors", metrics["worst_model_errors"])
                 print_group_report("worst town-deployable-model errors", metrics["worst_town_deployable_errors"])
+                print_group_report("worst town-rich-deployable-model errors", metrics["worst_town_rich_deployable_errors"])
                 print_group_report("worst cxx-v3 errors", metrics["worst_v3_errors"])
             if args.print_v3_false_safe > 0:
                 print_group_report("cxx-v3 false-safe groups", metrics["v3_false_safe_groups"])

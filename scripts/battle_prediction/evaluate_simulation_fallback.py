@@ -22,6 +22,7 @@ from evaluate_nullkiller_predictor import (
     feature_vector,
     fit_logistic,
     iter_json_lines,
+    shard_setup_key,
     setup_key,
     split_groups,
 )
@@ -70,6 +71,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("dataset", help="Dataset directory, .jsonl, .jsonl.gz, or .tar.gz archive")
     parser.add_argument("--sample-counts", default="1,3,5,10", help="Comma-separated simulated sample counts")
+    parser.add_argument(
+        "--group-key",
+        choices=("setup", "shard"),
+        default="setup",
+        help="Group repeated rows by full setup features or by generated shard metadata. Use shard for generated repeated-simulation datasets.",
+    )
     parser.add_argument("--min-group-size", type=int, default=4)
     parser.add_argument("--test-fraction", type=float, default=0.25)
     parser.add_argument("--epochs", type=int, default=1500)
@@ -140,14 +147,14 @@ def parse_bands(value: str) -> list[tuple[float, float]]:
     return result
 
 
-def load_replay_groups(path: str) -> tuple[list[ReplayGroup], Counter, int]:
+def load_replay_groups(path: str, group_key: str = "setup") -> tuple[list[ReplayGroup], Counter, int]:
     groups: dict[str, ReplayGroup] = {}
     schema_counts: Counter = Counter()
     rows = 0
     for row in iter_json_lines(path):
         rows += 1
         schema_counts[row.get("schema", 1)] += 1
-        key = setup_key(row)
+        key = shard_setup_key(row) if group_key == "shard" else setup_key(row)
         group = groups.get(key)
         if group is None:
             group = ReplayGroup(key=key, row=row, rows=[])
@@ -366,7 +373,7 @@ def main() -> int:
     safe_wilson_threshold = args.safe_wilson_threshold
     if safe_wilson_threshold is None:
         safe_wilson_threshold = args.safe_probability
-    replay_groups, schema_counts, rows = load_replay_groups(args.dataset)
+    replay_groups, schema_counts, rows = load_replay_groups(args.dataset, args.group_key)
     replay_groups = [
         group
         for group in replay_groups
@@ -377,7 +384,7 @@ def main() -> int:
 
     print(
         f"dataset={args.dataset} rows={rows} schemas={dict(schema_counts)} "
-        f"scope={args.scope} static_model={args.static_model} "
+        f"scope={args.scope} group_key={args.group_key} static_model={args.static_model} "
         f"groups={len(replay_groups)} train_groups={len(train_replays)} test_groups={len(test_replays)}"
     )
 

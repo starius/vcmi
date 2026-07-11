@@ -160,7 +160,7 @@ Generate deterministic datasets with:
 - targeted near-threshold battles, not only uniform random budgets
 - dedicated town/siege generators
 
-For each setup, store enough stable identifiers to group repeated simulations into an empirical outcome distribution.
+For each setup, store enough stable identifiers to group repeated simulations into an empirical outcome distribution. For generated repeated-simulation datasets, evaluate by shard key rather than by the full realized `setup_key`: stochastic battle setup can change fields such as battlefield across repeats, and grouping by full realized setup splits one generated setup into multiple smaller buckets.
 
 ## Training And Runtime Model
 
@@ -182,6 +182,7 @@ Offline validation:
 - false-safe and false-unsafe counts
 - separate metrics by battle type
 - holdout by generated setup, not by individual replay row
+- use `--group-key shard` for generated repeated-simulation datasets; reserve full setup grouping for datasets where each distinct realized setup is the intended unit
 - dataset integrity gate before analysis:
   - expected row count and schema
   - expected shard count and repeated rows per shard
@@ -221,8 +222,14 @@ As of 2026-07-11, the best empirical result is fallback-only deterministic repea
   - 10 samples: 98.44% win/loss accuracy, 95.32% safety accuracy on 1025 held-out rows
   - 20 samples: 97.94% win/loss accuracy, 100.00% safety accuracy on 583 held-out rows
   - 30 samples: 100.00% win/loss accuracy, 93.33% safety accuracy on 300 held-out rows; this bucket had one false-unsafe case and no false-safe cases
+- completed corrected 5k town-hero run, regrouped by generated shard (`--group-key shard`):
+  - 3 samples: 96.30% win/loss accuracy, 96.30% safety accuracy on 27 held-out shards; one false-safe case
+  - 5 samples: 100.00% win/loss accuracy, 96.30% safety accuracy on 27 held-out shards; one false-safe case
+  - 10 samples: 100.00% win/loss accuracy, 100.00% safety accuracy on 27 held-out shards / 1080 eligible holdout rows
+  - 20 samples: 100.00% win/loss accuracy, 100.00% safety accuracy on 27 held-out shards / 810 eligible holdout rows
+  - 30 samples: 100.00% win/loss accuracy, 96.30% safety accuracy on 27 held-out shards; one false-unsafe case and no false-safe cases
 
-The best static models are not merge-ready: current cxx-v3 was about 69.39% / Brier 0.287 on corrected 5k non-town deployed-static holdout rows, about 58.76% / Brier 0.363 on corrected 2k town-hero holdout rows, and 54.48% / Brier 0.392 on the completed corrected 5k town-hero holdout. On the completed 5k town-hero split, skill/spell static features reached 84.92% / Brier 0.117 on holdout after about 99.43% training accuracy, so this is still overfit offline evidence and not enough to merge as Nullkiller2 logic. Runtime simulation infrastructure exists but timed out when enabled in live Nullkiller turns, so the practical direction is offline MMAI simulation for labels plus a better validated static predictor.
+The best static models are not merge-ready: current cxx-v3 was about 69.39% / Brier 0.287 on corrected 5k non-town deployed-static holdout rows, about 58.76% / Brier 0.363 on corrected 2k town-hero holdout rows, and 59.26% / Brier 0.372 on the completed corrected 5k town-hero shard holdout. On the completed 5k town-hero shard split, skill/spell static features reached 88.89% / Brier 0.107 on holdout after about 98.63% training accuracy, so this is still overfit offline evidence and not enough to merge as Nullkiller2 logic. Runtime simulation infrastructure exists but timed out when enabled in live Nullkiller turns, so the practical direction is offline MMAI simulation for labels plus a better validated static predictor.
 
 ### Static Town Prototype
 
@@ -234,6 +241,14 @@ On the completed corrected 5k town-hero run:
 - current cxx-v3 probability applied to towns for diagnostics only: 54.48% held-out win/loss accuracy, Brier 0.3918
 - compact `town-deployable` model with regularization: about 81-83% held-out win/loss accuracy, Brier about 0.105-0.114 depending on threshold and L2
 - richer fitted static models with non-deployable or harder-to-port features: about 84-85% held-out win/loss accuracy
+
+On the same run grouped by generated shard (`--group-key shard`, 73 train shards / 27 holdout shards):
+
+- deployed town danger baseline: 77.78% held-out win/loss accuracy, Brier 0.2093, with 3 false-safe and 2 false-unsafe groups
+- current cxx-v3 probability applied to towns for diagnostics only: 59.26% held-out win/loss accuracy, Brier 0.3721, with 7 false-safe and 3 false-unsafe groups
+- compact `town-deployable` model with regularization: 85.19% held-out win/loss accuracy, Brier 0.1164
+- richer deployable town/siege interactions did not improve holdout on this split: 77.78% held-out win/loss accuracy, Brier 0.1243
+- broader skill/spell static features reached 88.89% held-out win/loss accuracy, Brier 0.1073, but remain diagnostic-only rather than a deployable Nullkiller2 model
 
 Conservative thresholds can eliminate false-safe groups on this small town holdout, but they do not approach 95% win/loss accuracy and introduce false-unsafe groups. This is not merge-ready as a production town predictor by itself.
 
