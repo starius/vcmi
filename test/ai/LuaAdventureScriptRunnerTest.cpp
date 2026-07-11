@@ -1569,6 +1569,62 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteArmyManagementActionSp
 	EXPECT_EQ(*output.intent, "executed army-management action-space options");
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteDismissalActionSpaceOptions)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				ai:runOption(input.actionSpace.dismissCreatureOptions[1])
+				ai:runOption(input.actionSpace.dismissHeroOptions[1])
+				return ai:output("end_turn", "executed dismissal action-space options")
+			end
+		}
+	)lua";
+
+	AI::AdventureScriptInput input = makeInput();
+	JsonNode creature;
+	creature["army_id"] = JsonNode(30);
+	creature["slot"] = JsonNode(3);
+	creature["planAction"]["type"] = JsonNode("dismiss_creature");
+	creature["planAction"]["type_id"] = JsonNode(48);
+	creature["planAction"]["army_id"] = JsonNode(30);
+	creature["planAction"]["slot"] = JsonNode(3);
+	input.actionSpace["dismissCreatureOptions"].Vector().push_back(creature);
+
+	JsonNode hero;
+	hero["hero_id"] = JsonNode(17);
+	hero["planAction"]["type"] = JsonNode("dismiss_hero");
+	hero["planAction"]["type_id"] = JsonNode(63);
+	hero["planAction"]["hero_id"] = JsonNode(17);
+	input.actionSpace["dismissHeroOptions"].Vector().push_back(hero);
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-dismissal-action-space-options", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 2);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "dismiss_creature");
+	EXPECT_EQ(commands[0]["payload"]["type_id"].Integer(), 48);
+	EXPECT_EQ(commands[0]["payload"]["army_id"].Integer(), 30);
+	EXPECT_EQ(commands[0]["payload"]["slot"].Integer(), 3);
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "dismiss_hero");
+	EXPECT_EQ(commands[1]["payload"]["type_id"].Integer(), 63);
+	EXPECT_EQ(commands[1]["payload"]["hero_id"].Integer(), 17);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "executed dismissal action-space options");
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteDefenseResponseActionSpaceOptions)
 {
 	const std::string source = R"lua(

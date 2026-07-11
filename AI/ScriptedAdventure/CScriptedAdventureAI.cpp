@@ -9864,8 +9864,10 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["buildOptions"].Vector();
 	actionSpace["recruitOptions"].Vector();
 	actionSpace["hireHeroOptions"].Vector();
+	actionSpace["dismissHeroOptions"].Vector();
 	actionSpace["prepareHeroOptions"].Vector();
 	actionSpace["armyTransferOptions"].Vector();
+	actionSpace["dismissCreatureOptions"].Vector();
 	actionSpace["upgradeCreatureOptions"].Vector();
 	actionSpace["formationOptions"].Vector();
 	actionSpace["tacticsOptions"].Vector();
@@ -9926,6 +9928,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	std::set<int32_t> seenNullkillerRecruitSources;
 	std::set<std::tuple<int32_t, int32_t, int32_t>> seenNullkillerFormationHelpers;
 	std::set<std::tuple<int32_t, int32_t>> seenObjectInteractionOptions;
+	std::set<std::tuple<int32_t, int32_t>> seenDismissCreatureOptions;
 	auto appendNullkillerBuildArmyHelperOption = [&](const CGTownInstance * town)
 	{
 		if(!town || town->tempOwner != playerID || !cc->isVisibleFor(town, playerID))
@@ -10147,6 +10150,34 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 			actionSpace["tacticsOptions"].Vector().push_back(option);
 		}
 	};
+	auto appendDismissCreatureOptions = [&](const CArmedInstance * army)
+	{
+		if(!army || army->tempOwner != playerID || !cc->isVisibleFor(army, playerID))
+			return;
+
+		const bool hasRequiredLastStack = army->stacksCount() < 2 && army->needsLastStack();
+		for(const auto & [slot, stack] : army->Slots())
+		{
+			if(!stack || hasRequiredLastStack)
+				continue;
+			if(!seenDismissCreatureOptions.emplace(army->id.getNum(), slot.getNum()).second)
+				continue;
+
+			JsonNode option;
+			option["army_id"] = JsonNode(army->id.getNum());
+			option["slot"] = JsonNode(slot.getNum());
+			option["army"] = jsonOwnedArmySnapshot(army);
+			option["stack"]["slot"] = JsonNode(slot.getNum());
+			option["stack"]["creatureId"] = JsonNode(stack->getCreatureID().getNum());
+			option["stack"]["creatureIdentifier"] = JsonNode(stableIdentifier(stack->getCreatureID()));
+			option["stack"]["count"] = JsonNode(stack->getCount());
+			option["stack"]["name"] = JsonNode(jsonText(stack->getName()));
+			setScriptActionType(option["planAction"], "dismiss_creature");
+			option["planAction"]["army_id"] = option["army_id"];
+			option["planAction"]["slot"] = option["slot"];
+			actionSpace["dismissCreatureOptions"].Vector().push_back(option);
+		}
+	};
 	auto appendGarrisonSwapOption = [&](const CGTownInstance * town)
 	{
 		if(!town || town->tempOwner != playerID || !cc->isVisibleFor(town, playerID))
@@ -10311,6 +10342,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		appendNullkillerRecruitHelperOption(town, nullptr);
 		appendNullkillerMoveCreaturesToHeroHelperOption(town);
 		appendGarrisonSwapOption(town);
+		appendDismissCreatureOptions(town);
 		appendDefenseResponseOptions(town);
 		appendUpgradeOptions(town);
 		appendUpgradeOptions(town->getVisitingHero());
@@ -10504,12 +10536,20 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		{
 			ownedHeroes.push_back(hero);
 			appendFormationOptions(hero);
+			appendDismissCreatureOptions(hero);
 			appendPrepareHeroOption(hero, nullptr, nullptr, 0, "self_artifacts", true, false);
 			appendObjectInteractionOption(hero, hero->getVisitedTown(), 1, "visited_town");
 			const CGObjectInstance * currentObject = cc->getTopObj(hero->visitablePos());
 			appendObjectInteractionOption(hero, currentObject, 2, "current_object");
 			appendNullkillerFormationHelperOption(hero, nullptr, 6, "single_creature_stacks", "nullkiller_add_single_creature_stacks");
 			appendNullkillerFormationHelperOption(hero, nullptr, 7, "whirlpool_formation", "nullkiller_rearrange_for_whirlpool");
+
+			JsonNode option;
+			option["hero_id"] = JsonNode(hero->id.getNum());
+			option["hero"] = jsonHero(hero);
+			setScriptActionType(option["planAction"], "dismiss_hero");
+			option["planAction"]["hero_id"] = option["hero_id"];
+			actionSpace["dismissHeroOptions"].Vector().push_back(option);
 		}
 	}
 

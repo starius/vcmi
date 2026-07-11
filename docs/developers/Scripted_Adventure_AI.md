@@ -788,6 +788,9 @@ Current bounded subroutine surface:
 - `actionSpace.objectInteractionOptions` advertises checked `nullkiller_object_interaction` continuations for owned
   heroes currently visiting a town or standing on a visible object. This lets Lua ask Nullkiller to resolve
   object-specific follow-up behavior without delegating the rest of the day.
+- `actionSpace.dismissHeroOptions` and `actionSpace.dismissCreatureOptions` list currently visible owned heroes and
+  dismissable owned army stacks as checked, non-recommended destructive actions. Scripts can consider them
+  explicitly without constructing ids from stale snapshots.
 
 ## Current API Coverage Stance
 
@@ -1698,6 +1701,9 @@ Regression harness:
 - Done: `actionSpace.objectInteractionOptions` exposes currently legal bounded Nullkiller object-interaction
   continuations for owned heroes visiting a town or standing on a visible object. Each option carries stable
   `hero_id` / `object_id` fields and a checked `nullkiller_object_interaction` payload.
+- Done: `actionSpace.dismissHeroOptions` and `actionSpace.dismissCreatureOptions` expose checked dismissal actions
+  for visible owned heroes and legal owned army stacks. These actions are intentionally discoverable but not
+  recommended, since they destroy assets and should require explicit Lua policy.
 - Done: Lua can call Nullkiller's bounded creature-preparation helper through `ai:pickBestCreatures`, matching
   the existing artifact-preparation helper and avoiding Lua-side reimplementation of stack logistics.
 - Done: Lua can call Nullkiller's bounded town-army helper through `ai:nullkillerBuildArmy(townId)`, reusing the
