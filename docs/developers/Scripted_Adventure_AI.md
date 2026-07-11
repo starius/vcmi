@@ -2096,6 +2096,10 @@ Regression harness:
 - Done: a fresh no-trace 16-map run of the current `boundedNullkillerControl.lua` script produced 9
   `ScriptedAdventureAI` wins, 5 `Nullkiller2` wins, and 2 infrastructure idle timeouts. The recovered day counts
   identified the earliest script losses as seed `16` on day 14 and seed `05` on day 28.
+- Done: the batch runner now reports these control-loop counters directly in `results.json`: `terminalRuns`,
+  `nonTerminalRuns`, `scriptedAdventureAIWins`, `nullkiller2Wins`, `redWins`, and `redLosses`. The current baseline
+  should therefore read as 14 terminal winner results, 9 script wins, 5 Nullkiller2 wins, and 2 non-terminal
+  infrastructure idles without manual aggregation.
 - Done: a traced rerun of the current loss/idle bucket parsed 11,532 trace events. The first pass mined seven
   `idle_with_candidates` items, but inspection showed these were ordinary bounded-control max-pass stops with
   intent `bounded Nullkiller control accepted native max-pass limit`, not no-work idles. The trace miner now

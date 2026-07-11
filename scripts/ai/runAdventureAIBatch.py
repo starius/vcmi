@@ -31,6 +31,7 @@ TERMINAL_OUTCOME_MARKERS = (
 TURN_START_DAY_RE = re.compile(r"Player \d+ \([^)]*\) starting turn, day (\d+)")
 INFRASTRUCTURE_FAILURE_OUTCOMES = {"idle_timeout", "timeout", "nonzero_exit"}
 INFRASTRUCTURE_FAILURE_TAIL_SIGNATURES = {"battle_ai_creation", "battle_ai_creation_invalid_stack"}
+TERMINAL_OUTCOMES = {"red_win", "red_loss"}
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 AI_NAME_ALIASES = {
     "Nullkiller": "Nullkiller2",
@@ -617,11 +618,14 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     winners: dict[str, int] = {}
     outcomes: dict[str, int] = {}
     infrastructure_retried_attempts = 0
+    terminal_runs = 0
     for result in results:
         winner = result_winner(result) or "none"
         winners[winner] = winners.get(winner, 0) + 1
         outcome = str(as_dict(result.get("outcome")).get("result", "unknown"))
         outcomes[outcome] = outcomes.get(outcome, 0) + 1
+        if outcome in TERMINAL_OUTCOMES:
+            terminal_runs += 1
         infrastructure_retried_attempts += len(as_list(result.get("previousAttempts")))
 
     completed_days = [
@@ -631,6 +635,12 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     ]
     return {
         "runs": len(results),
+        "terminalRuns": terminal_runs,
+        "nonTerminalRuns": len(results) - terminal_runs,
+        "scriptedAdventureAIWins": winners.get("ScriptedAdventureAI", 0),
+        "nullkiller2Wins": winners.get("Nullkiller2", 0),
+        "redWins": outcomes.get("red_win", 0),
+        "redLosses": outcomes.get("red_loss", 0),
         "winners": winners,
         "outcomes": outcomes,
         "timeouts": sum(1 for result in results if result.get("timedOut")),

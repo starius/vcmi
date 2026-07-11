@@ -115,6 +115,53 @@ class RunAdventureAIBatchTest(unittest.TestCase):
             self.assertEqual(summary["idleTimeouts"], 1)
             self.assertEqual(summary["nonzeroExit"], 0)
 
+    def test_summarize_results_reports_terminal_and_script_wins(self) -> None:
+        results = []
+        for index in range(9):
+            results.append({
+                "scenario": f"lua-win-{index}",
+                "run": index + 1,
+                "ai": ["ScriptedAdventureAI", "Nullkiller2"],
+                "outcome": {"result": "red_win", "completedDays": 30 + index},
+                "timedOut": False,
+                "idleTimedOut": False,
+                "returnCode": 0,
+                "elapsedSeconds": 1.0,
+            })
+        for index in range(5):
+            results.append({
+                "scenario": f"nullkiller-win-{index}",
+                "run": index + 10,
+                "ai": ["ScriptedAdventureAI", "Nullkiller2"],
+                "outcome": {"result": "red_loss", "completedDays": 40 + index},
+                "timedOut": False,
+                "idleTimedOut": False,
+                "returnCode": 0,
+                "elapsedSeconds": 1.0,
+            })
+        for index in range(2):
+            results.append({
+                "scenario": f"idle-{index}",
+                "run": index + 15,
+                "ai": ["ScriptedAdventureAI", "Nullkiller2"],
+                "outcome": {"result": "idle_timeout", "completedDays": 50 + index},
+                "timedOut": False,
+                "idleTimedOut": True,
+                "returnCode": -15,
+                "elapsedSeconds": 1.0,
+            })
+
+        summary = summarize_results(results)
+
+        self.assertEqual(summary["runs"], 16)
+        self.assertEqual(summary["terminalRuns"], 14)
+        self.assertEqual(summary["nonTerminalRuns"], 2)
+        self.assertEqual(summary["scriptedAdventureAIWins"], 9)
+        self.assertEqual(summary["nullkiller2Wins"], 5)
+        self.assertEqual(summary["redWins"], 9)
+        self.assertEqual(summary["redLosses"], 5)
+        self.assertEqual(summary["idleTimeouts"], 2)
+
     def test_run_one_passes_player_script_overrides(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
