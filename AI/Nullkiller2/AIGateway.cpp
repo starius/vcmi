@@ -165,13 +165,56 @@ bool movementActionMayStartBattle(EPathNodeAction action)
 		|| action == EPathNodeAction::TELEPORT_BLOCKING_VISIT;
 }
 
-const CGObjectInstance * strongestGuard(const CCallback & callback, const int3 & tile)
+bool isEnemy(const CCallback & callback, PlayerColor left, PlayerColor right)
+{
+	return left.isValidPlayer()
+		&& right.isValidPlayer()
+		&& callback.getPlayerRelations(left, right) == PlayerRelations::ENEMIES;
+}
+
+bool canBuildBattleSimulationRequestForObject(
+	const CCallback & callback,
+	const CGHeroInstance * attacker,
+	const CGObjectInstance * object)
+{
+	if(!attacker || !object || attacker == object)
+		return false;
+
+	if(const auto * town = dynamic_cast<const CGTownInstance *>(object))
+	{
+		if(!isEnemy(callback, town->getOwner(), attacker->getOwner()))
+			return false;
+
+		return town->armedGarrison() || town->getVisitingHero();
+	}
+
+	if(const auto * armed = dynamic_cast<const CArmedInstance *>(object))
+	{
+		if(armed->stacksCount() <= 0)
+			return false;
+
+		if(!armed->tempOwner.isValidPlayer())
+			return true;
+
+		return isEnemy(callback, armed->tempOwner, attacker->tempOwner);
+	}
+
+	return false;
+}
+
+const CGObjectInstance * strongestGuard(
+	const CCallback & callback,
+	const CGHeroInstance * hero,
+	const int3 & tile)
 {
 	const CGObjectInstance * result = nullptr;
 	uint64_t bestStrength = 0;
 
 	for(const auto * guard : callback.getGuardingCreatures(tile))
 	{
+		if(!canBuildBattleSimulationRequestForObject(callback, hero, guard))
+			continue;
+
 		const auto * army = dynamic_cast<const CArmedInstance *>(guard);
 		const uint64_t strength = army ? army->getArmyStrength() : 0;
 		if(!result || strength > bestStrength)
@@ -184,19 +227,13 @@ const CGObjectInstance * strongestGuard(const CCallback & callback, const int3 &
 	return result;
 }
 
-bool canBuildBattleSimulationRequestForObject(const CGObjectInstance * object)
-{
-	return dynamic_cast<const CArmedInstance *>(object) != nullptr
-		|| dynamic_cast<const CGTownInstance *>(object) != nullptr;
-}
-
 const CGObjectInstance * chooseBattleSimulationTarget(
 	const CCallback & callback,
 	const CGHeroInstance * hero,
 	const int3 & tile,
 	EPathNodeAction action)
 {
-	const auto * guard = strongestGuard(callback, tile);
+	const auto * guard = strongestGuard(callback, hero, tile);
 	auto visitableObjects = callback.getVisitableObjs(tile, false);
 	if(vstd::contains_if(visitableObjects, objWithID<Obj::HERO>))
 	{
@@ -213,7 +250,7 @@ const CGObjectInstance * chooseBattleSimulationTarget(
 	if(action == EPathNodeAction::BATTLE || action == EPathNodeAction::TELEPORT_BATTLE)
 		return guard ? guard : visitableObject;
 
-	if(visitableObject && canBuildBattleSimulationRequestForObject(visitableObject))
+	if(visitableObject && canBuildBattleSimulationRequestForObject(callback, hero, visitableObject))
 		return visitableObject;
 
 	return guard;
