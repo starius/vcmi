@@ -175,6 +175,12 @@ vetoes and static false-unsafe rescues.
 `cacheHits` and `planningCacheHits` show how many final-gate and planner-side
 simulation responses reused deterministic cached samples instead of running a
 new isolated simulation.
+Planner skip fields show why a dangerous capture candidate was not simulated:
+`planningSkippedFutureTurn` means the path would resolve after the current turn,
+`planningSkippedUnsafePath` means an earlier path segment was already unsafe,
+`planningSkippedProjectedArmy` means the path depended on an army state that is
+not present yet, and `planningSkippedNoTarget` means no simulatable battle
+target could be built for that visit.
 Runtime and planner simulation currently treat a battle as safe only if the
 attacker wins every requested sample. This matches the best observed town/siege
 offline safety policy and avoids accepting 19/20-style near misses as safe.

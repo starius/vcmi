@@ -67,6 +67,10 @@ struct BattleSimulationPlanningStats
 	uint64_t rejectedStaticSafe = 0;
 	uint64_t rejectedStaticUnsafe = 0;
 	uint64_t cacheHits = 0;
+	uint64_t skippedFutureTurn = 0;
+	uint64_t skippedUnsafePath = 0;
+	uint64_t skippedProjectedArmy = 0;
+	uint64_t skippedNoTarget = 0;
 };
 
 const int GOLD_MINE_PRODUCTION = 1000;
@@ -218,6 +222,10 @@ void recordBattleSimulationPlanningAccepted(bool staticSafe);
 void recordBattleSimulationPlanningRejected(bool staticSafe);
 void recordBattleSimulationPlanningIncomplete();
 void recordBattleSimulationPlanningCacheHit();
+void recordBattleSimulationPlanningSkippedFutureTurn();
+void recordBattleSimulationPlanningSkippedUnsafePath();
+void recordBattleSimulationPlanningSkippedProjectedArmy();
+void recordBattleSimulationPlanningSkippedNoTarget();
 BattleSimulationPlanningStats battleSimulationPlanningStatsSnapshot();
 bool canBuildBattleSimulationRequestForObject(
 	const CCallback & callback,

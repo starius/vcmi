@@ -59,16 +59,25 @@ std::optional<bool> plannerSimulationEvaluatesVisit(
 		return std::nullopt;
 
 	if(path.turn() > 0)
+	{
+		recordBattleSimulationPlanningSkippedFutureTurn();
 		return std::nullopt;
+	}
 
 	const auto pathDanger = path.getPathDanger();
 	if(pathDanger > 0 && !isSafeToVisit(hero, path.heroArmy, pathDanger, nullkiller->settings->getBattlePlanningSafeAttackRatio()))
+	{
+		recordBattleSimulationPlanningSkippedUnsafePath();
 		return std::nullopt;
+	}
 
 	// Runtime simulation uses the current hero army. Avoid accepting paths whose
 	// projected army differs due to exchanges or upgrades that have not happened yet.
 	if(path.heroArmy != static_cast<const CCreatureSet *>(hero))
+	{
+		recordBattleSimulationPlanningSkippedProjectedArmy();
 		return std::nullopt;
+	}
 
 	const auto * target = chooseBattleSimulationTargetForVisit(
 		*nullkiller->cc,
@@ -76,7 +85,10 @@ std::optional<bool> plannerSimulationEvaluatesVisit(
 		path.targetTile(),
 		objToVisit);
 	if(!target)
+	{
+		recordBattleSimulationPlanningSkippedNoTarget();
 		return std::nullopt;
+	}
 
 	const std::string visitName = objToVisit ? objToVisit->getObjectName() : path.targetTile().toString();
 	const std::string targetName = target->getObjectName();

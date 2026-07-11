@@ -41,6 +41,10 @@ std::atomic<uint64_t> battleSimulationPlanningAcceptedStaticUnsafe{0};
 std::atomic<uint64_t> battleSimulationPlanningRejectedStaticSafe{0};
 std::atomic<uint64_t> battleSimulationPlanningRejectedStaticUnsafe{0};
 std::atomic<uint64_t> battleSimulationPlanningCacheHits{0};
+std::atomic<uint64_t> battleSimulationPlanningSkippedFutureTurn{0};
+std::atomic<uint64_t> battleSimulationPlanningSkippedUnsafePath{0};
+std::atomic<uint64_t> battleSimulationPlanningSkippedProjectedArmy{0};
+std::atomic<uint64_t> battleSimulationPlanningSkippedNoTarget{0};
 }
 
 const CGObjectInstance * ObjectIdRef::operator->() const
@@ -195,6 +199,26 @@ void recordBattleSimulationPlanningCacheHit()
 	battleSimulationPlanningCacheHits.fetch_add(1, std::memory_order_relaxed);
 }
 
+void recordBattleSimulationPlanningSkippedFutureTurn()
+{
+	battleSimulationPlanningSkippedFutureTurn.fetch_add(1, std::memory_order_relaxed);
+}
+
+void recordBattleSimulationPlanningSkippedUnsafePath()
+{
+	battleSimulationPlanningSkippedUnsafePath.fetch_add(1, std::memory_order_relaxed);
+}
+
+void recordBattleSimulationPlanningSkippedProjectedArmy()
+{
+	battleSimulationPlanningSkippedProjectedArmy.fetch_add(1, std::memory_order_relaxed);
+}
+
+void recordBattleSimulationPlanningSkippedNoTarget()
+{
+	battleSimulationPlanningSkippedNoTarget.fetch_add(1, std::memory_order_relaxed);
+}
+
 BattleSimulationPlanningStats battleSimulationPlanningStatsSnapshot()
 {
 	return BattleSimulationPlanningStats{
@@ -205,7 +229,11 @@ BattleSimulationPlanningStats battleSimulationPlanningStatsSnapshot()
 		battleSimulationPlanningAcceptedStaticUnsafe.load(std::memory_order_relaxed),
 		battleSimulationPlanningRejectedStaticSafe.load(std::memory_order_relaxed),
 		battleSimulationPlanningRejectedStaticUnsafe.load(std::memory_order_relaxed),
-		battleSimulationPlanningCacheHits.load(std::memory_order_relaxed)
+		battleSimulationPlanningCacheHits.load(std::memory_order_relaxed),
+		battleSimulationPlanningSkippedFutureTurn.load(std::memory_order_relaxed),
+		battleSimulationPlanningSkippedUnsafePath.load(std::memory_order_relaxed),
+		battleSimulationPlanningSkippedProjectedArmy.load(std::memory_order_relaxed),
+		battleSimulationPlanningSkippedNoTarget.load(std::memory_order_relaxed)
 	};
 }
 

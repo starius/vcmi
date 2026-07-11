@@ -46,6 +46,7 @@ RUNTIME_SIMULATION_STATS_RE = re.compile(
 	r"(?:, planning accepted (\d+), planning rejected (\d+), planning incomplete (\d+))?"
 	r"(?:, planning accepted static safe (\d+), planning accepted static unsafe (\d+), planning rejected static safe (\d+), planning rejected static unsafe (\d+))?"
 	r"(?:, planning cache hits (\d+))?"
+	r"(?:, planning skipped future turn (\d+), planning skipped unsafe path (\d+), planning skipped projected army (\d+), planning skipped no target (\d+))?"
 )
 PLANNER_SIMULATION_RE = re.compile(
 	r"Planner battle simulation (accepted|rejected|incomplete)(?: .*?)? for player \d+ \(([^)]+)\):"
@@ -69,6 +70,10 @@ RUNTIME_SIMULATION_FIELDS = [
 	"planningRejectedStaticSafe",
 	"planningRejectedStaticUnsafe",
 	"planningCacheHits",
+	"planningSkippedFutureTurn",
+	"planningSkippedUnsafePath",
+	"planningSkippedProjectedArmy",
+	"planningSkippedNoTarget",
 ]
 
 ADJUDICATION_FIELDS = [
@@ -641,14 +646,18 @@ def parse_run_logs(task: GameTask) -> tuple[bool, str | None, str | None, bool, 
 						"cacheHits": int(stats_match.group(10) or 0),
 						"planningAccepted": int(stats_match.group(11) or 0),
 						"planningRejected": int(stats_match.group(12) or 0),
-						"planningIncomplete": int(stats_match.group(13) or 0),
-						"planningAcceptedStaticSafe": int(stats_match.group(14) or 0),
-						"planningAcceptedStaticUnsafe": int(stats_match.group(15) or 0),
-						"planningRejectedStaticSafe": int(stats_match.group(16) or 0),
-						"planningRejectedStaticUnsafe": int(stats_match.group(17) or 0),
-						"planningCacheHits": int(stats_match.group(18) or 0),
-					},
-				)
+							"planningIncomplete": int(stats_match.group(13) or 0),
+							"planningAcceptedStaticSafe": int(stats_match.group(14) or 0),
+							"planningAcceptedStaticUnsafe": int(stats_match.group(15) or 0),
+							"planningRejectedStaticSafe": int(stats_match.group(16) or 0),
+							"planningRejectedStaticUnsafe": int(stats_match.group(17) or 0),
+							"planningCacheHits": int(stats_match.group(18) or 0),
+							"planningSkippedFutureTurn": int(stats_match.group(19) or 0),
+							"planningSkippedUnsafePath": int(stats_match.group(20) or 0),
+							"planningSkippedProjectedArmy": int(stats_match.group(21) or 0),
+							"planningSkippedNoTarget": int(stats_match.group(22) or 0),
+						},
+					)
 
 		planner_match = PLANNER_SIMULATION_RE.search(line)
 		if planner_match:
@@ -1310,6 +1319,10 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 		"planningRejectedStaticSafe",
 		"planningRejectedStaticUnsafe",
 		"planningCacheHits",
+		"planningSkippedFutureTurn",
+		"planningSkippedUnsafePath",
+		"planningSkippedProjectedArmy",
+		"planningSkippedNoTarget",
 		"runDir",
 	]
 	with (output_dir / "games.csv").open("w", newline="") as handle:
@@ -1334,6 +1347,10 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 					"planningRejectedStaticSafe": runtime_stats["planningRejectedStaticSafe"],
 					"planningRejectedStaticUnsafe": runtime_stats["planningRejectedStaticUnsafe"],
 					"planningCacheHits": runtime_stats["planningCacheHits"],
+					"planningSkippedFutureTurn": runtime_stats["planningSkippedFutureTurn"],
+					"planningSkippedUnsafePath": runtime_stats["planningSkippedUnsafePath"],
+					"planningSkippedProjectedArmy": runtime_stats["planningSkippedProjectedArmy"],
+					"planningSkippedNoTarget": runtime_stats["planningSkippedNoTarget"],
 				}
 			)
 			writer.writerow({key: row[key] for key in fieldnames})
