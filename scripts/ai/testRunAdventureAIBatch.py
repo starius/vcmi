@@ -12,10 +12,41 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from runAdventureAIBatch import compact_result, run_one, run_one_with_infrastructure_retries, summarize_results
+from runAdventureAIBatch import compact_result, run_one, run_one_with_infrastructure_retries, run_outcome, summarize_results
 
 
 class RunAdventureAIBatchTest(unittest.TestCase):
+    def test_run_outcome_uses_last_started_day_for_terminal_result(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            stdout = Path(temp_dir) / "stdout.log"
+            stdout.write_text(
+                "\x1b[0m\x1b[1;32mPlayer 0 (red) starting turn, day 27\n"
+                "\x1b[0m\x1b[1;32mPlayer 1 (blue) starting turn, day 28\n"
+                "\x1b[0m\x1b[1;32mRed player lost. Ending game.\n",
+                encoding="utf-8",
+            )
+
+            outcome = run_outcome(stdout, timed_out=False, idle_timed_out=False, return_code=0)
+
+            self.assertEqual(outcome["result"], "red_loss")
+            self.assertEqual(outcome["lastStartedDay"], 28)
+            self.assertEqual(outcome["completedDays"], 28)
+
+    def test_run_outcome_keeps_exact_day_limit_count(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            stdout = Path(temp_dir) / "stdout.log"
+            stdout.write_text(
+                "Player 0 (red) starting turn, day 8\n"
+                "Reached test day limit 7 after completing day 7\n",
+                encoding="utf-8",
+            )
+
+            outcome = run_outcome(stdout, timed_out=False, idle_timed_out=False, return_code=0)
+
+            self.assertEqual(outcome["result"], "day_limit")
+            self.assertEqual(outcome["lastStartedDay"], 8)
+            self.assertEqual(outcome["completedDays"], 7)
+
     def test_run_one_classifies_stdout_idle_timeout(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

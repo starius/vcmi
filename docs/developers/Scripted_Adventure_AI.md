@@ -2089,6 +2089,10 @@ Regression harness:
   `03`, `09`, and `16`. Do not promote unconditional pre-slice defense passes; a future defense fix needs trace
   evidence that the native defense candidate is selected at the right time and does not starve broader
   priority/adventure planning.
+- Done: the batch evaluator now extracts the last started adventure day from standard headless client turn-start
+  lines and uses it as the run day count when terminal win/loss output lacks an exact completed-day marker. This
+  gives no-trace AI-vs-AI batches a usable "winner by day N" metric while preserving the exact `--testdays`
+  completed-day parser when present.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions

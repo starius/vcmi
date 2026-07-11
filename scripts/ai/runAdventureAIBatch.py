@@ -28,6 +28,7 @@ TERMINAL_OUTCOME_MARKERS = (
     "Red player won. Ending game.",
     "Red player lost. Ending game.",
 )
+TURN_START_DAY_RE = re.compile(r"Player \d+ \([^)]*\) starting turn, day (\d+)")
 INFRASTRUCTURE_FAILURE_OUTCOMES = {"idle_timeout", "timeout", "nonzero_exit"}
 INFRASTRUCTURE_FAILURE_TAIL_SIGNATURES = {"battle_ai_creation", "battle_ai_creation_invalid_stack"}
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -363,9 +364,11 @@ def args_for_scenario(args: argparse.Namespace, scenario: dict[str, Any]) -> arg
 
 def run_outcome(stdout_path: Path, timed_out: bool, idle_timed_out: bool, return_code: int | None) -> dict[str, Any]:
     text = stdout_path.read_text(encoding="utf-8", errors="replace") if stdout_path.exists() else ""
+    started_days = [int(match.group(1)) for match in TURN_START_DAY_RE.finditer(text)]
     outcome = {
         "result": "unknown",
         "completedDays": None,
+        "lastStartedDay": max(started_days) if started_days else None,
     }
     if timed_out:
         outcome["result"] = "timeout"
@@ -382,6 +385,8 @@ def run_outcome(stdout_path: Path, timed_out: bool, idle_timed_out: bool, return
         outcome["completedDays"] = int(match.group(1))
         if outcome["result"] == "unknown":
             outcome["result"] = "day_limit"
+    elif outcome["lastStartedDay"] is not None:
+        outcome["completedDays"] = outcome["lastStartedDay"]
     return outcome
 
 
