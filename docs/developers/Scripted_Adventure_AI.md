@@ -962,7 +962,7 @@ Example configuration fields:
   "fallbackAI": "Nullkiller2",
   "reloadScriptEachTurn": false,
   "maxScriptCallsPerTurn": 8,
-  "maxActionsPerPlan": 64,
+  "maxActionsPerPlan": 256,
   "maxMemoryBytes": 262144,
   "maxUpdateEvents": 256,
   "trace": true
@@ -1980,7 +1980,15 @@ Regression harness:
 - Done: a later 16-game no-trace full-outcome batch after API-only callback additions produced 4 red/script wins,
   8 red/script losses, and 4 idle timeouts. The idle signatures were `battle_ai_creation` for seeds `10` and `13`
   and `battle_ai_creation_invalid_stack` for seeds `08` and `15`. Seed `16` had a terminal red loss and was
-  terminated only by the post-outcome grace watchdog, so it counts as a completed winner result.
+  terminated only by the post-outcome grace watchdog, so it counts as a completed winner result. Seed `15` also
+  showed the bounded-control script exhausting the old 64-command imperative budget before a day was idle; the
+  default parity budget is now 256 checked commands so normal bounded native passes can finish without ordinary
+  full-day fallback.
+- Done: after raising the bounded-control budget, a focused seed `15` rerun finished as a clean red/script win with
+  no command-budget failure. A follow-up 16-game no-trace batch still produced 4 red/script wins, 8 red/script
+  losses, and 4 idle timeouts, but had zero command-budget failures. The remaining idle signatures were
+  `battle_ai_creation` for seed `03` and `battle_ai_creation_invalid_stack` for seeds `08`, `15`, and `16`; the
+  only fallback lines were benign `Thread termination requested` messages after terminal script wins.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions

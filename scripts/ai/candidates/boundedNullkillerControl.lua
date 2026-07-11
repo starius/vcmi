@@ -24,8 +24,8 @@ script/host failures, not for ordinary strategy.
 ]]
 
 local MemoryVersion = 1
-local DefaultMaxCommandsPerDay = 64
-local SafetyMaxSlicesPerDay = 64
+local DefaultMaxCommandsPerDay = 256
+local SafetyMaxSlicesPerDay = 256
 local DefaultMaxPassesPerSlice = 16
 local SafetyMaxPassesPerSlice = 64
 -- A zero limit asks the host to let the bounded Nullkiller helper inspect and

@@ -2,7 +2,7 @@
 	"script": "ai/candidates/boundedNullkillerControl.lua",
 	"reloadScriptEachTurn": false,
 	"maxScriptCallsPerTurn": 8,
-	"maxActionsPerPlan": 64,
+	"maxActionsPerPlan": 256,
 	"maxMemoryBytes": 262144,
 	"maxUpdateEvents": 256,
 	"maxConsecutiveFailures": 3,
