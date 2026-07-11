@@ -247,7 +247,9 @@ Observed pattern:
 - corrected schema3 worst cxx-v3 errors include confident sign mistakes: e.g. predicted probabilities below 1% for setups that MMAI won 100% of the time, and a 98.5% predicted win for a setup lost 100% of the time. This points to root-cause modeling gaps, not a threshold-only problem.
 - close/even diagnostics on the corrected 5k slice show the same confident-static-error shape: one non-town 47.6% empirical hero-vs-hero setup was predicted at 0.94%, and town close/even errors include high-fort/mage/moat sieges predicted above 88-96% despite empirical win rates around 38-47%.
 - on the same corrected schema3 data, fallback-only repeated simulation with an all-wins safety rule reached 97.6% win/loss accuracy and 100% safety accuracy with 3 samples, 98.5% / 100% with 5 samples, and 100% / 100% with 10 samples on eligible held-out rows. The dataset is still small, but it matches the broader 100k proxy direction.
+- using current deployed cxx-v3 coefficients as the static/hybrid baseline on the corrected 5k run, fallback-only repeated simulation still clears the target: on non-town deployed-static holdout rows, all-wins fallback reached about 97.2% win/loss accuracy and 100% safety accuracy with 3 samples, 97.8% / 97.3% with 10 samples, and 99.7% / 98.4% with 20 samples. On town rows it reached 100% / 100% with 1-3 samples, 95.2% / 100% with 5 samples, and 100% / 100% with 10 samples. These are still proxy numbers, but they show the fix must be runtime simulation, not another cxx-v3 coefficient patch.
 - a hybrid static-probability band such as `[0.20, 0.95]` is not enough yet: one corrected schema3 holdout setup had static probability below 1% while actual holdout win rate was 100%, so static confidence cannot currently decide when simulation may be skipped.
+- the same issue remains when the hybrid baseline is explicitly current cxx-v3: on the corrected 5k non-town holdout, `[0.20,0.95]` with all-wins fallback stayed around 77-80% win/loss accuracy for 1-30 samples because confidently wrong static cases were left unsimulated.
 - static v3 town/siege calibration is not currently deployed in Nullkiller2. Corrected schema3 data shows static town prediction is not reliable enough, so towns continue to use legacy danger until runtime simulation or a separately validated town model is available.
 - worst errors are repeated matchup/special-case failures, not just calibration threshold mistakes
 
@@ -268,7 +270,7 @@ Measured fallback behavior uses repeated MMAI outcomes as a proxy for running a 
 - cache simulation results per `(hero army state, hero stats, target state, battle context, model seed)` so pathfinding does not replay the same battle repeatedly
 - expose the fallback behind a setting until end-to-end AI games prove it improves outcomes
 
-Architecture caveat: current quick combat/autofight goes through normal battle flow with server/client combat AI interfaces. There is no small in-process Nullkiller API that clones an arbitrary visible battle state and returns a deterministic win distribution. The next implementation step is therefore to build a reusable headless battle-evaluation service from the existing battle simulation batch path, not to call client quick combat directly from pathfinding.
+Architecture caveat: current quick combat/autofight goes through normal battle flow with server/client combat AI interfaces. `BattleSimulationBatch` repeats an already-started live battle through `BattleProcessor::restartBattle`, a live `CBattleQuery`, network packs, and real `CGameState` mutation. There is no small in-process Nullkiller API that clones an arbitrary visible battle state and returns a deterministic win distribution. The next implementation step is therefore to build a reusable headless battle-evaluation service from the existing battle simulation batch path, not to call client quick combat directly from pathfinding.
 
 ## Runtime Simulation Service Plan
 
@@ -276,7 +278,7 @@ The runtime fallback should be implemented as a separate branch after the schema
 
 Implementation outline:
 
-1. Extract the reusable parts of `BattleSimulationBatch` into a server-side battle-evaluation service that can run a fixed battle setup repeatedly and return aggregate counts, not JSONL-only side effects.
+1. Extract the reusable parts of `BattleSimulationBatch` into a server-side battle-evaluation service that can run a fixed battle setup repeatedly and return aggregate counts, not JSONL-only side effects. The first extraction point is the replay setup around `BattleProcessor::restartBattle`; it must be separated from the batch writer and made explicit about the state it mutates/restores.
 2. Keep the first implementation process-isolated or server-owned. Nullkiller should ask for an evaluation through a controlled API/cache; it should not mutate live game state or call client quick combat directly.
 3. Define deterministic seed derivation from stable context: game seed, player, hero instance id, target object id, battle type, turn, and sample index.
 4. Store an evaluation cache keyed by a normalized battle state fingerprint: attacker army/stats/mana/spells, defender army/stats/mana/spells, town/siege state, terrain/battlefield, and evaluator version.

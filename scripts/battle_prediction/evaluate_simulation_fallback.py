@@ -18,6 +18,7 @@ from evaluate_nullkiller_predictor import (
     Group,
     battle_type,
     cxx_v3_probability,
+    cxx_v3_static_calibration_applies,
     feature_vector,
     fit_logistic,
     iter_json_lines,
@@ -76,6 +77,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--l2", type=float, default=0.01)
     parser.add_argument("--safe-probability", type=float, default=0.60)
     parser.add_argument("--actual-safe-probability", type=float, default=0.95)
+    parser.add_argument(
+        "--scope",
+        choices=("all", "deployed-static", "town"),
+        default="all",
+        help="Battle scope to evaluate. deployed-static matches current Nullkiller2 static v3 usage.",
+    )
+    parser.add_argument(
+        "--static-model",
+        choices=("full-fitted", "cxx-v3"),
+        default="full-fitted",
+        help="Static predictor used when fallback is not used. cxx-v3 matches current Nullkiller2 v3 coefficients.",
+    )
     parser.add_argument(
         "--safe-policy",
         choices=("probability", "all-wins", "wilson-lower"),
@@ -141,6 +154,16 @@ def load_replay_groups(path: str) -> tuple[list[ReplayGroup], Counter, int]:
             groups[key] = group
         group.rows.append(row)
     return list(groups.values()), schema_counts, rows
+
+
+def matches_scope(row: dict[str, Any], scope: str) -> bool:
+    if scope == "all":
+        return True
+    if scope == "deployed-static":
+        return cxx_v3_static_calibration_applies(row)
+    if scope == "town":
+        return battle_type(row).startswith("town")
+    raise ValueError(f"Unknown scope: {scope}")
 
 
 def split_replay_groups(groups: list[ReplayGroup], test_fraction: float) -> tuple[list[ReplayGroup], list[ReplayGroup]]:
@@ -344,20 +367,27 @@ def main() -> int:
     if safe_wilson_threshold is None:
         safe_wilson_threshold = args.safe_probability
     replay_groups, schema_counts, rows = load_replay_groups(args.dataset)
-    replay_groups = [group for group in replay_groups if group.count >= args.min_group_size]
+    replay_groups = [
+        group
+        for group in replay_groups
+        if group.count >= args.min_group_size and matches_scope(group.row, args.scope)
+    ]
     train_replays, test_replays = split_replay_groups(replay_groups, args.test_fraction)
     train_groups = [group.to_group() for group in train_replays]
 
     print(
         f"dataset={args.dataset} rows={rows} schemas={dict(schema_counts)} "
+        f"scope={args.scope} static_model={args.static_model} "
         f"groups={len(replay_groups)} train_groups={len(train_replays)} test_groups={len(test_replays)}"
     )
 
-    full_model = fit_logistic(train_groups, args.epochs, args.learning_rate, args.l2, feature_vector) if train_groups else None
+    full_model = None
+    if args.static_model == "full-fitted" and train_groups:
+        full_model = fit_logistic(train_groups, args.epochs, args.learning_rate, args.l2, feature_vector)
     static_predictor = full_model.predict if full_model else cxx_v3_probability
     static_by_key = static_probabilities(test_replays, static_predictor)
 
-    static_metrics = Metrics(name="static-full")
+    static_metrics = Metrics(name=f"static-{args.static_model}")
     for group in test_replays:
         actual_probability = win_rate(group.rows)
         add_prediction(
