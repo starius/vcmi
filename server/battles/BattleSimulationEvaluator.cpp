@@ -58,7 +58,7 @@ BattleSimulationResponse BattleSimulationEvaluator::evaluate(const BattleSimulat
 
 void BattleSimulationEvaluator::storeCachedSummary(const BattleSimulationRequest & request, const BattleSimulationSummary & summary)
 {
-	if(isValidRequest(request))
+	if(isValidRequest(request) && summary.rows >= request.sampleCount)
 		cache.store(makeCacheKey(request), summary);
 }
 
