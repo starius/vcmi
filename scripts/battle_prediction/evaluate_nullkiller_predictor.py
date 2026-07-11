@@ -373,6 +373,38 @@ def town_initial_wall_total(row: dict[str, Any]) -> float:
     return sum(town_initial_wall_state(row, key) for key in ("bottomWall", "belowGate", "overGate", "upperWall"))
 
 
+def town_pre_merge_state(row: dict[str, Any]) -> dict[str, Any] | None:
+    pre_merge = row.get("townPreMergeState")
+    return pre_merge if isinstance(pre_merge, dict) else None
+
+
+def town_pre_merge_army(row: dict[str, Any], key: str) -> dict[str, Any]:
+    pre_merge = town_pre_merge_state(row)
+    if not pre_merge:
+        return {}
+    army = pre_merge.get(key)
+    return army if isinstance(army, dict) else {}
+
+
+def town_pre_merge_army_strength(row: dict[str, Any], key: str) -> float:
+    return float(town_pre_merge_army(row, key).get("armyStrength") or 0.0)
+
+
+def town_pre_merge_stack_count(row: dict[str, Any], key: str) -> float:
+    stacks = town_pre_merge_army(row, key).get("stacks") or []
+    return float(len(stacks)) if isinstance(stacks, list) else 0.0
+
+
+def town_pre_merge_largest_share(row: dict[str, Any], key: str) -> float:
+    army = town_pre_merge_army(row, key)
+    total = max(float(army.get("armyStrength") or 0.0), 1.0)
+    stacks = army.get("stacks") or []
+    if not isinstance(stacks, list):
+        return 0.0
+    powers = [float(stack.get("power") or 0.0) for stack in stacks if isinstance(stack, dict)]
+    return max(powers) / total if powers else 0.0
+
+
 def feature_vector(row: dict[str, Any]) -> list[float]:
     attacker = max(side_strength(row, "attacker"), EPSILON)
     defender = max(side_strength(row, "defender"), EPSILON)
@@ -532,6 +564,9 @@ def town_deployable_feature_vector(row: dict[str, Any]) -> list[float]:
     faction = int(town.get("faction") if town.get("faction") is not None else -1)
     terrain = int(row.get("terrain") if row.get("terrain") is not None else -1)
     battlefield = int(row.get("battlefield") if row.get("battlefield") is not None else -1)
+    pre_merge_town_army = town_pre_merge_army_strength(row, "townArmy")
+    pre_merge_hero_army = town_pre_merge_army_strength(row, "defendingHeroArmy")
+    defender_army_denominator = max(defender_army, 1.0)
 
     values = [
         math.log(attacker_strength / deployed_strength),
@@ -542,6 +577,15 @@ def town_deployable_feature_vector(row: dict[str, Any]) -> list[float]:
         math.log(attacker_army),
         math.log(defender_army),
         math.log(max(town_feature(row, "armyStrength"), 0.0) + 1.0),
+        1.0 if town_pre_merge_state(row) else 0.0,
+        math.log1p(pre_merge_town_army),
+        math.log1p(pre_merge_hero_army),
+        pre_merge_town_army / defender_army_denominator,
+        pre_merge_hero_army / defender_army_denominator,
+        town_pre_merge_stack_count(row, "townArmy"),
+        town_pre_merge_stack_count(row, "defendingHeroArmy"),
+        town_pre_merge_largest_share(row, "townArmy"),
+        town_pre_merge_largest_share(row, "defendingHeroArmy"),
         math.log((attacker_stats["stacks"] + 1.0) / (defender_stats["stacks"] + 1.0)),
         attacker_stats["max_share"] - defender_stats["max_share"],
         primary(attacker_hero, 0) - primary(defender_hero, 0),
@@ -740,6 +784,15 @@ TOWN_DEPLOYABLE_FEATURE_NAMES = [
     "log_attacker_army",
     "log_defender_army",
     "log_town_army",
+    "town_pre_merge_available",
+    "log_pre_merge_town_army",
+    "log_pre_merge_defending_hero_army",
+    "pre_merge_town_army_share",
+    "pre_merge_defending_hero_army_share",
+    "pre_merge_town_stack_count",
+    "pre_merge_defending_hero_stack_count",
+    "pre_merge_town_largest_stack_share",
+    "pre_merge_defending_hero_largest_stack_share",
     "log_stack_count_ratio",
     "max_stack_share_diff",
     "attack_diff",
@@ -953,11 +1006,32 @@ def setup_key(row: dict[str, Any]) -> str:
             "keepDamage": town.get("keepDamage"),
         }
 
+    def clean_army_snapshot(army: dict[str, Any] | None) -> Any:
+        if not army:
+            return None
+        return {
+            "objectId": army.get("objectId"),
+            "armyStrength": army.get("armyStrength"),
+            "stacks": army.get("stacks"),
+        }
+
+    def clean_town_pre_merge(pre_merge: dict[str, Any] | None) -> Any:
+        if not pre_merge:
+            return None
+        return {
+            "townId": pre_merge.get("townId"),
+            "defendingHeroId": pre_merge.get("defendingHeroId"),
+            "townArmy": clean_army_snapshot(pre_merge.get("townArmy")),
+            "defendingHeroArmy": clean_army_snapshot(pre_merge.get("defendingHeroArmy")),
+        }
+
     stable = {
         "battleType": battle_type(row),
         "terrain": row.get("terrain"),
         "battlefield": row.get("battlefield"),
         "defendedTown": clean_town(row.get("defendedTown")),
+        "townPreMergeState": clean_town_pre_merge(row.get("townPreMergeState")) if row.get("schema", 1) >= 5 else None,
+        "initialWallState": row.get("initialWallState") if row.get("schema", 1) >= 4 else None,
         "attackerHero": clean_hero(row.get("attackerHero")),
         "defenderHero": clean_hero(row.get("defenderHero")),
         "attackerArmyStrength": row.get("attackerArmyStrength"),

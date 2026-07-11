@@ -316,7 +316,10 @@ void CGTownInstance::onHeroVisit(IGameEventCallback & gameEvents, const CGHeroIn
 			const bool isBattleOutside = isBattleOutsideTown(defendingHero);
 
 			if(!isBattleOutside && defendingHero && defendingHero == getVisitingHero())
+			{
+				gameEvents.setNextBattleTownPreMergeState(this, defendingHero);
 				mergeGarrisonOnSiege(gameEvents);
+			}
 
 			gameEvents.startBattle(h, defendingArmy, getSightCenter(), h, defendingHero, BattleLayout::createDefaultLayout(*cb, h, defendingArmy), (isBattleOutside ? nullptr : this));
 		}

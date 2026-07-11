@@ -37,6 +37,27 @@
 #include "../../lib/CPlayerState.h"
 #include <vstd/RNG.h>
 
+namespace
+{
+std::optional<BattleStartTownPreMergeSnapshot> takeMatchingTownPreMergeSnapshot(
+	std::optional<BattleStartTownPreMergeSnapshot> & pending,
+	const BattleStartInfo & setup)
+{
+	if(!pending)
+		return std::nullopt;
+
+	const auto * defenderHero = setup.heroes[BattleSide::DEFENDER];
+	if(!setup.town || !defenderHero)
+		return std::nullopt;
+	if(pending->townId != setup.town->id || pending->defendingHeroId != defenderHero->id)
+		return std::nullopt;
+
+	auto result = std::move(pending);
+	pending.reset();
+	return result;
+}
+}
+
 BattleProcessor::BattleProcessor(CGameHandler * gameHandler)
 	: gameHandler(gameHandler)
 	, actionsProcessor(std::make_unique<BattleActionProcessor>(this, gameHandler))
@@ -75,7 +96,14 @@ void BattleProcessor::restartBattle(const BattleID & battleID, const CArmedInsta
 
 void BattleProcessor::restartBattle(const BattleID & battleID, const BattleStartInfo & setup)
 {
+	BattleStartInfo replaySetup = setup;
 	auto battle = gameHandler->gameState().getBattle(battleID);
+	if(!replaySetup.townPreMerge)
+	{
+		auto preMerge = townPreMergeSnapshots.find(battleID);
+		if(preMerge != townPreMergeSnapshots.end())
+			replaySetup.townPreMerge = preMerge->second;
+	}
 
 	auto attackerQuery = gameHandler->queries->topQuery(battle->getSide(BattleSide::ATTACKER).color);
 	auto * lastBattleQuery = gameHandler->queries->queryAs<CBattleQuery>(attackerQuery);
@@ -100,39 +128,44 @@ void BattleProcessor::restartBattle(const BattleID & battleID, const BattleStart
 	{
 		for(auto i : {BattleSide::ATTACKER, BattleSide::DEFENDER})
 		{
-			if(setup.heroes[i])
-				manaToRestore[i] = BattleSimulationBatch::getReplayInitialMana(setup.heroes[i], battle->getSide(i).initialMana);
+			if(replaySetup.heroes[i])
+				manaToRestore[i] = BattleSimulationBatch::getReplayInitialMana(replaySetup.heroes[i], battle->getSide(i).initialMana);
 		}
 
 		lastBattleQuery->result = std::nullopt;
 
-		assert(lastBattleQuery->belligerents[BattleSide::ATTACKER] == setup.armies[BattleSide::ATTACKER]);
-		assert(lastBattleQuery->belligerents[BattleSide::DEFENDER] == setup.armies[BattleSide::DEFENDER]);
+		assert(lastBattleQuery->belligerents[BattleSide::ATTACKER] == replaySetup.armies[BattleSide::ATTACKER]);
+		assert(lastBattleQuery->belligerents[BattleSide::DEFENDER] == replaySetup.armies[BattleSide::DEFENDER]);
 	}
 
 	BattleCancelled bc;
 	bc.battleID = battleID;
 	gameHandler->sendAndApply(bc);
 	resultProcessor->discardBattleResult(battleID);
+	townPreMergeSnapshots.erase(battleID);
 
 	for(auto i : {BattleSide::ATTACKER, BattleSide::DEFENDER})
 	{
-		if(setup.heroes[i])
+		if(replaySetup.heroes[i])
 		{
 			SetMana restoreInitialMana;
 			restoreInitialMana.val = manaToRestore[i];
-			restoreInitialMana.hid = setup.heroes[i]->id;
+			restoreInitialMana.hid = replaySetup.heroes[i]->id;
 			restoreInitialMana.mode = ChangeValueMode::ABSOLUTE;
 			gameHandler->sendAndApply(restoreInitialMana);
 		}
 	}
 
-	startBattle(setup);
+	startBattle(replaySetup);
 }
 
 void BattleProcessor::restartBattle(const IBattleInfo & battle)
 {
-	restartBattle(battle.getBattleID(), BattleStartInfo::fromBattle(battle));
+	auto setup = BattleStartInfo::fromBattle(battle);
+	auto preMerge = townPreMergeSnapshots.find(battle.getBattleID());
+	if(preMerge != townPreMergeSnapshots.end())
+		setup.townPreMerge = preMerge->second;
+	restartBattle(battle.getBattleID(), setup);
 }
 
 BattleSimulation::BattleSimulationResponse BattleProcessor::evaluateBattleSimulation(const BattleSimulation::BattleSimulationRequest & request) const
@@ -166,22 +199,28 @@ void BattleProcessor::startBattle(const CArmedInstance *army1, const CArmedInsta
 
 void BattleProcessor::startBattle(const BattleStartInfo & setup)
 {
-	assert(gameHandler->gameState().getBattle(setup.armies[BattleSide::ATTACKER]->getOwner()) == nullptr);
-	assert(gameHandler->gameState().getBattle(setup.armies[BattleSide::DEFENDER]->getOwner()) == nullptr);
+	BattleStartInfo battleSetup = setup;
+	if(!battleSetup.townPreMerge)
+		battleSetup.townPreMerge = takeMatchingTownPreMergeSnapshot(nextTownPreMergeSnapshot, setup);
 
-	auto battleID = setupBattle(setup.tile, setup.armies, setup.heroes, setup.layout, setup.town); //initializes stacks, places creatures on battlefield, blocks and informs player interfaces
+	assert(gameHandler->gameState().getBattle(battleSetup.armies[BattleSide::ATTACKER]->getOwner()) == nullptr);
+	assert(gameHandler->gameState().getBattle(battleSetup.armies[BattleSide::DEFENDER]->getOwner()) == nullptr);
+
+	auto battleID = setupBattle(battleSetup.tile, battleSetup.armies, battleSetup.heroes, battleSetup.layout, battleSetup.town); //initializes stacks, places creatures on battlefield, blocks and informs player interfaces
+	if(battleSetup.townPreMerge)
+		townPreMergeSnapshots[battleID] = *battleSetup.townPreMerge;
 
 	const auto * battle = gameHandler->gameState().getBattle(battleID);
 	assert(battle);
 
 	//add battle bonuses based from player state only when attacks neutral creatures
-	const auto * attackerInfo = gameHandler->gameInfo().getPlayerState(setup.armies[BattleSide::ATTACKER]->getOwner(), false);
-	if(attackerInfo && !setup.armies[BattleSide::DEFENDER]->getOwner().isValidPlayer())
+	const auto * attackerInfo = gameHandler->gameInfo().getPlayerState(battleSetup.armies[BattleSide::ATTACKER]->getOwner(), false);
+	if(attackerInfo && !battleSetup.armies[BattleSide::DEFENDER]->getOwner().isValidPlayer())
 	{
 		for(const auto & bonus : attackerInfo->battleBonuses)
 		{
 			GiveBonus giveBonus(GiveBonus::ETarget::OBJECT);
-			giveBonus.id = setup.heroes[BattleSide::ATTACKER]->id;
+			giveBonus.id = battleSetup.heroes[BattleSide::ATTACKER]->id;
 			giveBonus.bonus = bonus;
 			gameHandler->sendAndApply(giveBonus);
 		}
@@ -189,7 +228,7 @@ void BattleProcessor::startBattle(const BattleStartInfo & setup)
 
 	auto attackerQuery = gameHandler->queries->topQuery(battle->getSide(BattleSide::ATTACKER).color);
 	auto * topBattleQuery = gameHandler->queries->queryAs<CBattleQuery>(attackerQuery);
-	if(!topBattleQuery && setup.armies[BattleSide::DEFENDER]->getOwner().isValidPlayer())
+	if(!topBattleQuery && battleSetup.armies[BattleSide::DEFENDER]->getOwner().isValidPlayer())
 	{
 		auto defenderQuery = gameHandler->queries->topQuery(battle->getSide(BattleSide::DEFENDER).color);
 		topBattleQuery = gameHandler->queries->queryAs<CBattleQuery>(defenderQuery);
@@ -214,6 +253,26 @@ void BattleProcessor::startBattle(const CArmedInstance *army1, const CArmedInsta
 		army2->ID == Obj::HERO ? dynamic_cast<const CGHeroInstance*>(army2) : nullptr,
 		BattleLayout::createDefaultLayout(gameHandler->gameInfo(), army1, army2),
 		nullptr);
+}
+
+void BattleProcessor::setNextBattleTownPreMergeState(const CGTownInstance * town, const CGHeroInstance * defendingHero)
+{
+	if(!town || !defendingHero)
+	{
+		nextTownPreMergeSnapshot.reset();
+		return;
+	}
+
+	nextTownPreMergeSnapshot = makeBattleStartTownPreMergeSnapshot(town, defendingHero);
+}
+
+const BattleStartTownPreMergeSnapshot * BattleProcessor::getTownPreMergeSnapshot(const BattleID & battleID) const
+{
+	auto found = townPreMergeSnapshots.find(battleID);
+	if(found == townPreMergeSnapshots.end())
+		return nullptr;
+
+	return &found->second;
 }
 
 BattleID BattleProcessor::setupBattle(int3 tile, BattleSideArray<const CArmedInstance *> armies, BattleSideArray<const CGHeroInstance *> heroes, const BattleLayout & layout, const CGTownInstance *town)

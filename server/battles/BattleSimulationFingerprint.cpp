@@ -39,6 +39,7 @@ enum class FingerprintSection : uint64_t
 	TOWN_FORTIFICATIONS = 11,
 	TOWN_SPELLS = 12,
 	BATTLE_START = 13,
+	TOWN_PRE_MERGE = 14,
 };
 
 uint64_t mix(uint64_t value)
@@ -297,6 +298,38 @@ void addTown(BattleSimulationFingerprintBuilder & builder, const CGTownInstance 
 	if(visitingHero)
 		addIdentifier(builder, visitingHero->id);
 }
+
+void addArmySnapshot(BattleSimulationFingerprintBuilder & builder, const BattleStartArmySnapshot & army)
+{
+	addSection(builder, FingerprintSection::ARMY);
+	addIdentifier(builder, army.objectId);
+	builder.add(army.armyStrength);
+	builder.add(army.stacks.size());
+	for(const auto & stack : army.stacks)
+	{
+		addSection(builder, FingerprintSection::STACK);
+		addIdentifier(builder, stack.slot);
+		addIdentifier(builder, stack.creature);
+		builder.addSigned(stack.count);
+		builder.add(stack.power);
+		builder.addSigned(stack.experience);
+	}
+}
+
+void addTownPreMergeSnapshot(
+	BattleSimulationFingerprintBuilder & builder,
+	const std::optional<BattleStartTownPreMergeSnapshot> & snapshot)
+{
+	addSection(builder, FingerprintSection::TOWN_PRE_MERGE);
+	builder.addBool(snapshot.has_value());
+	if(!snapshot)
+		return;
+
+	addIdentifier(builder, snapshot->townId);
+	addIdentifier(builder, snapshot->defendingHeroId);
+	addArmySnapshot(builder, snapshot->townArmy);
+	addArmySnapshot(builder, snapshot->defendingHeroArmy);
+}
 }
 
 bool isValidStateFingerprint(uint64_t fingerprint)
@@ -318,6 +351,7 @@ uint64_t fingerprintBattleStartInfo(const BattleStartInfo & setup)
 	addPosition(builder, setup.tile);
 	addLayout(builder, setup.layout);
 	addTown(builder, setup.town);
+	addTownPreMergeSnapshot(builder, setup.townPreMerge);
 
 	for(const auto side : { BattleSide::ATTACKER, BattleSide::DEFENDER })
 	{

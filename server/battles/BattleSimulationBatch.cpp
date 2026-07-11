@@ -10,6 +10,7 @@
 #include "StdInc.h"
 #include "BattleSimulationBatch.h"
 
+#include "BattleProcessor.h"
 #include "BattleSimulationReplay.h"
 
 #include "../CGameHandler.h"
@@ -220,6 +221,53 @@ void appendArmy(std::ostream & out, const CCreatureSet * army)
 		}
 	}
 	out << ']';
+}
+
+void appendArmySnapshot(std::ostream & out, const BattleStartArmySnapshot & army)
+{
+	out << "{";
+	out << "\"objectId\":";
+	appendNullableIdentifier(out, army.objectId);
+	out << ",\"armyStrength\":" << army.armyStrength;
+	out << ",\"stacks\":[";
+	bool first = true;
+	for(const auto & stack : army.stacks)
+	{
+		if(!first)
+			out << ',';
+		first = false;
+
+		out << "{";
+		out << "\"slot\":" << stack.slot.getNum();
+		out << ",\"creature\":" << stack.creature.getNum();
+		out << ",\"count\":" << stack.count;
+		out << ",\"power\":" << stack.power;
+		out << ",\"stats\":";
+		appendCreatureStats(out, stack.creature.toCreature());
+		out << ",\"experience\":" << stack.experience;
+		out << "}";
+	}
+	out << "]}";
+}
+
+void appendTownPreMergeState(std::ostream & out, const BattleStartTownPreMergeSnapshot * snapshot)
+{
+	if(!snapshot)
+	{
+		out << "null";
+		return;
+	}
+
+	out << "{";
+	out << "\"townId\":";
+	appendNullableIdentifier(out, snapshot->townId);
+	out << ",\"defendingHeroId\":";
+	appendNullableIdentifier(out, snapshot->defendingHeroId);
+	out << ",\"townArmy\":";
+	appendArmySnapshot(out, snapshot->townArmy);
+	out << ",\"defendingHeroArmy\":";
+	appendArmySnapshot(out, snapshot->defendingHeroArmy);
+	out << '}';
 }
 
 void appendSpellList(std::ostream & out, const std::set<SpellID> & spells, bool combatOnly)
@@ -603,13 +651,14 @@ void initialize()
 	state.replay.setSampleLimit(state.config.maxBattles);
 }
 
-void appendResultRow(const CBattleInfoCallback & battle, const BattleResult & result)
+void appendResultRow(CGameHandler & gameHandler, const CBattleInfoCallback & battle, const BattleResult & result)
 {
 	const auto * info = battle.getBattle();
 	const int64_t rowIndex = state.replay.recordedSamples();
+	const auto * townPreMerge = gameHandler.battles->getTownPreMergeSnapshot(info->getBattleID());
 
 	state.output << "{";
-	state.output << "\"schema\":4";
+	state.output << "\"schema\":5";
 	state.output << ",\"row\":" << rowIndex;
 	state.output << ",\"shardIndex\":" << state.config.shardIndex;
 	state.output << ",\"shardCount\":" << state.config.shardCount;
@@ -630,6 +679,8 @@ void appendResultRow(const CBattleInfoCallback & battle, const BattleResult & re
 	state.output << ",\"hasMoat\":" << (battle.hasMoat() ? "true" : "false");
 	state.output << ",\"defendedTown\":";
 	appendTown(state.output, info->getDefendedTown(), info->getSideHero(BattleSide::DEFENDER));
+	state.output << ",\"townPreMergeState\":";
+	appendTownPreMergeState(state.output, townPreMerge);
 	state.output << ",\"initialWallState\":";
 	appendInitialWallState(state.output, info->getDefendedTown());
 	state.output << ",\"finalWallState\":";
@@ -697,13 +748,13 @@ int32_t getReplayInitialMana(const CGHeroInstance * hero, int32_t fallback)
 	return state.replay.getReplayInitialMana(hero, fallback);
 }
 
-BattleSimulationRecordResult recordResult(CGameHandler &, const CBattleInfoCallback & battle, const BattleResult & result)
+BattleSimulationRecordResult recordResult(CGameHandler & gameHandler, const CBattleInfoCallback & battle, const BattleResult & result)
 {
 	initialize();
 	if(!state.config.enabled)
 		return {};
 
-	appendResultRow(battle, result);
+	appendResultRow(gameHandler, battle, result);
 	return state.replay.recordResult(result);
 }
 

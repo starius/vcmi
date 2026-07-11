@@ -54,19 +54,18 @@ std::optional<BattleStartInfo> makeTownBattleStartInfo(
 	const CGHeroInstance * defendingHero = town->getVisitingHero() ? town->getVisitingHero() : town->getGarrisonHero();
 	const auto * defendingArmy = defendingHero ? static_cast<const CArmedInstance *>(defendingHero) : static_cast<const CArmedInstance *>(town);
 	const bool isBattleOutside = town->isBattleOutsideTown(defendingHero);
+	auto preMerge = std::optional<BattleStartTownPreMergeSnapshot>{};
 
-	// CGTownInstance::onHeroVisit merges the town garrison into a visiting defending hero before
-	// an inside siege. That mutates game state, so a read-only planning setup cannot represent it
-	// exactly yet. Returning no setup is safer than caching or simulating the wrong army.
 	if(!isBattleOutside && defendingHero == town->getVisitingHero() && town->stacksCount() > 0)
-		return std::nullopt;
+		preMerge = makeBattleStartTownPreMergeSnapshot(town, defendingHero);
 
 	return BattleStartInfo{
 		BattleSideArray<const CArmedInstance *>{attacker, defendingArmy},
 		BattleSideArray<const CGHeroInstance *>{attacker, defendingHero},
 		town->getSightCenter(),
 		BattleLayout::createDefaultLayout(gameInfo, attacker, defendingArmy),
-		isBattleOutside ? nullptr : town
+		isBattleOutside ? nullptr : town,
+		preMerge
 	};
 }
 

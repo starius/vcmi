@@ -159,6 +159,90 @@ def validate_army_fields(row: dict[str, Any], side: str) -> list[str]:
     return errors
 
 
+def validate_army_snapshot(node: Any, name: str) -> list[str]:
+    if not isinstance(node, dict):
+        return [f"{name} is not an object"]
+
+    errors = [f"{name} missing {key}" for key in missing_keys(node, ["objectId", "armyStrength", "stacks"])]
+    stacks = node.get("stacks")
+    if not isinstance(stacks, list):
+        errors.append(f"{name}.stacks is not an array")
+        return errors
+
+    required_stack = ["slot", "creature", "count", "power", "stats", "experience"]
+    required_stats = [
+        "level",
+        "faction",
+        "fightValue",
+        "aiValue",
+        "growth",
+        "attack",
+        "defense",
+        "damageMin",
+        "damageMax",
+        "hitPoints",
+        "speed",
+        "shots",
+        "spellPoints",
+        "doubleWide",
+        "shooter",
+        "flying",
+        "blocksRetaliation",
+        "unlimitedRetaliations",
+        "additionalAttack",
+        "additionalRetaliation",
+        "returnAfterStrike",
+        "twoHexAttackBreath",
+        "attacksAllAdjacent",
+        "threeHeadedAttack",
+        "spellAfterAttack",
+        "spellcaster",
+        "mindImmune",
+        "undead",
+        "nonLiving",
+        "magicResistance",
+        "levelSpellImmunity",
+        "spellDamageReduction",
+        "blockAllMagic",
+        "spellSchoolImmunity",
+    ]
+    for index, stack in enumerate(stacks):
+        if not isinstance(stack, dict):
+            errors.append(f"{name}.stacks[{index}] is not an object")
+            continue
+        errors.extend(f"{name}.stacks[{index}] missing {key}" for key in missing_keys(stack, required_stack))
+        stats = stack.get("stats")
+        if not isinstance(stats, dict):
+            errors.append(f"{name}.stacks[{index}].stats is not an object")
+            continue
+        errors.extend(f"{name}.stacks[{index}].stats missing {key}" for key in missing_keys(stats, required_stats))
+    return errors
+
+
+def validate_town_pre_merge_state(row: dict[str, Any], town: dict[str, Any]) -> list[str]:
+    if int(row.get("schema", 1)) < 5:
+        return []
+
+    if "townPreMergeState" not in row:
+        return ["town battle missing townPreMergeState field"]
+
+    pre_merge = row.get("townPreMergeState")
+    needs_pre_merge = (
+        battle_type(row) == "town-hero"
+        and town.get("defendingHeroSource") == "visiting"
+        and not town.get("hasGarrisonHero")
+    )
+    if pre_merge is None:
+        return ["town-hero visiting siege missing townPreMergeState object"] if needs_pre_merge else []
+    if not isinstance(pre_merge, dict):
+        return ["townPreMergeState is not an object"]
+
+    errors = [f"townPreMergeState missing {key}" for key in missing_keys(pre_merge, ["townId", "defendingHeroId", "townArmy", "defendingHeroArmy"])]
+    errors.extend(validate_army_snapshot(pre_merge.get("townArmy"), "townPreMergeState.townArmy"))
+    errors.extend(validate_army_snapshot(pre_merge.get("defendingHeroArmy"), "townPreMergeState.defendingHeroArmy"))
+    return errors
+
+
 def validate_town_fields(row: dict[str, Any]) -> list[str]:
     type_name = battle_type(row)
     if not type_name.startswith("town"):
@@ -247,6 +331,7 @@ def validate_town_fields(row: dict[str, Any]) -> list[str]:
             errors.append(f"town-hero battle has invalid defendingHeroSource={town.get('defendingHeroSource')}")
     elif defender_hero is not None:
         errors.append(f"{type_name} battle unexpectedly has defenderHero")
+    errors.extend(validate_town_pre_merge_state(row, town))
     return errors
 
 

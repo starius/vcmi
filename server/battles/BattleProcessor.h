@@ -15,6 +15,9 @@
 #include "BattleSimulationRequest.h"
 #include "BattleStartInfo.h"
 
+#include <map>
+#include <optional>
+
 class CGHeroInstance;
 class CGTownInstance;
 class CArmedInstance;
@@ -49,6 +52,8 @@ class BattleProcessor : boost::noncopyable
 	std::unique_ptr<BattleFlowProcessor> flowProcessor;
 	std::unique_ptr<BattleResultProcessor> resultProcessor;
 	std::unique_ptr<BattleSimulation::BattleSimulationEvaluator> simulationEvaluator;
+	std::optional<BattleStartTownPreMergeSnapshot> nextTownPreMergeSnapshot;
+	std::map<BattleID, BattleStartTownPreMergeSnapshot> townPreMergeSnapshots;
 
 	void updateGateState(const CBattleInfoCallback & battle);
 	void engageIntoBattle(PlayerColor player);
@@ -70,6 +75,9 @@ public:
 	void startBattle(const BattleStartInfo & setup);
 	/// Starts battle between two armies (which can also be heroes) at position of 2nd object
 	void startBattle(const CArmedInstance *army1, const CArmedInstance *army2);
+	/// Stores pre-merge town/visiting hero army state for the next matching siege battle
+	void setNextBattleTownPreMergeState(const CGTownInstance * town, const CGHeroInstance * defendingHero);
+	const BattleStartTownPreMergeSnapshot * getTownPreMergeSnapshot(const BattleID & battleID) const;
 	/// Restart ongoing battle and end previous battle
 	void restartBattle(const BattleID & battleID, const CArmedInstance *army1, const CArmedInstance *army2, int3 tile, const CGHeroInstance *hero1, const CGHeroInstance *hero2, const BattleLayout & layout, const CGTownInstance *town);
 	/// Restart ongoing battle and end previous battle using specified setup

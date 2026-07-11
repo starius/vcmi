@@ -4497,6 +4497,11 @@ void CGameHandler::newObject(std::shared_ptr<CGObjectInstance> object, PlayerCol
 	sendAndApply(no);
 }
 
+void CGameHandler::setNextBattleTownPreMergeState(const CGTownInstance * town, const CGHeroInstance * defendingHero)
+{
+	battles->setNextBattleTownPreMergeState(town, defendingHero);
+}
+
 void CGameHandler::startBattle(const CArmedInstance *army1, const CArmedInstance *army2, int3 tile, const CGHeroInstance *hero1, const CGHeroInstance *hero2, const BattleLayout & layout, const CGTownInstance *town)
 {
 	battles->startBattle(army1, army2, tile, hero1, hero2, layout, town);

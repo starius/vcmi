@@ -18,8 +18,10 @@
 #include "../CGameHandler.h"
 
 #include "../../lib/battle/BattleInfo.h"
+#include "../../lib/battle/BattleLayout.h"
 #include "../../lib/callback/GameRandomizer.h"
 #include "../../lib/gameState/CGameState.h"
+#include "../../lib/mapObjects/CGTownInstance.h"
 #include "../../lib/networkPacks/PacksForClientBattle.h"
 
 namespace BattleSimulation
@@ -64,6 +66,15 @@ std::optional<BattleResult> runSingleSample(
 	auto setup = remapBattleStartInfo(*clonedState, sampleRequest.setup);
 	if(!setup)
 		return std::nullopt;
+
+	if(setup->townPreMerge && setup->town && setup->heroes[BattleSide::DEFENDER] == setup->town->getVisitingHero())
+	{
+		setup->town->mergeGarrisonOnSiege(gameHandler);
+		setup->layout = BattleLayout::createDefaultLayout(
+			gameHandler.gameInfo(),
+			setup->armies[BattleSide::ATTACKER],
+			setup->armies[BattleSide::DEFENDER]);
+	}
 
 	const auto battleID = clonedState->nextBattleID;
 	auto actionProvider = actionProviderFactory.create(gameHandler, sampleRequest, battleID);

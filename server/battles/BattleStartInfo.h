@@ -10,12 +10,41 @@
 #pragma once
 
 #include "../../lib/battle/BattleLayout.h"
+#include "../../lib/GameConstants.h"
 #include "../../lib/int3.h"
+
+#include <cstdint>
+#include <optional>
+#include <vector>
 
 class CArmedInstance;
 class CGHeroInstance;
 class CGTownInstance;
 class IBattleInfo;
+
+struct BattleStartStackSnapshot
+{
+	SlotID slot;
+	CreatureID creature;
+	TQuantity count = 0;
+	uint64_t power = 0;
+	int64_t experience = 0;
+};
+
+struct BattleStartArmySnapshot
+{
+	ObjectInstanceID objectId;
+	uint64_t armyStrength = 0;
+	std::vector<BattleStartStackSnapshot> stacks;
+};
+
+struct BattleStartTownPreMergeSnapshot
+{
+	ObjectInstanceID townId;
+	ObjectInstanceID defendingHeroId;
+	BattleStartArmySnapshot townArmy;
+	BattleStartArmySnapshot defendingHeroArmy;
+};
 
 struct BattleStartInfo
 {
@@ -24,6 +53,12 @@ struct BattleStartInfo
 	int3 tile;
 	BattleLayout layout;
 	const CGTownInstance * town = nullptr;
+	std::optional<BattleStartTownPreMergeSnapshot> townPreMerge;
 
 	static BattleStartInfo fromBattle(const IBattleInfo & battle);
 };
+
+BattleStartArmySnapshot makeBattleStartArmySnapshot(const CArmedInstance * army);
+std::optional<BattleStartTownPreMergeSnapshot> makeBattleStartTownPreMergeSnapshot(
+	const CGTownInstance * town,
+	const CGHeroInstance * defendingHero);
