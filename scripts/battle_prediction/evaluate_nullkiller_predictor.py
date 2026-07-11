@@ -1192,6 +1192,25 @@ TOWN_RICH_DEPLOYABLE_EXTRA_NAMES += [f"town_building_{building_id}" for building
 TOWN_RICH_DEPLOYABLE_FEATURE_NAMES = TOWN_DEPLOYABLE_FEATURE_NAMES + TOWN_RICH_DEPLOYABLE_EXTRA_NAMES
 
 
+def validate_feature_name_width(
+    label: str,
+    row: dict[str, Any],
+    features: FeatureFunction,
+    names: list[str],
+) -> None:
+    width = len(features(row))
+    if width != len(names):
+        raise ValueError(f"{label} feature width {width} does not match {len(names)} feature names")
+
+
+def validate_named_feature_widths(row: dict[str, Any]) -> None:
+    validate_feature_name_width("full", row, feature_vector, FEATURE_NAMES)
+    validate_feature_name_width("ratio", row, ratio_feature_vector, RATIO_FEATURE_NAMES)
+    validate_feature_name_width("v3_compatible", row, v3_compatible_feature_vector, V3_COMPATIBLE_FEATURE_NAMES)
+    validate_feature_name_width("town_deployable", row, town_deployable_feature_vector, TOWN_DEPLOYABLE_FEATURE_NAMES)
+    validate_feature_name_width("town_rich_deployable", row, town_rich_deployable_feature_vector, TOWN_RICH_DEPLOYABLE_FEATURE_NAMES)
+
+
 def army_power_by_creature(row: dict[str, Any], side: str) -> dict[int, float]:
     result: dict[int, float] = defaultdict(float)
     for stack in row.get(f"{side}Army") or []:
@@ -2358,6 +2377,8 @@ def main() -> int:
         for group in groups
         if group.count >= args.min_group_size and matches_scope(group.row, args.scope)
     ]
+    if groups:
+        validate_named_feature_widths(groups[0].row)
     train, test = split_groups(groups, args.test_fraction)
     fit_models = not args.deployed_danger_only
     full_model = fit_logistic(train, args.epochs, args.learning_rate, args.l2, feature_vector) if train and fit_models else None
@@ -2409,6 +2430,17 @@ def main() -> int:
         }
 
     def serialize_model(model: LogisticModel, names: list[str]) -> dict[str, Any]:
+        validate_feature_name_width("serialized", groups[0].row, model.features, names)
+        if (
+            len(model.coefficients) != len(names)
+            or len(model.scaler.mean) != len(names)
+            or len(model.scaler.scale) != len(names)
+        ):
+            raise ValueError(
+                "serialized model width mismatch: "
+                f"coefficients={len(model.coefficients)} names={len(names)} "
+                f"mean={len(model.scaler.mean)} scale={len(model.scaler.scale)}"
+            )
         return {
             "intercept": model.intercept,
             "features": [
