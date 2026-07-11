@@ -200,6 +200,19 @@ double normalizeHeroStrength(double heroStrength);
 double getNormalizedHeroStrength(const CGHeroInstance * hero);
 bool isSafeToVisit(const CGHeroInstance * h, uint64_t dangerStrength, float safeAttackRatio);
 bool isSafeToVisit(const CGHeroInstance * h, const CCreatureSet *, uint64_t dangerStrength, float safeAttackRatio);
+bool canBuildBattleSimulationRequestForObject(
+	const CCallback & callback,
+	const CGHeroInstance * attacker,
+	const CGObjectInstance * object);
+const CGObjectInstance * strongestBattleSimulationGuard(
+	const CCallback & callback,
+	const CGHeroInstance * hero,
+	const int3 & tile);
+const CGObjectInstance * chooseBattleSimulationTargetForVisit(
+	const CCallback & callback,
+	const CGHeroInstance * hero,
+	const int3 & tile,
+	const CGObjectInstance * preferredObject);
 
 bool compareHeroStrength(const CGHeroInstance * h1, const CGHeroInstance * h2);
 bool compareArmyStrength(const CArmedInstance * a1, const CArmedInstance * a2);

@@ -16,8 +16,125 @@
 #include "CaptureObjectsBehavior.h"
 #include "../AIUtility.h"
 
+#include "../../../lib/UnlockGuard.h"
+#include "../../../lib/gameState/CGameState.h"
+
 namespace NK2AI
 {
+namespace
+{
+constexpr int64_t PLANNING_SIMULATION_GAME_SEED = 0;
+
+const char * simulationStatusName(BattleOutcomeSimulationStatus status)
+{
+	switch(status)
+	{
+		case BattleOutcomeSimulationStatus::INVALID_REQUEST:
+			return "invalid request";
+		case BattleOutcomeSimulationStatus::NOT_AVAILABLE:
+			return "not available";
+		case BattleOutcomeSimulationStatus::COMPLETE:
+			return "complete";
+	}
+
+	return "unknown";
+}
+
+bool plannerSimulationAcceptsUnsafeVisit(
+	const Nullkiller * nullkiller,
+	const CGHeroInstance * hero,
+	const AIPath & path,
+	const CGObjectInstance * objToVisit)
+{
+	if(!nullkiller || !hero || !nullkiller->cc || !nullkiller->settings)
+		return false;
+	if(nullkiller->settings->getBattlePredictionModel() != BattlePredictionModel::V3)
+		return false;
+
+	const int sampleCount = nullkiller->settings->getBattlePredictionSimulationSamples();
+	if(sampleCount <= 0)
+		return false;
+
+	if(path.turn() > 0)
+		return false;
+
+	// Runtime simulation uses the current hero army. Avoid accepting paths whose
+	// projected army differs due to exchanges or upgrades that have not happened yet.
+	if(path.heroArmy != static_cast<const CCreatureSet *>(hero))
+		return false;
+
+	const auto * target = chooseBattleSimulationTargetForVisit(
+		*nullkiller->cc,
+		hero,
+		path.targetTile(),
+		objToVisit);
+	if(!target)
+		return false;
+
+	const std::string visitName = objToVisit ? objToVisit->getObjectName() : path.targetTile().toString();
+	const std::string targetName = target->getObjectName();
+	const std::string playerName = nullkiller->playerID.toString();
+
+	BattleOutcomeSimulationResult simulation;
+	{
+		auto unlock = vstd::makeUnlockSharedGuard(CGameState::mutex);
+		BattleOutcomeSimulationThresholds thresholds;
+		simulation = nullkiller->cc->evaluateBattleSimulationForVisit(
+			hero,
+			target,
+			PLANNING_SIMULATION_GAME_SEED,
+			sampleCount,
+			thresholds);
+	}
+
+	if(simulation.status != BattleOutcomeSimulationStatus::COMPLETE || simulation.sampleCount < sampleCount)
+	{
+		logAi->debug(
+			"Planner battle simulation incomplete for player %d (%s): %s visiting %s, target %s, status %s, samples %lld/%d",
+			nullkiller->playerID,
+			playerName.c_str(),
+			hero->getNameTranslated().c_str(),
+			visitName.c_str(),
+			targetName.c_str(),
+			simulationStatusName(simulation.status),
+			static_cast<long long>(simulation.sampleCount),
+			sampleCount);
+		return false;
+	}
+
+	const bool safe = simulation.attackerAllWinsSafe
+		|| (simulation.attackerProbabilitySafe && simulation.attackerWilsonSafe);
+	if(!safe)
+	{
+		logAi->debug(
+			"Planner battle simulation rejected statically unsafe path for player %d (%s): %s visiting %s, target %s, samples %lld, attacker wins %lld, defender wins %lld, win rate %.3f",
+			nullkiller->playerID,
+			playerName.c_str(),
+			hero->getNameTranslated().c_str(),
+			visitName.c_str(),
+			targetName.c_str(),
+			static_cast<long long>(simulation.sampleCount),
+			static_cast<long long>(simulation.attackerWins),
+			static_cast<long long>(simulation.defenderWins),
+			simulation.attackerWinProbability);
+		return false;
+	}
+
+	logAi->debug(
+		"Planner battle simulation accepted statically unsafe path for player %d (%s): %s visiting %s, target %s, samples %lld, attacker wins %lld, defender wins %lld, win rate %.3f",
+		nullkiller->playerID,
+		playerName.c_str(),
+		hero->getNameTranslated().c_str(),
+		visitName.c_str(),
+		targetName.c_str(),
+		static_cast<long long>(simulation.sampleCount),
+		static_cast<long long>(simulation.attackerWins),
+		static_cast<long long>(simulation.defenderWins),
+		simulation.attackerWinProbability);
+
+	return true;
+}
+}
 
 using namespace Goals;
 
@@ -116,6 +233,8 @@ Goals::TGoalVec CaptureObjectsBehavior::getVisitGoals(
 		}
 
 		auto isSafe = isSafeToVisit(hero, path.heroArmy, danger, nullkiller->settings->getBattlePlanningSafeAttackRatio());
+		if(!isSafe && plannerSimulationAcceptsUnsafeVisit(nullkiller, hero, path, objToVisit))
+			isSafe = true;
 
 #if NK2AI_TRACE_LEVEL >= 2
 		logAi->trace(

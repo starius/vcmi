@@ -43,6 +43,9 @@ RUNTIME_SIMULATION_STATS_RE = re.compile(
 	r"(?:, invalid (\d+), not available (\d+))?"
 	r"(?:, skipped no target (\d+))?"
 )
+PLANNER_SIMULATION_RE = re.compile(
+	r"Planner battle simulation (accepted|rejected|incomplete)(?: .*?)? for player \d+ \(([^)]+)\):"
+)
 
 RUNTIME_SIMULATION_FIELDS = [
 	"requests",
@@ -53,6 +56,9 @@ RUNTIME_SIMULATION_FIELDS = [
 	"invalid",
 	"notAvailable",
 	"skippedNoTarget",
+	"planningAccepted",
+	"planningRejected",
+	"planningIncomplete",
 ]
 
 ADJUDICATION_FIELDS = [
@@ -499,6 +505,7 @@ def parse_run_logs(task: GameTask) -> tuple[bool, str | None, str | None, bool, 
 
 		if "Disaster" in line or "Reason:" in line:
 			diagnostics.append(line)
+
 		stats_match = RUNTIME_SIMULATION_STATS_RE.search(line)
 		if stats_match:
 			color = canonical_color(stats_match.group(1))
@@ -517,6 +524,18 @@ def parse_run_logs(task: GameTask) -> tuple[bool, str | None, str | None, bool, 
 						"skippedNoTarget": int(stats_match.group(9) or 0),
 					},
 				)
+
+		planner_match = PLANNER_SIMULATION_RE.search(line)
+		if planner_match:
+			color = canonical_color(planner_match.group(2))
+			if color:
+				stats = runtime_simulation_stats_by_color.setdefault(color, empty_runtime_simulation_stats())
+				field = {
+					"accepted": "planningAccepted",
+					"rejected": "planningRejected",
+					"incomplete": "planningIncomplete",
+				}[planner_match.group(1)]
+				stats[field] += 1
 
 	if winner is None and loser is not None:
 		winner = opposite_two_player_color(loser)
@@ -1011,6 +1030,9 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 		"runtimeIncomplete",
 		"runtimeSafe",
 		"runtimeRejected",
+		"planningAccepted",
+		"planningRejected",
+		"planningIncomplete",
 		"runDir",
 	]
 	with (output_dir / "games.csv").open("w", newline="") as handle:
@@ -1026,6 +1048,9 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 					"runtimeIncomplete": runtime_stats["incomplete"],
 					"runtimeSafe": runtime_stats["safe"],
 					"runtimeRejected": runtime_stats["rejected"],
+					"planningAccepted": runtime_stats["planningAccepted"],
+					"planningRejected": runtime_stats["planningRejected"],
+					"planningIncomplete": runtime_stats["planningIncomplete"],
 				}
 			)
 			writer.writerow({key: row[key] for key in fieldnames})
