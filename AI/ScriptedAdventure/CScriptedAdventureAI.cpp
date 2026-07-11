@@ -169,6 +169,28 @@ enum class ScriptArmyTransferKind : int32_t
 	REINFORCE_TOWN = 2
 };
 
+enum class ScriptArtifactManagementKind : int32_t
+{
+	UNKNOWN = 0,
+	SORT_BACKPACK = 1,
+	SCROLL_BACKPACK = 2,
+	LOAD_COSTUME = 3,
+	SAVE_COSTUME = 4,
+	ASSEMBLE = 5,
+	DISASSEMBLE = 6,
+	ERASE_TRANSITION = 7,
+	BULK_MOVE_TO_HERO = 8,
+	BULK_SWAP_WITH_HERO = 9,
+	MOVE_SINGLE_TO_HERO = 10
+};
+
+enum class ScriptBackpackSortMode : int32_t
+{
+	SLOT = 1,
+	COST = 2,
+	CLASS = 3
+};
+
 enum class ScriptQueryKind : int32_t
 {
 	UNKNOWN = 0,
@@ -388,6 +410,50 @@ const char * scriptArmyTransferKindName(ScriptArmyTransferKind kind)
 		return "gather_to_hero";
 	case ScriptArmyTransferKind::REINFORCE_TOWN:
 		return "reinforce_town";
+	default:
+		return "unknown";
+	}
+}
+
+const char * scriptArtifactManagementKindName(ScriptArtifactManagementKind kind)
+{
+	switch(kind)
+	{
+	case ScriptArtifactManagementKind::SORT_BACKPACK:
+		return "sort_backpack";
+	case ScriptArtifactManagementKind::SCROLL_BACKPACK:
+		return "scroll_backpack";
+	case ScriptArtifactManagementKind::LOAD_COSTUME:
+		return "load_costume";
+	case ScriptArtifactManagementKind::SAVE_COSTUME:
+		return "save_costume";
+	case ScriptArtifactManagementKind::ASSEMBLE:
+		return "assemble";
+	case ScriptArtifactManagementKind::DISASSEMBLE:
+		return "disassemble";
+	case ScriptArtifactManagementKind::ERASE_TRANSITION:
+		return "erase_transition";
+	case ScriptArtifactManagementKind::BULK_MOVE_TO_HERO:
+		return "bulk_move_to_hero";
+	case ScriptArtifactManagementKind::BULK_SWAP_WITH_HERO:
+		return "bulk_swap_with_hero";
+	case ScriptArtifactManagementKind::MOVE_SINGLE_TO_HERO:
+		return "move_single_to_hero";
+	default:
+		return "unknown";
+	}
+}
+
+const char * scriptBackpackSortModeName(ScriptBackpackSortMode mode)
+{
+	switch(mode)
+	{
+	case ScriptBackpackSortMode::SLOT:
+		return "slot";
+	case ScriptBackpackSortMode::COST:
+		return "cost";
+	case ScriptBackpackSortMode::CLASS:
+		return "class";
 	default:
 		return "unknown";
 	}
@@ -1104,6 +1170,33 @@ std::string toUpperAscii(std::string value)
 	for(char & character : value)
 		character = static_cast<char>(std::toupper(static_cast<unsigned char>(character)));
 	return value;
+}
+
+ScriptBackpackSortMode readBackpackSortMode(const JsonNode & node)
+{
+	if(hasField(node, "mode_id"))
+	{
+		switch(readInteger(node, "mode_id"))
+		{
+		case static_cast<int32_t>(ScriptBackpackSortMode::SLOT):
+			return ScriptBackpackSortMode::SLOT;
+		case static_cast<int32_t>(ScriptBackpackSortMode::COST):
+			return ScriptBackpackSortMode::COST;
+		case static_cast<int32_t>(ScriptBackpackSortMode::CLASS):
+			return ScriptBackpackSortMode::CLASS;
+		default:
+			throw std::invalid_argument("Unsupported backpack artifact sort mode id");
+		}
+	}
+
+	const std::string mode = toLowerAscii(hasField(node, "mode") ? readString(node, "mode") : std::string("slot"));
+	if(mode == "slot")
+		return ScriptBackpackSortMode::SLOT;
+	if(mode == "cost")
+		return ScriptBackpackSortMode::COST;
+	if(mode == "class")
+		return ScriptBackpackSortMode::CLASS;
+	throw std::invalid_argument("Unsupported backpack artifact sort mode: " + mode);
 }
 
 NK2AI::ScriptTaskSearchMode readNullkillerTaskSearchMode(const JsonNode & node, const NK2AI::ScriptTaskSearchMode defaultValue = NK2AI::ScriptTaskSearchMode::ALL)
@@ -9407,21 +9500,20 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		if(!hero || hero->tempOwner != playerID)
 			throw std::invalid_argument("Unknown hero or hero is not owned by scripted AI");
 
-		const std::string mode = toLowerAscii(hasField(action, "mode") ? readString(action, "mode") : std::string("slot"));
-		if(mode != "slot" && mode != "cost" && mode != "class")
-			throw std::invalid_argument("Unsupported backpack artifact sort mode: " + mode);
+		const ScriptBackpackSortMode mode = readBackpackSortMode(action);
 
 		const RequestWaitResult request = submitAndWaitForRequest(typeid(ManageBackpackArtifacts), CTypeList::getInstance().getTypeID<ManageBackpackArtifacts>(nullptr), [&]
 		{
-			if(mode == "slot")
+			if(mode == ScriptBackpackSortMode::SLOT)
 				cc->sortBackpackArtifactsBySlot(hero->id);
-			else if(mode == "cost")
+			else if(mode == ScriptBackpackSortMode::COST)
 				cc->sortBackpackArtifactsByCost(hero->id);
 			else
 				cc->sortBackpackArtifactsByClass(hero->id);
 		});
 		actionResult["hero_id"] = JsonNode(hero->id.getNum());
-		actionResult["mode"] = JsonNode(mode);
+		actionResult["mode_id"] = JsonNode(static_cast<int32_t>(mode));
+		actionResult["mode"] = JsonNode(scriptBackpackSortModeName(mode));
 		actionResult["request"] = jsonRequestWaitResult(request);
 		if(!waitTillFreeForScriptAction(actionResult, type))
 			return false;
@@ -9886,6 +9978,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["digOptions"].Vector();
 	actionSpace["adventureSpellOptions"].Vector();
 	actionSpace["buyArtifactOptions"].Vector();
+	actionSpace["artifactManagementOptions"].Vector();
 	actionSpace["spellResearchOptions"].Vector();
 	actionSpace["visitTownBuildingOptions"].Vector();
 	actionSpace["questObjectOptions"].Vector();
@@ -10338,6 +10431,203 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 			actionSpace["recommendedActions"].Vector().push_back(option["planAction"]);
 	};
 
+	std::set<std::tuple<int32_t, int32_t, int32_t, int32_t, int32_t>> seenArtifactManagementOptions;
+	size_t singleArtifactTransferOptions = 0;
+	constexpr size_t maxSingleArtifactTransferOptions = 64;
+	auto setArtifactManagementKind = [](JsonNode & option, ScriptArtifactManagementKind kind)
+	{
+		option["managementKindId"] = JsonNode(static_cast<int32_t>(kind));
+		option["managementKind"] = JsonNode(scriptArtifactManagementKindName(kind));
+	};
+	auto appendArtifactManagementOption = [&](JsonNode option, ScriptArtifactManagementKind kind, int32_t heroID, int32_t otherHeroID, int32_t slot, int32_t extra)
+	{
+		if(!seenArtifactManagementOptions.emplace(heroID, otherHeroID, slot, static_cast<int32_t>(kind), extra).second)
+			return;
+
+		setArtifactManagementKind(option, kind);
+		option["bounded"] = JsonNode(true);
+		option["delegatesRestOfDay"] = JsonNode(false);
+		actionSpace["artifactManagementOptions"].Vector().push_back(option);
+	};
+	auto appendHeroArtifactManagementOptions = [&](const CGHeroInstance * hero)
+	{
+		if(!hero || hero->tempOwner != playerID || !cc->isVisibleFor(hero, playerID))
+			return;
+
+		for(const ScriptBackpackSortMode mode : { ScriptBackpackSortMode::SLOT, ScriptBackpackSortMode::COST, ScriptBackpackSortMode::CLASS })
+		{
+			JsonNode option;
+			option["hero_id"] = JsonNode(hero->id.getNum());
+			option["hero"] = jsonHero(hero);
+			option["mode_id"] = JsonNode(static_cast<int32_t>(mode));
+			option["mode"] = JsonNode(scriptBackpackSortModeName(mode));
+			setScriptActionType(option["planAction"], "sort_backpack_artifacts");
+			option["planAction"]["hero_id"] = option["hero_id"];
+			option["planAction"]["mode_id"] = option["mode_id"];
+			appendArtifactManagementOption(option, ScriptArtifactManagementKind::SORT_BACKPACK, hero->id.getNum(), -1, -1, static_cast<int32_t>(mode));
+		}
+
+		for(const bool left : { false, true })
+		{
+			JsonNode option;
+			option["hero_id"] = JsonNode(hero->id.getNum());
+			option["hero"] = jsonHero(hero);
+			option["left"] = JsonNode(left);
+			setScriptActionType(option["planAction"], "scroll_backpack_artifacts");
+			option["planAction"]["hero_id"] = option["hero_id"];
+			option["planAction"]["left"] = option["left"];
+			appendArtifactManagementOption(option, ScriptArtifactManagementKind::SCROLL_BACKPACK, hero->id.getNum(), -1, -1, left ? 1 : 0);
+		}
+
+		for(const bool saveCostume : { false, true })
+		{
+			JsonNode option;
+			option["hero_id"] = JsonNode(hero->id.getNum());
+			option["hero"] = jsonHero(hero);
+			option["costume_index"] = JsonNode(0);
+			option["save"] = JsonNode(saveCostume);
+			setScriptActionType(option["planAction"], "manage_hero_costume");
+			option["planAction"]["hero_id"] = option["hero_id"];
+			option["planAction"]["costume_index"] = option["costume_index"];
+			option["planAction"]["save"] = option["save"];
+			appendArtifactManagementOption(option, saveCostume ? ScriptArtifactManagementKind::SAVE_COSTUME : ScriptArtifactManagementKind::LOAD_COSTUME, hero->id.getNum(), -1, -1, 0);
+		}
+
+		auto appendAssemblyOptionsForSlot = [&](ArtifactPosition position, const ArtSlotInfo & slotInfo, bool backpack)
+		{
+			const CArtifactInstance * artifact = slotInfo.getArt();
+			if(!artifact || !artifact->getType())
+				return;
+
+			const JsonNode artifactSlot = jsonArtifactSlot(hero, position, slotInfo, backpack);
+			for(const CArtifact * combinedArtifact : ArtifactUtils::assemblyPossibilities(hero, artifact->getTypeId()))
+			{
+				if(!combinedArtifact)
+					continue;
+
+				JsonNode option;
+				option["hero_id"] = JsonNode(hero->id.getNum());
+				option["hero"] = jsonHero(hero);
+				option["slot"] = JsonNode(position.getNum());
+				option["artifactSlot"] = artifactSlot;
+				option["artifact_id"] = JsonNode(combinedArtifact->getId().getNum());
+				option["artifactIdentifier"] = JsonNode(combinedArtifact->getJsonKey());
+				option["artifactName"] = JsonNode(jsonText(combinedArtifact->getNameTranslated()));
+				option["fused"] = JsonNode(combinedArtifact->isFused());
+				setScriptActionType(option["planAction"], "assemble_artifacts");
+				option["planAction"]["hero_id"] = option["hero_id"];
+				option["planAction"]["slot"] = option["slot"];
+				option["planAction"]["assemble"] = JsonNode(true);
+				option["planAction"]["artifact_id"] = option["artifact_id"];
+				appendArtifactManagementOption(option, ScriptArtifactManagementKind::ASSEMBLE, hero->id.getNum(), -1, position.getNum(), combinedArtifact->getId().getNum());
+			}
+
+			const size_t constituentCount = artifact->getType()->getConstituents().size();
+			const size_t requiredBackpackSlots = constituentCount > 0 ? constituentCount - 1 : 0;
+			const bool canDisassemble = artifact->isCombined()
+				&& artifact->hasParts()
+				&& (!ArtifactUtils::isSlotBackpack(position) || ArtifactUtils::isBackpackFreeSlots(hero, requiredBackpackSlots));
+			if(canDisassemble)
+			{
+				JsonNode option;
+				option["hero_id"] = JsonNode(hero->id.getNum());
+				option["hero"] = jsonHero(hero);
+				option["slot"] = JsonNode(position.getNum());
+				option["artifactSlot"] = artifactSlot;
+				option["requiredBackpackSlots"] = JsonNode(static_cast<int32_t>(std::min<size_t>(requiredBackpackSlots, static_cast<size_t>(std::numeric_limits<int32_t>::max()))));
+				setScriptActionType(option["planAction"], "assemble_artifacts");
+				option["planAction"]["hero_id"] = option["hero_id"];
+				option["planAction"]["slot"] = option["slot"];
+				option["planAction"]["assemble"] = JsonNode(false);
+				appendArtifactManagementOption(option, ScriptArtifactManagementKind::DISASSEMBLE, hero->id.getNum(), -1, position.getNum(), artifact->getTypeId().getNum());
+			}
+		};
+
+		for(const auto & [position, slotInfo] : hero->artifactsWorn)
+			appendAssemblyOptionsForSlot(position, slotInfo, false);
+		for(size_t index = 0; index < hero->artifactsInBackpack.size(); ++index)
+			appendAssemblyOptionsForSlot(ArtifactPosition::BACKPACK_START + static_cast<int>(index), hero->artifactsInBackpack[index], true);
+
+		if(const CArtifactInstance * transitionArtifact = hero->getArt(ArtifactPosition::TRANSITION_POS))
+		{
+			if(!transitionArtifact->canBePutAt(hero))
+			{
+				JsonNode option;
+				option["hero_id"] = JsonNode(hero->id.getNum());
+				option["hero"] = jsonHero(hero);
+				option["artifactSlot"] = jsonArtifactSlot(hero, ArtifactPosition::TRANSITION_POS, hero->artifactsTransitionPos, false);
+				setScriptActionType(option["planAction"], "erase_transition_artifact");
+				option["planAction"]["hero_id"] = option["hero_id"];
+				appendArtifactManagementOption(option, ScriptArtifactManagementKind::ERASE_TRANSITION, hero->id.getNum(), -1, ArtifactPosition(ArtifactPosition::TRANSITION_POS).getNum(), transitionArtifact->getTypeId().getNum());
+			}
+		}
+	};
+	auto appendArtifactTransferOptions = [&](const CGHeroInstance * source, const CGHeroInstance * destination)
+	{
+		if(!source || !destination || source == destination)
+			return;
+		if(source->tempOwner != playerID || destination->tempOwner != playerID)
+			return;
+		if(!cc->isVisibleFor(source, playerID) || !cc->isVisibleFor(destination, playerID))
+			return;
+		if(source->visitablePos() != destination->visitablePos())
+			return;
+
+		for(const bool swap : { false, true })
+		{
+			JsonNode option;
+			option["sourceHeroId"] = JsonNode(source->id.getNum());
+			option["destinationHeroId"] = JsonNode(destination->id.getNum());
+			option["sourceHero"] = jsonHero(source);
+			option["destinationHero"] = jsonHero(destination);
+			option["swap"] = JsonNode(swap);
+			option["equipped"] = JsonNode(true);
+			option["backpack"] = JsonNode(true);
+			setScriptActionType(option["planAction"], "bulk_move_artifacts");
+			option["planAction"]["src_id"] = JsonNode(source->id.getNum());
+			option["planAction"]["dst_id"] = JsonNode(destination->id.getNum());
+			option["planAction"]["src_hero_id"] = JsonNode(source->id.getNum());
+			option["planAction"]["dst_hero_id"] = JsonNode(destination->id.getNum());
+			option["planAction"]["swap"] = option["swap"];
+			option["planAction"]["equipped"] = option["equipped"];
+			option["planAction"]["backpack"] = option["backpack"];
+			appendArtifactManagementOption(option, swap ? ScriptArtifactManagementKind::BULK_SWAP_WITH_HERO : ScriptArtifactManagementKind::BULK_MOVE_TO_HERO, source->id.getNum(), destination->id.getNum(), -1, swap ? 1 : 0);
+		}
+
+		if(!ArtifactUtils::isBackpackFreeSlots(destination))
+			return;
+
+		auto appendSingleArtifactTransferOption = [&](ArtifactPosition position, const ArtSlotInfo & slotInfo, bool backpack)
+		{
+			if(singleArtifactTransferOptions >= maxSingleArtifactTransferOptions)
+				return;
+			const CArtifactInstance * artifact = slotInfo.getArt();
+			if(!artifact || !artifact->getType() || !ArtifactUtils::isArtRemovable({ position, slotInfo }))
+				return;
+
+			JsonNode option;
+			option["sourceHeroId"] = JsonNode(source->id.getNum());
+			option["destinationHeroId"] = JsonNode(destination->id.getNum());
+			option["sourceHero"] = jsonHero(source);
+			option["destinationHero"] = jsonHero(destination);
+			option["artifactSlot"] = jsonArtifactSlot(source, position, slotInfo, backpack);
+			setScriptActionType(option["planAction"], "swap_artifacts");
+			option["planAction"]["src"]["holder_id"] = JsonNode(source->id.getNum());
+			option["planAction"]["src"]["slot"] = JsonNode(position.getNum());
+			option["planAction"]["dst"]["holder_id"] = JsonNode(destination->id.getNum());
+			option["planAction"]["dst"]["slot"] = JsonNode(ArtifactPosition(ArtifactPosition::FIRST_AVAILABLE).getNum());
+			const size_t before = actionSpace["artifactManagementOptions"].Vector().size();
+			appendArtifactManagementOption(option, ScriptArtifactManagementKind::MOVE_SINGLE_TO_HERO, source->id.getNum(), destination->id.getNum(), position.getNum(), artifact->getId().getNum());
+			if(actionSpace["artifactManagementOptions"].Vector().size() > before)
+				++singleArtifactTransferOptions;
+		};
+
+		for(const auto & [position, slotInfo] : source->artifactsWorn)
+			appendSingleArtifactTransferOption(position, slotInfo, false);
+		for(size_t index = 0; index < source->artifactsInBackpack.size(); ++index)
+			appendSingleArtifactTransferOption(ArtifactPosition::BACKPACK_START + static_cast<int>(index), source->artifactsInBackpack[index], true);
+	};
+
 	for(const CGTownInstance * town : cc->getTownsInfo(true))
 	{
 		if(!town || town->tempOwner != playerID)
@@ -10543,6 +10833,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 			appendFormationOptions(hero);
 			appendDismissCreatureOptions(hero);
 			appendPrepareHeroOption(hero, nullptr, nullptr, 0, "self_artifacts", true, false);
+			appendHeroArtifactManagementOptions(hero);
 			appendObjectInteractionOption(hero, hero->getVisitedTown(), 1, "visited_town");
 			const CGObjectInstance * currentObject = cc->getTopObj(hero->visitablePos());
 			appendObjectInteractionOption(hero, currentObject, 2, "current_object");
@@ -10605,6 +10896,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 			if(hero == otherHero || hero->visitablePos() != otherHero->visitablePos())
 				continue;
 			appendPrepareHeroOption(hero, otherHero, otherHero, 4, "co_located_hero", true, true);
+			appendArtifactTransferOptions(hero, otherHero);
 		}
 	}
 
@@ -10875,7 +11167,7 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 	analysis["scriptMemory"]["persistedInPlayerLocalSettings"] = JsonNode(true);
 	analysis["scriptMemory"]["localStateKey"] = JsonNode(SCRIPT_MEMORY_LOCAL_STATE_KEY);
 	analysis["candidateFields"].Vector();
-	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "typeId", "subtypeId", "kindId", "buildingKindId", "transferKindId", "preparationKindId", "responseKindId", "pathActionId", "levelId", "statusId", "targetKindId", "spell_id", "task_id", "goalTypeId", "priorityTier", "heroRoleId", "nullkillerRoleId", "nullkillerArtifactScore", "nullkillerPotentialArtifactScore", "outcomeId", "failureActionId" })
+	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "typeId", "subtypeId", "kindId", "buildingKindId", "transferKindId", "preparationKindId", "managementKindId", "mode_id", "responseKindId", "pathActionId", "levelId", "statusId", "targetKindId", "spell_id", "task_id", "goalTypeId", "priorityTier", "heroRoleId", "nullkillerRoleId", "nullkillerArtifactScore", "nullkillerPotentialArtifactScore", "outcomeId", "failureActionId" })
 		analysis["candidateFields"].Vector().push_back(JsonNode(field));
 	analysis["danger"]["candidateDangerSource"] = JsonNode("Nullkiller direct object/guard danger evaluator");
 	analysis["danger"]["enemyReachSource"] = JsonNode("visible enemy distance and strength alerts");

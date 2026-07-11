@@ -382,6 +382,26 @@ ai.artifactSlots = {
 	backpackStart = 19
 }
 
+ai.artifactManagementKinds = {
+	unknown = 0,
+	sortBackpack = 1,
+	scrollBackpack = 2,
+	loadCostume = 3,
+	saveCostume = 4,
+	assemble = 5,
+	disassemble = 6,
+	eraseTransition = 7,
+	bulkMoveToHero = 8,
+	bulkSwapWithHero = 9,
+	moveSingleToHero = 10
+}
+
+ai.backpackSortModes = {
+	slot = 1,
+	cost = 2,
+	class = 3
+}
+
 ai.formations = {
 	loose = 0,
 	tight = 1

@@ -601,6 +601,8 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 						mineKind = ai.objectKinds.mine,
 						dwellingBuildingKind = ai.buildingKinds.dwelling,
 						gatherTransferKind = ai.armyTransferKinds.gatherToHero,
+						assembleManagementKind = ai.artifactManagementKinds.assemble,
+						backpackCostSortMode = ai.backpackSortModes.cost,
 						blockingQueryType = ai.queryTypes.blockingDialog,
 						teleportBattlePathAction = ai.pathActions.teleportBattle,
 						criticalThreat = ai.threatLevels.critical,
@@ -823,6 +825,8 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 	EXPECT_EQ(output.memory["mineKind"].Integer(), 3);
 	EXPECT_EQ(output.memory["dwellingBuildingKind"].Integer(), 11);
 	EXPECT_EQ(output.memory["gatherTransferKind"].Integer(), 1);
+	EXPECT_EQ(output.memory["assembleManagementKind"].Integer(), 5);
+	EXPECT_EQ(output.memory["backpackCostSortMode"].Integer(), 2);
 	EXPECT_EQ(output.memory["blockingQueryType"].Integer(), 3);
 	EXPECT_EQ(output.memory["teleportBattlePathAction"].Integer(), 9);
 	EXPECT_EQ(output.memory["criticalThreat"].Integer(), 3);
@@ -1623,6 +1627,121 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteDismissalActionSpaceOp
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	ASSERT_TRUE(output.intent);
 	EXPECT_EQ(*output.intent, "executed dismissal action-space options");
+}
+
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteArtifactManagementActionSpaceOptions)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				for _, option in ipairs(input.actionSpace.artifactManagementOptions) do
+					ai:runOption(option)
+				end
+				return ai:output("end_turn", "executed artifact-management action-space options")
+			end
+		}
+	)lua";
+
+	AI::AdventureScriptInput input = makeInput();
+	auto appendOption = [&](const JsonNode & planAction)
+	{
+		JsonNode option;
+		option["planAction"] = planAction;
+		input.actionSpace["artifactManagementOptions"].Vector().push_back(option);
+	};
+
+	JsonNode sort;
+	sort["type"] = JsonNode("sort_backpack_artifacts");
+	sort["type_id"] = JsonNode(25);
+	sort["hero_id"] = JsonNode(17);
+	sort["mode_id"] = JsonNode(2);
+	appendOption(sort);
+
+	JsonNode scroll;
+	scroll["type"] = JsonNode("scroll_backpack_artifacts");
+	scroll["type_id"] = JsonNode(26);
+	scroll["hero_id"] = JsonNode(17);
+	scroll["left"] = JsonNode(false);
+	appendOption(scroll);
+
+	JsonNode costume;
+	costume["type"] = JsonNode("manage_hero_costume");
+	costume["type_id"] = JsonNode(27);
+	costume["hero_id"] = JsonNode(17);
+	costume["costume_index"] = JsonNode(0);
+	costume["save"] = JsonNode(true);
+	appendOption(costume);
+
+	JsonNode assemble;
+	assemble["type"] = JsonNode("assemble_artifacts");
+	assemble["type_id"] = JsonNode(28);
+	assemble["hero_id"] = JsonNode(17);
+	assemble["slot"] = JsonNode(3);
+	assemble["assemble"] = JsonNode(true);
+	assemble["artifact_id"] = JsonNode(141);
+	appendOption(assemble);
+
+	JsonNode bulk;
+	bulk["type"] = JsonNode("bulk_move_artifacts");
+	bulk["type_id"] = JsonNode(24);
+	bulk["src_id"] = JsonNode(17);
+	bulk["dst_id"] = JsonNode(18);
+	bulk["src_hero_id"] = JsonNode(17);
+	bulk["dst_hero_id"] = JsonNode(18);
+	bulk["swap"] = JsonNode(false);
+	bulk["equipped"] = JsonNode(true);
+	bulk["backpack"] = JsonNode(true);
+	appendOption(bulk);
+
+	JsonNode swap;
+	swap["type"] = JsonNode("swap_artifacts");
+	swap["type_id"] = JsonNode(23);
+	swap["src"]["holder_id"] = JsonNode(17);
+	swap["src"]["slot"] = JsonNode(3);
+	swap["dst"]["holder_id"] = JsonNode(18);
+	swap["dst"]["slot"] = JsonNode(-2);
+	appendOption(swap);
+
+	JsonNode erase;
+	erase["type"] = JsonNode("erase_transition_artifact");
+	erase["type_id"] = JsonNode(30);
+	erase["hero_id"] = JsonNode(17);
+	appendOption(erase);
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-artifact-management-action-space-options", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 7);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "sort_backpack_artifacts");
+	EXPECT_EQ(commands[0]["payload"]["type_id"].Integer(), 25);
+	EXPECT_EQ(commands[0]["payload"]["mode_id"].Integer(), 2);
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "scroll_backpack_artifacts");
+	EXPECT_EQ(commands[1]["payload"]["type_id"].Integer(), 26);
+	EXPECT_EQ(commands[2]["payload"]["type"].String(), "manage_hero_costume");
+	EXPECT_EQ(commands[2]["payload"]["type_id"].Integer(), 27);
+	EXPECT_EQ(commands[3]["payload"]["type"].String(), "assemble_artifacts");
+	EXPECT_EQ(commands[3]["payload"]["type_id"].Integer(), 28);
+	EXPECT_EQ(commands[4]["payload"]["type"].String(), "bulk_move_artifacts");
+	EXPECT_EQ(commands[4]["payload"]["type_id"].Integer(), 24);
+	EXPECT_EQ(commands[5]["payload"]["type"].String(), "swap_artifacts");
+	EXPECT_EQ(commands[5]["payload"]["type_id"].Integer(), 23);
+	EXPECT_EQ(commands[5]["payload"]["dst"]["slot"].Integer(), -2);
+	EXPECT_EQ(commands[6]["payload"]["type"].String(), "erase_transition_artifact");
+	EXPECT_EQ(commands[6]["payload"]["type_id"].Integer(), 30);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "executed artifact-management action-space options");
 }
 
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteDefenseResponseActionSpaceOptions)

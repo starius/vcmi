@@ -759,8 +759,8 @@ Current bounded subroutine surface:
   waiting on any old query or movement blocker.
 - Lua exposes numeric constants for stable host ids used by the strategic contract:
   `ai.actionTypeIds`, `ai.buildingKinds`, `ai.objectKinds`, `ai.armyTransferKinds`, `ai.queryTypes`,
-  `ai.pathActions`, `ai.threatLevels`, `ai.riskLevels`, `ai.specialActionKinds`, `ai.adventureSpellKinds`,
-  `ai.nullkillerStepOutcomes`,
+  `ai.artifactManagementKinds`, `ai.backpackSortModes`, `ai.pathActions`, `ai.threatLevels`, `ai.riskLevels`,
+  `ai.specialActionKinds`, `ai.adventureSpellKinds`, `ai.nullkillerStepOutcomes`,
   `ai.nullkillerFailureActions`, `ai.nullkillerTaskModes`, `ai.nullkillerPriorityTiers`,
   `ai.nullkillerHeroLockReasons`, and `ai.nullkillerHeroRoles`. Scripts should
   branch on these constants rather than trace strings or raw magic numbers.
@@ -791,6 +791,10 @@ Current bounded subroutine surface:
 - `actionSpace.dismissHeroOptions` and `actionSpace.dismissCreatureOptions` list currently visible owned heroes and
   dismissable owned army stacks as checked, non-recommended destructive actions. Scripts can consider them
   explicitly without constructing ids from stale snapshots.
+- `actionSpace.artifactManagementOptions` lists currently legal bounded artifact-management operations for owned
+  heroes: backpack sort/scroll, costume load/save, assemble/disassemble, transition-slot cleanup, and artifact
+  transfer options between co-located heroes. The ready `planAction` payloads use stable ids where possible, e.g.
+  numeric `mode_id` for backpack sorting.
 
 ## Current API Coverage Stance
 
@@ -1704,6 +1708,9 @@ Regression harness:
 - Done: `actionSpace.dismissHeroOptions` and `actionSpace.dismissCreatureOptions` expose checked dismissal actions
   for visible owned heroes and legal owned army stacks. These actions are intentionally discoverable but not
   recommended, since they destroy assets and should require explicit Lua policy.
+- Done: `actionSpace.artifactManagementOptions` exposes checked artifact-management actions that were previously
+  callable but not discoverable as options. Scripts can now rank artifact sorting, assembly/disassembly,
+  transition cleanup, and co-located hero artifact transfers without constructing low-level slot payloads by hand.
 - Done: Lua can call Nullkiller's bounded creature-preparation helper through `ai:pickBestCreatures`, matching
   the existing artifact-preparation helper and avoiding Lua-side reimplementation of stack logistics.
 - Done: Lua can call Nullkiller's bounded town-army helper through `ai:nullkillerBuildArmy(townId)`, reusing the
