@@ -18,6 +18,7 @@ from evaluate_nullkiller_predictor import (
     cxx_v3_probability,
     deployed_safe_prediction,
     filter_complete_shard_groups,
+    iter_json_lines,
     load_groups,
     load_shard_manifest,
     matches_scope,
@@ -28,6 +29,8 @@ from evaluate_nullkiller_predictor import (
     secondary_skill_count,
     side_strength,
     split_groups,
+    setup_key,
+    shard_setup_key,
     summarize_deployed_danger,
     summarize_predictions,
     town_bool,
@@ -58,12 +61,33 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--town-danger-factors", default="", help="Comma-separated deployed town danger factors to summarize")
     parser.add_argument("--probe-town-guards", action="store_true", help="Probe compact town safety guards derived from miss segments")
     parser.add_argument("--guard-results", type=int, default=12, help="Number of town guard candidates to print")
+    parser.add_argument(
+        "--simulation-sample-counts",
+        default="",
+        help=(
+            "Comma-separated first-N repeated simulation sample counts to annotate printed miss groups. "
+            "Uses an all-wins safe verdict for each requested count."
+        ),
+    )
     parser.add_argument("--json", action="store_true", help="Print machine-readable output")
     return parser.parse_args()
 
 
 def parse_float_list(value: str) -> list[float]:
     return [float(part.strip()) for part in value.split(",") if part.strip()]
+
+
+def parse_int_list(value: str) -> list[int]:
+    result = []
+    for part in value.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        parsed = int(part)
+        if parsed <= 0:
+            raise ValueError("sample counts must be positive")
+        result.append(parsed)
+    return sorted(set(result))
 
 
 def load_filtered_groups(args: argparse.Namespace) -> tuple[list[Group], Counter, int]:
@@ -82,6 +106,62 @@ def load_filtered_groups(args: argparse.Namespace) -> tuple[list[Group], Counter
         if group.count >= args.min_group_size and matches_scope(group.row, args.scope)
     ]
     return groups, schema_counts, row_count
+
+
+def group_key_for_row(row: dict[str, Any], group_key: str) -> str:
+    return shard_setup_key(row) if group_key == "shard" else setup_key(row)
+
+
+def simulation_sample_summaries(
+    args: argparse.Namespace,
+    selected_keys: set[str],
+    sample_counts: list[int],
+) -> dict[str, list[dict[str, Any]]]:
+    if not selected_keys or not sample_counts:
+        return {}
+
+    max_samples = max(sample_counts)
+    winners: dict[str, list[bool]] = {key: [] for key in selected_keys}
+
+    for row in iter_json_lines(args.dataset):
+        key = group_key_for_row(row, args.group_key)
+        if key not in winners or len(winners[key]) >= max_samples:
+            continue
+        if not matches_scope(row, args.scope):
+            continue
+        winners[key].append(row.get("winner") == "attacker")
+
+    result: dict[str, list[dict[str, Any]]] = {}
+    for key, values in winners.items():
+        summaries = []
+        for sample_count in sample_counts:
+            available = min(sample_count, len(values))
+            sample = values[:available]
+            attacker_wins = sum(sample)
+            summaries.append(
+                {
+                    "sample_count": sample_count,
+                    "available_samples": available,
+                    "attacker_wins": attacker_wins,
+                    "win_probability": attacker_wins / available if available else 0.0,
+                    "all_wins_safe": available == sample_count and attacker_wins == sample_count,
+                }
+            )
+        result[key] = summaries
+    return result
+
+
+def annotate_simulation_samples(
+    reports: list[dict[str, Any]],
+    sample_summaries: dict[str, list[dict[str, Any]]],
+) -> None:
+    if not sample_summaries:
+        return
+
+    for report in reports:
+        key = report.get("group_key")
+        if key in sample_summaries:
+            report["simulation_samples"] = sample_summaries[key]
 
 
 def close_even_v3_misses(
@@ -504,6 +584,7 @@ def print_summary(name: str, metrics: dict[str, Any]) -> None:
 def main() -> int:
     args = parse_args()
     town_danger_factors = parse_float_list(args.town_danger_factors)
+    simulation_sample_counts = parse_int_list(args.simulation_sample_counts)
     guard_factors = town_danger_factors or [1.0, 1.1, 1.25, 1.4, 1.5, 1.75, 2.0]
     groups, schema_counts, row_count = load_filtered_groups(args)
     train, test = split_groups(groups, args.test_fraction)
@@ -537,6 +618,26 @@ def main() -> int:
         "false_safe_segments": summarize_segments(false_safe, args.segments),
         "false_unsafe_segments": summarize_segments(false_unsafe, args.segments),
     }
+    if simulation_sample_counts:
+        reported_groups = [
+            *metrics["close_even_v3_misses"],
+            *metrics["worst_v3_groups"],
+            *metrics["v3_false_safe_groups"],
+            *metrics["v3_false_unsafe_groups"],
+        ]
+        sample_summaries = simulation_sample_summaries(
+            args,
+            {str(group["group_key"]) for group in reported_groups if group.get("group_key")},
+            simulation_sample_counts,
+        )
+        for reports in (
+            metrics["close_even_v3_misses"],
+            metrics["worst_v3_groups"],
+            metrics["v3_false_safe_groups"],
+            metrics["v3_false_unsafe_groups"],
+        ):
+            annotate_simulation_samples(reports, sample_summaries)
+        metrics["simulation_sample_counts"] = simulation_sample_counts
     if args.probe_town_guards:
         metrics["town_guard_probe"] = probe_town_guard_rules(groups, train, test, guard_factors, args.guard_results)
 

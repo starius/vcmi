@@ -546,6 +546,7 @@ python3 scripts/battle_prediction/report_v3_static_misses.py \
   --complete-shards-only \
   --limit 40 \
   --segments 40 \
+  --simulation-sample-counts 8,15,20 \
   --town-danger-factors 1.0,1.25,1.5,1.75,2.0 \
   --probe-town-guards \
   --guard-results 40

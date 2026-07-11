@@ -2210,6 +2210,7 @@ def compact_group_summary(group: Group, model: LogisticModel | None, safe_ratio:
     probability = model.predict(row) if model else None
     v3_probability = cxx_v3_probability(row)
     return {
+        "group_key": group.key,
         "count": group.count,
         "win_rate": group.win_rate,
         "model_probability": probability,
@@ -2342,6 +2343,14 @@ def print_group_report(title: str, groups: list[dict[str, Any]]) -> None:
             print(f"     town: {group['town']}")
         if group["town_pre_merge"] != "none":
             print(f"     pre-merge: {group['town_pre_merge']}")
+        if group.get("simulation_samples"):
+            sample_parts = []
+            for item in group["simulation_samples"]:
+                sample_parts.append(
+                    f"{item['sample_count']}:wins={item['attacker_wins']}/{item['available_samples']} "
+                    f"p={item['win_probability']:.3f} all_wins_safe={item['all_wins_safe']}"
+                )
+            print(f"     simulation all-wins samples: {'; '.join(sample_parts)}")
 
 
 def top_model_features(model: LogisticModel, names: list[str], limit: int) -> list[dict[str, float | str]]:
