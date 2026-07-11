@@ -14,6 +14,8 @@
 #include "../lib/network/NetworkInterface.h"
 #include "../lib/StartInfo.h"
 
+#include <functional>
+
 class CMapInfo;
 
 struct CPackForLobby;
@@ -50,6 +52,7 @@ class CVCMIServer : public LobbyInfo, public INetworkServerListener, public INet
 	PlayerConnectionID currentPlayerId;
 	uint16_t port;
 	bool runByClient;
+	std::function<void(CGameHandler &)> gameHandlerConfigurationHook;
 
 	std::shared_ptr<IServerDiscoveryListener> discoveryListener;
 
@@ -88,6 +91,7 @@ public:
 	~CVCMIServer();
 
 	void run();
+	void setGameHandlerConfigurationHook(std::function<void(CGameHandler &)> hook);
 
 	bool wasStartedByClient() const;
 	bool prepareToStartGame();

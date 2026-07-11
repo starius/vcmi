@@ -213,6 +213,11 @@ void CVCMIServer::run()
 	networkHandler->run();
 }
 
+void CVCMIServer::setGameHandlerConfigurationHook(std::function<void(CGameHandler &)> hook)
+{
+	gameHandlerConfigurationHook = std::move(hook);
+}
+
 void CVCMIServer::onTimer()
 {
 	// we might receive onTimer call after transitioning from GAMEPLAY to LOBBY state, e.g. on game restart
@@ -347,6 +352,9 @@ bool CVCMIServer::prepareToStartGame()
 
 	if (!started)
 		return false;
+
+	if(gameHandlerConfigurationHook)
+		gameHandlerConfigurationHook(*newGH);
 
 	gh = std::move(newGH);
 
