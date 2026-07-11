@@ -1877,6 +1877,9 @@ Regression harness:
 - Done: bounded scripted Nullkiller query handling now mirrors native Nullkiller's hero-exchange army/artifact
   transfer direction. This keeps `ai:nullkillerAnswerQuery` aligned with `AIGateway::heroExchangeStarted` instead
   of letting bounded control rearrange heroes differently after meetings.
+- Done: `actionSpace.acceptedActions` is generated from the stable C++ script-action id registry. New checked
+  actions now become advertised through the same authoritative table that validates `type_id`, reducing string/id
+  drift across C++, Lua, traces, and tests.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions

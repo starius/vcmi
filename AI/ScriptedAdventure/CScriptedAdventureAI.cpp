@@ -9194,20 +9194,12 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	JsonNode actionSpace;
 	actionSpace["acceptedActionTypes"].Vector();
 	actionSpace["acceptedActions"].Vector();
-	for(const std::string & type : AI::acceptedPlanActionTypes())
+	for(const auto & [typeId, type] : scriptActionTypeRegistry())
 	{
 		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
 		JsonNode accepted;
 		accepted["type"] = JsonNode(type);
-		accepted["typeId"] = JsonNode(scriptActionTypeId(type));
-		actionSpace["acceptedActions"].Vector().push_back(accepted);
-	}
-	for(const char * type : { "pick_best_creatures", "pick_best_artifacts", "prepare_hero", "swap_artifacts", "bulk_move_artifacts", "sort_backpack_artifacts", "scroll_backpack_artifacts", "manage_hero_costume", "assemble_artifacts", "ignore_script_query", "erase_transition_artifact", "swap_creatures", "merge_stacks", "merge_or_swap_stacks", "split_stack", "bulk_move_army", "bulk_split_stack", "bulk_merge_stacks", "bulk_split_rebalance_stack", "dismiss_creature", "upgrade_creature", "set_formation", "set_tactics", "set_town_name", "swap_garrison_hero", "nullkiller_reset", "nullkiller_lock_resources", "nullkiller_lock_hero", "nullkiller_unlock_hero", "nullkiller_trade", "nullkiller_priority_pass", "nullkiller_turn_slice", "nullkiller_build_army", "nullkiller_upgrade_army", "nullkiller_recruit_creatures", "nullkiller_move_creatures_to_hero", "nullkiller_dismiss_weak_hero", "nullkiller_optimize_artifacts", "nullkiller_add_single_creature_stacks", "nullkiller_rearrange_for_whirlpool", "nullkiller_rearrange_for_siege", "trade_resources", "market_trade", "request_statistic", "dismiss_hero", "build_boat", "castle_teleport", "dig", "cast_spell", "buy_artifact", "spell_research", "visit_town_building", "nullkiller_tasks", "nullkiller_task", "nullkiller_step", "nullkiller_pass", "nullkiller_answer_query", "nullkiller_object_interaction" })
-	{
-		actionSpace["acceptedActionTypes"].Vector().push_back(JsonNode(type));
-		JsonNode accepted;
-		accepted["type"] = JsonNode(type);
-		accepted["typeId"] = JsonNode(scriptActionTypeId(type));
+		accepted["typeId"] = JsonNode(typeId);
 		actionSpace["acceptedActions"].Vector().push_back(accepted);
 	}
 
