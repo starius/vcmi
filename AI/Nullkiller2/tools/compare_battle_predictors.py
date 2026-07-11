@@ -284,6 +284,24 @@ def parse_args() -> argparse.Namespace:
 		default=None,
 		help="Minimum Wilson 95% lower bound for the valid-game candidate win rate.",
 	)
+	parser.add_argument(
+		"--min-valid-games",
+		type=int,
+		default=None,
+		help="Minimum valid games required for outcome proof.",
+	)
+	parser.add_argument(
+		"--max-invalid-paired-samples",
+		type=int,
+		default=None,
+		help="Maximum invalid paired samples allowed for outcome proof.",
+	)
+	parser.add_argument(
+		"--min-paired-decisive-samples",
+		type=int,
+		default=None,
+		help="Minimum decisive paired samples required for outcome proof.",
+	)
 	parser.add_argument("--keep-engine-logs", action="store_true", help="Keep VCMI log files in each run directory. Stdout and summaries are always kept.")
 	parser.add_argument("--require-clean-exit", action="store_true", help="Mark nonzero vcmiclient exits as failed games.")
 	args = parser.parse_args()
@@ -319,6 +337,9 @@ def parse_args() -> argparse.Namespace:
 		"max_runtime_simulation_invalid",
 		"max_runtime_simulation_not_available",
 		"max_runtime_simulation_planning_incomplete",
+		"min_valid_games",
+		"max_invalid_paired_samples",
+		"min_paired_decisive_samples",
 	):
 		if getattr(args, option_name) is not None and getattr(args, option_name) < 0:
 			parser.error("--" + option_name.replace("_", "-") + " must be non-negative")
@@ -1041,6 +1062,9 @@ def analyze_results(args: argparse.Namespace, results: list[GameResult]) -> dict
 				"maxCandidateBetterP": args.max_candidate_better_p,
 				"minCandidateWinRate": args.min_candidate_win_rate,
 				"minCandidateWinRateWilsonLower": args.min_candidate_win_rate_wilson_lower,
+				"minValidGames": args.min_valid_games,
+				"maxInvalidPairedSamples": args.max_invalid_paired_samples,
+				"minPairedDecisiveSamples": args.min_paired_decisive_samples,
 			},
 			"configReplacements": [
 				{"file": str(replacement.file), "old": replacement.old, "new": replacement.new}
@@ -1172,6 +1196,30 @@ def evaluate_outcome_requirements(args: argparse.Namespace, analysis: dict) -> d
 	games = analysis["games"]
 	paired = analysis["pairedSamples"]
 
+	if args.min_valid_games is not None:
+		valid_games = games["valid"]
+		if valid_games < args.min_valid_games:
+			errors.append(
+				f"valid games {valid_games} below required "
+				f"{args.min_valid_games}"
+			)
+
+	if args.max_invalid_paired_samples is not None:
+		invalid_samples = paired["invalid"]
+		if invalid_samples > args.max_invalid_paired_samples:
+			errors.append(
+				f"invalid paired samples {invalid_samples} above allowed "
+				f"{args.max_invalid_paired_samples}"
+			)
+
+	if args.min_paired_decisive_samples is not None:
+		decisive_samples = paired["decisive"]
+		if decisive_samples < args.min_paired_decisive_samples:
+			errors.append(
+				f"decisive paired samples {decisive_samples} below required "
+				f"{args.min_paired_decisive_samples}"
+			)
+
 	if args.max_candidate_better_p is not None:
 		p_value = paired["oneSidedCandidateBetterP"]
 		if p_value is None:
@@ -1208,6 +1256,9 @@ def evaluate_outcome_requirements(args: argparse.Namespace, analysis: dict) -> d
 			args.max_candidate_better_p,
 			args.min_candidate_win_rate,
 			args.min_candidate_win_rate_wilson_lower,
+			args.min_valid_games,
+			args.max_invalid_paired_samples,
+			args.min_paired_decisive_samples,
 		)
 	)
 	return {
@@ -1215,6 +1266,9 @@ def evaluate_outcome_requirements(args: argparse.Namespace, analysis: dict) -> d
 		"maxCandidateBetterP": args.max_candidate_better_p,
 		"minCandidateWinRate": args.min_candidate_win_rate,
 		"minCandidateWinRateWilsonLower": args.min_candidate_win_rate_wilson_lower,
+		"minValidGames": args.min_valid_games,
+		"maxInvalidPairedSamples": args.max_invalid_paired_samples,
+		"minPairedDecisiveSamples": args.min_paired_decisive_samples,
 		"ok": not errors,
 		"errors": errors,
 	}

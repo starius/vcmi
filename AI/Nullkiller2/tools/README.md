@@ -135,6 +135,9 @@ python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
   --min-runtime-simulation-planning-vetoes 1 \
   --min-runtime-simulation-planning-rescues 1 \
   --max-runtime-simulation-planning-incomplete 0 \
+  --min-valid-games 250 \
+  --max-invalid-paired-samples 0 \
+  --min-paired-decisive-samples 30 \
   --max-candidate-better-p 0.05 \
   --min-candidate-win-rate-wilson-lower 0.50
 ```
@@ -153,7 +156,10 @@ any incomplete, invalid, or not-available simulation responses instead of only
 checking the complete-rate threshold.
 Use `--max-candidate-better-p` and
 `--min-candidate-win-rate-wilson-lower` to make the script fail unless the
-candidate clears the requested statistical improvement bar.
+candidate clears the requested statistical improvement bar. Use
+`--min-valid-games`, `--max-invalid-paired-samples`, and
+`--min-paired-decisive-samples` to reject underpowered proof runs even before
+interpreting the p-value.
 The planning ratio replacement only affects offensive planning when V3 runtime
 simulation is enabled; it lets more candidate attacks reach the final simulator
 gate without changing defensive threat checks.
