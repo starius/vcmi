@@ -135,6 +135,8 @@ python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
   --min-runtime-simulation-planning-vetoes 1 \
   --min-runtime-simulation-planning-rescues 1 \
   --max-runtime-simulation-planning-incomplete 0 \
+  --min-runtime-simulation-planning-candidates 10 \
+  --min-runtime-simulation-planning-decision-rate 0.05 \
   --min-valid-games 250 \
   --max-invalid-paired-samples 0 \
   --min-paired-decisive-samples 30 \
@@ -181,6 +183,10 @@ Planner skip fields show why a dangerous capture candidate was not simulated:
 `planningSkippedProjectedArmy` means the path depended on an army state that is
 not present yet, and `planningSkippedNoTarget` means no simulatable battle
 target could be built for that visit.
+Use `--min-runtime-simulation-planning-candidates` and
+`--min-runtime-simulation-planning-decision-rate` to fail proof runs where
+planner simulation is enabled but does not cover enough dangerous capture
+candidates to explain an end-to-end result.
 Runtime and planner simulation currently treat a battle as safe only if the
 attacker wins every requested sample. This matches the best observed town/siege
 offline safety policy and avoids accepting 19/20-style near misses as safe.

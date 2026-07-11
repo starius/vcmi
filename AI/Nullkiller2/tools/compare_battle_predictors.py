@@ -272,6 +272,45 @@ def parse_args() -> argparse.Namespace:
 		help="Maximum incomplete planner-side simulation responses allowed for each --require-runtime-simulation model.",
 	)
 	parser.add_argument(
+		"--min-runtime-simulation-planning-candidates",
+		type=int,
+		default=0,
+		help=(
+			"Minimum dangerous planner-side capture candidates required for each "
+			"--require-runtime-simulation model. Counts decisions, incomplete responses, and skip reasons."
+		),
+	)
+	parser.add_argument(
+		"--min-runtime-simulation-planning-decision-rate",
+		type=float,
+		default=None,
+		help="Minimum completed planner decision rate among dangerous planner-side simulation candidates.",
+	)
+	parser.add_argument(
+		"--max-runtime-simulation-planning-skipped-future-turn",
+		type=int,
+		default=None,
+		help="Maximum planner simulation skips allowed for future-turn paths.",
+	)
+	parser.add_argument(
+		"--max-runtime-simulation-planning-skipped-unsafe-path",
+		type=int,
+		default=None,
+		help="Maximum planner simulation skips allowed for paths with unsafe intermediate danger.",
+	)
+	parser.add_argument(
+		"--max-runtime-simulation-planning-skipped-projected-army",
+		type=int,
+		default=None,
+		help="Maximum planner simulation skips allowed for paths whose projected army differs from the current army.",
+	)
+	parser.add_argument(
+		"--max-runtime-simulation-planning-skipped-no-target",
+		type=int,
+		default=None,
+		help="Maximum planner simulation skips allowed when no simulatable battle target can be built.",
+	)
+	parser.add_argument(
 		"--max-candidate-better-p",
 		type=float,
 		default=None,
@@ -342,12 +381,22 @@ def parse_args() -> argparse.Namespace:
 		"max_runtime_simulation_invalid",
 		"max_runtime_simulation_not_available",
 		"max_runtime_simulation_planning_incomplete",
+		"min_runtime_simulation_planning_candidates",
+		"max_runtime_simulation_planning_skipped_future_turn",
+		"max_runtime_simulation_planning_skipped_unsafe_path",
+		"max_runtime_simulation_planning_skipped_projected_army",
+		"max_runtime_simulation_planning_skipped_no_target",
 		"min_valid_games",
 		"max_invalid_paired_samples",
 		"min_paired_decisive_samples",
 	):
 		if getattr(args, option_name) is not None and getattr(args, option_name) < 0:
 			parser.error("--" + option_name.replace("_", "-") + " must be non-negative")
+	if (
+		args.min_runtime_simulation_planning_decision_rate is not None
+		and not 0.0 <= args.min_runtime_simulation_planning_decision_rate <= 1.0
+	):
+		parser.error("--min-runtime-simulation-planning-decision-rate must be between 0 and 1")
 	for option_name in (
 		"max_candidate_better_p",
 		"min_candidate_win_rate",
@@ -1066,6 +1115,12 @@ def analyze_results(args: argparse.Namespace, results: list[GameResult]) -> dict
 				"minPlanningVetoes": args.min_runtime_simulation_planning_vetoes,
 				"minPlanningRescues": args.min_runtime_simulation_planning_rescues,
 				"maxPlanningIncomplete": args.max_runtime_simulation_planning_incomplete,
+				"minPlanningCandidates": args.min_runtime_simulation_planning_candidates,
+				"minPlanningDecisionRate": args.min_runtime_simulation_planning_decision_rate,
+				"maxPlanningSkippedFutureTurn": args.max_runtime_simulation_planning_skipped_future_turn,
+				"maxPlanningSkippedUnsafePath": args.max_runtime_simulation_planning_skipped_unsafe_path,
+				"maxPlanningSkippedProjectedArmy": args.max_runtime_simulation_planning_skipped_projected_army,
+				"maxPlanningSkippedNoTarget": args.max_runtime_simulation_planning_skipped_no_target,
 			},
 			"outcomeRequirements": {
 				"maxCandidateBetterP": args.max_candidate_better_p,
@@ -1121,6 +1176,14 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 		planning_decisions = stats["planningAccepted"] + stats["planningRejected"]
 		planning_vetoes = stats["planningRejectedStaticSafe"]
 		planning_rescues = stats["planningAcceptedStaticUnsafe"]
+		planning_skips = (
+			stats["planningSkippedFutureTurn"]
+			+ stats["planningSkippedUnsafePath"]
+			+ stats["planningSkippedProjectedArmy"]
+			+ stats["planningSkippedNoTarget"]
+		)
+		planning_candidates = planning_decisions + stats["planningIncomplete"] + planning_skips
+		planning_decision_rate = planning_decisions / planning_candidates if planning_candidates else None
 		model_errors = []
 
 		if requests < args.min_runtime_simulation_requests:
@@ -1168,20 +1231,68 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 				f"{model}: planner simulation incomplete responses {stats['planningIncomplete']} above allowed "
 				f"{args.max_runtime_simulation_planning_incomplete}"
 			)
+		if planning_candidates < args.min_runtime_simulation_planning_candidates:
+			model_errors.append(
+				f"{model}: planner simulation candidates {planning_candidates} below required "
+				f"{args.min_runtime_simulation_planning_candidates}"
+			)
+		if args.min_runtime_simulation_planning_decision_rate is not None:
+			if planning_decision_rate is None:
+				model_errors.append(f"{model}: planner simulation decision rate is unavailable")
+			elif planning_decision_rate < args.min_runtime_simulation_planning_decision_rate:
+				model_errors.append(
+					f"{model}: planner simulation decision rate {planning_decision_rate:.3f} below required "
+					f"{args.min_runtime_simulation_planning_decision_rate:.3f}"
+				)
+		if (
+			args.max_runtime_simulation_planning_skipped_future_turn is not None
+			and stats["planningSkippedFutureTurn"] > args.max_runtime_simulation_planning_skipped_future_turn
+		):
+			model_errors.append(
+				f"{model}: planner future-turn skips {stats['planningSkippedFutureTurn']} above allowed "
+				f"{args.max_runtime_simulation_planning_skipped_future_turn}"
+			)
+		if (
+			args.max_runtime_simulation_planning_skipped_unsafe_path is not None
+			and stats["planningSkippedUnsafePath"] > args.max_runtime_simulation_planning_skipped_unsafe_path
+		):
+			model_errors.append(
+				f"{model}: planner unsafe-path skips {stats['planningSkippedUnsafePath']} above allowed "
+				f"{args.max_runtime_simulation_planning_skipped_unsafe_path}"
+			)
+		if (
+			args.max_runtime_simulation_planning_skipped_projected_army is not None
+			and stats["planningSkippedProjectedArmy"] > args.max_runtime_simulation_planning_skipped_projected_army
+		):
+			model_errors.append(
+				f"{model}: planner projected-army skips {stats['planningSkippedProjectedArmy']} above allowed "
+				f"{args.max_runtime_simulation_planning_skipped_projected_army}"
+			)
+		if (
+			args.max_runtime_simulation_planning_skipped_no_target is not None
+			and stats["planningSkippedNoTarget"] > args.max_runtime_simulation_planning_skipped_no_target
+		):
+			model_errors.append(
+				f"{model}: planner no-target skips {stats['planningSkippedNoTarget']} above allowed "
+				f"{args.max_runtime_simulation_planning_skipped_no_target}"
+			)
 
 		errors.extend(model_errors)
 		model_reports.append(
-			{
-				"model": model,
-				"stats": stats,
-				"completeRate": complete_rate,
-				"planningDecisions": planning_decisions,
-				"planningVetoes": planning_vetoes,
-				"planningRescues": planning_rescues,
-				"ok": not model_errors,
-				"errors": model_errors,
-			}
-		)
+				{
+					"model": model,
+					"stats": stats,
+					"completeRate": complete_rate,
+					"planningDecisions": planning_decisions,
+					"planningVetoes": planning_vetoes,
+					"planningRescues": planning_rescues,
+					"planningSkips": planning_skips,
+					"planningCandidates": planning_candidates,
+					"planningDecisionRate": planning_decision_rate,
+					"ok": not model_errors,
+					"errors": model_errors,
+				}
+			)
 
 	return {
 		"required": bool(args.require_runtime_simulation),
@@ -1195,6 +1306,12 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 		"minPlanningVetoes": args.min_runtime_simulation_planning_vetoes,
 		"minPlanningRescues": args.min_runtime_simulation_planning_rescues,
 		"maxPlanningIncomplete": args.max_runtime_simulation_planning_incomplete,
+		"minPlanningCandidates": args.min_runtime_simulation_planning_candidates,
+		"minPlanningDecisionRate": args.min_runtime_simulation_planning_decision_rate,
+		"maxPlanningSkippedFutureTurn": args.max_runtime_simulation_planning_skipped_future_turn,
+		"maxPlanningSkippedUnsafePath": args.max_runtime_simulation_planning_skipped_unsafe_path,
+		"maxPlanningSkippedProjectedArmy": args.max_runtime_simulation_planning_skipped_projected_army,
+		"maxPlanningSkippedNoTarget": args.max_runtime_simulation_planning_skipped_no_target,
 		"ok": not errors,
 		"errors": errors,
 	}
