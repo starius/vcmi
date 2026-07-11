@@ -657,14 +657,22 @@ int32_t getReplayInitialMana(const CGHeroInstance * hero, int32_t fallback)
 	return iter->second;
 }
 
-bool recordResultAndShouldReplay(CGameHandler &, const CBattleInfoCallback & battle, const BattleResult & result)
+BattleSimulationRecordResult recordResult(CGameHandler &, const CBattleInfoCallback & battle, const BattleResult & result)
 {
 	initialize();
 	if(!state.config.enabled)
-		return false;
+		return {};
 
 	appendResultRow(battle, result);
 	recordSummary(result);
-	return state.rowsWritten < state.config.maxBattles;
+	return BattleSimulationRecordResult{
+		state.rowsWritten < state.config.maxBattles,
+		state.summary
+	};
+}
+
+bool recordResultAndShouldReplay(CGameHandler & gameHandler, const CBattleInfoCallback & battle, const BattleResult & result)
+{
+	return recordResult(gameHandler, battle, result).shouldReplay;
 }
 }

@@ -343,7 +343,8 @@ void BattleResultProcessor::endBattleConfirm(const CBattleInfoCallback & battle)
 	const auto * battleResult = battleResults.at(battle.getBattle()->getBattleID()).get();
 	const auto * finishingBattle = finishingBattles.at(battle.getBattle()->getBattleID()).get();
 
-	if(BattleSimulationBatch::recordResultAndShouldReplay(*gameHandler, battle, *battleResult))
+	const auto simulationRecord = BattleSimulationBatch::recordResult(*gameHandler, battle, *battleResult);
+	if(simulationRecord.shouldReplay)
 	{
 		gameHandler->battles->restartBattle(*battle.getBattle());
 		return;
