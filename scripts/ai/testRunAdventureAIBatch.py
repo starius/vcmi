@@ -47,6 +47,9 @@ class RunAdventureAIBatchTest(unittest.TestCase):
                 clean=True,
                 extra_arg=[],
                 script=None,
+                player_script=[],
+                red_script=None,
+                blue_script=None,
                 trace=False,
                 json=False,
             )
@@ -76,6 +79,82 @@ class RunAdventureAIBatchTest(unittest.TestCase):
             self.assertIn("fake client started", result["stdoutSummary"]["tail"])
             self.assertGreaterEqual(result["stdoutSummary"]["lastOutputAgeSeconds"], 0.0)
             self.assertEqual(compact_result(result)["stdoutTailSignature"], "unknown")
+
+    def test_run_one_passes_player_script_overrides(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            client = root / "fake-client.py"
+            client.write_text(
+                textwrap.dedent(
+                    """\
+                    #!/usr/bin/env python3
+                    import os
+
+                    keys = [
+                        "VCMI_SCRIPTED_ADVENTURE_SCRIPT",
+                        "VCMI_SCRIPTED_ADVENTURE_RED_SCRIPT",
+                        "VCMI_SCRIPTED_ADVENTURE_BLUE_SCRIPT",
+                        "VCMI_SCRIPTED_ADVENTURE_PLAYER_1_SCRIPT",
+                    ]
+                    for key in keys:
+                        print(f"{key}={os.environ.get(key, '')}", flush=True)
+                    """
+                ),
+                encoding="utf-8",
+            )
+            client.chmod(0o755)
+
+            red_script = root / "red.lua"
+            blue_script = root / "blue.lua"
+            red_script.write_text("return {}", encoding="utf-8")
+            blue_script.write_text("return {}", encoding="utf-8")
+
+            args = argparse.Namespace(
+                client=str(client),
+                ai=["ScriptedAdventureAI", "ScriptedAdventureAI"],
+                runs=1,
+                testdays=0,
+                timeout=10,
+                idle_timeout=0.0,
+                exit_grace_after_outcome=10.0,
+                output=root / "runs",
+                cwd=None,
+                clean=True,
+                extra_arg=[],
+                script="ai/global.lua",
+                player_script=["1=ai/player-one.lua"],
+                red_script=str(red_script),
+                blue_script=None,
+                trace=False,
+                json=False,
+            )
+            scenario = {
+                "name": "player-scripts",
+                "group": "training",
+                "stage": "outcome",
+                "kind": "unit",
+                "map": "unit-test-map",
+                "runs": 1,
+                "testdays": 0,
+                "timeout": 10,
+                "idle_timeout": 0.0,
+                "extra_arg": [],
+                "enabled": True,
+                "tags": [],
+                "player_scripts": {"blue": str(blue_script)},
+            }
+
+            result = run_one(args, scenario, 1)
+            stdout_tail = "\n".join(result["stdoutSummary"]["tail"])
+
+            self.assertFalse(result["timedOut"])
+            self.assertFalse(result["idleTimedOut"])
+            self.assertEqual(result["outcome"]["result"], "unknown")
+            self.assertIn("VCMI_SCRIPTED_ADVENTURE_SCRIPT=ai/global.lua", stdout_tail)
+            self.assertIn(f"VCMI_SCRIPTED_ADVENTURE_RED_SCRIPT=file:{red_script.resolve()}", stdout_tail)
+            self.assertIn(f"VCMI_SCRIPTED_ADVENTURE_BLUE_SCRIPT=file:{blue_script.resolve()}", stdout_tail)
+            self.assertIn("VCMI_SCRIPTED_ADVENTURE_PLAYER_1_SCRIPT=ai/player-one.lua", stdout_tail)
+            self.assertEqual(result["playerScripts"]["VCMI_SCRIPTED_ADVENTURE_PLAYER_1_SCRIPT"], "ai/player-one.lua")
 
 
 if __name__ == "__main__":

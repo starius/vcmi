@@ -1177,6 +1177,22 @@ VCMI_SCRIPTED_ADVENTURE_SCRIPT=file:/tmp/candidate.lua \
 Per-player script override variables are also supported, for example
 `VCMI_SCRIPTED_ADVENTURE_RED_SCRIPT` or `VCMI_SCRIPTED_ADVENTURE_PLAYER_0_SCRIPT`.
 
+The batch runner can set those overrides directly when both sides use `ScriptedAdventureAI`:
+
+```bash
+scripts/ai/runAdventureAIBatch.py \
+  --client build/bin/vcmiclient \
+  --scenario-file scripts/ai/rmgSmallUndergroundNoWater16.json \
+  --ai ScriptedAdventureAI \
+  --ai ScriptedAdventureAI \
+  --red-script ai/candidates/champion.lua \
+  --blue-script ai/candidates/candidate.lua \
+  --jobs 16
+```
+
+For more than two players, use repeated `--player-script PLAYER=SCRIPT` entries. `PLAYER` may be a color name
+such as `red`/`blue` or a numeric player id such as `0`/`1`; scenario JSON may also include `playerScripts`.
+
 Baseline-vs-candidate script evaluations can be launched with:
 
 ```bash
@@ -1961,6 +1977,10 @@ Regression harness:
   and the stdout tail ended after repeated `Creating battle AI BattleAI` lines. Until a userspace stack tool is
   available, treat this as a battle/client infrastructure stall that the evaluation ladder should classify via
   `idle_timeout`, not as a scripted adventure strategy loss.
+- Done: a later 16-game no-trace full-outcome batch after API-only callback additions produced 4 red/script wins,
+  8 red/script losses, and 4 idle timeouts. The idle signatures were `battle_ai_creation` for seeds `10` and `13`
+  and `battle_ai_creation_invalid_stack` for seeds `08` and `15`. Seed `16` had a terminal red loss and was
+  terminated only by the post-outcome grace watchdog, so it counts as a completed winner result.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions

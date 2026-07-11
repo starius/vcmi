@@ -67,6 +67,42 @@ def script_override_value(script: str | None) -> str | None:
     return script
 
 
+def player_script_env_name(player: str) -> str:
+    key = str(player).strip()
+    if not key:
+        raise ValueError("Player script override is missing a player key")
+    if key.isdigit():
+        return f"VCMI_SCRIPTED_ADVENTURE_PLAYER_{int(key)}_SCRIPT"
+    return f"VCMI_SCRIPTED_ADVENTURE_{safe_name(key).upper()}_SCRIPT"
+
+
+def parse_player_script_override(raw: str) -> tuple[str, str]:
+    if "=" not in raw:
+        raise ValueError(f"Player script override must use PLAYER=SCRIPT syntax: {raw}")
+    player, script = raw.split("=", 1)
+    player = player.strip()
+    script = script.strip()
+    if not player or not script:
+        raise ValueError(f"Player script override must use PLAYER=SCRIPT syntax: {raw}")
+    return player, script
+
+
+def player_script_overrides(args: argparse.Namespace, scenario: dict[str, Any]) -> dict[str, str]:
+    overrides: dict[str, str] = {}
+    for raw in getattr(args, "player_script", []) or []:
+        player, script = parse_player_script_override(str(raw))
+        overrides[player_script_env_name(player)] = script_override_value(script) or script
+
+    for player, attr in (("red", "red_script"), ("blue", "blue_script")):
+        if script := getattr(args, attr, None):
+            overrides[player_script_env_name(player)] = script_override_value(script) or script
+
+    for player, script in as_dict(scenario.get("player_scripts")).items():
+        overrides[player_script_env_name(str(player))] = script_override_value(str(script)) or str(script)
+
+    return overrides
+
+
 def stdout_has_terminal_outcome(stdout_path: Path) -> bool:
     if not stdout_path.exists():
         return False
@@ -213,6 +249,9 @@ def normalize_scenario(raw: dict[str, Any], index: int, args: argparse.Namespace
         "enabled": bool(raw.get("enabled", True)),
         "tags": string_list(raw.get("tags")),
     }
+    player_scripts = raw.get("playerScripts", raw.get("player_scripts"))
+    if isinstance(player_scripts, dict):
+        scenario["player_scripts"] = {str(player): str(script) for player, script in player_scripts.items()}
     if raw.get("map"):
         scenario["map"] = str(raw["map"])
     if raw.get("save"):
@@ -306,6 +345,9 @@ def args_for_scenario(args: argparse.Namespace, scenario: dict[str, Any]) -> arg
         clean=args.clean,
         extra_arg=scenario["extra_arg"],
         script=args.script,
+        player_script=list(getattr(args, "player_script", []) or []),
+        red_script=getattr(args, "red_script", None),
+        blue_script=getattr(args, "blue_script", None),
         trace=args.trace,
         json=args.json,
     )
@@ -365,6 +407,8 @@ def run_one(args: argparse.Namespace, scenario_or_map: dict[str, Any] | str, run
     env["XDG_CACHE_HOME"] = str(run_dir / "cache")
     if script := script_override_value(args.script):
         env["VCMI_SCRIPTED_ADVENTURE_SCRIPT"] = script
+    player_scripts = player_script_overrides(args, scenario)
+    env.update(player_scripts)
     if args.trace:
         env["VCMI_SCRIPTED_ADVENTURE_TRACE"] = "1"
     started = time.monotonic()
@@ -444,6 +488,8 @@ def run_one(args: argparse.Namespace, scenario_or_map: dict[str, Any] | str, run
         "run": run_index,
         "runDir": str(run_dir),
         "command": command,
+        "script": script_override_value(args.script),
+        "playerScripts": player_scripts,
         "timeoutSeconds": args.timeout,
         "idleTimeoutSeconds": args.idle_timeout,
         "timedOut": timed_out,
@@ -565,6 +611,9 @@ def main() -> int:
     parser.add_argument("--clean", action="store_true", help="Delete existing run directories before reuse.")
     parser.add_argument("--extra-arg", action="append", default=[], help="Extra argument passed to vcmiclient.")
     parser.add_argument("--script", default=None, help="Script resource path or local Lua file used by ScriptedAdventureAI.")
+    parser.add_argument("--player-script", action="append", default=[], help="Per-player script override as PLAYER=SCRIPT, e.g. red=ai/a.lua or 1=file:/tmp/blue.lua.")
+    parser.add_argument("--red-script", default=None, help="Shortcut for --player-script red=SCRIPT.")
+    parser.add_argument("--blue-script", default=None, help="Shortcut for --player-script blue=SCRIPT.")
     parser.add_argument("--trace", action="store_true", help="Enable ScriptedAdventureAI trace files for each run.")
     parser.add_argument("--jobs", type=int, default=1, help="Number of runs to execute in parallel.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable batch manifest.")
