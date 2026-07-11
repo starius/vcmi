@@ -38,11 +38,28 @@
 #include "AIGateway.h"
 #include "Goals/Goals.h"
 
+#include <mutex>
+
 namespace NK2AI
 {
 namespace
 {
 constexpr int64_t RUNTIME_SIMULATION_GAME_SEED = 0;
+
+const char * runtimeSimulationStatusName(BattleOutcomeSimulationStatus status)
+{
+	switch(status)
+	{
+		case BattleOutcomeSimulationStatus::INVALID_REQUEST:
+			return "invalid request";
+		case BattleOutcomeSimulationStatus::NOT_AVAILABLE:
+			return "not available";
+		case BattleOutcomeSimulationStatus::COMPLETE:
+			return "complete";
+	}
+
+	return "unknown";
+}
 
 bool movementActionMayStartBattle(EPathNodeAction action)
 {
@@ -128,7 +145,18 @@ bool runtimeBattleSimulationRejectsVisit(
 		sampleCount,
 		thresholds);
 	if(simulation.status != BattleOutcomeSimulationStatus::COMPLETE || simulation.sampleCount < sampleCount)
+	{
+		static std::once_flag warningLogged;
+		std::call_once(warningLogged, [&]()
+		{
+			logAi->warn(
+				"Runtime battle simulation is enabled but did not return enough samples: status %s, samples %lld/%d. Final battle-visit safety gate will use static danger only until a simulation provider is connected.",
+				runtimeSimulationStatusName(simulation.status),
+				static_cast<long long>(simulation.sampleCount),
+				sampleCount);
+		});
 		return false;
+	}
 
 	const bool safe = simulation.attackerAllWinsSafe || (simulation.attackerProbabilitySafe && simulation.attackerWilsonSafe);
 	if(safe)
