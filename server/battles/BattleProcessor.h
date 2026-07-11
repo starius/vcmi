@@ -77,6 +77,8 @@ public:
 	void restartBattle(const IBattleInfo & battle);
 	/// Evaluate a battle setup through the runtime simulation service boundary
 	BattleSimulation::BattleSimulationResponse evaluateBattleSimulation(const BattleSimulation::BattleSimulationRequest & request) const;
+	/// Store a runtime simulation summary for later cached evaluation
+	void storeBattleSimulationSummary(const BattleSimulation::BattleSimulationRequest & request, const BattleSimulation::BattleSimulationSummary & summary);
 
 	/// Processing of incoming battle action netpack
 	bool makePlayerBattleAction(const BattleID & battleID, PlayerColor player, const BattleAction & ba);

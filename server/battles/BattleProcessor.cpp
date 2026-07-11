@@ -140,6 +140,11 @@ BattleSimulation::BattleSimulationResponse BattleProcessor::evaluateBattleSimula
 	return simulationEvaluator->evaluate(request);
 }
 
+void BattleProcessor::storeBattleSimulationSummary(const BattleSimulation::BattleSimulationRequest & request, const BattleSimulation::BattleSimulationSummary & summary)
+{
+	simulationEvaluator->storeCachedSummary(request, summary);
+}
+
 void BattleProcessor::startBattle(const CArmedInstance *army1, const CArmedInstance *army2, int3 tile,
 								const CGHeroInstance *hero1, const CGHeroInstance *hero2, const BattleLayout & layout, const CGTownInstance *town)
 {
