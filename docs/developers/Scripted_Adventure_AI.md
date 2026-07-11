@@ -2138,6 +2138,11 @@ Regression harness:
   infrastructure failures, with reasons such as `inflight_imperative_command:nullkiller_turn_slice`. This lets the
   retry loop handle in-flight bounded-helper stalls even when the stdout tail is not specific enough to classify
   them as battle-AI setup noise.
+- Done: promotion metrics now separate script failures from infrastructure failures. `scriptTimeouts`,
+  `scriptIdleTimeouts`, and `scriptNonzeroExit` drive the hard script-safety gates, while `infrastructureFailures`
+  remains visible and must not exceed the baseline unless explicitly allowed. This prevents battle/client
+  infrastructure stalls from looking like Lua policy idles while still blocking noisy candidates that introduce more
+  infrastructure failures than the control.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions

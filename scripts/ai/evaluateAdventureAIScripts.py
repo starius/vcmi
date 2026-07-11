@@ -164,6 +164,24 @@ def run_metrics(results: list[dict[str, Any]], summary: dict[str, Any]) -> dict[
     completed = sum(1 for result in results if not result["timedOut"] and result["returnCode"] == 0)
     infrastructure_failures = sum(1 for result in results if result.get("infrastructureFailure"))
     infrastructure_retried_attempts = sum(len(result.get("previousAttempts", [])) for result in results)
+    script_timeouts = sum(1 for result in results if result["timedOut"] and not result.get("infrastructureFailure"))
+    script_idle_timeouts = sum(1 for result in results if result.get("idleTimedOut") and not result.get("infrastructureFailure"))
+    script_nonzero = sum(
+        1
+        for result in results
+        if (
+            not result["timedOut"]
+            and not result.get("idleTimedOut")
+            and result["returnCode"] != 0
+            and not result.get("infrastructureFailure")
+        )
+    )
+    script_completed = sum(
+        1
+        for result in results
+        if not result.get("infrastructureFailure") and not result["timedOut"] and result["returnCode"] == 0
+    )
+    non_infrastructure_runs = len(results) - infrastructure_failures
     elapsed = sum(float(result["elapsedSeconds"]) for result in results)
     parse_errors = len(summary.get("parse_errors", []))
     fallback_outputs = nested_int(summary, "output_statuses", "fallback")
@@ -181,14 +199,15 @@ def run_metrics(results: list[dict[str, Any]], summary: dict[str, Any]) -> dict[
     outcomes = outcome_counts(results)
 
     safety_score = (
-        completed * 1000
-        - timeouts * 1200
-        - idle_timeouts * 900
-        - nonzero * 600
+        script_completed * 1000
+        - script_timeouts * 1200
+        - script_idle_timeouts * 900
+        - script_nonzero * 600
         - parse_errors * 100
         - fallback_outputs * 250
         - failed_actions * 100
         - stopped_batches * 25
+        - infrastructure_failures * 50
     )
     activity_score = (
         + executed_actions * 5
@@ -204,11 +223,16 @@ def run_metrics(results: list[dict[str, Any]], summary: dict[str, Any]) -> dict[
     return {
         "runs": len(results),
         "completed": completed,
+        "scriptCompleted": script_completed,
+        "nonInfrastructureRuns": non_infrastructure_runs,
         "timeouts": timeouts,
         "idleTimeouts": idle_timeouts,
         "nonzeroExit": nonzero,
         "infrastructureFailures": infrastructure_failures,
         "infrastructureRetriedAttempts": infrastructure_retried_attempts,
+        "scriptTimeouts": script_timeouts,
+        "scriptIdleTimeouts": script_idle_timeouts,
+        "scriptNonzeroExit": script_nonzero,
         "elapsedSeconds": round(elapsed, 3),
         "parseErrors": parse_errors,
         "fallbackOutputs": fallback_outputs,
@@ -245,6 +269,9 @@ def metric_delta(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[st
         "failedActions",
         "infrastructureFailures",
         "infrastructureRetriedAttempts",
+        "scriptTimeouts",
+        "scriptIdleTimeouts",
+        "scriptNonzeroExit",
         "redWins",
         "redLosses",
     )
@@ -313,10 +340,12 @@ def promotion_verdict(
         "heldoutScoreDelta": heldout_delta.get("score") if heldout_delta else None,
         "heldoutQualityDelta": heldout_delta.get("qualityScore") if heldout_delta else None,
         "heldoutImportantMistakeDelta": heldout_delta.get("importantMistakes") if heldout_delta else None,
-        "candidateCompletedAllRuns": candidate["completed"] == candidate["runs"],
-        "candidateHasNoTimeouts": candidate["timeouts"] == 0,
-        "candidateHasNoIdleTimeouts": candidate["idleTimeouts"] == 0,
-        "candidateHasNoNonzeroExits": candidate["nonzeroExit"] == 0,
+        "candidateCompletedAllNonInfrastructureRuns": candidate["scriptCompleted"] == candidate["nonInfrastructureRuns"],
+        "candidateHasNoScriptTimeouts": candidate["scriptTimeouts"] == 0,
+        "candidateHasNoScriptIdleTimeouts": candidate["scriptIdleTimeouts"] == 0,
+        "candidateHasNoScriptNonzeroExits": candidate["scriptNonzeroExit"] == 0,
+        "candidateInfrastructureFailuresAllowed": candidate["infrastructureFailures"]
+        <= baseline["infrastructureFailures"] + args.allow_more_infrastructure_failures,
         "candidateHasNoParseErrors": candidate["parseErrors"] == 0,
         "candidateFallbacksNotWorse": candidate["fallbackOutputs"] <= baseline["fallbackOutputs"],
         "candidateFailedActionsAllowed": candidate["failedActions"] <= baseline["failedActions"] + args.allow_more_failed_actions,
@@ -337,10 +366,11 @@ def promotion_verdict(
     }
 
     hard_fail_keys = [
-        "candidateCompletedAllRuns",
-        "candidateHasNoTimeouts",
-        "candidateHasNoIdleTimeouts",
-        "candidateHasNoNonzeroExits",
+        "candidateCompletedAllNonInfrastructureRuns",
+        "candidateHasNoScriptTimeouts",
+        "candidateHasNoScriptIdleTimeouts",
+        "candidateHasNoScriptNonzeroExits",
+        "candidateInfrastructureFailuresAllowed",
         "candidateHasNoParseErrors",
         "candidateFallbacksNotWorse",
         "candidateFailedActionsAllowed",
@@ -377,7 +407,9 @@ def promotion_verdict(
 def print_metrics(label: str, metrics: dict[str, Any]) -> None:
     print(
         f"{label}: score={metrics['score']} completed={metrics['completed']}/{metrics['runs']} "
+        f"script_completed={metrics['scriptCompleted']}/{metrics['nonInfrastructureRuns']} "
         f"timeouts={metrics['timeouts']} idle_timeouts={metrics['idleTimeouts']} "
+        f"script_timeouts={metrics['scriptTimeouts']} script_idle={metrics['scriptIdleTimeouts']} "
         f"infra={metrics['infrastructureFailures']} retried={metrics['infrastructureRetriedAttempts']} "
         f"failed_actions={metrics['failedActions']} "
         f"fallbacks={metrics['fallbackOutputs']} executed={metrics['executedActions']} "
@@ -422,6 +454,7 @@ def main() -> int:
     parser.add_argument("--allow-heldout-important-mistake-regression", type=int, default=0, help="Allowed held-out important-mistake increase before rejecting promotion.")
     parser.add_argument("--allow-more-failed-actions", type=int, default=0, help="Candidate failed actions allowed above baseline.")
     parser.add_argument("--allow-more-important-mistakes", type=int, default=0, help="Candidate important mistakes allowed above baseline.")
+    parser.add_argument("--allow-more-infrastructure-failures", type=int, default=0, help="Candidate infrastructure failures allowed above baseline.")
     args = parser.parse_args()
     args.ai = normalize_ai_names(args.ai)
 
@@ -462,7 +495,7 @@ def main() -> int:
         "qualityDelta": quality_delta,
         "mapProgressDelta": map_progress_delta,
         "promotion": promotion,
-        "scoreNotes": "Iteration score combines safety, useful actions, final visible-state quality, longitudinal map-progress/control deltas, mined mistake penalties, and outcomes when traces are enabled. With --no-trace, trace-local quality, map-progress, action, and mistake metrics are zeroed and the score is outcome/safety focused. Hard promotion gates reject crashes, parse errors, extra fallbacks, extra failed actions, and extra important mistakes.",
+        "scoreNotes": "Iteration score combines script safety, useful actions, final visible-state quality, longitudinal map-progress/control deltas, mined mistake penalties, and outcomes when traces are enabled. With --no-trace, trace-local quality, map-progress, action, and mistake metrics are zeroed and the score is outcome/safety focused. Infrastructure failures are tracked separately from script timeouts/idles and only mildly penalized; hard promotion gates reject script crashes, parse errors, extra fallbacks, extra failed actions, extra important mistakes, and infrastructure failures above the configured allowance.",
     }
 
     (args.output / "evaluation.json").write_text(json.dumps(evaluation, indent=2, sort_keys=True), encoding="utf-8")
@@ -479,12 +512,12 @@ def main() -> int:
         print(f"evaluation: {args.output / 'evaluation.json'}")
 
     has_failed_runs = (
-        baseline_metrics["timeouts"]
-        or baseline_metrics["idleTimeouts"]
-        or baseline_metrics["nonzeroExit"]
-        or candidate_metrics["timeouts"]
-        or candidate_metrics["idleTimeouts"]
-        or candidate_metrics["nonzeroExit"]
+        baseline_metrics["scriptTimeouts"]
+        or baseline_metrics["scriptIdleTimeouts"]
+        or baseline_metrics["scriptNonzeroExit"]
+        or candidate_metrics["scriptTimeouts"]
+        or candidate_metrics["scriptIdleTimeouts"]
+        or candidate_metrics["scriptNonzeroExit"]
     )
     has_parse_errors = baseline_metrics["parseErrors"] or candidate_metrics["parseErrors"]
     return 1 if has_failed_runs or has_parse_errors else 0
