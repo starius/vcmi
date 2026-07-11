@@ -11,9 +11,9 @@ Nullkiller, and normal map play still runs through bounded native day slices.
 The only added policy is a narrow emergency-town-defense opening. Critical
 matching recruitment may preempt movement because queued creatures defend this
 turn and trace losses repeatedly show zero-strength towns while scouts still
-have ordinary movement options. Construction is more expensive and slower, so it
-does not preempt normal native planning; it is allowed either when there is no
-map tempo left, or as a last-chance action after Nullkiller says the day is done.
+have ordinary movement options. Construction is more expensive and slower, so
+building remains gated on the scripted player having no practical map tempo
+left.
 
 This is deliberately conservative:
 
@@ -23,8 +23,6 @@ This is deliberately conservative:
   under bounded Nullkiller control unless a critical threatened town can recruit
   immediately.
 * It prefers recruitment over construction because creatures can defend now.
-* It can make one last safe hero move before ending the day if a critical hero
-  threat remains after native planning has stopped.
 * It does not invent prices, availability, paths, or game mechanics in Lua.
 * After the emergency action it refreshes and returns to bounded Nullkiller.
 
@@ -67,12 +65,6 @@ local DefenseScore = {
     goldCost = 0.02
 }
 
-local HeroEscapeScore = {
-    criticalThreat = 100000,
-    strengthRatio = 1000,
-    moveValue = 1
-}
-
 local DefenseTrigger = {
     -- Broad pressure responses regressed winning seeds. Only intervene when
     -- native planning has little map tempo left and the town threat is severe.
@@ -111,7 +103,6 @@ local function normalizeMemory(input)
     memory.totalSlices = memory.totalSlices or 0
     memory.totalQueriesAnswered = memory.totalQueriesAnswered or 0
     memory.totalEmergencyDefenseActions = memory.totalEmergencyDefenseActions or 0
-    memory.totalEmergencyHeroEscapes = memory.totalEmergencyHeroEscapes or 0
     return memory
 end
 
@@ -218,28 +209,6 @@ local function emergencyDefenseAlerts(input)
     return result
 end
 
-local function emergencyHeroThreatAlerts(input)
-    local result = {}
-
-    for _, alert in ipairs(asArray(input.analysis and input.analysis.heroThreatAlerts)) do
-        local heroId = tonumber(alert.hero_id or alert.heroId or nil)
-        local level = threatLevel(alert)
-        if heroId and level >= ThreatLevel.critical then
-            result[#result + 1] = {
-                heroId = heroId,
-                level = level,
-                strengthRatio = tonumber(alert.strengthRatio or 0) or 0
-            }
-        end
-    end
-    return result
-end
-
-local function hasLastChancePressure(input)
-    return #emergencyDefenseAlerts(input) > 0
-        or #emergencyHeroThreatAlerts(input) > 0
-end
-
 local function resourceGold(cost)
     if type(cost) ~= "table" then
         return 0
@@ -249,10 +218,6 @@ end
 
 local function optionTownId(option)
     return tonumber(option.town_id or option.townId or option.source_id or option.sourceId or nil)
-end
-
-local function optionHeroId(option)
-    return tonumber(option.hero_id or option.heroId or nil)
 end
 
 local function matchesAlert(option, alert)
@@ -310,10 +275,12 @@ local function chooseEmergencyRecruit(input, alerts)
     local best
     local bestScore = -math.huge
     for _, option in ipairs(asArray(input.actionSpace and input.actionSpace.recruitOptions)) do
-        if option.planAction and (tonumber(option.amount or 0) or 0) > 0 and hasMatchingAlert(option, alerts) then
+        if option.planAction and (tonumber(option.amount or 0) or 0) > 0 then
             local alert = bestAlertForOption(option, alerts)
             local score = recruitScore(option, alert)
-            score = score + DefenseScore.criticalBonus
+            if hasMatchingAlert(option, alerts) then
+                score = score + DefenseScore.criticalBonus
+            end
             if score > bestScore then
                 best = option
                 bestScore = score
@@ -342,23 +309,18 @@ local function chooseEmergencyBuild(input, alerts)
     return best
 end
 
-local function runEmergencyDefense(ai, current, memory, options)
+local function runEmergencyDefense(ai, current, memory)
     local alerts = emergencyDefenseAlerts(current)
     if #alerts == 0 then
         return current, false
     end
 
-    options = options or {}
     local lowTempo = lacksMapTempo(current)
     local option = chooseEmergencyRecruit(current, alerts)
     local intent = "emergency town defense recruitment"
-    if not option and (lowTempo or options.allowBuild == true) then
+    if not option and lowTempo then
         option = chooseEmergencyBuild(current, alerts)
-        if options.lastChance == true then
-            intent = "last-chance town defense construction"
-        else
-            intent = "emergency town defense construction"
-        end
+        intent = "emergency town defense construction"
     end
     if not option then
         return current, false
@@ -369,71 +331,6 @@ local function runEmergencyDefense(ai, current, memory, options)
     memory.lastIntent = intent
     ai:setMemory(memory)
     return ai:refresh(), true
-end
-
-local function isSafeMovementOption(option)
-    local riskInfo = option.riskInfo or {}
-    return option.planAction
-        and (option.safe == true or riskInfo.safe == true)
-end
-
-local function heroEscapeScore(option, alert)
-    return alert.level * HeroEscapeScore.criticalThreat
-        + alert.strengthRatio * HeroEscapeScore.strengthRatio
-        + (tonumber(option.value or 0) or 0) * HeroEscapeScore.moveValue
-end
-
-local function chooseEmergencyHeroEscape(input, alerts)
-    local best
-    local bestScore = -math.huge
-    for _, option in ipairs(asArray(input.actionSpace and input.actionSpace.movementOptions)) do
-        if isSafeMovementOption(option) then
-            for _, alert in ipairs(alerts) do
-                if optionHeroId(option) == alert.heroId then
-                    local score = heroEscapeScore(option, alert)
-                    if score > bestScore then
-                        best = option
-                        bestScore = score
-                    end
-                end
-            end
-        end
-    end
-    return best
-end
-
-local function runEmergencyHeroEscape(ai, current, memory)
-    local alerts = emergencyHeroThreatAlerts(current)
-    if #alerts == 0 then
-        return current, false
-    end
-
-    local option = chooseEmergencyHeroEscape(current, alerts)
-    if not option then
-        return current, false
-    end
-
-    ai:runOption(option)
-    memory.totalEmergencyHeroEscapes = memory.totalEmergencyHeroEscapes + 1
-    memory.lastIntent = "last-chance threatened hero escape"
-    ai:setMemory(memory)
-    return ai:refresh(), true
-end
-
-local function runLastChanceBeforeEndTurn(ai, current, memory)
-    if not hasLastChancePressure(current) then
-        return current, false
-    end
-
-    current = ai:refresh()
-
-    local acted
-    current, acted = runEmergencyDefense(ai, current, memory, { allowBuild = true, lastChance = true })
-    if acted then
-        return current, true
-    end
-
-    return runEmergencyHeroEscape(ai, current, memory)
 end
 
 local function sliceDidAdventureWork(result)
@@ -514,36 +411,24 @@ function Script.runDay(ai, input)
         ai:setMemory(memory)
 
         if sliceShouldEndTurn(result) then
-            local acted
-            current, acted = runLastChanceBeforeEndTurn(ai, current, memory)
-            if not turnIsActive(current) then
-                return ai:output("end_turn", "turn ended after last-chance defensive action", 0.5)
+            ai:endTurn()
+            local intent = "defensive bounded control accepted native stop-turn signal"
+            if result.status == "idle" then
+                intent = "defensive bounded control found no remaining native work"
             end
-            if not acted then
-                ai:endTurn()
-                local intent = "defensive bounded control accepted native stop-turn signal"
-                if result.status == "idle" then
-                    intent = "defensive bounded control found no remaining native work"
-                end
-                return ai:output("end_turn", intent, 0.5)
-            end
+            return ai:output("end_turn", intent, 0.5)
+        end
 
-        elseif sliceReachedNativePassLimit(result) then
+        if sliceReachedNativePassLimit(result) then
             ai:endTurn()
             return ai:output("end_turn", "defensive bounded control accepted native max-pass limit", 0.5)
+        end
 
-        elseif sliceDidWork(result) then
+        if sliceDidWork(result) then
             current = ai:refresh()
         else
-            local acted
-            current, acted = runLastChanceBeforeEndTurn(ai, current, memory)
-            if not turnIsActive(current) then
-                return ai:output("end_turn", "turn ended after last-chance defensive action", 0.5)
-            end
-            if not acted then
-                ai:endTurn()
-                return ai:output("end_turn", "defensive bounded control found no remaining native work", 0.5)
-            end
+            ai:endTurn()
+            return ai:output("end_turn", "defensive bounded control found no remaining native work", 0.5)
         end
     end
 
