@@ -1928,6 +1928,11 @@ Regression harness:
   zero pending AI-status queries as a successful no-op and clears the stale script query cache entry instead of
   sending a server reply. A focused seed `08` rerun after this guard no longer emitted stale-query server errors,
   but still idle-timed-out at a pure `battle_ai_creation` signature.
+- Done: a one-off seed `08` proc-stack capture at the battle idle showed the client process sleeping rather than
+  spending CPU in Lua policy: main/network/worker threads were in futex waits, the server thread was in epoll wait,
+  and the stdout tail ended after repeated `Creating battle AI BattleAI` lines. Until a userspace stack tool is
+  available, treat this as a battle/client infrastructure stall that the evaluation ladder should classify via
+  `idle_timeout`, not as a scripted adventure strategy loss.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions
