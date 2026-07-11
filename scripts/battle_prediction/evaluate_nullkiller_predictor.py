@@ -78,6 +78,7 @@ def parse_args() -> argparse.Namespace:
         help="With --group-key shard, keep only shard groups whose row count matches manifest.jsonl.",
     )
     parser.add_argument("--test-fraction", type=float, default=0.25)
+    parser.add_argument("--cv-folds", type=int, default=0, help="Run deterministic group k-fold cross-validation when greater than 1")
     parser.add_argument("--epochs", type=int, default=2500)
     parser.add_argument("--learning-rate", type=float, default=0.05)
     parser.add_argument("--l2", type=float, default=0.001)
@@ -1209,6 +1210,19 @@ def split_groups(groups: list[Group], test_fraction: float) -> tuple[list[Group]
     return train, test
 
 
+def group_fold(group: Group, folds: int) -> int:
+    digest = hashlib.sha256(group.key.encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], "big") % folds
+
+
+def split_cross_validation_fold(groups: list[Group], folds: int, fold: int) -> tuple[list[Group], list[Group]]:
+    train: list[Group] = []
+    test: list[Group] = []
+    for group in groups:
+        (test if group_fold(group, folds) == fold else train).append(group)
+    return train, test
+
+
 def sigmoid(value: float) -> float:
     if value >= 0:
         z = math.exp(-value)
@@ -1397,12 +1411,20 @@ def summarize_deployed_danger(groups: list[Group], safe_ratio: float, town_dange
     }
 
 
-def summarize_predictions(groups: list[Group], safe_ratio: float, model: LogisticModel | None = None) -> dict[str, Any]:
+def summarize_predictions(
+    groups: list[Group],
+    safe_ratio: float,
+    model: LogisticModel | None = None,
+    model_safe_probability: float = V3_SAFE_PROBABILITY,
+) -> dict[str, Any]:
     rows = sum(group.count for group in groups)
     baseline_correct = 0.0
     baseline_brier = 0.0
     model_correct = 0.0
     model_brier = 0.0
+    model_false_safe = 0
+    model_false_unsafe = 0
+    model_safe_groups = 0
     v3_correct = 0.0
     v3_brier = 0.0
     v3_deployed_rows = 0
@@ -1415,8 +1437,10 @@ def summarize_predictions(groups: list[Group], safe_ratio: float, model: Logisti
     loss_squared = []
     false_safe = 0
     false_unsafe = 0
+    baseline_safe_groups = 0
     v3_false_safe = 0
     v3_false_unsafe = 0
+    v3_safe_groups = 0
     by_type: Counter = Counter()
 
     for group in groups:
@@ -1433,11 +1457,18 @@ def summarize_predictions(groups: list[Group], safe_ratio: float, model: Logisti
             false_safe += 1
         if not safe and expected_win >= 0.95:
             false_unsafe += 1
+        baseline_safe_groups += safe
 
         if model:
             probability = model.predict(row)
+            model_safe = probability >= model_safe_probability
             model_correct += weight * ((probability >= 0.5) == actual_class)
             model_brier += weight * (probability - expected_win) ** 2
+            if model_safe and expected_win < 0.95:
+                model_false_safe += 1
+            if not model_safe and expected_win >= 0.95:
+                model_false_unsafe += 1
+            model_safe_groups += model_safe
 
         v3_probability = cxx_v3_probability(row)
         v3_safe = v3_probability >= V3_SAFE_PROBABILITY
@@ -1447,6 +1478,7 @@ def summarize_predictions(groups: list[Group], safe_ratio: float, model: Logisti
             v3_false_safe += 1
         if not v3_safe and expected_win >= 0.95:
             v3_false_unsafe += 1
+        v3_safe_groups += v3_safe
         if cxx_v3_static_calibration_applies(row):
             v3_deployed_rows += weight
             v3_deployed_groups += 1
@@ -1469,10 +1501,12 @@ def summarize_predictions(groups: list[Group], safe_ratio: float, model: Logisti
         "baseline_brier": baseline_brier / rows if rows else 0.0,
         "baseline_false_safe_groups": false_safe,
         "baseline_false_unsafe_groups": false_unsafe,
+        "baseline_safe_groups": baseline_safe_groups,
         "v3_accuracy": v3_correct / rows if rows else 0.0,
         "v3_brier": v3_brier / rows if rows else 0.0,
         "v3_false_safe_groups": v3_false_safe,
         "v3_false_unsafe_groups": v3_false_unsafe,
+        "v3_safe_groups": v3_safe_groups,
         "v3_deployed_rows": v3_deployed_rows,
         "v3_deployed_groups": v3_deployed_groups,
         "v3_deployed_accuracy": v3_deployed_correct / v3_deployed_rows if v3_deployed_rows else 0.0,
@@ -1487,7 +1521,160 @@ def summarize_predictions(groups: list[Group], safe_ratio: float, model: Logisti
     if model:
         result["model_accuracy"] = model_correct / rows if rows else 0.0
         result["model_brier"] = model_brier / rows if rows else 0.0
+        result["model_false_safe_groups"] = model_false_safe
+        result["model_false_unsafe_groups"] = model_false_unsafe
+        result["model_safe_groups"] = model_safe_groups
+        result["model_safe_probability"] = model_safe_probability
     return result
+
+
+def empty_cv_summary() -> dict[str, Any]:
+    return {
+        "rows": 0,
+        "groups": 0,
+        "correct_weight": 0.0,
+        "brier_weight": 0.0,
+        "false_safe_groups": 0,
+        "false_unsafe_groups": 0,
+        "safe_groups": 0,
+    }
+
+
+def add_cv_summary(
+    target: dict[str, Any],
+    rows: int,
+    groups: int,
+    accuracy: float,
+    brier: float,
+    false_safe_groups: int,
+    false_unsafe_groups: int,
+    safe_groups: int = 0,
+) -> None:
+    target["rows"] += rows
+    target["groups"] += groups
+    target["correct_weight"] += rows * accuracy
+    target["brier_weight"] += rows * brier
+    target["false_safe_groups"] += false_safe_groups
+    target["false_unsafe_groups"] += false_unsafe_groups
+    target["safe_groups"] += safe_groups
+
+
+def finalize_cv_summary(summary: dict[str, Any]) -> dict[str, Any]:
+    rows = max(int(summary["rows"]), 1)
+    return {
+        "rows": summary["rows"],
+        "groups": summary["groups"],
+        "accuracy": summary["correct_weight"] / rows,
+        "brier": summary["brier_weight"] / rows,
+        "false_safe_groups": summary["false_safe_groups"],
+        "false_unsafe_groups": summary["false_unsafe_groups"],
+        "safe_groups": summary["safe_groups"],
+    }
+
+
+def cross_validate_models(
+    groups: list[Group],
+    folds: int,
+    safe_ratio: float,
+    epochs: int,
+    learning_rate: float,
+    l2: float,
+    model_safe_probability: float,
+    fit_models: bool,
+) -> dict[str, Any]:
+    folds = max(2, folds)
+    summaries = {
+        "baseline": empty_cv_summary(),
+        "deployed_danger": empty_cv_summary(),
+        "cxx_v3": empty_cv_summary(),
+    }
+    model_features: list[tuple[str, FeatureFunction]] = []
+    if fit_models:
+        model_features = [
+            ("full", feature_vector),
+            ("ratio", ratio_feature_vector),
+            ("v3_compatible", v3_compatible_feature_vector),
+            ("town_deployable", town_deployable_feature_vector),
+            ("town_rich_deployable", town_rich_deployable_feature_vector),
+        ]
+        for name, _ in model_features:
+            summaries[name] = empty_cv_summary()
+
+    fold_outputs = []
+    for fold in range(folds):
+        train, test = split_cross_validation_fold(groups, folds, fold)
+        if not test:
+            continue
+
+        baseline = summarize_predictions(test, safe_ratio)
+        add_cv_summary(
+            summaries["baseline"],
+            baseline["rows"],
+            baseline["groups"],
+            baseline["baseline_accuracy"],
+            baseline["baseline_brier"],
+            baseline["baseline_false_safe_groups"],
+            baseline["baseline_false_unsafe_groups"],
+            baseline["baseline_safe_groups"],
+        )
+        add_cv_summary(
+            summaries["cxx_v3"],
+            baseline["rows"],
+            baseline["groups"],
+            baseline["v3_accuracy"],
+            baseline["v3_brier"],
+            baseline["v3_false_safe_groups"],
+            baseline["v3_false_unsafe_groups"],
+            baseline["v3_safe_groups"],
+        )
+
+        deployed = summarize_deployed_danger(test, safe_ratio)
+        add_cv_summary(
+            summaries["deployed_danger"],
+            deployed["rows"],
+            deployed["groups"],
+            deployed["accuracy"],
+            deployed["brier"],
+            deployed["false_safe_groups"],
+            deployed["false_unsafe_groups"],
+            deployed["safe_groups"],
+        )
+
+        fold_result: dict[str, Any] = {
+            "fold": fold,
+            "train_groups": len(train),
+            "test_groups": len(test),
+            "test_rows": sum(group.count for group in test),
+        }
+
+        if train and model_features:
+            for name, features in model_features:
+                model = fit_logistic(train, epochs, learning_rate, l2, features)
+                model_summary = summarize_predictions(test, safe_ratio, model, model_safe_probability)
+                add_cv_summary(
+                    summaries[name],
+                    model_summary["rows"],
+                    model_summary["groups"],
+                    model_summary["model_accuracy"],
+                    model_summary["model_brier"],
+                    model_summary["model_false_safe_groups"],
+                    model_summary["model_false_unsafe_groups"],
+                    model_summary["model_safe_groups"],
+                )
+                fold_result[name] = {
+                    "accuracy": model_summary["model_accuracy"],
+                    "brier": model_summary["model_brier"],
+                    "false_safe_groups": model_summary["model_false_safe_groups"],
+                    "false_unsafe_groups": model_summary["model_false_unsafe_groups"],
+                }
+        fold_outputs.append(fold_result)
+
+    return {
+        "folds_requested": folds,
+        "folds_evaluated": len(fold_outputs),
+        "models": {name: finalize_cv_summary(summary) for name, summary in summaries.items()},
+        "folds": fold_outputs,
+    }
 
 
 def threshold_summary(groups: list[Group], model: LogisticModel) -> dict[str, Any]:
@@ -1832,6 +2019,17 @@ def main() -> int:
         "train": summarize_predictions(train, args.safe_ratio, full_model),
         "test": summarize_predictions(test, args.safe_ratio, full_model),
     }
+    if args.cv_folds > 1:
+        metrics["cross_validation"] = cross_validate_models(
+            groups,
+            args.cv_folds,
+            args.safe_ratio,
+            args.epochs,
+            args.learning_rate,
+            args.l2,
+            args.town_deployable_safe_probability,
+            fit_models,
+        )
     if town_danger_factors:
         metrics["town_danger_factors"] = {
             "train": [summarize_deployed_danger(train, args.safe_ratio, factor) for factor in town_danger_factors],
@@ -2070,6 +2268,22 @@ def main() -> int:
                 "false_unsafe_groups="
                 f"{summary['baseline_false_unsafe_groups']}"
             )
+        if "cross_validation" in metrics:
+            cv = metrics["cross_validation"]
+            print(
+                f"cross-validation: folds={cv['folds_evaluated']}/{cv['folds_requested']} "
+                f"safe_probability={args.town_deployable_safe_probability:.4f}"
+            )
+            for model_name, summary in cv["models"].items():
+                print(
+                    f"  {model_name} "
+                    f"rows={summary['rows']} groups={summary['groups']} "
+                    f"accuracy={summary['accuracy']:.4f} "
+                    f"brier={summary['brier']:.4f} "
+                    f"false_safe={summary['false_safe_groups']} "
+                    f"false_unsafe={summary['false_unsafe_groups']} "
+                    f"safe_groups={summary['safe_groups']}"
+                )
         if town_danger_factors:
             print("town danger factor diagnostics:")
             for name in ["train", "test"]:

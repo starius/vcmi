@@ -183,6 +183,8 @@ Offline validation:
 - separate metrics by battle type
 - holdout by generated setup, not by individual replay row
 - use `--group-key shard` for generated repeated-simulation datasets; reserve full setup grouping for datasets where each distinct realized setup is the intended unit
+- use deterministic group cross-validation for small or still-growing generated datasets before interpreting fitted town/siege models, for example:
+  `python3 scripts/battle_prediction/evaluate_nullkiller_predictor.py <dataset> --scope town --group-key shard --complete-shards-only --summary-only --cv-folds 5`
 - dataset integrity gate before analysis:
   - expected row count and schema
   - expected shard count and repeated rows per shard
