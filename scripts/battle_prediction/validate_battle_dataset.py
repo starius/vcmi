@@ -408,6 +408,8 @@ def validate_town_fields(row: dict[str, Any]) -> list[str]:
     wall_state_fields = ["finalWallState"]
     if int(row.get("schema", 1)) >= 4:
         wall_state_fields.append("initialWallState")
+    if int(row.get("schema", 1)) >= 6:
+        wall_state_fields.append("battleStartWallState")
 
     for key in wall_state_fields:
         wall_state = row.get(key)

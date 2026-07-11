@@ -10,6 +10,7 @@
 #pragma once
 
 #include "../../lib/battle/BattleLayout.h"
+#include "../../lib/constants/Enumerations.h"
 #include "../../lib/constants/EntityIdentifiers.h"
 #include "../../lib/GameConstants.h"
 #include "../../lib/int3.h"
@@ -115,10 +116,24 @@ struct BattleStartObstacleSnapshot
 	std::vector<int32_t> affectedTiles;
 };
 
+struct BattleStartWallStateSnapshot
+{
+	EWallState keep = EWallState::NONE;
+	EWallState bottomTower = EWallState::NONE;
+	EWallState bottomWall = EWallState::NONE;
+	EWallState belowGate = EWallState::NONE;
+	EWallState overGate = EWallState::NONE;
+	EWallState upperWall = EWallState::NONE;
+	EWallState upperTower = EWallState::NONE;
+	EWallState gate = EWallState::NONE;
+	EGateState gateState = EGateState::NONE;
+};
+
 struct BattleStartStateSnapshot
 {
 	std::vector<BattleStartStackStateSnapshot> stacks;
 	std::vector<BattleStartObstacleSnapshot> obstacles;
+	std::optional<BattleStartWallStateSnapshot> wallState;
 };
 
 struct BattleStartInfo

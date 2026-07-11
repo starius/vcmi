@@ -79,6 +79,21 @@ std::optional<BattleStartTownPreMergeSnapshot> makeBattleStartTownPreMergeSnapsh
 BattleStartStateSnapshot makeBattleStartStateSnapshot(const IBattleInfo & battle)
 {
 	BattleStartStateSnapshot result;
+	if(battle.getDefendedTown())
+	{
+		result.wallState = BattleStartWallStateSnapshot{
+			battle.getWallState(EWallPart::KEEP),
+			battle.getWallState(EWallPart::BOTTOM_TOWER),
+			battle.getWallState(EWallPart::BOTTOM_WALL),
+			battle.getWallState(EWallPart::BELOW_GATE),
+			battle.getWallState(EWallPart::OVER_GATE),
+			battle.getWallState(EWallPart::UPPER_WALL),
+			battle.getWallState(EWallPart::UPPER_TOWER),
+			battle.getWallState(EWallPart::GATE),
+			battle.getGateState()
+		};
+	}
+
 	const auto stacks = battle.getStacksIf([](const CStack * stack)
 	{
 		return stack && !stack->isGhost();

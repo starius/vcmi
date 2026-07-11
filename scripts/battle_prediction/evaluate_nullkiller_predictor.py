@@ -1389,6 +1389,7 @@ def setup_key(row: dict[str, Any]) -> str:
         "townPreMergeState": clean_town_pre_merge(row.get("townPreMergeState")) if row.get("schema", 1) >= 5 else None,
         "battleStartStacks": clean_battle_start_stacks(row.get("battleStartStacks")) if row.get("schema", 1) >= 6 else None,
         "battleStartObstacles": clean_battle_start_obstacles(row.get("battleStartObstacles")) if row.get("schema", 1) >= 6 else None,
+        "battleStartWallState": row.get("battleStartWallState") if row.get("schema", 1) >= 6 else None,
         "initialWallState": row.get("initialWallState") if row.get("schema", 1) >= 4 else None,
         "attackerHero": clean_hero(row.get("attackerHero")),
         "defenderHero": clean_hero(row.get("defenderHero")),

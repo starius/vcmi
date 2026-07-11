@@ -568,6 +568,28 @@ void appendFinalWallState(std::ostream & out, const IBattleInfo * info)
 		info->getGateState());
 }
 
+void appendBattleStartWallState(std::ostream & out, const BattleStartStateSnapshot * snapshot)
+{
+	if(!snapshot || !snapshot->wallState)
+	{
+		out << "null";
+		return;
+	}
+
+	const auto & wallState = *snapshot->wallState;
+	appendWallState(
+		out,
+		wallState.keep,
+		wallState.bottomTower,
+		wallState.bottomWall,
+		wallState.belowGate,
+		wallState.overGate,
+		wallState.upperWall,
+		wallState.upperTower,
+		wallState.gate,
+		wallState.gateState);
+}
+
 std::string defendedHeroSource(const CGTownInstance * town, const CGHeroInstance * defenderHero)
 {
 	if(!town || !defenderHero)
@@ -798,6 +820,8 @@ void appendResultRow(CGameHandler & gameHandler, const CBattleInfoCallback & bat
 	appendBattleStartStacks(state.output, battleStart);
 	state.output << ",\"battleStartObstacles\":";
 	appendBattleStartObstacles(state.output, battleStart);
+	state.output << ",\"battleStartWallState\":";
+	appendBattleStartWallState(state.output, battleStart);
 	state.output << ",\"initialWallState\":";
 	appendInitialWallState(state.output, info->getDefendedTown());
 	state.output << ",\"finalWallState\":";

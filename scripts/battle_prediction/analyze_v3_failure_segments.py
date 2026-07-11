@@ -295,6 +295,8 @@ def segments_for(row: dict[str, Any], actual: float, predicted: float) -> list[s
     if type_name.startswith("town"):
         initial_wall_total = wall_total(row, "initialWallState", ["bottomWall", "belowGate", "overGate", "upperWall"])
         initial_tower_total = wall_total(row, "initialWallState", ["bottomTower", "upperTower"])
+        battle_start_wall_total = wall_total(row, "battleStartWallState", ["bottomWall", "belowGate", "overGate", "upperWall"])
+        battle_start_tower_total = wall_total(row, "battleStartWallState", ["bottomTower", "upperTower"])
         pre_merge = town_pre_merge_state(row)
         buildings = town_buildings(row)
         attacker_start = battle_start_stack_stats(row, "attacker")
@@ -314,6 +316,11 @@ def segments_for(row: dict[str, Any], actual: float, predicted: float) -> list[s
                 f"town_initial_keep={wall_state(row, 'initialWallState', 'keep')}",
                 f"town_initial_gate={wall_state(row, 'initialWallState', 'gate')}",
                 f"town_initial_gate_state={wall_state(row, 'initialWallState', 'gateState')}",
+                f"town_battle_start_wall_total={bucket(battle_start_wall_total, [1, 4, 8, 12])}",
+                f"town_battle_start_tower_total={bucket(battle_start_tower_total, [1, 4])}",
+                f"town_battle_start_keep={wall_state(row, 'battleStartWallState', 'keep')}",
+                f"town_battle_start_gate={wall_state(row, 'battleStartWallState', 'gate')}",
+                f"town_battle_start_gate_state={wall_state(row, 'battleStartWallState', 'gateState')}",
             ]
         )
         if min(attacker_start["available"], defender_start["available"]):
@@ -466,6 +473,7 @@ def town_summary(row: dict[str, Any]) -> str:
     fortifications = town.get("fortifications") or {}
     buildings = [town_building_label(building) for building in sorted(town_buildings(row))]
     initial_wall_total = wall_total(row, "initialWallState", ["bottomWall", "belowGate", "overGate", "upperWall"])
+    battle_start_wall_total = wall_total(row, "battleStartWallState", ["bottomWall", "belowGate", "overGate", "upperWall"])
     final_wall_total = wall_total(row, "finalWallState", ["bottomWall", "belowGate", "overGate", "upperWall"])
     return (
         f"faction={town.get('faction')} fort={town.get('fortLevel')} "
@@ -475,9 +483,11 @@ def town_summary(row: dict[str, Any]) -> str:
         f"walls={fortifications.get('wallsHealth')} keep={fortifications.get('citadelHealth')} "
         f"towers={fortifications.get('upperTowerHealth')}/{fortifications.get('lowerTowerHealth')} "
         f"moat={fortifications.get('hasMoat')} "
-        f"initialWallTotal={initial_wall_total} finalWallTotal={final_wall_total} "
+        f"initialWallTotal={initial_wall_total} battleStartWallTotal={battle_start_wall_total} finalWallTotal={final_wall_total} "
         f"initialGate={wall_state(row, 'initialWallState', 'gate')} "
         f"initialGateState={wall_state(row, 'initialWallState', 'gateState')} "
+        f"battleStartGate={wall_state(row, 'battleStartWallState', 'gate')} "
+        f"battleStartGateState={wall_state(row, 'battleStartWallState', 'gateState')} "
         f"buildings={buildings}"
     )
 
