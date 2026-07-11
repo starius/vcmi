@@ -16,6 +16,7 @@
 #include "ServerSpellCastEnvironment.h"
 #include "TurnStartVisitScheduler.h"
 #include "battles/BattleSimulationBatch.h"
+#include "battles/BattleSimulationSetup.h"
 #include "battles/BattleProcessor.h"
 #include "processors/HeroPoolProcessor.h"
 #include "processors/NewTurnProcessor.h"
@@ -4504,6 +4505,29 @@ void CGameHandler::startBattle(const CArmedInstance *army1, const CArmedInstance
 void CGameHandler::startBattle(const CArmedInstance *army1, const CArmedInstance *army2 )
 {
 	battles->startBattle(army1, army2);
+}
+
+BattleSimulation::BattleSimulationResponse CGameHandler::evaluateBattleSimulationForVisit(
+	const CGHeroInstance * attacker,
+	const CGObjectInstance * target,
+	int64_t gameSeed,
+	int32_t sampleCount)
+{
+	return evaluateBattleSimulationForVisit(attacker, target, gameSeed, sampleCount, {});
+}
+
+BattleSimulation::BattleSimulationResponse CGameHandler::evaluateBattleSimulationForVisit(
+	const CGHeroInstance * attacker,
+	const CGObjectInstance * target,
+	int64_t gameSeed,
+	int32_t sampleCount,
+	const BattleSimulation::BattleSimulationDecisionThresholds & thresholds)
+{
+	auto request = BattleSimulation::makeBattleSimulationRequestForVisit(gameInfo(), attacker, target, gameSeed, sampleCount, thresholds);
+	if(!request)
+		return BattleSimulation::makeResponse({}, thresholds, BattleSimulation::BattleSimulationResponseStatus::INVALID_REQUEST);
+
+	return battles->evaluateBattleSimulation(*request);
 }
 
 void CGameHandler::useChargeBasedSpell(const ObjectInstanceID & heroObjectID, const SpellID & spellID)
