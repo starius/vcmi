@@ -1683,6 +1683,9 @@ Regression harness:
 - Done: exact army stack management, bulk army moves, creature upgrades, upgrade candidates, formation/tactics
   changes, and town garrison-hero swaps are exposed through checked Lua facade methods. The native merge-or-swap
   helper and town rename callback are also exposed for raw player-action parity.
+- Done: `actionSpace` now advertises direct formation, tactics, and garrison-swap options with checked
+  `planAction` payloads, so scripts can discover and execute these army-management choices through `ai:runOption`
+  instead of hard-coding object scans or action constructors.
 - Done: Lua can call Nullkiller's bounded creature-preparation helper through `ai:pickBestCreatures`, matching
   the existing artifact-preparation helper and avoiding Lua-side reimplementation of stack logistics.
 - Done: Lua can call Nullkiller's bounded town-army helper through `ai:nullkillerBuildArmy(townId)`, reusing the

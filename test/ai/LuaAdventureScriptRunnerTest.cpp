@@ -1497,6 +1497,78 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteActionSpaceOptions)
 	EXPECT_EQ(*output.intent, "executed action-space options");
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteArmyManagementActionSpaceOptions)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				ai:runOption(input.actionSpace.formationOptions[1])
+				ai:runOption(input.actionSpace.tacticsOptions[1])
+				ai:runOption(input.actionSpace.garrisonSwapOptions[1])
+				return ai:output("end_turn", "executed army-management action-space options")
+			end
+		}
+	)lua";
+
+	AI::AdventureScriptInput input = makeInput();
+	JsonNode formation;
+	formation["hero_id"] = JsonNode(17);
+	formation["formation_id"] = JsonNode(1);
+	formation["planAction"]["type"] = JsonNode("set_formation");
+	formation["planAction"]["type_id"] = JsonNode(50);
+	formation["planAction"]["hero_id"] = JsonNode(17);
+	formation["planAction"]["formation_id"] = JsonNode(1);
+	input.actionSpace["formationOptions"].Vector().push_back(formation);
+
+	JsonNode tactics;
+	tactics["hero_id"] = JsonNode(17);
+	tactics["enabled"] = JsonNode(true);
+	tactics["planAction"]["type"] = JsonNode("set_tactics");
+	tactics["planAction"]["type_id"] = JsonNode(51);
+	tactics["planAction"]["hero_id"] = JsonNode(17);
+	tactics["planAction"]["enabled"] = JsonNode(true);
+	input.actionSpace["tacticsOptions"].Vector().push_back(tactics);
+
+	JsonNode garrisonSwap;
+	garrisonSwap["town_id"] = JsonNode(16);
+	garrisonSwap["visitingHeroId"] = JsonNode(17);
+	garrisonSwap["garrisonHeroId"] = JsonNode(18);
+	garrisonSwap["planAction"]["type"] = JsonNode("swap_garrison_hero");
+	garrisonSwap["planAction"]["type_id"] = JsonNode(53);
+	garrisonSwap["planAction"]["town_id"] = JsonNode(16);
+	input.actionSpace["garrisonSwapOptions"].Vector().push_back(garrisonSwap);
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-army-management-action-space-options", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 3);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "set_formation");
+	EXPECT_EQ(commands[0]["payload"]["type_id"].Integer(), 50);
+	EXPECT_EQ(commands[0]["payload"]["hero_id"].Integer(), 17);
+	EXPECT_EQ(commands[0]["payload"]["formation_id"].Integer(), 1);
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "set_tactics");
+	EXPECT_EQ(commands[1]["payload"]["type_id"].Integer(), 51);
+	EXPECT_EQ(commands[1]["payload"]["hero_id"].Integer(), 17);
+	EXPECT_TRUE(commands[1]["payload"]["enabled"].Bool());
+	EXPECT_EQ(commands[2]["payload"]["type"].String(), "swap_garrison_hero");
+	EXPECT_EQ(commands[2]["payload"]["type_id"].Integer(), 53);
+	EXPECT_EQ(commands[2]["payload"]["town_id"].Integer(), 16);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "executed army-management action-space options");
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanSelectAndRunOneNullkillerCandidate)
 {
 	const std::string source = R"lua(

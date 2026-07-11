@@ -9867,6 +9867,9 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["prepareHeroOptions"].Vector();
 	actionSpace["armyTransferOptions"].Vector();
 	actionSpace["upgradeCreatureOptions"].Vector();
+	actionSpace["formationOptions"].Vector();
+	actionSpace["tacticsOptions"].Vector();
+	actionSpace["garrisonSwapOptions"].Vector();
 	actionSpace["reachableObjects"].Vector();
 	actionSpace["movementOptions"].Vector();
 	actionSpace["shipyardOptions"].Vector();
@@ -10065,6 +10068,62 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 			option["planAction"]["town_id"] = option["town_id"];
 		actionSpace["nullkillerHelperOptions"].Vector().push_back(option);
 	};
+	auto appendFormationOptions = [&](const CGHeroInstance * hero)
+	{
+		if(!hero || hero->tempOwner != playerID || !cc->isVisibleFor(hero, playerID))
+			return;
+
+		for(const EArmyFormation formation : { EArmyFormation::LOOSE, EArmyFormation::TIGHT })
+		{
+			JsonNode option;
+			option["hero_id"] = JsonNode(hero->id.getNum());
+			option["hero"] = jsonHero(hero);
+			option["currentFormationId"] = JsonNode(static_cast<int32_t>(hero->formation));
+			option["currentFormation"] = JsonNode(armyFormationName(hero->formation));
+			option["formation_id"] = JsonNode(static_cast<int32_t>(formation));
+			option["formation"] = JsonNode(armyFormationName(formation));
+			option["alreadyCurrent"] = JsonNode(hero->formation == formation);
+			setScriptActionType(option["planAction"], "set_formation");
+			option["planAction"]["hero_id"] = option["hero_id"];
+			option["planAction"]["formation_id"] = option["formation_id"];
+			actionSpace["formationOptions"].Vector().push_back(option);
+		}
+
+		for(const bool enabled : { false, true })
+		{
+			JsonNode option;
+			option["hero_id"] = JsonNode(hero->id.getNum());
+			option["hero"] = jsonHero(hero);
+			option["currentlyEnabled"] = JsonNode(hero->tacticFormationEnabled);
+			option["enabled"] = JsonNode(enabled);
+			option["alreadyCurrent"] = JsonNode(hero->tacticFormationEnabled == enabled);
+			setScriptActionType(option["planAction"], "set_tactics");
+			option["planAction"]["hero_id"] = option["hero_id"];
+			option["planAction"]["enabled"] = option["enabled"];
+			actionSpace["tacticsOptions"].Vector().push_back(option);
+		}
+	};
+	auto appendGarrisonSwapOption = [&](const CGTownInstance * town)
+	{
+		if(!town || town->tempOwner != playerID || !cc->isVisibleFor(town, playerID))
+			return;
+
+		const CGHeroInstance * visitingHero = town->getVisitingHero();
+		const CGHeroInstance * garrisonHero = town->getGarrisonHero();
+		if(!visitingHero || !garrisonHero || visitingHero->tempOwner != playerID || garrisonHero->tempOwner != playerID)
+			return;
+
+		JsonNode option;
+		option["town_id"] = JsonNode(town->id.getNum());
+		option["town"] = jsonTown(town, resources, true);
+		option["visitingHeroId"] = JsonNode(visitingHero->id.getNum());
+		option["visitingHero"] = jsonHero(visitingHero);
+		option["garrisonHeroId"] = JsonNode(garrisonHero->id.getNum());
+		option["garrisonHero"] = jsonHero(garrisonHero);
+		setScriptActionType(option["planAction"], "swap_garrison_hero");
+		option["planAction"]["town_id"] = option["town_id"];
+		actionSpace["garrisonSwapOptions"].Vector().push_back(option);
+	};
 
 	std::set<int32_t> seenUpgradeArmies;
 	auto appendUpgradeOptions = [&](const CArmedInstance * army)
@@ -10162,6 +10221,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		appendNullkillerBuildArmyHelperOption(town);
 		appendNullkillerRecruitHelperOption(town, nullptr);
 		appendNullkillerMoveCreaturesToHeroHelperOption(town);
+		appendGarrisonSwapOption(town);
 		appendUpgradeOptions(town);
 		appendUpgradeOptions(town->getVisitingHero());
 		appendUpgradeOptions(town->getGarrisonHero());
@@ -10353,6 +10413,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		if(hero && hero->tempOwner == playerID)
 		{
 			ownedHeroes.push_back(hero);
+			appendFormationOptions(hero);
 			appendPrepareHeroOption(hero, nullptr, nullptr, 0, "self_artifacts", true, false);
 			appendNullkillerFormationHelperOption(hero, nullptr, 6, "single_creature_stacks", "nullkiller_add_single_creature_stacks");
 			appendNullkillerFormationHelperOption(hero, nullptr, 7, "whirlpool_formation", "nullkiller_rearrange_for_whirlpool");

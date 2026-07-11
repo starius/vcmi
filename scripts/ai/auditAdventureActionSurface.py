@@ -13,6 +13,7 @@ from typing import Any
 PACK_RE = re.compile(r"struct\s+DLL_LINKAGE\s+(\w+)\s*:\s*public\s+CPackForServer")
 ACTION_RE = re.compile(r"\{\s*\d+\s*,\s*\"([^\"]+)\"\s*\}")
 ACTION_ID_RE = re.compile(r"\{\s*(\d+)\s*,\s*\"([^\"]+)\"\s*\}")
+ACTION_SPACE_VECTOR_RE = re.compile(r"actionSpace\s*\[\s*\"([^\"]+)\"\s*\]\.Vector\s*\(")
 LUA_ACTION_ID_RE = re.compile(r"^\s*([A-Za-z]\w*)\s*=\s*(\d+)\s*,?\s*$")
 LUA_ACTION_NAME_RE = re.compile(r"^\s*([A-Za-z]\w*)\s*=\s*ai\.actionTypeIds\.([A-Za-z]\w*)\s*,?\s*$")
 LUA_ACTION_LITERAL_RE = re.compile(r"\btype\s*=\s*\"([a-z_]+)\"")
@@ -67,6 +68,30 @@ INTENTIONAL_EXCLUSIONS: dict[str, str] = {
     "AdvInterfaceReady": "client handshake, not a player strategy action",
     "SaveLocalState": "script memory replaces player-local UI state",
     "MakeAction": "battle action packet; adventure AI delegates battle control to BattleAI except retreat/surrender callback",
+}
+
+# Direct, player-visible actions whose legality depends on current visible game
+# state should have typed action-space option lists. Raw Lua wrappers remain
+# available for scripts that already know exact ids, but these fields let scripts
+# discover normal UI-equivalent choices without probing hidden state.
+DISCOVERABLE_ACTION_OPTIONS: dict[str, str] = {
+    "build": "buildOptions",
+    "recruit": "recruitOptions",
+    "hire_hero": "hireHeroOptions",
+    "transfer_army": "armyTransferOptions",
+    "upgrade_creature": "upgradeCreatureOptions",
+    "set_formation": "formationOptions",
+    "set_tactics": "tacticsOptions",
+    "swap_garrison_hero": "garrisonSwapOptions",
+    "move_hero": "movementOptions",
+    "visit_object": "reachableObjects",
+    "build_boat": "shipyardOptions",
+    "castle_teleport": "castleTeleportOptions",
+    "dig": "digOptions",
+    "cast_spell": "adventureSpellOptions",
+    "buy_artifact": "buyArtifactOptions",
+    "spell_research": "spellResearchOptions",
+    "visit_town_building": "visitTownBuildingOptions",
 }
 
 
@@ -138,12 +163,18 @@ def lua_facade_action_types(repo_root: Path) -> set[str]:
     return set(LUA_ACTION_LITERAL_RE.findall(text))
 
 
+def action_space_vector_fields(repo_root: Path) -> set[str]:
+    text = (repo_root / "AI/ScriptedAdventure/CScriptedAdventureAI.cpp").read_text(encoding="utf-8")
+    return set(ACTION_SPACE_VECTOR_RE.findall(text))
+
+
 def audit(repo_root: Path) -> dict[str, Any]:
     packs = pack_for_server_types(repo_root)
     actions = registered_action_types(repo_root)
     cpp_action_ids = registered_action_ids(repo_root)
     lua_ids = lua_action_ids(repo_root)
     lua_facades = lua_facade_action_types(repo_root)
+    action_space_fields = action_space_vector_fields(repo_root)
 
     missing_classifications = sorted(
         pack
@@ -177,6 +208,11 @@ def audit(repo_root: Path) -> dict[str, Any]:
     }
     missing_lua_facade_actions = sorted(actions - lua_facades)
     extra_lua_facade_actions = sorted(lua_facades - actions)
+    missing_discoverable_option_fields = {
+        action: field
+        for action, field in sorted(DISCOVERABLE_ACTION_OPTIONS.items())
+        if action in actions and field not in action_space_fields
+    }
 
     return {
         "ok": (
@@ -188,6 +224,7 @@ def audit(repo_root: Path) -> dict[str, Any]:
             and not mismatched_lua_action_ids
             and not missing_lua_facade_actions
             and not extra_lua_facade_actions
+            and not missing_discoverable_option_fields
         ),
         "packCount": len(packs),
         "coveredPackCount": len(PACK_ACTION_COVERAGE),
@@ -195,6 +232,7 @@ def audit(repo_root: Path) -> dict[str, Any]:
         "registeredActionCount": len(actions),
         "luaActionIdCount": len(lua_ids),
         "luaFacadeActionCount": len(lua_facades),
+        "actionSpaceOptionFieldCount": len(action_space_fields),
         "missingPackClassifications": missing_classifications,
         "stalePackClassifications": stale_classifications,
         "missingRegisteredActions": missing_registered_actions,
@@ -203,6 +241,7 @@ def audit(repo_root: Path) -> dict[str, Any]:
         "mismatchedLuaActionIds": mismatched_lua_action_ids,
         "missingLuaFacadeActions": missing_lua_facade_actions,
         "extraLuaFacadeActions": extra_lua_facade_actions,
+        "missingDiscoverableOptionFields": missing_discoverable_option_fields,
         "intentionalExclusions": INTENTIONAL_EXCLUSIONS,
     }
 
