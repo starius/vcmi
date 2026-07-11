@@ -250,8 +250,8 @@ def validate_schema3_rich_fields(path: str, max_examples: int = 20) -> dict[str,
     for row in iter_json_lines(path):
         rows += 1
         row_errors = []
-        if int(row.get("schema", 1)) != 3:
-            row_errors.append(f"schema is {row.get('schema')}, not 3")
+        if int(row.get("schema", 1)) < 3:
+            row_errors.append(f"schema is {row.get('schema')}, expected at least 3")
 
         row_errors.extend(validate_hero_fields(row, "attacker"))
         row_errors.extend(validate_hero_fields(row, "defender"))
