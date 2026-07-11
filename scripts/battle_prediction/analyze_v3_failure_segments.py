@@ -25,6 +25,7 @@ from evaluate_nullkiller_predictor import (
     hero_strength,
     load_shard_manifest,
     load_groups,
+    town_buildings,
     town_pre_merge_army_strength,
     town_pre_merge_largest_share,
     town_pre_merge_not_in_battle_share,
@@ -292,6 +293,7 @@ def segments_for(row: dict[str, Any], actual: float, predicted: float) -> list[s
         initial_wall_total = wall_total(row, "initialWallState", ["bottomWall", "belowGate", "overGate", "upperWall"])
         initial_tower_total = wall_total(row, "initialWallState", ["bottomTower", "upperTower"])
         pre_merge = town_pre_merge_state(row)
+        buildings = town_buildings(row)
         result.extend(
             [
                 f"town_faction={town_feature(row, 'faction')}",
@@ -299,6 +301,7 @@ def segments_for(row: dict[str, Any], actual: float, predicted: float) -> list[s
                 f"town_mage={town_feature(row, 'mageGuildLevel', 0)}",
                 f"town_tavern={int(bool(town_feature(row, 'hasBuiltTavern', False)))}",
                 f"town_grail={int(bool(town_feature(row, 'hasBuiltGrail', False)))}",
+                f"town_building_count={bucket(len(buildings), [5, 10, 15, 20, 30])}",
                 f"town_moat={int(bool(town_fortification(row, 'hasMoat', False)))}",
                 f"town_initial_wall_total={bucket(initial_wall_total, [1, 4, 8, 12])}",
                 f"town_initial_tower_total={bucket(initial_tower_total, [1, 4])}",
@@ -307,6 +310,7 @@ def segments_for(row: dict[str, Any], actual: float, predicted: float) -> list[s
                 f"town_initial_gate_state={wall_state(row, 'initialWallState', 'gateState')}",
             ]
         )
+        result.extend(f"town_building={building_id}" for building_id in sorted(buildings))
         if pre_merge:
             defender_army = max(float(row.get("defenderArmyStrength") or 0.0), 1.0)
             town_army = town_pre_merge_army_strength(row, "townArmy")
@@ -418,6 +422,7 @@ def town_summary(row: dict[str, Any]) -> str:
     if not isinstance(town, dict):
         return "none"
     fortifications = town.get("fortifications") or {}
+    buildings = sorted(town_buildings(row))
     initial_wall_total = wall_total(row, "initialWallState", ["bottomWall", "belowGate", "overGate", "upperWall"])
     final_wall_total = wall_total(row, "finalWallState", ["bottomWall", "belowGate", "overGate", "upperWall"])
     return (
@@ -430,7 +435,8 @@ def town_summary(row: dict[str, Any]) -> str:
         f"moat={fortifications.get('hasMoat')} "
         f"initialWallTotal={initial_wall_total} finalWallTotal={final_wall_total} "
         f"initialGate={wall_state(row, 'initialWallState', 'gate')} "
-        f"initialGateState={wall_state(row, 'initialWallState', 'gateState')}"
+        f"initialGateState={wall_state(row, 'initialWallState', 'gateState')} "
+        f"buildings={buildings}"
     )
 
 

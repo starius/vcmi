@@ -588,6 +588,20 @@ def v3_compatible_feature_vector(row: dict[str, Any]) -> list[float]:
 TOWN_FACTION_BUCKETS = 9
 TOWN_TERRAIN_BUCKETS = 10
 TOWN_BATTLEFIELD_BUCKETS = 24
+TOWN_BUILDING_IDS = list(range(44)) + list(range(150, 156))
+
+
+def town_buildings(row: dict[str, Any]) -> set[int]:
+    buildings = (row.get("defendedTown") or {}).get("buildings") or []
+    if not isinstance(buildings, list):
+        return set()
+    result = set()
+    for building in buildings:
+        try:
+            result.add(int(building))
+        except (TypeError, ValueError):
+            continue
+    return result
 
 
 def town_deployable_feature_vector(row: dict[str, Any]) -> list[float]:
@@ -699,6 +713,7 @@ def town_rich_deployable_feature_vector(row: dict[str, Any]) -> list[float]:
     current_mana_diff = raw_mana(attacker_hero) - raw_mana(defender_hero)
     spell_count_diff = combat_spell_count(attacker_hero) - combat_spell_count(defender_hero)
     log_strength_ratio = math.log(attacker / defender)
+    buildings = town_buildings(row)
 
     values.extend([
         min(attacker_rich["available"], defender_rich["available"]),
@@ -752,6 +767,7 @@ def town_rich_deployable_feature_vector(row: dict[str, Any]) -> list[float]:
         post_merge_town_army_share * tower_total,
         pre_merge_participating_share * log_strength_ratio,
     ])
+    values.extend(1.0 if building_id in buildings else 0.0 for building_id in TOWN_BUILDING_IDS)
     return values
 
 
@@ -935,6 +951,7 @@ TOWN_RICH_DEPLOYABLE_EXTRA_NAMES = [
     "post_merge_town_army_share_x_initial_tower_health",
     "pre_merge_participating_share_x_log_strength_ratio",
 ]
+TOWN_RICH_DEPLOYABLE_EXTRA_NAMES += [f"town_building_{building_id}" for building_id in TOWN_BUILDING_IDS]
 
 TOWN_RICH_DEPLOYABLE_FEATURE_NAMES = TOWN_DEPLOYABLE_FEATURE_NAMES + TOWN_RICH_DEPLOYABLE_EXTRA_NAMES
 
@@ -1873,13 +1890,14 @@ def town_summary(row: dict[str, Any]) -> str:
     if not town:
         return "none"
     fortifications = town.get("fortifications") or {}
+    buildings = sorted(town_buildings(row))
     return (
         f"faction={town.get('faction')} fort={town.get('fortLevel')} "
         f"mage={town.get('mageGuildLevel')} tavern={town.get('hasBuiltTavern')} "
         f"grail={town.get('hasBuiltGrail')} walls={fortifications.get('wallsHealth')} "
         f"keep={fortifications.get('citadelHealth')} towers="
         f"{fortifications.get('upperTowerHealth')}/{fortifications.get('lowerTowerHealth')} "
-        f"moat={fortifications.get('hasMoat')}"
+        f"moat={fortifications.get('hasMoat')} buildings={buildings}"
     )
 
 
