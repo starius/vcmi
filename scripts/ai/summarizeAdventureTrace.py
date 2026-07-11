@@ -32,6 +32,7 @@ IMPORTANT_MISTAKE_TYPES = {
     "hero_threat_without_escape",
     "defense_pressure_without_response",
     "failed_action",
+    "inflight_imperative_command",
     "repeated_failed_target",
 }
 
@@ -108,6 +109,19 @@ def count_actions(counter: Counter[str], actions: Any) -> None:
 def count_action(counter: Counter[str], action: Any) -> None:
 	action_type = as_dict(action).get("type", "<missing>")
 	counter[str(action_type)] += 1
+
+
+def imperative_command_signature(trace_path: Path, player: str, day: int, payload: dict[str, Any]) -> tuple[str, str, int, int, str, str]:
+    command = as_dict(payload.get("command"))
+    action = as_dict(command.get("payload"))
+    return (
+        str(trace_path.parent),
+        player,
+        day,
+        as_int(payload.get("commandIndex")),
+        str(command.get("kind", "<missing>")),
+        str(action.get("type", "<none>")),
+    )
 
 
 def day_from_path(path: Path) -> str | None:
@@ -974,6 +988,9 @@ def summarize(files: list[Path], max_mistakes: int = 100) -> dict[str, Any]:
     progresses_by_key: dict[tuple[str, int, int], dict[str, Any]] = {}
     first_inputs: dict[tuple[str, str], dict[str, Any]] = {}
     latest_inputs: dict[tuple[str, str], dict[str, Any]] = {}
+    imperative_command_starts: Counter[tuple[str, str, int, int, str, str]] = Counter()
+    imperative_command_completions: Counter[tuple[str, str, int, int, str, str]] = Counter()
+    imperative_start_records: dict[tuple[str, str, int, int, str, str], list[dict[str, Any]]] = {}
 
     for path in files:
         try:
@@ -1020,11 +1037,18 @@ def summarize(files: list[Path], max_mistakes: int = 100) -> dict[str, Any]:
         elif label == "imperative-command-start":
             command = as_dict(payload.get("command"))
             progress_counts[f"imperative_{command.get('kind', '<missing>')}_started"] += 1
+            signature = imperative_command_signature(path, player, day, payload)
+            imperative_command_starts[signature] += 1
+            start_record = dict(record)
+            start_record["callIndex"] = as_int(payload.get("commandIndex"))
+            start_record["command"] = command
+            imperative_start_records.setdefault(signature, []).append(start_record)
         elif label == "imperative-command":
             command = as_dict(payload.get("command"))
             response = as_dict(payload.get("response"))
             action = as_dict(command.get("payload"))
             result = as_dict(response.get("result"))
+            imperative_command_completions[imperative_command_signature(path, player, day, payload)] += 1
             if command.get("kind") == "execute":
                 count_action(requested_actions, action)
                 if response.get("ok") is False:
@@ -1100,6 +1124,26 @@ def summarize(files: list[Path], max_mistakes: int = 100) -> dict[str, Any]:
                 opponent_update_types[str(as_dict(event).get("type", "<missing>"))] += 1
 
     mistakes = analyze_mistakes(inputs_by_key, outputs_by_key, progresses_by_key)
+    for signature, started in imperative_command_starts.items():
+        in_flight = started - imperative_command_completions.get(signature, 0)
+        if in_flight <= 0:
+            continue
+
+        records = imperative_start_records.get(signature, [])
+        for record in records[-in_flight:]:
+            command = as_dict(record.get("command"))
+            action = as_dict(command.get("payload"))
+            action_type = str(action.get("type", "<none>"))
+            details = {
+                "name": f"inflight-{command.get('kind', '<missing>')}-{action_type}",
+                "description": "An imperative host command started but no completed command trace was written.",
+                "command": command,
+                "commandIndex": record.get("callIndex"),
+                "actionType": action_type,
+            }
+            mistakes.append(make_mistake("inflight_imperative_command", 4, record, details["description"], details))
+
+    mistakes.sort(key=lambda item: (-as_int(item.get("severity")), str(item.get("type")), str(item.get("trace"))))
     mistake_counts = Counter(str(item.get("type", "<missing>")) for item in mistakes)
     return {
         "files": len(files),

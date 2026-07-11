@@ -2129,6 +2129,11 @@ Regression harness:
   completed `refresh` commands in normal `imperative-command` traces. This closes the trace blind spot seen in seed
   `08`, where the last completed native slice was productive but the following untraced refresh/continuation path
   idled before another executable command appeared.
+- Done: reran seed `08` with the new telemetry. The trace ended with an unmatched started
+  `nullkiller_turn_slice`, not an untraced refresh, and the run was classified as the existing
+  `battle_ai_creation` infrastructure timeout. The trace summarizer now reports these as
+  `inflight_imperative_command` mistakes so future runs can distinguish a script-level idle from an in-flight host
+  helper/battle setup stall.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions

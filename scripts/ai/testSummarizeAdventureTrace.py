@@ -524,6 +524,43 @@ class ImperativeTraceSummaryTest(unittest.TestCase):
         self.assertEqual(summary["progress"]["imperative_refresh"], 1)
         self.assertEqual(summary["output_intents"]["delegate"], 1)
 
+    def test_imperative_command_start_without_completion_is_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            start_path = root / "player-red-day-16-event-1287-imperative-command-start.json"
+            start_path.write_text(
+                json.dumps(
+                    {
+                        "label": "imperative-command-start",
+                        "player": "red",
+                        "script": "ai/candidates/boundedNullkillerControl.lua",
+                        "payload": {
+                            "commandIndex": 4,
+                            "command": {
+                                "kind": "execute",
+                                "payload": {
+                                    "type": "nullkiller_turn_slice",
+                                    "type_id": 106,
+                                    "max_passes": 1,
+                                },
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            summary = summarize([start_path])
+
+        self.assertEqual(summary["labels"]["imperative-command-start"], 1)
+        self.assertEqual(summary["progress"]["imperative_execute_started"], 1)
+        self.assertEqual(summary["mistakes"]["counts"]["inflight_imperative_command"], 1)
+        self.assertEqual(summary["mistakes"]["important"], 1)
+        mistake = summary["mistakes"]["items"][0]
+        self.assertEqual(mistake["details"]["actionType"], "nullkiller_turn_slice")
+        self.assertEqual(mistake["details"]["commandIndex"], 4)
+
     def test_imperative_output_progress_suppresses_false_idle_and_stopped_mistakes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
