@@ -140,7 +140,7 @@ Goals::TGoalVec GatherArmyBehavior::deliverArmyToHero(const Nullkiller * aiNk, c
 		}
 
 		auto danger = path.getTotalDanger();
-		auto isSafe = isSafeToVisit(receiverHero, path.heroArmy, danger, aiNk->settings->getSafeAttackRatio());
+		auto isSafe = isSafeToVisit(receiverHero, path.heroArmy, danger, aiNk->settings->getBattlePlanningSafeAttackRatio());
 
 #if NK2AI_TRACE_LEVEL >= 2
 		logAi->trace(
@@ -320,7 +320,7 @@ Goals::TGoalVec GatherArmyBehavior::upgradeArmy(const Nullkiller * aiNk, const C
 		}
 
 		auto danger = path.getTotalDanger();
-		auto isSafe = isSafeToVisit(path.targetHero, path.heroArmy, danger, aiNk->settings->getSafeAttackRatio());
+		auto isSafe = isSafeToVisit(path.targetHero, path.heroArmy, danger, aiNk->settings->getBattlePlanningSafeAttackRatio());
 
 #if NK2AI_TRACE_LEVEL >= 2
 		logAi->trace(

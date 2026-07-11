@@ -356,6 +356,7 @@ Measured fallback behavior uses repeated MMAI outcomes as a proxy for running a 
 - invoke battle simulation for attack decisions until static confidence is empirically trustworthy. The corrected schema3 run shows static confidence can be confidently wrong, so a narrow uncertainty band is unsafe as the first runtime gate.
 - after runtime simulation exists, a cheap static model can still be used to order candidates, cache keys, or skip strategically irrelevant checks, but not as the only safety gate for taking a battle.
 - the current Nullkiller runtime hook is a final movement gate in `AIGateway::moveHeroToTile`: it can reject a battle that static planning already chose, but it cannot recover false-unsafe opportunities that were filtered out earlier by `isSafeToVisit`. The first end-to-end V3+runtime A/B test should therefore be interpreted primarily as a false-safe reduction test unless we also loosen or replace the planner-side static safety checks.
+- `battlePredictionSimulationPlanningSafeAttackRatio` is the first narrow planner-side relaxation. It defaults to 0, which keeps existing behavior. When V3 runtime simulation samples are enabled and this setting is positive, offensive capture/gather planning uses this ratio instead of the normal `safeAttackRatio`, while defense, escape, and threat-map checks keep the normal ratio. The conservative first A/B value is 1.0 so more attack candidates reach the final runtime simulator gate without broadly weakening defensive reasoning.
 - use deterministic seeds derived from game seed, hero id, target object id, turn, and fallback sample index
 - evaluate at least 5 samples for win/loss prediction; use 10+ samples or a stricter all-wins style rule for safety-sensitive attacks
 - treat win/loss probability and safety as separate outputs:
@@ -431,7 +432,10 @@ python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
   --require-runtime-simulation candidate \
   --config-replace config/ai/nk2ai/nk2ai-settings.json \
     '"battlePredictionSimulationSamples" : 0' \
-    '"battlePredictionSimulationSamples" : 3'
+    '"battlePredictionSimulationSamples" : 3' \
+  --config-replace config/ai/nk2ai/nk2ai-settings.json \
+    '"battlePredictionSimulationPlanningSafeAttackRatio" : 0' \
+    '"battlePredictionSimulationPlanningSafeAttackRatio" : 1.0'
 ```
 
 Batch collection caveat: when running `vcmibattlesim` with MMAI in parallel, each shard needs an isolated XDG config/cache profile. A shared profile can be rewritten by clients and silently disable the MMAI mod for later shards. Use `--xdg-config-template` and, if needed, `--xdg-profile-root` so each client starts from the same active-mod configuration.

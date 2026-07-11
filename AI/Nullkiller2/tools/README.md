@@ -128,7 +128,10 @@ python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
   --require-runtime-simulation candidate \
   --config-replace config/ai/nk2ai/nk2ai-settings.json \
     '"battlePredictionSimulationSamples" : 0' \
-    '"battlePredictionSimulationSamples" : 3'
+    '"battlePredictionSimulationSamples" : 3' \
+  --config-replace config/ai/nk2ai/nk2ai-settings.json \
+    '"battlePredictionSimulationPlanningSafeAttackRatio" : 0' \
+    '"battlePredictionSimulationPlanningSafeAttackRatio" : 1.0'
 ```
 
 The replacement is restored before exit. Summary files include
@@ -136,6 +139,9 @@ The replacement is restored before exit. Summary files include
 `--require-runtime-simulation candidate` guard makes the run fail if valid
 candidate games do not have simulation requests or if fewer than 90% of those
 requests complete.
+The planning ratio replacement only affects offensive planning when V3 runtime
+simulation is enabled; it lets more candidate attacks reach the final simulator
+gate without changing defensive threat checks.
 
 With `--adjudicate-testdays`, games that reach the completed-day limit without
 a standard winner are scored deterministically from the run-local

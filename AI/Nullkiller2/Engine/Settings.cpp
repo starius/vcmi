@@ -88,6 +88,7 @@ namespace NK2AI
 		safeAttackRatio(1.1),
 		battlePredictionSafeProbability(0.65f),
 		battlePredictionSimulationSamples(0),
+		battlePredictionSimulationPlanningSafeAttackRatio(0.0f),
 		maxArmyLossTarget(0.35f),
 		battlePredictionModel(BattlePredictionModel::LEGACY),
 		allowObjectGraph(true),
@@ -118,6 +119,8 @@ namespace NK2AI
 			battlePredictionSafeProbability = std::clamp(static_cast<float>(node["battlePredictionSafeProbability"].Float()), 0.01f, 0.99f);
 		if(!node["battlePredictionSimulationSamples"].isNull())
 			battlePredictionSimulationSamples = std::clamp(static_cast<int>(node["battlePredictionSimulationSamples"].Integer()), 0, 100);
+		if(!node["battlePredictionSimulationPlanningSafeAttackRatio"].isNull())
+			battlePredictionSimulationPlanningSafeAttackRatio = std::clamp(static_cast<float>(node["battlePredictionSimulationPlanningSafeAttackRatio"].Float()), 0.0f, 10.0f);
 		allowObjectGraph = node["allowObjectGraph"].Bool();
 		updateHitmapOnTileReveal = node["updateHitmapOnTileReveal"].Bool();
 		openMap = node["openMap"].Bool();
@@ -131,5 +134,15 @@ namespace NK2AI
 			return getRatioModelSafeAttackRatio(battlePredictionSafeProbability);
 
 		return safeAttackRatio;
+	}
+
+	float Settings::getBattlePlanningSafeAttackRatio() const
+	{
+		if(battlePredictionModel == BattlePredictionModel::V3
+			&& battlePredictionSimulationSamples > 0
+			&& battlePredictionSimulationPlanningSafeAttackRatio > 0.0f)
+			return battlePredictionSimulationPlanningSafeAttackRatio;
+
+		return getSafeAttackRatio();
 	}
 }

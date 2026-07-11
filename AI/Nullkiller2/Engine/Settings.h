@@ -39,6 +39,7 @@ namespace NK2AI
 		float safeAttackRatio;
 		float battlePredictionSafeProbability;
 		int battlePredictionSimulationSamples;
+		float battlePredictionSimulationPlanningSafeAttackRatio;
 		float maxArmyLossTarget;
 		BattlePredictionModel battlePredictionModel;
 		bool allowObjectGraph;
@@ -56,6 +57,7 @@ namespace NK2AI
 		float getRetreatThresholdRelative() const { return retreatThresholdRelative; }
 		float getRetreatThresholdAbsolute() const { return retreatThresholdAbsolute; }
 		float getSafeAttackRatio() const;
+		float getBattlePlanningSafeAttackRatio() const;
 		float getBattlePredictionSafeProbability() const { return battlePredictionSafeProbability; }
 		int getBattlePredictionSimulationSamples() const { return battlePredictionSimulationSamples; }
 		float getMaxArmyLossTarget() const { return maxArmyLossTarget; }
