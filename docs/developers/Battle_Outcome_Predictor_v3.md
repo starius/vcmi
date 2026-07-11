@@ -212,8 +212,9 @@ Recent MMAI-labeled datasets show that simple global ratio/logistic tuning is no
 As of 2026-07-11, the best empirical result is fallback-only deterministic repeated simulation with MMAI labels and an all-wins safety rule. These are still offline proxy results, not a deployed Nullkiller2 runtime result.
 
 - live 20k schema5 town-hero run, current shard-group snapshot (`schema5-mmai-town-hero-20k-20260711`):
-  - at 276 complete shard groups / 14040 parsed schema5 town rows, fallback-only all-wins simulation reached 96.72% held-out win/loss accuracy at 8, 15, and 20 samples
-  - 20 samples is the current clean safety point: 98.36% safety accuracy, Brier 0.0029, 0 false-safe groups, and 1 conservative false-unsafe group on the held-out split
+  - at 281 complete shard groups / 14209 parsed schema5 town rows, fallback-only all-wins simulation reached 96.83% held-out win/loss accuracy at 20 samples
+  - 20 samples is the current clean safety point: 98.41% safety accuracy, Brier 0.0028, 0 false-safe groups, and 1 conservative false-unsafe group on the held-out split
+  - the remaining 20-sample conservative miss is an actual 96.67% attacker-win group where the first 20 simulation samples went 19-1; all-wins rejects it because one early simulated loss is enough to fail the safety gate
   - 8 and 15 samples still clear 95% held-out accuracy, but each currently has 1 false-safe group, so they are weaker safety gates for deployment
   - at 229 complete shard groups / 11450 complete-shard rows, annotated static-miss inspection confirmed that 8/15/20 all-wins simulation would block the inspected close-even and worst cxx-v3 false-safe groups, while rescuing the top static false-unsafe groups
 - corrected 5k mixed run, current deployed non-town scope (`schema3-richstats-mmai-real-mixed-5k-20260711`, `simulation-fallback-cxx-v3-deployed-static-allwins.txt`):
@@ -536,6 +537,7 @@ Current live remote schema5 run:
 - refreshed fallback proxy at 239 live shard groups / 12049 parsed rows: static cxx-v3 on the held-out split was 38.30% accurate with Brier 0.4268, 21 false-safe groups, and 5 false-unsafe groups. Fallback-only all-wins simulation remained the best result so far: 8 samples reached 95.74% held-out accuracy, Brier 0.0148, 0 false-safe groups, and 1 conservative false-unsafe group; 15 and 20 samples reached 97.87% held-out accuracy with Brier 0.0052 and 0.0024, also with 0 false-safe and 1 false-unsafe group. Static/simulation hybrids that leave confident static predictions unsimulated remained poor, so the current evidence still favors runtime simulation as the town/siege safety gate.
 - refreshed fallback proxy at 261 live shard groups / 13251 parsed rows: static cxx-v3 on the held-out split was 38.89% accurate with Brier 0.4168, 24 false-safe groups, and 5 false-unsafe groups. Fallback-only all-wins simulation reached 96.30% held-out accuracy at 8 samples with Brier 0.0136, but now had 1 false-safe and 1 false-unsafe group. Fifteen samples reached 98.15% accuracy with Brier 0.0049, also with 1 false-safe and 1 false-unsafe group. The cleanest current safety point is 20 samples: 98.15% held-out accuracy, 98.15% safety accuracy, Brier 0.0027, 0 false-safe groups, and 1 conservative false-unsafe group. This keeps simulation-backed all-wins prediction ahead of any static town/siege heuristic tested so far.
 - refreshed fallback proxy at 276 complete shard groups / 14040 parsed schema5 town rows: static cxx-v3 on the held-out split was 40.98% accurate with Brier 0.4037, 24 false-safe groups, and 7 false-unsafe groups. Fallback-only all-wins simulation stayed above target: 8 samples reached 96.72% held-out accuracy, Brier 0.0124, 1 false-safe group, and 1 false-unsafe group; 15 samples also reached 96.72%, Brier 0.0045, 1 false-safe group, and 1 false-unsafe group. The cleanest current safety point remains 20 samples: 96.72% held-out accuracy, 98.36% safety accuracy, Brier 0.0029, 0 false-safe groups, and 1 conservative false-unsafe group. This keeps simulation-backed all-wins prediction ahead of any static town/siege heuristic tested so far, but the larger snapshot also shows that 8/15 samples are not strict enough for a no-false-safe deployment gate.
+- refreshed fallback proxy at 281 complete shard groups / 14209 parsed schema5 town rows: static cxx-v3 on the held-out split was 41.27% accurate with Brier 0.4077, 25 false-safe groups, and 7 false-unsafe groups. Fallback-only all-wins simulation with 20 samples reached 96.83% held-out accuracy, 98.41% safety accuracy, Brier 0.0028, 0 false-safe groups, and 1 conservative false-unsafe group. The conservative miss was a static false-unsafe group with actual 96.67% attacker wins; its first 20 samples were 19 attacker wins and 1 loss, so all-wins intentionally rejected it.
 
 Then validate and inspect the schema5 model failures:
 
@@ -589,13 +591,14 @@ python3 scripts/battle_prediction/evaluate_simulation_fallback.py \
   --static-model cxx-v3 \
   --safe-policy all-wins \
   --json-output /root/vcmi-nk-ratio-results/schema5-mmai-town-hero-20k-20260711/fallback-proof.json \
-  --require-fallback-sample-count 15 \
+  --require-fallback-sample-count 20 \
   --min-fallback-accuracy50 0.95 \
   --min-fallback-safety-accuracy 0.95 \
   --max-fallback-false-safe-groups 0 \
   --max-fallback-false-unsafe-groups 1 \
   --print-worst 40 \
-  --print-false-safe 40
+  --print-false-safe 40 \
+  --print-false-unsafe 40
 
 python3 scripts/battle_prediction/analyze_v3_failure_segments.py \
   /root/vcmi-nk-ratio-results/schema5-mmai-town-hero-20k-20260711 \

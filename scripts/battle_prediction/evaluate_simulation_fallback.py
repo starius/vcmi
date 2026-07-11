@@ -123,6 +123,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--print-worst", type=int, default=8)
     parser.add_argument("--print-false-safe", type=int, default=8)
+    parser.add_argument("--print-false-unsafe", type=int, default=8)
     parser.add_argument("--json-output", default=None, help="Optional path for a machine-readable metrics summary")
     parser.add_argument(
         "--require-fallback-sample-count",
@@ -412,12 +413,13 @@ def evaluate_policy(
     safe_wilson_z: float,
     safe_wilson_threshold: float,
     band: tuple[float, float] | None,
-) -> tuple[Metrics, list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[Metrics, list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     name = "fallback-only" if band is None else f"hybrid[{band[0]:.2f},{band[1]:.2f}]"
     name += f":safe={safe_policy}"
     metrics = Metrics(name=name)
     worst = []
     false_safe_cases = []
+    false_unsafe_cases = []
 
     for group in groups:
         if group.count <= sample_count:
@@ -476,10 +478,13 @@ def evaluate_policy(
         worst.append(item)
         if predicted_safe and not actual_safe:
             false_safe_cases.append(item)
+        if not predicted_safe and actual_safe:
+            false_unsafe_cases.append(item)
 
     worst.sort(key=lambda item: item["error"], reverse=True)
     false_safe_cases.sort(key=lambda item: (item["actual"], -item["sample"], -item["count"]))
-    return metrics, worst, false_safe_cases
+    false_unsafe_cases.sort(key=lambda item: (-item["actual"], -item["sample"], -item["static"], -item["count"]))
+    return metrics, worst, false_safe_cases, false_unsafe_cases
 
 
 def summarize_army(row: dict[str, Any], side: str) -> str:
@@ -552,10 +557,12 @@ def main() -> int:
 
     final_worst: list[dict[str, Any]] = []
     final_false_safe: list[dict[str, Any]] = []
+    final_false_unsafe: list[dict[str, Any]] = []
     final_title = ""
     final_false_safe_title = ""
+    final_false_unsafe_title = ""
     for sample_count in sample_counts:
-        fallback_metrics, fallback_worst, fallback_false_safe = evaluate_policy(
+        fallback_metrics, fallback_worst, fallback_false_safe, fallback_false_unsafe = evaluate_policy(
             test_replays,
             sample_count,
             static_by_key,
@@ -573,9 +580,11 @@ def main() -> int:
             final_title = f"worst fallback-only sample_count={sample_count}"
             final_false_safe = fallback_false_safe
             final_false_safe_title = f"false-safe fallback-only sample_count={sample_count}"
+            final_false_unsafe = fallback_false_unsafe
+            final_false_unsafe_title = f"false-unsafe fallback-only sample_count={sample_count}"
 
         for band in bands:
-            hybrid_metrics, hybrid_worst, hybrid_false_safe = evaluate_policy(
+            hybrid_metrics, hybrid_worst, hybrid_false_safe, hybrid_false_unsafe = evaluate_policy(
                 test_replays,
                 sample_count,
                 static_by_key,
@@ -593,9 +602,12 @@ def main() -> int:
                 final_title = f"worst hybrid band={band} sample_count={sample_count}"
                 final_false_safe = hybrid_false_safe
                 final_false_safe_title = f"false-safe hybrid band={band} sample_count={sample_count}"
+                final_false_unsafe = hybrid_false_unsafe
+                final_false_unsafe_title = f"false-unsafe hybrid band={band} sample_count={sample_count}"
 
     print_worst(final_worst, args.print_worst, final_title)
     print_worst(final_false_safe, args.print_false_safe, final_false_safe_title)
+    print_worst(final_false_unsafe, args.print_false_unsafe, final_false_unsafe_title)
     requirements = evaluate_fallback_requirements(args, metric_summaries)
     if requirements["required"]:
         print(f"fallback requirements: {'ok' if requirements['ok'] else 'failed'}")
