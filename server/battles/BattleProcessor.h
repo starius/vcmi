@@ -12,6 +12,7 @@
 #include "../../lib/constants/EntityIdentifiers.h"
 #include "../../lib/constants/Enumerations.h"
 #include "../../lib/battle/BattleSide.h"
+#include "BattleSimulationRequest.h"
 #include "BattleStartInfo.h"
 
 class CGHeroInstance;
@@ -30,6 +31,10 @@ class CBattleQuery;
 class BattleActionProcessor;
 class BattleFlowProcessor;
 class BattleResultProcessor;
+namespace BattleSimulation
+{
+	class BattleSimulationEvaluator;
+}
 
 /// Main class for battle handling. Contains all public interface for battles that is accessible from outside, e.g. for CGameHandler
 class BattleProcessor : boost::noncopyable
@@ -42,6 +47,7 @@ class BattleProcessor : boost::noncopyable
 	std::unique_ptr<BattleActionProcessor> actionsProcessor;
 	std::unique_ptr<BattleFlowProcessor> flowProcessor;
 	std::unique_ptr<BattleResultProcessor> resultProcessor;
+	std::unique_ptr<BattleSimulation::BattleSimulationEvaluator> simulationEvaluator;
 
 	void updateGateState(const CBattleInfoCallback & battle);
 	void engageIntoBattle(PlayerColor player);
@@ -69,6 +75,8 @@ public:
 	void restartBattle(const BattleID & battleID, const BattleStartInfo & setup);
 	/// Restart an ongoing battle using its current setup
 	void restartBattle(const IBattleInfo & battle);
+	/// Evaluate a battle setup through the runtime simulation service boundary
+	BattleSimulation::BattleSimulationResponse evaluateBattleSimulation(const BattleSimulation::BattleSimulationRequest & request) const;
 
 	/// Processing of incoming battle action netpack
 	bool makePlayerBattleAction(const BattleID & battleID, PlayerColor player, const BattleAction & ba);

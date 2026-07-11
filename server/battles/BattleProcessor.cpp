@@ -14,6 +14,7 @@
 #include "BattleFlowProcessor.h"
 #include "BattleResultProcessor.h"
 #include "BattleSimulationBatch.h"
+#include "BattleSimulationEvaluator.h"
 
 #include "../CGameHandler.h"
 #include "../queries/QueriesProcessor.h"
@@ -41,6 +42,7 @@ BattleProcessor::BattleProcessor(CGameHandler * gameHandler)
 	, actionsProcessor(std::make_unique<BattleActionProcessor>(this, gameHandler))
 	, flowProcessor(std::make_unique<BattleFlowProcessor>(this, gameHandler))
 	, resultProcessor(std::make_unique<BattleResultProcessor>(gameHandler))
+	, simulationEvaluator(std::make_unique<BattleSimulation::BattleSimulationEvaluator>())
 {
 }
 
@@ -131,6 +133,11 @@ void BattleProcessor::restartBattle(const BattleID & battleID, const BattleStart
 void BattleProcessor::restartBattle(const IBattleInfo & battle)
 {
 	restartBattle(battle.getBattleID(), BattleStartInfo::fromBattle(battle));
+}
+
+BattleSimulation::BattleSimulationResponse BattleProcessor::evaluateBattleSimulation(const BattleSimulation::BattleSimulationRequest & request) const
+{
+	return simulationEvaluator->evaluate(request);
 }
 
 void BattleProcessor::startBattle(const CArmedInstance *army1, const CArmedInstance *army2, int3 tile,
