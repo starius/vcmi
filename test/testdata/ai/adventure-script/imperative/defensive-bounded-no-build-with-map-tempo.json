@@ -58,11 +58,50 @@
 			]
 		}
 	},
+	"refreshInput": {
+		"state": {
+			"turn": {
+				"active": true,
+				"queries": []
+			},
+			"heroes": [
+				{
+					"id": 5
+				}
+			]
+		},
+		"memory": {
+			"version": 1
+		},
+		"limits": {
+			"maxActions": 16
+		},
+		"analysis": {
+			"defenseAlerts": []
+		},
+		"actionSpace": {
+			"movementOptions": [
+				{
+					"hero_id": 5,
+					"planAction": {
+						"type": "move_hero",
+						"hero_id": 5,
+						"x": 10,
+						"y": 10,
+						"z": 0
+					}
+				}
+			]
+		}
+	},
 	"expect": {
 		"status": "end_turn",
 		"commandsExact": [
 			{
 				"type": "nullkiller_turn_slice"
+			},
+			{
+				"kind": "refresh"
 			},
 			{
 				"type": "end_turn"

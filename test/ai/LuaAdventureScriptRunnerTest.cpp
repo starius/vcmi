@@ -2678,7 +2678,7 @@ TEST(LuaAdventureScriptRunnerTest, DefensiveBoundedControlBuildsOnlyWhenRecruitm
 	EXPECT_EQ(output.memory["totalEmergencyDefenseActions"].Integer(), 1);
 }
 
-TEST(LuaAdventureScriptRunnerTest, DefensiveBoundedControlDoesNotBuildWhenMapTempoExists)
+TEST(LuaAdventureScriptRunnerTest, DefensiveBoundedControlDoesNotBuildBeforeNativeWorkWhenMapTempoExists)
 {
 	const std::string source = readAdventureScript("scripts/ai/candidates/defensiveBoundedNullkillerControl.lua");
 	scripting::LuaAdventureScriptRunner runner("test:defensive-bounded-control-map-tempo", source);
@@ -2715,28 +2715,229 @@ TEST(LuaAdventureScriptRunnerTest, DefensiveBoundedControlDoesNotBuildWhenMapTem
 	input.actionSpace["buildOptions"].Vector().push_back(buildOption);
 
 	std::vector<JsonNode> commands;
+	int slices = 0;
 	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
 	{
 		commands.push_back(command);
 
 		JsonNode response;
 		response["ok"] = JsonNode(true);
+		if(command["kind"].String() == "refresh")
+		{
+			AI::AdventureScriptInput refreshed = input;
+			refreshed.analysis["defenseAlerts"].Vector().clear();
+			refreshed.actionSpace["buildOptions"].Vector().clear();
+			response["input"] = refreshed.toJson();
+			return response;
+		}
+
 		response["result"]["ok"] = JsonNode(true);
 		response["result"]["type"] = command["payload"]["type"];
 		if(command["payload"]["type"].String() == "nullkiller_turn_slice")
 		{
-			response["result"]["didWork"] = JsonNode(false);
+			++slices;
+			response["result"]["didWork"] = JsonNode(slices == 1);
+			response["result"]["priorityTasksExecuted"] = JsonNode(slices == 1 ? 1 : 0);
 			response["result"]["shouldStopTurn"] = JsonNode(false);
 			response["result"]["exhaustedCandidates"] = JsonNode(false);
 		}
 		return response;
 	});
 
-	ASSERT_EQ(commands.size(), 2);
+	ASSERT_GE(commands.size(), 2);
 	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_turn_slice");
-	EXPECT_EQ(commands[1]["payload"]["type"].String(), "end_turn");
+	for(const JsonNode & command : commands)
+	{
+		if(hasField(command, "payload"))
+		{
+			EXPECT_NE(command["payload"]["type"].String(), "build");
+		}
+	}
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	EXPECT_EQ(output.memory["totalEmergencyDefenseActions"].Integer(), 0);
+}
+
+TEST(LuaAdventureScriptRunnerTest, DefensiveBoundedControlBuildsLastChanceAfterNativeStop)
+{
+	const std::string source = readAdventureScript("scripts/ai/candidates/defensiveBoundedNullkillerControl.lua");
+	scripting::LuaAdventureScriptRunner runner("test:defensive-bounded-control-last-chance-build", source);
+
+	AI::AdventureScriptInput input = makeInput();
+	input.state["turn"]["active"] = JsonNode(true);
+	input.state["turn"]["queries"].Vector();
+	input.limits["maxActions"] = JsonNode(16);
+
+	JsonNode hero;
+	hero["id"] = JsonNode(5);
+	input.state["heroes"].Vector().push_back(hero);
+
+	JsonNode moveOption;
+	moveOption["hero_id"] = JsonNode(5);
+	moveOption["planAction"]["type"] = JsonNode("move_hero");
+	moveOption["planAction"]["hero_id"] = JsonNode(5);
+	moveOption["planAction"]["x"] = JsonNode(10);
+	moveOption["planAction"]["y"] = JsonNode(10);
+	moveOption["planAction"]["z"] = JsonNode(0);
+	input.actionSpace["movementOptions"].Vector().push_back(moveOption);
+
+	JsonNode alert;
+	alert["town_id"] = JsonNode(42);
+	alert["levelId"] = JsonNode(3);
+	input.analysis["defenseAlerts"].Vector().push_back(alert);
+
+	JsonNode buildOption;
+	buildOption["town_id"] = JsonNode(42);
+	buildOption["buildingKindId"] = JsonNode(4);
+	buildOption["planAction"]["type"] = JsonNode("build");
+	buildOption["planAction"]["town_id"] = JsonNode(42);
+	buildOption["planAction"]["building_id"] = JsonNode(7);
+	input.actionSpace["buildOptions"].Vector().push_back(buildOption);
+
+	std::vector<JsonNode> commands;
+	bool buildRan = false;
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		if(command["kind"].String() == "refresh")
+		{
+			if(buildRan)
+			{
+				AI::AdventureScriptInput refreshed = input;
+				refreshed.analysis["defenseAlerts"].Vector().clear();
+				refreshed.actionSpace["buildOptions"].Vector().clear();
+				response["input"] = refreshed.toJson();
+			}
+			else
+			{
+				response["input"] = input.toJson();
+			}
+			return response;
+		}
+
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		if(command["payload"]["type"].String() == "nullkiller_turn_slice")
+		{
+			response["result"]["didWork"] = JsonNode(false);
+			response["result"]["shouldStopTurn"] = JsonNode(true);
+			response["result"]["exhaustedCandidates"] = JsonNode(false);
+		}
+		else if(command["payload"]["type"].String() == "build")
+		{
+			buildRan = true;
+		}
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 6);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[1]["kind"].String(), "refresh");
+	EXPECT_EQ(commands[2]["payload"]["type"].String(), "build");
+	EXPECT_EQ(commands[2]["payload"]["town_id"].Integer(), 42);
+	EXPECT_EQ(commands[2]["payload"]["building_id"].Integer(), 7);
+	EXPECT_EQ(commands[3]["kind"].String(), "refresh");
+	EXPECT_EQ(commands[4]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[5]["payload"]["type"].String(), "end_turn");
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_EQ(output.memory["totalEmergencyDefenseActions"].Integer(), 1);
+}
+
+TEST(LuaAdventureScriptRunnerTest, DefensiveBoundedControlMovesThreatenedHeroLastChance)
+{
+	const std::string source = readAdventureScript("scripts/ai/candidates/defensiveBoundedNullkillerControl.lua");
+	scripting::LuaAdventureScriptRunner runner("test:defensive-bounded-control-last-chance-hero", source);
+
+	AI::AdventureScriptInput input = makeInput();
+	input.state["turn"]["active"] = JsonNode(true);
+	input.state["turn"]["queries"].Vector();
+	input.limits["maxActions"] = JsonNode(16);
+
+	JsonNode hero;
+	hero["id"] = JsonNode(5);
+	input.state["heroes"].Vector().push_back(hero);
+
+	JsonNode alert;
+	alert["hero_id"] = JsonNode(5);
+	alert["levelId"] = JsonNode(3);
+	alert["strengthRatio"] = JsonNode(10.0);
+	input.analysis["heroThreatAlerts"].Vector().push_back(alert);
+
+	JsonNode riskyMove;
+	riskyMove["hero_id"] = JsonNode(5);
+	riskyMove["safe"] = JsonNode(false);
+	riskyMove["value"] = JsonNode(2000.0);
+	riskyMove["planAction"]["type"] = JsonNode("move_hero");
+	riskyMove["planAction"]["hero_id"] = JsonNode(5);
+	riskyMove["planAction"]["x"] = JsonNode(9);
+	riskyMove["planAction"]["y"] = JsonNode(9);
+	riskyMove["planAction"]["z"] = JsonNode(0);
+	input.actionSpace["movementOptions"].Vector().push_back(riskyMove);
+
+	JsonNode safeMove;
+	safeMove["hero_id"] = JsonNode(5);
+	safeMove["safe"] = JsonNode(true);
+	safeMove["value"] = JsonNode(1000.0);
+	safeMove["planAction"]["type"] = JsonNode("move_hero");
+	safeMove["planAction"]["hero_id"] = JsonNode(5);
+	safeMove["planAction"]["x"] = JsonNode(10);
+	safeMove["planAction"]["y"] = JsonNode(10);
+	safeMove["planAction"]["z"] = JsonNode(0);
+	input.actionSpace["movementOptions"].Vector().push_back(safeMove);
+
+	std::vector<JsonNode> commands;
+	bool moveRan = false;
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		if(command["kind"].String() == "refresh")
+		{
+			if(moveRan)
+			{
+				AI::AdventureScriptInput refreshed = input;
+				refreshed.analysis["heroThreatAlerts"].Vector().clear();
+				refreshed.actionSpace["movementOptions"].Vector().clear();
+				response["input"] = refreshed.toJson();
+			}
+			else
+			{
+				response["input"] = input.toJson();
+			}
+			return response;
+		}
+
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		if(command["payload"]["type"].String() == "nullkiller_turn_slice")
+		{
+			response["result"]["didWork"] = JsonNode(false);
+			response["result"]["shouldStopTurn"] = JsonNode(true);
+			response["result"]["exhaustedCandidates"] = JsonNode(false);
+		}
+		else if(command["payload"]["type"].String() == "move_hero")
+		{
+			moveRan = true;
+		}
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 6);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[1]["kind"].String(), "refresh");
+	EXPECT_EQ(commands[2]["payload"]["type"].String(), "move_hero");
+	EXPECT_EQ(commands[2]["payload"]["hero_id"].Integer(), 5);
+	EXPECT_EQ(commands[2]["payload"]["x"].Integer(), 10);
+	EXPECT_EQ(commands[2]["payload"]["y"].Integer(), 10);
+	EXPECT_EQ(commands[3]["kind"].String(), "refresh");
+	EXPECT_EQ(commands[4]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[5]["payload"]["type"].String(), "end_turn");
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_EQ(output.memory["totalEmergencyHeroEscapes"].Integer(), 1);
 }
 
 TEST(LuaAdventureScriptRunnerTest, NativeTownDefenseBoundedControlCallsDefendTownBeforeSlice)
@@ -3566,11 +3767,20 @@ TEST(LuaAdventureScriptRunnerTest, JsonPolicyFixtures)
 		if(hasField(fixture, "mode") && fixture["mode"].String() == "imperative")
 		{
 			std::vector<JsonNode> commands;
-			const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+			AI::AdventureScriptOutput output;
+			try
 			{
-				commands.push_back(command);
-				return fixtureHostResponse(fixture, input, command);
-			});
+				output = runner.runDayImperative(input, [&](const JsonNode & command)
+				{
+					commands.push_back(command);
+					return fixtureHostResponse(fixture, input, command);
+				});
+			}
+			catch(const std::exception & exception)
+			{
+				ADD_FAILURE() << path.string() << ": " << exception.what();
+				throw;
+			}
 
 			verifyFixtureExpectation(path, fixture, output);
 			verifyFixtureCommandExpectation(path, fixture, commands);
