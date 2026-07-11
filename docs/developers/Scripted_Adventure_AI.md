@@ -2265,6 +2265,9 @@ Regression harness:
 - Done: the shared query-policy helper now supports rich dialog/window `planAction` choices. Scripts can select
   university/market skill purchases, dwelling recruitment, and tavern hero hire options by stable ids and advisory
   scores, then execute the already-published checked action without writing bespoke per-window loops.
+- Done: `defaultAdventure.lua` now uses the shared query-policy helper for pending dialogs instead of carrying its
+  own partial answer selector. This keeps the readable policy aligned with the same rich dialog API used by tests
+  and future candidate scripts.
 
 ## Open Design Questions
 

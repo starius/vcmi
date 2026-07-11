@@ -177,15 +177,6 @@ local TransferKind = {
     reinforceTown = 2
 }
 
-local QueryType = {
-    heroLevelUp = 1,
-    commanderLevelUp = 2,
-    blockingDialog = 3,
-    teleportDialog = 4,
-    mapObjectSelect = 5,
-    artifactAssemblyPrompt = 12
-}
-
 local ThreatLevel = {
     watch = 1,
     high = 2,
@@ -229,9 +220,6 @@ local function adoptHostConstants(ai)
     end
     if type(ai.armyTransferKinds) == "table" then
         TransferKind = ai.armyTransferKinds
-    end
-    if type(ai.queryTypes) == "table" then
-        QueryType = ai.queryTypes
     end
     if type(ai.threatLevels) == "table" then
         ThreatLevel = ai.threatLevels
@@ -1113,65 +1101,15 @@ local function firstPendingQuery(input)
     return queries[1]
 end
 
-local function queryHasType(query, typeId, legacyType)
-    if not query then
-        return false
-    end
-    if query.typeId ~= nil then
-        return query.typeId == typeId
-    end
-    return query.type == legacyType
-end
-
-local function defaultQueryAnswer(query)
-    if not query then
-        return 0
-    end
-
-    if queryHasType(query, QueryType.heroLevelUp, "hero_level_up")
-        or queryHasType(query, QueryType.commanderLevelUp, "commander_level_up")
-    then
-        local options = query.skill_options or {}
-        return (options[1] or {}).answer or 0
-    end
-
-    if queryHasType(query, QueryType.blockingDialog, "blocking_dialog") then
-        local components = query.components or {}
-        local experienceAnswer
-        local goldAnswer
-        for _, component in ipairs(components) do
-            if component.typeId == ComponentType.experience then
-                experienceAnswer = component.answer
-            elseif component.typeId == ComponentType.resource and component.subtypeId == ResourceID.gold then
-                goldAnswer = component.answer
-            end
-        end
-        if experienceAnswer and goldAnswer then
-            return experienceAnswer
-        end
-        if query.selection and #components > 0 then
-            return components[#components].answer or #components
-        end
-        if query.cancel then
-            return 1
-        end
-        return 0
-    end
-
-    if queryHasType(query, QueryType.teleportDialog, "teleport_dialog") then
-        local exits = query.exits or {}
-        if query.impassable or #exits == 0 then
-            return -1
-        end
-        return exits[1].answer or 0
-    end
-
-    if queryHasType(query, QueryType.mapObjectSelect, "map_object_select") then
-        local objects = query.objects or {}
-        return (objects[1] or {}).answer or 0
-    end
-
-    return 0
+local function defaultQueryPolicy()
+    return {
+        component_preferences = {
+            { type_id = ComponentType.experience },
+            { type_id = ComponentType.resource, subtype_id = ResourceID.gold }
+        },
+        use_plan_actions = true,
+        default_answer = 0
+    }
 end
 
 local function chooseDayActions(input)
@@ -1364,19 +1302,10 @@ function Script.runDay(ai, input)
     while commands < commandLimit do
         local query = firstPendingQuery(current)
         if query then
-            -- Artifact assembly prompts are local script decisions, not server
-            -- QueryReply dialogs. The conservative default preserves current
-            -- artifact layout and lets the normal helper path rearrange later.
-            if queryHasType(query, QueryType.artifactAssemblyPrompt, "artifact_assembly_prompt") then
-                ai:ignoreScriptDecision(query.query_id)
-            else
-                -- For real server queries, prefer a bounded native Nullkiller
-                -- answer. This keeps level-up skill selection, garrison army
-                -- pickup, hero-exchange artifact/army transfer, recruitment,
-                -- teleport choices, and cautious yes/no object prompts aligned
-                -- with the baseline AI without delegating the rest of the day.
-                ai:nullkillerAnswerQuery(query, defaultQueryAnswer(query))
-            end
+            -- The shared query-policy facade handles simple QueryReply dialogs,
+            -- artifact-assembly decisions, and rich window plan actions through
+            -- checked host requests while preserving a Lua decision boundary.
+            ai:answerQueryByPolicy(query, defaultQueryPolicy())
             commands = commands + 1
             refreshAfterCommand()
         else
