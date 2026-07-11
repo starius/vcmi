@@ -22,6 +22,7 @@ struct BattleSimulationRequest
 	BattleStartInfo setup;
 	BattleSimulationSeedContext seed;
 	BattleSimulationDecisionThresholds thresholds;
+	uint64_t stateFingerprint = 0;
 	int32_t sampleCount = 0;
 };
 

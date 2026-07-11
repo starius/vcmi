@@ -15,6 +15,7 @@ namespace BattleSimulation
 bool isValidRequest(const BattleSimulationRequest & request)
 {
 	return request.sampleCount > 0
+		&& request.stateFingerprint != 0
 		&& request.setup.armies[BattleSide::ATTACKER] != nullptr
 		&& request.setup.armies[BattleSide::DEFENDER] != nullptr
 		&& request.seed.sampleIndex >= 0

@@ -9,7 +9,10 @@
  */
 #pragma once
 
+#include "BattleSimulationCache.h"
 #include "BattleSimulationRequest.h"
+
+#include <cstddef>
 
 namespace BattleSimulation
 {
@@ -17,5 +20,12 @@ class BattleSimulationEvaluator
 {
 public:
 	BattleSimulationResponse evaluate(const BattleSimulationRequest & request) const;
+
+	void storeCachedSummary(const BattleSimulationRequest & request, const BattleSimulationSummary & summary);
+	void clearCache();
+	size_t cacheSize() const;
+
+private:
+	mutable BattleSimulationCache cache;
 };
 }

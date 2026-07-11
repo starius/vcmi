@@ -17,6 +17,26 @@ BattleSimulationResponse BattleSimulationEvaluator::evaluate(const BattleSimulat
 	if(!isValidRequest(request))
 		return makeResponse({}, request.thresholds, BattleSimulationResponseStatus::INVALID_REQUEST);
 
+	const auto cached = cache.find(makeCacheKey(request));
+	if(cached)
+		return makeResponse(*cached, request.thresholds, BattleSimulationResponseStatus::COMPLETE);
+
 	return makeResponse({}, request.thresholds, BattleSimulationResponseStatus::NOT_AVAILABLE);
+}
+
+void BattleSimulationEvaluator::storeCachedSummary(const BattleSimulationRequest & request, const BattleSimulationSummary & summary)
+{
+	if(isValidRequest(request))
+		cache.store(makeCacheKey(request), summary);
+}
+
+void BattleSimulationEvaluator::clearCache()
+{
+	cache.clear();
+}
+
+size_t BattleSimulationEvaluator::cacheSize() const
+{
+	return cache.size();
 }
 }
