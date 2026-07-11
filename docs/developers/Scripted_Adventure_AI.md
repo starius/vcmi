@@ -1894,6 +1894,11 @@ Regression harness:
   The host still caps serialized candidate details by default during execution so traces do not become enormous,
   while `candidate_details_limit = 0` can be used by inspection-heavy scripts that deliberately want every returned
   candidate serialized. `boundedNullkillerControl.lua` uses the all-candidates mode as the current API-parity probe.
+- Done: a patched-client 16-map, 3-day traced smoke of `boundedNullkillerControl.lua` completed all scenarios at the
+  day limit with 611 parsed trace events, 438 all-candidate `nullkiller_turn_slice` commands, 29 bounded query
+  answers, zero failed checked actions, zero parse errors, and zero mined mistakes. Raw command traces confirmed all
+  turn slices used `max_candidates = 0` and `max_attempts = 0`; host native result traces reported
+  `candidateLimit = 0` with serialized details capped at 64.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions
