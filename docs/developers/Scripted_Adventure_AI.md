@@ -2287,6 +2287,18 @@ Regression harness:
   (`/root/script-ai-runs/champion-training10-notrace-20260711`). The earlier 16-map screen for the same champion
   remains 16 terminal games with 10 `ScriptedAdventureAI` wins and 6 `Nullkiller2` wins, so the policy is a useful
   baseline but not near the requested 16/16 promotion bar.
+- Rejected / not promoted: wiring `actionSpace.defenseResponseOptions` directly into
+  `boundedNullkillerControl.lua` as an unconditional pre-slice critical-defense response improved the explicit
+  10-map training bucket to 9 terminal results, 6 `ScriptedAdventureAI` wins, 3 `Nullkiller2` wins, and 1 final
+  infrastructure idle (`/root/script-ai-runs/critical-defense-response-full16-notrace-20260711-180639`). However,
+  the comparable 16-map screen with idle watchdogs and one infrastructure retry produced only 15 terminal results,
+  7 `ScriptedAdventureAI` wins, 8 `Nullkiller2` wins, and 1 final infrastructure idle after 8 infrastructure
+  retries (`/root/script-ai-runs/critical-defense-response-rmg16-retry-notrace-20260711-184846`). A raw no-retry
+  probe of the same 16-map corpus also produced five `battle_ai_creation*` timeouts
+  (`/root/script-ai-runs/critical-defense-response-rmg16-notrace-20260711-181630`). The experiment was reverted
+  from the packaged control script because it stayed below the existing 10-win champion screen; future defense
+  policy should use these options with tighter gating or host-side stop conditions, not as an unconditional
+  pre-slice action.
 - Done: added policy-level query helpers to the Lua facade. `ai:answerPendingQueriesByPolicy` lets scripts express
   dialog preferences using numeric ids, provide a resolver callback, delegate individual dialogs to
   `nullkiller_answer_query`, and refresh after each answer. This is an API-parity step for scriptable dialogs, not
