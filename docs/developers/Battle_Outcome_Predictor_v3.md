@@ -616,6 +616,21 @@ python3 scripts/battle_prediction/analyze_v3_failure_segments.py \
   --print-groups 40
 ```
 
+The same analysis can be run as one reproducible artifact bundle:
+
+```bash
+python3 scripts/battle_prediction/run_town_battle_analysis.py \
+  /root/vcmi-nk-ratio-results/schema5-mmai-town-hero-20k-20260711 \
+  --output-dir /root/vcmi-nk-ratio-results/schema5-mmai-town-hero-20k-20260711/v3-analysis \
+  --expected-rows 20000 \
+  --expected-schema 5 \
+  --expected-shards 400 \
+  --expected-shard-size 50 \
+  --expected-groups 400
+```
+
+This writes `commands.sh`, `analysis-summary.json`, `validation.json`, `nullkiller-predictor.json`, `v3-static-misses.json`, `fallback-proof.json`, `fallback-proof.txt`, and close-even / false-safe / false-unsafe segment reports. Use it for post-run root-cause analysis so each result can be traced to the exact command line.
+
 Next schema6 collection should use the same generated `town-hero` setup. A real schema6 remote build is available at `/root/vcmi-schema6-real-build`; do not use `/root/vcmi-schema6-build` for collection because that directory was configured against `/root/vcmi-schema5-src` and emitted schema5 rows. The real build was configured from `/root/vcmi-schema6-src` with `ENABLE_VIDEO=OFF`, `ENABLE_EDITOR=OFF`, `ENABLE_LAUNCHER=OFF`, and `ENABLE_DISCORD=OFF`, then linked `Data` and `Maps` in `bin/` to the same data paths as the working schema5 build.
 
 A strict 4-row smoke passed on 2026-07-11:
@@ -625,7 +640,7 @@ A strict 4-row smoke passed on 2026-07-11:
 - validation: 4/4 rows schema6, 4/4 `town-hero`, 4/4 complete shards, 4/4 logs with MMAI initialized, 0 MMAI fallback lines, and `--require-schema3-rich-fields` passed
 - row inspection: the first row had 12 `battleStartStacks`, 1 `battleStartObstacles`, and `townPreMergeState`
 
-A strict remote watcher is running as PID `300572` with log `/root/vcmi-nk-ratio-results/schema6-mmai-town-hero-20k-20260711-wallstate-strict-watcher.log`. It replaced the earlier sleeping watcher PID `299131` after the validator gained schema6 battle-start counter gates. The watcher waits for schema5 PID `256999` to exit, validates schema5 with 20000 expected rows, schema 5, 400 complete shards, MMAI initialization, no fallback lines, and rich fields, rebuilds the patched `vcmibattlesim` target in `/root/vcmi-schema6-real-build`, starts the schema6 20000-row town-hero collection from `/root/vcmi-schema6-real-build/bin`, then validates schema6 with the structural battle-start counter gates below. As of a lightweight remote check at 14851 schema5 rows / 300 observed shards, schema5 was still running and schema6 had not started.
+A post-run analysis watcher is running as PID `300820` with log `/root/vcmi-nk-ratio-results/schema6-mmai-town-hero-20k-20260711-wallstate-analysis-watcher.log`. It replaced the stricter validation-only watcher PID `300572` after `run_town_battle_analysis.py` was added. The watcher waits for schema5 PID `256999` to exit, validates schema5 with 20000 expected rows, schema 5, 400 complete shards, MMAI initialization, no fallback lines, and rich fields, rebuilds the patched `vcmibattlesim` target in `/root/vcmi-schema6-real-build`, starts the schema6 20000-row town-hero collection from `/root/vcmi-schema6-real-build/bin`, then runs the bundled schema6 validation and v3 analysis driver below. As of a lightweight remote check at 15119 schema5 rows / 307 observed shards, schema5 was still running and schema6 had not started.
 
 Validate schema6 data with the same gate but `--expected-schema 6`; `--require-schema3-rich-fields` now also requires `battleStartStacks`, `battleStartObstacles`, and `battleStartWallState` on schema6 rows. The validator reports `schema6_battle_start` coverage counters for stack arrays, both-side stack rows, turret rows, obstacle rows, wall-state rows, and rows where battle-start wall/gate state differs from initial wall/gate state. Use `--min-schema6-battle-start-counter NAME=COUNT` for structural gates that must hold for the whole dataset. The rich town prototype and segment analyzer consume schema6 start-stack, obstacle, and battle-start wall aggregates automatically and emit `battle_start_*` and `town_battle_start_*` features/segments:
 
@@ -672,6 +687,21 @@ python3 scripts/battle_prediction/validate_battle_dataset.py \
 ```
 
 For a run that is intended to prove opening-effect wall mutation coverage, add low positive sanity gates such as `--min-schema6-battle-start-counter wall_changed_rows=1` and `--min-schema6-battle-start-counter gate_changed_rows=1`. Keep those separate from the base structural gate because a valid random batch can contain walls without necessarily containing a pre-first-turn wall or gate mutation.
+
+After schema6 validation, run the bundled analysis driver:
+
+```bash
+python3 scripts/battle_prediction/run_town_battle_analysis.py \
+  /root/vcmi-nk-ratio-results/schema6-mmai-town-hero-20k-20260711 \
+  --output-dir /root/vcmi-nk-ratio-results/schema6-mmai-town-hero-20k-20260711/v3-analysis \
+  --expected-rows 20000 \
+  --expected-schema 6 \
+  --expected-shards 400 \
+  --expected-shard-size 50 \
+  --expected-groups 400
+```
+
+For schema6 this command repeats the structural battle-start validation gates before producing the close-even, false-safe, false-unsafe, static-miss, fitted-model, and simulation-fallback artifacts.
 
 The schema4 run can still be validated and inspected for wall-state-only evidence:
 
