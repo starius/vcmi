@@ -47,6 +47,7 @@ RUNTIME_SIMULATION_STATS_RE = re.compile(
 	r"(?:, planning accepted static safe (\d+), planning accepted static unsafe (\d+), planning rejected static safe (\d+), planning rejected static unsafe (\d+))?"
 	r"(?:, planning cache hits (\d+))?"
 	r"(?:, planning skipped future turn (\d+), planning skipped unsafe path (\d+), planning skipped projected army (\d+), planning skipped no target (\d+))?"
+	r"(?:, planning score adjusted (\d+))?"
 )
 PLANNER_SIMULATION_RE = re.compile(
 	r"Planner battle simulation (accepted|rejected|incomplete)(?: .*?)? for player \d+ \(([^)]+)\):"
@@ -74,6 +75,7 @@ RUNTIME_SIMULATION_FIELDS = [
 	"planningSkippedUnsafePath",
 	"planningSkippedProjectedArmy",
 	"planningSkippedNoTarget",
+	"planningScoreAdjusted",
 ]
 
 ADJUDICATION_FIELDS = [
@@ -311,6 +313,12 @@ def parse_args() -> argparse.Namespace:
 		help="Maximum planner simulation skips allowed when no simulatable battle target can be built.",
 	)
 	parser.add_argument(
+		"--min-runtime-simulation-planning-score-adjusted",
+		type=int,
+		default=0,
+		help="Minimum priority evaluations whose static target danger/loss was adjusted by an accepted planner simulation.",
+	)
+	parser.add_argument(
 		"--max-candidate-better-p",
 		type=float,
 		default=None,
@@ -386,6 +394,7 @@ def parse_args() -> argparse.Namespace:
 		"max_runtime_simulation_planning_skipped_unsafe_path",
 		"max_runtime_simulation_planning_skipped_projected_army",
 		"max_runtime_simulation_planning_skipped_no_target",
+		"min_runtime_simulation_planning_score_adjusted",
 		"min_valid_games",
 		"max_invalid_paired_samples",
 		"min_paired_decisive_samples",
@@ -705,6 +714,7 @@ def parse_run_logs(task: GameTask) -> tuple[bool, str | None, str | None, bool, 
 							"planningSkippedUnsafePath": int(stats_match.group(20) or 0),
 							"planningSkippedProjectedArmy": int(stats_match.group(21) or 0),
 							"planningSkippedNoTarget": int(stats_match.group(22) or 0),
+							"planningScoreAdjusted": int(stats_match.group(23) or 0),
 						},
 					)
 
@@ -1121,6 +1131,7 @@ def analyze_results(args: argparse.Namespace, results: list[GameResult]) -> dict
 				"maxPlanningSkippedUnsafePath": args.max_runtime_simulation_planning_skipped_unsafe_path,
 				"maxPlanningSkippedProjectedArmy": args.max_runtime_simulation_planning_skipped_projected_army,
 				"maxPlanningSkippedNoTarget": args.max_runtime_simulation_planning_skipped_no_target,
+				"minPlanningScoreAdjusted": args.min_runtime_simulation_planning_score_adjusted,
 			},
 			"outcomeRequirements": {
 				"maxCandidateBetterP": args.max_candidate_better_p,
@@ -1276,6 +1287,11 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 				f"{model}: planner no-target skips {stats['planningSkippedNoTarget']} above allowed "
 				f"{args.max_runtime_simulation_planning_skipped_no_target}"
 			)
+		if stats["planningScoreAdjusted"] < args.min_runtime_simulation_planning_score_adjusted:
+			model_errors.append(
+				f"{model}: planner score adjustments {stats['planningScoreAdjusted']} below required "
+				f"{args.min_runtime_simulation_planning_score_adjusted}"
+			)
 
 		errors.extend(model_errors)
 		model_reports.append(
@@ -1289,6 +1305,7 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 					"planningSkips": planning_skips,
 					"planningCandidates": planning_candidates,
 					"planningDecisionRate": planning_decision_rate,
+					"planningScoreAdjusted": stats["planningScoreAdjusted"],
 					"ok": not model_errors,
 					"errors": model_errors,
 				}
@@ -1312,6 +1329,7 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 		"maxPlanningSkippedUnsafePath": args.max_runtime_simulation_planning_skipped_unsafe_path,
 		"maxPlanningSkippedProjectedArmy": args.max_runtime_simulation_planning_skipped_projected_army,
 		"maxPlanningSkippedNoTarget": args.max_runtime_simulation_planning_skipped_no_target,
+		"minPlanningScoreAdjusted": args.min_runtime_simulation_planning_score_adjusted,
 		"ok": not errors,
 		"errors": errors,
 	}
@@ -1440,6 +1458,7 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 		"planningSkippedUnsafePath",
 		"planningSkippedProjectedArmy",
 		"planningSkippedNoTarget",
+		"planningScoreAdjusted",
 		"runDir",
 	]
 	with (output_dir / "games.csv").open("w", newline="") as handle:
@@ -1468,6 +1487,7 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 					"planningSkippedUnsafePath": runtime_stats["planningSkippedUnsafePath"],
 					"planningSkippedProjectedArmy": runtime_stats["planningSkippedProjectedArmy"],
 					"planningSkippedNoTarget": runtime_stats["planningSkippedNoTarget"],
+					"planningScoreAdjusted": runtime_stats["planningScoreAdjusted"],
 				}
 			)
 			writer.writerow({key: row[key] for key in fieldnames})

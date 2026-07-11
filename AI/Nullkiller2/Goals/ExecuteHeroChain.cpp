@@ -12,6 +12,7 @@
 #include "../AIGateway.h"
 #include "../Engine/Nullkiller.h"
 #include "../Pathfinding/Actions/DimensionDoorAction.h"
+#include "../../../lib/callback/BattleOutcomeSimulation.h"
 
 namespace NK2AI
 {
@@ -109,6 +110,14 @@ bool ExecuteHeroChain::operator==(const ExecuteHeroChain & other) const
 		&& chainPath.targetHero == other.chainPath.targetHero
 		&& chainPath.nodes.size() == other.chainPath.nodes.size()
 		&& chainPath.chainMask == other.chainPath.chainMask;
+}
+
+void ExecuteHeroChain::setTargetBattleSimulationAccepted(const BattleOutcomeSimulationResult & simulation)
+{
+	targetBattleSimulationAccepted = true;
+	targetBattleSimulationWinProbability = simulation.attackerWinProbability;
+	targetBattleSimulationSamples = simulation.sampleCount;
+	targetBattleSimulationAttackerWins = simulation.attackerWins;
 }
 
 std::vector<ObjectInstanceID> ExecuteHeroChain::getAffectedObjects() const

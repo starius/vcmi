@@ -137,6 +137,7 @@ python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
   --max-runtime-simulation-planning-incomplete 0 \
   --min-runtime-simulation-planning-candidates 10 \
   --min-runtime-simulation-planning-decision-rate 0.05 \
+  --min-runtime-simulation-planning-score-adjusted 1 \
   --min-valid-games 250 \
   --max-invalid-paired-samples 0 \
   --min-paired-decisive-samples 30 \
@@ -187,6 +188,8 @@ Use `--min-runtime-simulation-planning-candidates` and
 `--min-runtime-simulation-planning-decision-rate` to fail proof runs where
 planner simulation is enabled but does not cover enough dangerous capture
 candidates to explain an end-to-end result.
+`planningScoreAdjusted` counts priority evaluations where an accepted planner
+simulation replaced static target danger/loss with path-only danger/loss.
 Runtime and planner simulation currently treat a battle as safe only if the
 attacker wins every requested sample. This matches the best observed town/siege
 offline safety policy and avoids accepting 19/20-style near misses as safe.

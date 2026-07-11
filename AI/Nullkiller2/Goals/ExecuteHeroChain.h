@@ -12,6 +12,10 @@
 #include "CGoal.h"
 #include "../Pathfinding/AIPathfinder.h"
 
+#include <cstdint>
+
+struct BattleOutcomeSimulationResult;
+
 namespace NK2AI
 {
 namespace Goals
@@ -21,6 +25,10 @@ namespace Goals
 	private:
 		AIPath chainPath;
 		std::string targetName;
+		bool targetBattleSimulationAccepted = false;
+		double targetBattleSimulationWinProbability = 0.0;
+		int64_t targetBattleSimulationSamples = 0;
+		int64_t targetBattleSimulationAttackerWins = 0;
 
 	public:
 		float closestWayRatio;
@@ -31,6 +39,11 @@ namespace Goals
 		std::string toString() const override;
 		bool operator==(const ExecuteHeroChain & other) const override;
 		const AIPath & getPath() const { return chainPath; }
+		void setTargetBattleSimulationAccepted(const BattleOutcomeSimulationResult & simulation);
+		bool hasTargetBattleSimulationAccepted() const { return targetBattleSimulationAccepted; }
+		double getTargetBattleSimulationWinProbability() const { return targetBattleSimulationWinProbability; }
+		int64_t getTargetBattleSimulationSamples() const { return targetBattleSimulationSamples; }
+		int64_t getTargetBattleSimulationAttackerWins() const { return targetBattleSimulationAttackerWins; }
 
 		int getHeroExchangeCount() const override { return chainPath.exchangeCount; }
 

@@ -45,6 +45,7 @@ std::atomic<uint64_t> battleSimulationPlanningSkippedFutureTurn{0};
 std::atomic<uint64_t> battleSimulationPlanningSkippedUnsafePath{0};
 std::atomic<uint64_t> battleSimulationPlanningSkippedProjectedArmy{0};
 std::atomic<uint64_t> battleSimulationPlanningSkippedNoTarget{0};
+std::atomic<uint64_t> battleSimulationPlanningScoreAdjusted{0};
 }
 
 const CGObjectInstance * ObjectIdRef::operator->() const
@@ -219,6 +220,11 @@ void recordBattleSimulationPlanningSkippedNoTarget()
 	battleSimulationPlanningSkippedNoTarget.fetch_add(1, std::memory_order_relaxed);
 }
 
+void recordBattleSimulationPlanningScoreAdjusted()
+{
+	battleSimulationPlanningScoreAdjusted.fetch_add(1, std::memory_order_relaxed);
+}
+
 BattleSimulationPlanningStats battleSimulationPlanningStatsSnapshot()
 {
 	return BattleSimulationPlanningStats{
@@ -233,7 +239,8 @@ BattleSimulationPlanningStats battleSimulationPlanningStatsSnapshot()
 		battleSimulationPlanningSkippedFutureTurn.load(std::memory_order_relaxed),
 		battleSimulationPlanningSkippedUnsafePath.load(std::memory_order_relaxed),
 		battleSimulationPlanningSkippedProjectedArmy.load(std::memory_order_relaxed),
-		battleSimulationPlanningSkippedNoTarget.load(std::memory_order_relaxed)
+		battleSimulationPlanningSkippedNoTarget.load(std::memory_order_relaxed),
+		battleSimulationPlanningScoreAdjusted.load(std::memory_order_relaxed)
 	};
 }
 

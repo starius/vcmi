@@ -27,6 +27,12 @@ namespace
 {
 constexpr int64_t PLANNING_SIMULATION_GAME_SEED = 0;
 
+struct PlannerSimulationVerdict
+{
+	bool safe = false;
+	BattleOutcomeSimulationResult simulation;
+};
+
 const char * simulationStatusName(BattleOutcomeSimulationStatus status)
 {
 	switch(status)
@@ -42,7 +48,7 @@ const char * simulationStatusName(BattleOutcomeSimulationStatus status)
 	return "unknown";
 }
 
-std::optional<bool> plannerSimulationEvaluatesVisit(
+std::optional<PlannerSimulationVerdict> plannerSimulationEvaluatesVisit(
 	const Nullkiller * nullkiller,
 	const CGHeroInstance * hero,
 	const AIPath & path,
@@ -140,7 +146,7 @@ std::optional<bool> plannerSimulationEvaluatesVisit(
 			static_cast<long long>(simulation.attackerWins),
 			static_cast<long long>(simulation.defenderWins),
 			simulation.attackerWinProbability);
-		return false;
+		return PlannerSimulationVerdict{ false, simulation };
 	}
 
 	recordBattleSimulationPlanningAccepted(staticSafe);
@@ -157,7 +163,7 @@ std::optional<bool> plannerSimulationEvaluatesVisit(
 		static_cast<long long>(simulation.defenderWins),
 		simulation.attackerWinProbability);
 
-	return true;
+	return PlannerSimulationVerdict{ true, simulation };
 }
 }
 
@@ -258,10 +264,12 @@ Goals::TGoalVec CaptureObjectsBehavior::getVisitGoals(
 		}
 
 		auto isSafe = isSafeToVisit(hero, path.heroArmy, danger, nullkiller->settings->getBattlePlanningSafeAttackRatio());
+		std::optional<PlannerSimulationVerdict> simulationVerdict;
 		if(danger > 0)
 		{
-			if(const auto simulationSafe = plannerSimulationEvaluatesVisit(nullkiller, hero, path, objToVisit, isSafe))
-				isSafe = *simulationSafe;
+			simulationVerdict = plannerSimulationEvaluatesVisit(nullkiller, hero, path, objToVisit, isSafe);
+			if(simulationVerdict)
+				isSafe = simulationVerdict->safe;
 		}
 
 #if NK2AI_TRACE_LEVEL >= 2
@@ -278,6 +286,8 @@ Goals::TGoalVec CaptureObjectsBehavior::getVisitGoals(
 		if(isSafe)
 		{
 			auto newWay = new ExecuteHeroChain(path, objToVisit);
+			if(simulationVerdict && simulationVerdict->safe)
+				newWay->setTargetBattleSimulationAccepted(simulationVerdict->simulation);
 			TSubgoal sharedPtr;
 			sharedPtr.reset(newWay);
 			auto heroRole = nullkiller->heroManager->getHeroRoleOrDefaultInefficient(path.targetHero);

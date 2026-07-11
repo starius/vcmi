@@ -34,6 +34,7 @@
 #include "../Markers/HeroExchange.h"
 #include "../Markers/ArmyUpgrade.h"
 #include "../Markers/DefendTown.h"
+#include "../AIUtility.h"
 
 #include <vcmi/spells/Service.h>
 #include <vcmi/spells/Spell.h>
@@ -72,6 +73,7 @@ EvaluationContext::EvaluationContext(const Nullkiller* aiNk)
 	isArmyUpgrade(false),
 	isHero(false),
 	isEnemy(false),
+	targetBattleSimulationAccepted(false),
 	explorePriority(0),
 	powerRatio(0)
 {
@@ -977,13 +979,20 @@ public:
 
 		Goals::ExecuteHeroChain & chain = dynamic_cast<Goals::ExecuteHeroChain &>(*task);
 		const AIPath & path = chain.getPath();
+		const bool targetBattleSimulationAccepted = chain.hasTargetBattleSimulationAccepted();
 
 		if (vstd::isAlmostZero(path.movementCost()))
 			return;
 
-		vstd::amax(evaluationContext.danger, path.getTotalDanger());
+		const uint64_t evaluatedDanger = targetBattleSimulationAccepted
+			? path.getPathDanger()
+			: path.getTotalDanger();
+		vstd::amax(evaluationContext.danger, evaluatedDanger);
 		evaluationContext.movementCost += path.movementCost();
 		evaluationContext.closestWayRatio = chain.closestWayRatio;
+		evaluationContext.targetBattleSimulationAccepted |= targetBattleSimulationAccepted;
+		if(targetBattleSimulationAccepted)
+			recordBattleSimulationPlanningScoreAdjusted();
 
 		HeroMap<float> costsPerHero;
 
@@ -1010,7 +1019,7 @@ public:
 		evaluationContext.movementCost *= costsPerHero.size(); //further deincentivise chaining as it often involves bringing back the army afterwards
 
 		auto hero = task->hero;
-		bool checkGold = evaluationContext.danger == 0;
+		bool checkGold = evaluationContext.danger == 0 && !targetBattleSimulationAccepted;
 		auto army = path.heroArmy;
 
 		const CGObjectInstance * target = aiNk->cc->getObj((ObjectInstanceID)task->objid, false);
@@ -1075,7 +1084,10 @@ public:
 		}
 		evaluationContext.armyInvolvement += army->getArmyCost();
 
-		vstd::amax(evaluationContext.armyLossRatio, (float)path.getTotalArmyLoss() / (float)army->getArmyStrength());
+		const uint64_t evaluatedArmyLoss = targetBattleSimulationAccepted
+			? path.armyLoss
+			: path.getTotalArmyLoss();
+		vstd::amax(evaluationContext.armyLossRatio, (float)evaluatedArmyLoss / (float)army->getArmyStrength());
 		addTileDanger(evaluationContext, path.targetTile(), path.turn(), path.getHeroStrength());
 		vstd::amax(evaluationContext.turn, path.turn());
 	}
@@ -1574,7 +1586,9 @@ float PriorityEvaluator::evaluate(Goals::TSubgoal task, int priorityTier)
 				//    && ((evaluationContext.enemyHeroDangerRatio > 0 && arriveNextWeek) || evaluationContext.enemyHeroDangerRatio > involvedStrengthOutOfTotalRatio))
 				// 	return 0;
 
-				const auto requiresBattle = evaluationContext.armyLossRatio > 0 || evaluationContext.danger > 0;
+				const auto requiresBattle = evaluationContext.targetBattleSimulationAccepted
+					|| evaluationContext.armyLossRatio > 0
+					|| evaluationContext.danger > 0;
 				score += evaluationContext.strategicalValue * 1000;
 				if(evaluationContext.explorePriority > 0)
 				{
