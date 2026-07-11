@@ -1814,6 +1814,9 @@ Regression harness:
 - Done: `scripts/ai/candidates/boundedNullkillerControl.lua` now uses `ai:nullkillerBoundedDay`, so the parity probe
   also exercises the shared one-native-pass-at-a-time API instead of hiding multiple native passes inside one host
   command.
+- Done: a traced 3-day small underground/no-water smoke of the bounded-day parity probe reached the day limit
+  cleanly. The trace had 23 `nullkiller_turn_slice` commands, all with `max_passes = 1`, one bounded query answer,
+  three script-requested end-turn outputs, zero failed checked actions, and zero fallback outputs.
 - Done: `scripts/ai/candidates/boundedNullkillerAdventure.lua` now stays on the bounded-helper contract too. Native
   no-task and stop-turn signals become Lua-controlled end-turn outputs, while unexpected helper failures or exhausted
   bounded budgets raise script errors for the host safety path instead of explicitly delegating the rest of the day to
