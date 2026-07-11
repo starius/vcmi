@@ -587,6 +587,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 				ai:nullkillerTurnSlice({ max_passes = 2, max_candidates = 8, max_attempts = 3, adventure_mode = ai.nullkillerTaskModes.defense })
 				ai:nullkillerNativePass(3, 9, 4)
 				ai:nullkillerNativePasses({ max_passes = 2, first_pass_index = 4, max_candidates = 10, max_attempts = 5, adventure_mode = ai.nullkillerTaskModes.escape })
+				ai:nullkillerDefendTown(16, { max_candidates = 12, max_attempts = 2 })
 				return {
 					status = "end_turn",
 					memory = {
@@ -640,7 +641,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 		return response;
 	});
 
-	ASSERT_EQ(commands.size(), 48);
+	ASSERT_EQ(commands.size(), 49);
 	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_tasks");
 	EXPECT_EQ(commands[0]["payload"]["mode"].String(), "adventure");
 	EXPECT_EQ(commands[0]["payload"]["max_candidates"].Integer(), 7);
@@ -807,6 +808,11 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 	EXPECT_EQ(commands[47]["payload"]["max_candidates"].Integer(), 10);
 	EXPECT_EQ(commands[47]["payload"]["max_attempts"].Integer(), 5);
 	EXPECT_EQ(commands[47]["payload"]["adventure_mode"].Integer(), 9);
+	EXPECT_EQ(commands[48]["payload"]["type"].String(), "nullkiller_defend_town");
+	EXPECT_EQ(commands[48]["payload"]["town_id"].Integer(), 16);
+	EXPECT_EQ(commands[48]["payload"]["max_candidates"].Integer(), 12);
+	EXPECT_EQ(commands[48]["payload"]["max_attempts"].Integer(), 2);
+	EXPECT_EQ(commands[48]["payload"]["type_id"].Integer(), 122);
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	EXPECT_EQ(output.memory["firstTask"].Integer(), 41);
 	EXPECT_EQ(output.memory["stepTask"].Integer(), 42);
@@ -1366,7 +1372,8 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeFacadeCoversAdvertisedActionTypeIds
 		"nullkiller_step",
 		"nullkiller_pass",
 		"nullkiller_answer_query",
-		"nullkiller_object_interaction"
+		"nullkiller_object_interaction",
+		"nullkiller_defend_town"
 	};
 
 	AI::AdventureScriptInput input = makeInput();

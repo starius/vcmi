@@ -541,7 +541,8 @@ ai.actionTypeIds = {
 	nullkillerStep = 118,
 	nullkillerPass = 119,
 	nullkillerAnswerQuery = 120,
-	nullkillerObjectInteraction = 121
+	nullkillerObjectInteraction = 121,
+	nullkillerDefendTown = 122
 }
 
 ai.actionTypeIdsByName = {
@@ -611,7 +612,8 @@ ai.actionTypeIdsByName = {
 	nullkiller_step = ai.actionTypeIds.nullkillerStep,
 	nullkiller_pass = ai.actionTypeIds.nullkillerPass,
 	nullkiller_answer_query = ai.actionTypeIds.nullkillerAnswerQuery,
-	nullkiller_object_interaction = ai.actionTypeIds.nullkillerObjectInteraction
+	nullkiller_object_interaction = ai.actionTypeIds.nullkillerObjectInteraction,
+	nullkiller_defend_town = ai.actionTypeIds.nullkillerDefendTown
 }
 
 function ai:updateActionTypeIdsFromActionSpace()
@@ -755,6 +757,20 @@ function ai:runNullkillerTask(taskId)
 		action.task_id = taskId
 	end
 	action.type = "nullkiller_task"
+	return self:execute(action)
+end
+
+function ai:nullkillerDefendTown(townId, options)
+	local action = copyFields(townId)
+	if type(townId) ~= "table" then
+		action.town_id = townId
+		if type(options) == "table" then
+			for key, value in pairs(options) do
+				action[key] = value
+			end
+		end
+	end
+	action.type = "nullkiller_defend_town"
 	return self:execute(action)
 end
 

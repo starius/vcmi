@@ -312,7 +312,7 @@ end
 
 local function runEmergencyDefense(ai, current, memory)
     local alerts = emergencyDefenseAlerts(current)
-    if #alerts == 0 then
+    if #alerts == 0 or not lacksMapTempo(current) then
         return current, false
     end
 

@@ -394,6 +394,10 @@ The `ai` facade:
   currently visiting or standing at a visible object, then return control to Lua. This covers bounded native
   handling such as owned-town creature pickup, opportunistic spellbook purchase for a main hero, and hill-fort
   upgrades without delegating the rest of the day.
+- `ai:nullkillerDefendTown(townId, options?)`: ask the host to find native Nullkiller defense tasks that contain a
+  checked `DEFEND_TOWN` goal for one visible owned town, execute a bounded sequence of those matching tasks, and
+  return control to Lua. This keeps the Lua boundary integer-based (`town_id`) and avoids choosing defense work
+  from localized names or broad serialized task labels. Options may include `max_candidates` and `max_attempts`.
 - `ai:nullkillerLockResources(resources)`, `ai:nullkillerLockHero(heroId, reasonId?)`, and
   `ai:nullkillerUnlockHero(heroId)`: constrain later bounded Nullkiller candidate generation and helper calls
   without changing game state or delegating the day. Resources should be passed either as a 7-item amount vector
@@ -728,6 +732,11 @@ Current bounded subroutine surface:
 - `nullkiller_optimize_artifacts` runs Nullkiller's native artifact cleanup step for one visible owned hero or all
   visible owned heroes, then returns to Lua. This is the standalone form of the artifact phase that native
   `Nullkiller::makeTurn` runs after a successful pass.
+- `nullkiller_defend_town` is a narrower checked helper for defense policy experiments. It first requests the
+  normal native defense candidate set, filters the opaque handles host-side by recursively looking for a real
+  `DEFEND_TOWN` goal on the requested visible owned `town_id`, then runs the filtered sequence through the same
+  bounded task executor used by `nullkiller_step`. The result reports matching serialized tasks, attempted tasks,
+  stable outcome ids, stop/replan flags, selected task ids when available, and native error text.
 - `nullkiller_turn_slice` composes the native priority loop, one bounded adventure step, the resource trader, and
   artifact cleanup into a capped pass-shaped helper. This is the preferred bridge when a Lua policy wants parity
   with the shape of `Nullkiller::makeTurn` but must keep control after one or a few passes. It returns a `passes`
@@ -2191,6 +2200,15 @@ Regression harness:
   some loss seeds (`02`, `09`, `10`) but regressed many previous wins, so selecting broad defense candidates by
   `town_id` is still too blunt. A future defense API should expose a more specific reinforce/defend-town operation
   with host-side scoring/stop conditions rather than forcing Lua to choose among partially serialized defense tasks.
+- Done: added the first version of that narrower defense API as `ai:nullkillerDefendTown(townId, options?)` /
+  `nullkiller_defend_town`. The helper keeps the script/C++ contract integer-based, filters matching defense tasks
+  in C++ by actual `DEFEND_TOWN` goals for the requested town, and returns bounded execution telemetry instead of
+  handing over the rest of the day. This is an API-parity step, not yet a promoted policy change; it should be
+  screened before wiring it into the champion script.
+- Done: restored the missing map-tempo guard in `defensiveBoundedNullkillerControl.lua`. The candidate's documented
+  rule is now enforced again: emergency recruit/build spending requires both a critical/high defense alert and no
+  practical movement options. `LuaAdventureScriptRunnerTest.DefensiveBoundedControlDoesNotSpendWhenMapTempoExists`
+  covers this so defense experiments do not silently starve expansion tempo.
 - Done: tightened trace mining for town-defense misses. Earlier same-day progress touching a threatened town no
   longer suppresses `defense_pressure_without_response` when the current input still exposes a matching recruit,
   build, or reinforce-town candidate. Re-summarizing the fresh traced baseline now surfaces repeated defense misses

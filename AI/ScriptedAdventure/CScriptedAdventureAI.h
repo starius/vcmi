@@ -199,6 +199,7 @@ private:
 	JsonNode makeNullkillerTaskCandidates(const JsonNode & action, bool executionMode = false);
 	bool executeNullkillerTaskAction(const JsonNode & action, JsonNode & actionResult);
 	bool executeNullkillerQueryAction(const JsonNode & action, JsonNode & actionResult);
+	bool executeNullkillerDefendTownAction(const JsonNode & action, JsonNode & actionResult);
 	bool executeNullkillerStepAction(const JsonNode & action, JsonNode & actionResult);
 	bool executeNullkillerPassAction(const JsonNode & action, JsonNode & actionResult);
 	bool executeNullkillerTurnSliceAction(const JsonNode & action, JsonNode & actionResult);

@@ -93,6 +93,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <limits>
 #include <set>
 #include <shared_mutex>
@@ -491,6 +492,7 @@ const std::vector<std::pair<int32_t, std::string>> & scriptActionTypeRegistry()
 		{119, "nullkiller_pass"},
 		{120, "nullkiller_answer_query"},
 		{121, "nullkiller_object_interaction"},
+		{122, "nullkiller_defend_town"},
 	};
 	return registry;
 }
@@ -6358,6 +6360,160 @@ bool CScriptedAdventureAI::executeNullkillerTaskAction(const JsonNode & action, 
 	return executed;
 }
 
+bool CScriptedAdventureAI::executeNullkillerDefendTownAction(const JsonNode & action, JsonNode & actionResult)
+{
+	const auto * object = cc->getObj(ObjectInstanceID(readInteger(action, "town_id")), false);
+	const auto * town = dynamic_cast<const CGTownInstance *>(object);
+	if(!town || town->tempOwner != playerID || !cc->isVisibleFor(town, playerID))
+		throw std::invalid_argument("Unknown town or town is not owned and visible to scripted AI");
+
+	JsonNode candidateAction = action;
+	candidateAction["mode"] = JsonNode(static_cast<int32_t>(NK2AI::ScriptTaskSearchMode::DEFENSE));
+	const JsonNode candidates = makeNullkillerTaskCandidates(candidateAction, true);
+	actionResult["town_id"] = JsonNode(town->id.getNum());
+	actionResult["nullkiller"] = candidates;
+
+	std::function<bool(const NK2AI::Goals::AbstractGoal &)> goalContainsDefendTown = [&](const NK2AI::Goals::AbstractGoal & goal) -> bool
+	{
+		if(goal.goalType == NK2AI::Goals::DEFEND_TOWN && goal.town == town)
+			return true;
+
+		if(const auto * composition = dynamic_cast<const NK2AI::Goals::Composition *>(&goal))
+		{
+			for(const NK2AI::Goals::TGoalVec & sequence : composition->getSubtasks())
+			{
+				for(const NK2AI::Goals::TSubgoal & subgoal : sequence)
+				{
+					if(subgoal && goalContainsDefendTown(*subgoal))
+						return true;
+				}
+			}
+		}
+
+		return false;
+	};
+
+	std::vector<const NullkillerTaskHandle *> matchingHandles;
+	for(const NullkillerTaskHandle & handle : nullkillerTaskHandles)
+	{
+		const auto * goal = dynamic_cast<const NK2AI::Goals::AbstractGoal *>(handle.candidate.task.get());
+		if(goal && goalContainsDefendTown(*goal))
+			matchingHandles.push_back(&handle);
+	}
+
+	actionResult["matchingTasks"].Vector();
+	for(const NullkillerTaskHandle * handle : matchingHandles)
+		actionResult["matchingTasks"].Vector().push_back(handle->taskJson);
+	actionResult["matchingTaskCount"] = JsonNode(static_cast<int32_t>(matchingHandles.size()));
+
+	if(matchingHandles.empty())
+	{
+		actionResult["ok"] = JsonNode(true);
+		actionResult["didExecute"] = JsonNode(false);
+		actionResult["attempted"] = JsonNode(false);
+		actionResult["exhaustedCandidates"] = JsonNode(true);
+		actionResult["outcomeId"] = JsonNode(4);
+		actionResult["outcome"] = JsonNode("exhausted_candidates");
+		actionResult["error"] = JsonNode("No matching Nullkiller defend-town task");
+		return true;
+	}
+
+	const size_t maxAttempts = readNullkillerCandidateLimit(action, "max_attempts", static_cast<int32_t>(matchingHandles.size()));
+	NK2AI::Goals::TTaskVec nativeTasks;
+	nativeTasks.reserve(matchingHandles.size());
+	for(const NullkillerTaskHandle * handle : matchingHandles)
+		nativeTasks.push_back(handle->candidate.task);
+
+	auto taskJsonByIndex = [&](size_t index) -> std::optional<JsonNode>
+	{
+		if(index >= matchingHandles.size())
+			return std::nullopt;
+		return matchingHandles[index]->taskJson;
+	};
+
+	NK2AI::ScriptTaskExecutionResult result;
+	{
+		std::shared_lock gameStateLock(CGameState::mutex);
+		std::lock_guard sharedStorageLock(NK2AI::AISharedStorage::locker);
+		NK2AI::Nullkiller::ScriptVisibleOnlyScope visibleOnly(*nullkiller);
+		result = nullkiller->executeScriptTaskSequence(nativeTasks, maxAttempts);
+	}
+
+	actionResult["ok"] = JsonNode(true);
+	actionResult["didExecute"] = JsonNode(result.executed);
+	actionResult["attempted"] = JsonNode(result.attempted);
+	actionResult["attempts"] = JsonNode(static_cast<int32_t>(result.attempts));
+	actionResult["maxAttempts"] = JsonNode(jsonNullkillerLimit(maxAttempts));
+	actionResult["selectedTaskIndex"] = JsonNode(static_cast<int32_t>(result.selectedTaskIndex));
+	actionResult["attemptedTasks"].Vector();
+	for(const NK2AI::ScriptTaskAttemptResult & attemptResult : result.attemptResults)
+	{
+		JsonNode attempt;
+		attempt["taskIndex"] = JsonNode(static_cast<int32_t>(attemptResult.taskIndex));
+		attempt["executed"] = JsonNode(attemptResult.executed);
+		attempt["failureActionId"] = JsonNode(static_cast<int32_t>(attemptResult.failureAction));
+		attempt["failureAction"] = JsonNode(nullkillerTaskFailureActionName(attemptResult.failureAction));
+		if(const auto taskJson = taskJsonByIndex(attemptResult.taskIndex))
+		{
+			attempt["task"] = *taskJson;
+			attempt["task_id"] = (*taskJson)["task_id"];
+		}
+		if(!attemptResult.error.empty())
+			attempt["error"] = JsonNode(attemptResult.error);
+		actionResult["attemptedTasks"].Vector().push_back(attempt);
+	}
+	actionResult["attemptedTaskCount"] = JsonNode(static_cast<int32_t>(actionResult["attemptedTasks"].Vector().size()));
+	actionResult["failureActionId"] = JsonNode(static_cast<int32_t>(result.failureAction));
+	actionResult["failureAction"] = JsonNode(nullkillerTaskFailureActionName(result.failureAction));
+	actionResult["shouldReplan"] = JsonNode(result.shouldReplan);
+	actionResult["shouldStopTurn"] = JsonNode(result.stopTurn);
+	actionResult["exhaustedCandidates"] = JsonNode(result.exhaustedCandidates);
+	int32_t outcomeID = 0;
+	std::string outcome = "failed";
+	if(result.executed)
+	{
+		outcomeID = 1;
+		outcome = "executed";
+	}
+	else if(result.shouldReplan)
+	{
+		outcomeID = 2;
+		outcome = "replan";
+	}
+	else if(result.stopTurn)
+	{
+		outcomeID = 3;
+		outcome = "stop_turn";
+	}
+	else if(result.exhaustedCandidates)
+	{
+		outcomeID = 4;
+		outcome = "exhausted_candidates";
+	}
+	actionResult["outcomeId"] = JsonNode(outcomeID);
+	actionResult["outcome"] = JsonNode(outcome);
+	if(const auto selectedTask = taskJsonByIndex(result.selectedTaskIndex))
+	{
+		actionResult["selectedTask"] = *selectedTask;
+		actionResult["task_id"] = (*selectedTask)["task_id"];
+	}
+	if(!result.error.empty())
+		actionResult["error"] = JsonNode(result.error);
+
+	if(result.executed)
+	{
+		for(const auto * heroInfo : cc->getHeroesInfo())
+			AIGateway::pickBestArtifacts(cc, heroInfo);
+
+		if(!waitTillFreeForScriptAction(actionResult, "nullkiller_defend_town"))
+			return false;
+
+		return true;
+	}
+
+	return !result.stopTurn;
+}
+
 bool CScriptedAdventureAI::executeNullkillerQueryAction(const JsonNode & action, JsonNode & actionResult)
 {
 	const QueryID queryID(readInteger(action, "query_id"));
@@ -7604,7 +7760,7 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 	};
 
 	std::optional<AutoAnswerModeGuard> autoAnswerModeGuard;
-	if(type != "nullkiller_reset" && type != "nullkiller_trade" && type != "nullkiller_priority_pass" && type != "nullkiller_tasks" && type != "nullkiller_task" && type != "nullkiller_step" && type != "nullkiller_pass" && type != "nullkiller_turn_slice" && type != "nullkiller_answer_query")
+	if(type != "nullkiller_reset" && type != "nullkiller_trade" && type != "nullkiller_priority_pass" && type != "nullkiller_tasks" && type != "nullkiller_task" && type != "nullkiller_step" && type != "nullkiller_pass" && type != "nullkiller_turn_slice" && type != "nullkiller_answer_query" && type != "nullkiller_defend_town")
 		autoAnswerModeGuard.emplace(*this);
 
 	auto readOwnedArmy = [&](const std::string & field, const std::string & label) -> const CArmedInstance *
@@ -8205,6 +8361,9 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 
 	if(type == "nullkiller_task")
 		return executeNullkillerTaskAction(action, actionResult);
+
+	if(type == "nullkiller_defend_town")
+		return executeNullkillerDefendTownAction(action, actionResult);
 
 	if(type == "nullkiller_answer_query")
 		return executeNullkillerQueryAction(action, actionResult);
