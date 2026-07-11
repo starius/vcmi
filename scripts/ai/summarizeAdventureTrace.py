@@ -359,6 +359,12 @@ def progress_has_native_stop(progress: Any) -> bool:
     return bool(native_slices and native_slice_should_end_turn(native_slices[-1]))
 
 
+def output_accepts_native_max_pass(output: Any) -> bool:
+    data = as_dict(output)
+    intent = str(data.get("intent") or "").lower()
+    return "native max-pass limit" in intent
+
+
 def append_task(tasks: list[dict[str, Any]], task: Any) -> None:
     task_data = as_dict(task)
     if task_data:
@@ -787,7 +793,12 @@ def analyze_mistakes(
             details = {"name": "fallback-output", "description": "Script explicitly requested fallback."}
             mistakes.append(make_mistake("fallback_output", 5, output_record, details["description"], details))
 
-        if output.get("status") == "end_turn" and has_relevant_candidates(action_space) and not progress_has_native_stop(progress):
+        if (
+            output.get("status") == "end_turn"
+            and has_relevant_candidates(action_space)
+            and not progress_has_native_stop(progress)
+            and not output_accepts_native_max_pass(output)
+        ):
             details = {
                 "name": "idle-with-candidates",
                 "description": "Script ended the turn while build, recruit, movement, or object candidates were available.",

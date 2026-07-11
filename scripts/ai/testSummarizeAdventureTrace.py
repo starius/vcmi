@@ -591,6 +591,83 @@ class ImperativeTraceSummaryTest(unittest.TestCase):
         self.assertNotIn("idle_with_candidates", mistakes)
         self.assertNotIn("stopped_batch", mistakes)
 
+    def test_bounded_max_pass_intent_suppresses_false_idle_mistake(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            input_path = root / "player-red-day-1-event-0-imperative-input.json"
+            input_path.write_text(
+                json.dumps(
+                    {
+                        "label": "imperative-input",
+                        "player": "red",
+                        "script": "ai/candidates/boundedNullkillerControl.lua",
+                        "payload": {
+                            "input": {
+                                "state": {"heroes": [], "towns": [], "resources": {}},
+                                "updates": {"events": []},
+                                "opponentUpdates": {"events": []},
+                                "analysis": {},
+                                "actionSpace": {
+                                    "buildOptions": [
+                                        {
+                                            "planAction": {
+                                                "type": "build",
+                                                "town_id": 17,
+                                                "building_id": 5,
+                                            }
+                                        }
+                                    ],
+                                    "reachableObjects": [
+                                        {
+                                            "planAction": {
+                                                "type": "visit_object",
+                                                "hero_id": 5,
+                                                "object_id": 9,
+                                            },
+                                            "safe": True,
+                                        }
+                                    ],
+                                },
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            output_path = root / "player-red-day-1-event-1-imperative-output.json"
+            output_path.write_text(
+                json.dumps(
+                    {
+                        "label": "imperative-output",
+                        "player": "red",
+                        "script": "ai/candidates/boundedNullkillerControl.lua",
+                        "payload": {
+                            "output": {
+                                "status": "end_turn",
+                                "actions": [],
+                                "intent": "bounded Nullkiller control accepted native max-pass limit",
+                            },
+                            "progress": {
+                                "executed": [
+                                    {
+                                        "type": "nullkiller_turn_slice",
+                                        "didWork": True,
+                                    }
+                                ],
+                                "failed": [],
+                                "remaining": [],
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            summary = summarize([input_path, output_path])
+
+        self.assertNotIn("idle_with_candidates", summary["mistakes"]["counts"])
+
     def test_map_progress_deltas_are_summarized(self) -> None:
         def write_input(
             path: Path,

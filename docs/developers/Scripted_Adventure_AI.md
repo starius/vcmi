@@ -2093,6 +2093,16 @@ Regression harness:
   lines and uses it as the run day count when terminal win/loss output lacks an exact completed-day marker. This
   gives no-trace AI-vs-AI batches a usable "winner by day N" metric while preserving the exact `--testdays`
   completed-day parser when present.
+- Done: a fresh no-trace 16-map run of the current `boundedNullkillerControl.lua` script produced 9
+  `ScriptedAdventureAI` wins, 5 `Nullkiller2` wins, and 2 infrastructure idle timeouts. The recovered day counts
+  identified the earliest script losses as seed `16` on day 14 and seed `05` on day 28.
+- Done: a traced rerun of the current loss/idle bucket parsed 11,532 trace events. The first pass mined seven
+  `idle_with_candidates` items, but inspection showed these were ordinary bounded-control max-pass stops with
+  intent `bounded Nullkiller control accepted native max-pass limit`, not no-work idles. The trace miner now
+  suppresses that false-positive class. After filtering, the same trace set leaves two important items: one
+  high/critical defense-pressure miss and one terminal native action interruption, both on seed `16`, which won
+  in the traced rerun. The remaining actual losses need stronger loss-specific trace heuristics than generic
+  "candidate existed at end turn".
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions
