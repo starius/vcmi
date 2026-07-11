@@ -16,6 +16,7 @@ from evaluate_nullkiller_predictor import (
     combat_spell_count,
     compact_group_summary,
     cxx_v3_probability,
+    deployed_safe_prediction,
     filter_complete_shard_groups,
     load_groups,
     load_shard_manifest,
@@ -55,6 +56,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--close-even-max", type=float, default=0.75)
     parser.add_argument("--close-even-min-error", type=float, default=0.25)
     parser.add_argument("--town-danger-factors", default="", help="Comma-separated deployed town danger factors to summarize")
+    parser.add_argument("--probe-town-guards", action="store_true", help="Probe compact town safety guards derived from miss segments")
+    parser.add_argument("--guard-results", type=int, default=12, help="Number of town guard candidates to print")
     parser.add_argument("--json", action="store_true", help="Print machine-readable output")
     return parser.parse_args()
 
@@ -276,6 +279,159 @@ def false_unsafe_source_groups(groups: list[Group], safe_probability: float) -> 
     ]
 
 
+def hero_diff(row: dict[str, Any], function: Any) -> float:
+    return float(function(row.get("attackerHero")) - function(row.get("defenderHero")))
+
+
+def defender_combat_spell_advantage(row: dict[str, Any], value: int) -> bool:
+    return hero_diff(row, combat_spell_count) <= -value
+
+
+def attacker_combat_spell_advantage(row: dict[str, Any], value: int) -> bool:
+    return hero_diff(row, combat_spell_count) >= value
+
+
+def defender_mana_advantage(row: dict[str, Any], value: int) -> bool:
+    return hero_diff(row, raw_mana) <= -value
+
+
+def attacker_spell_power_advantage(row: dict[str, Any], value: int) -> bool:
+    return primary(row.get("attackerHero"), 2) - primary(row.get("defenderHero"), 2) >= value
+
+
+def town_fort_at_least(row: dict[str, Any], value: int) -> bool:
+    return town_feature(row, "fortLevel") >= value
+
+
+def town_mage_guild_at_least(row: dict[str, Any], value: int) -> bool:
+    return town_feature(row, "mageGuildLevel") >= value
+
+
+def town_has_moat(row: dict[str, Any]) -> bool:
+    return bool(town_fortification(row, "hasMoat"))
+
+
+def town_has_full_walls(row: dict[str, Any]) -> bool:
+    return town_fortification(row, "wallsHealth") >= 3
+
+
+def town_guard_candidates() -> dict[str, Any]:
+    return {
+        "none": lambda row: False,
+        "def_spells4": lambda row: defender_combat_spell_advantage(row, 4),
+        "def_spells4_or_fort2_moat": lambda row: defender_combat_spell_advantage(row, 4)
+        or (town_fort_at_least(row, 2) and town_has_moat(row)),
+        "def_spells4_or_castle": lambda row: defender_combat_spell_advantage(row, 4) or town_fort_at_least(row, 3),
+        "def_spells2_mage2_or_fort2_moat": lambda row: (
+            defender_combat_spell_advantage(row, 2)
+            and town_mage_guild_at_least(row, 2)
+        )
+        or (town_fort_at_least(row, 2) and town_has_moat(row)),
+        "def_spells4_or_fullwalls": lambda row: defender_combat_spell_advantage(row, 4) or town_has_full_walls(row),
+        "def_spells4_or_premerge10": lambda row: defender_combat_spell_advantage(row, 4)
+        or town_pre_merge_not_in_battle_share(row) >= 0.10,
+        "def_spells4_or_mana50_castle": lambda row: defender_combat_spell_advantage(row, 4)
+        or (defender_mana_advantage(row, 50) and town_fort_at_least(row, 3)),
+    }
+
+
+def town_override_candidates() -> dict[str, Any]:
+    return {
+        "none": lambda row: False,
+        "att_spells2_power5": lambda row: attacker_combat_spell_advantage(row, 2)
+        and attacker_spell_power_advantage(row, 5),
+        "att_spells2": lambda row: attacker_combat_spell_advantage(row, 2),
+        "att_spells2_not_castle": lambda row: attacker_combat_spell_advantage(row, 2)
+        and not town_fort_at_least(row, 3),
+    }
+
+
+def summarize_guard_prediction(
+    label: str,
+    groups: list[Group],
+    factor: float,
+    guard_name: str,
+    override_name: str,
+) -> dict[str, Any]:
+    guard = town_guard_candidates()[guard_name]
+    override = town_override_candidates()[override_name]
+    rows = sum(group.count for group in groups)
+    correct = 0.0
+    brier = 0.0
+    false_safe = 0
+    false_unsafe = 0
+    safe_groups = 0
+
+    for group in groups:
+        actual_class = group.win_rate >= 0.5
+        safe = deployed_safe_prediction(group.row, SAFE_ATTACK_RATIO, factor)
+        if guard(group.row):
+            safe = False
+        if override(group.row):
+            safe = True
+        probability = 1.0 if safe else 0.0
+        correct += group.count * (safe == actual_class)
+        brier += group.count * (probability - group.win_rate) ** 2
+        false_safe += int(safe and group.win_rate < 0.95)
+        false_unsafe += int((not safe) and group.win_rate >= 0.95)
+        safe_groups += int(safe)
+
+    return {
+        "label": label,
+        "factor": factor,
+        "guard": guard_name,
+        "override": override_name,
+        "rows": rows,
+        "groups": len(groups),
+        "accuracy": correct / rows if rows else 0.0,
+        "brier": brier / rows if rows else 0.0,
+        "false_safe": false_safe,
+        "false_unsafe": false_unsafe,
+        "safe_groups": safe_groups,
+    }
+
+
+def probe_town_guard_rules(
+    all_groups: list[Group],
+    train: list[Group],
+    test: list[Group],
+    factors: list[float],
+    limit: int,
+) -> list[dict[str, Any]]:
+    guards = town_guard_candidates()
+    overrides = town_override_candidates()
+    results = []
+
+    for factor in factors:
+        for guard_name in guards:
+            for override_name in overrides:
+                all_summary = summarize_guard_prediction("all", all_groups, factor, guard_name, override_name)
+                train_summary = summarize_guard_prediction("train", train, factor, guard_name, override_name)
+                test_summary = summarize_guard_prediction("test", test, factor, guard_name, override_name)
+                score = (
+                    test_summary["false_safe"] == 0,
+                    all_summary["false_safe"] == 0,
+                    test_summary["accuracy"],
+                    all_summary["accuracy"],
+                    -test_summary["false_unsafe"],
+                    -all_summary["false_unsafe"],
+                    test_summary["safe_groups"],
+                )
+                results.append(
+                    {
+                        "score": score,
+                        "all": all_summary,
+                        "train": train_summary,
+                        "test": test_summary,
+                    }
+                )
+
+    results.sort(key=lambda item: item["score"], reverse=True)
+    for item in results:
+        del item["score"]
+    return results[:limit]
+
+
 def v3_false_safe_report_groups(groups: list[Group], limit: int, safe_ratio: float, safe_probability: float) -> list[dict[str, Any]]:
     candidates = false_safe_source_groups(groups, safe_probability)
     candidates.sort(key=lambda group: (cxx_v3_probability(group.row) - group.win_rate, group.count), reverse=True)
@@ -348,6 +504,7 @@ def print_summary(name: str, metrics: dict[str, Any]) -> None:
 def main() -> int:
     args = parse_args()
     town_danger_factors = parse_float_list(args.town_danger_factors)
+    guard_factors = town_danger_factors or [1.0, 1.1, 1.25, 1.4, 1.5, 1.75, 2.0]
     groups, schema_counts, row_count = load_filtered_groups(args)
     train, test = split_groups(groups, args.test_fraction)
     false_safe = false_safe_source_groups(groups, args.safe_probability)
@@ -380,6 +537,8 @@ def main() -> int:
         "false_safe_segments": summarize_segments(false_safe, args.segments),
         "false_unsafe_segments": summarize_segments(false_unsafe, args.segments),
     }
+    if args.probe_town_guards:
+        metrics["town_guard_probe"] = probe_town_guard_rules(groups, train, test, guard_factors, args.guard_results)
 
     if args.json:
         print(json.dumps(metrics, indent=2, sort_keys=True))
@@ -417,6 +576,24 @@ def main() -> int:
                 f"avg_cxx_v3={item['avg_cxx_v3']:.4f} "
                 f"avg_signed_error={item['avg_signed_error']:.4f}"
             )
+
+    if args.probe_town_guards:
+        print("town guard prototype candidates:")
+        for index, item in enumerate(metrics["town_guard_probe"], start=1):
+            all_summary = item["all"]
+            print(
+                f"  {index}. factor={all_summary['factor']:.2f} "
+                f"guard={all_summary['guard']} override={all_summary['override']}"
+            )
+            for name in ("all", "train", "test"):
+                summary = item[name]
+                print(
+                    f"     {name}: accuracy={summary['accuracy']:.4f} "
+                    f"brier={summary['brier']:.4f} "
+                    f"false_safe={summary['false_safe']} "
+                    f"false_unsafe={summary['false_unsafe']} "
+                    f"safe_groups={summary['safe_groups']}/{summary['groups']}"
+                )
 
     return 0
 
