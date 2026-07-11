@@ -2154,6 +2154,11 @@ Regression harness:
   terminal losses, seeds `05` and `14` show actionable `defense_pressure_without_response` findings; seeds `02`,
   `07`, `10`, and `15` have no mined important script mistake yet, so the next policy work needs either a targeted
   defense response or stronger loss-specific trace heuristics before changing broader strategy.
+- Rejected / not promoted: a no-trace full-outcome screen of `defaultAdventure.lua` on the same 16-map corpus
+  produced 16 terminal results, 0 `ScriptedAdventureAI` wins, and 16 `Nullkiller2` wins
+  (`/root/script-ai-runs/default-full16-notrace-ebca357-20260711`). The richer readable policy is useful as a
+  source of ideas and fixture-tested scoring code, but it is not a competitive full-game replacement for the
+  bounded Nullkiller control baseline.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions
