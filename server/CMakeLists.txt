@@ -5,6 +5,7 @@ set(vcmiservercommon_SRCS
 		battles/BattleFlowProcessor.cpp
 		battles/BattleProcessor.cpp
 		battles/BattleResultProcessor.cpp
+		battles/BattleSimulationActionCapture.cpp
 		battles/BattleSimulationCache.cpp
 		battles/BattleSimulationEvaluator.cpp
 		battles/BattleSimulationFingerprint.cpp
@@ -47,6 +48,7 @@ set(vcmiservercommon_HEADERS
 		battles/BattleFlowProcessor.h
 		battles/BattleProcessor.h
 		battles/BattleResultProcessor.h
+		battles/BattleSimulationActionCapture.h
 		battles/BattleSimulationCache.h
 		battles/BattleSimulationEvaluator.h
 		battles/BattleSimulationFingerprint.h
