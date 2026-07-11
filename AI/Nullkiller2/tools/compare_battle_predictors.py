@@ -41,6 +41,7 @@ RUNTIME_SIMULATION_STATS_RE = re.compile(
 	r"Runtime battle simulation stats for player \d+ \(([^)]+)\): "
 	r"requests (\d+), complete (\d+), incomplete (\d+), safe (\d+), rejected (\d+)"
 	r"(?:, invalid (\d+), not available (\d+))?"
+	r"(?:, skipped no target (\d+))?"
 )
 
 RUNTIME_SIMULATION_FIELDS = [
@@ -51,6 +52,7 @@ RUNTIME_SIMULATION_FIELDS = [
 	"rejected",
 	"invalid",
 	"notAvailable",
+	"skippedNoTarget",
 ]
 
 ADJUDICATION_FIELDS = [
@@ -512,6 +514,7 @@ def parse_run_logs(task: GameTask) -> tuple[bool, str | None, str | None, bool, 
 						"rejected": int(stats_match.group(6)),
 						"invalid": int(stats_match.group(7) or 0),
 						"notAvailable": int(stats_match.group(8) or 0),
+						"skippedNoTarget": int(stats_match.group(9) or 0),
 					},
 				)
 

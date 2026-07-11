@@ -57,6 +57,7 @@ struct RuntimeBattleSimulationStats
 	uint64_t notAvailable = 0;
 	uint64_t safe = 0;
 	uint64_t rejected = 0;
+	uint64_t skippedNoTarget = 0;
 };
 
 std::atomic<uint64_t> runtimeBattleSimulationRequests{0};
@@ -66,6 +67,7 @@ std::atomic<uint64_t> runtimeBattleSimulationInvalidRequest{0};
 std::atomic<uint64_t> runtimeBattleSimulationNotAvailable{0};
 std::atomic<uint64_t> runtimeBattleSimulationSafe{0};
 std::atomic<uint64_t> runtimeBattleSimulationRejected{0};
+std::atomic<uint64_t> runtimeBattleSimulationSkippedNoTarget{0};
 
 const char * runtimeSimulationStatusName(BattleOutcomeSimulationStatus status)
 {
@@ -120,7 +122,8 @@ RuntimeBattleSimulationStats runtimeBattleSimulationStatsSnapshot()
 		runtimeBattleSimulationInvalidRequest.load(std::memory_order_relaxed),
 		runtimeBattleSimulationNotAvailable.load(std::memory_order_relaxed),
 		runtimeBattleSimulationSafe.load(std::memory_order_relaxed),
-		runtimeBattleSimulationRejected.load(std::memory_order_relaxed)
+		runtimeBattleSimulationRejected.load(std::memory_order_relaxed),
+		runtimeBattleSimulationSkippedNoTarget.load(std::memory_order_relaxed)
 	};
 }
 
@@ -135,17 +138,18 @@ RuntimeBattleSimulationStats runtimeBattleSimulationStatsDelta(
 		after.invalidRequest - before.invalidRequest,
 		after.notAvailable - before.notAvailable,
 		after.safe - before.safe,
-		after.rejected - before.rejected
+		after.rejected - before.rejected,
+		after.skippedNoTarget - before.skippedNoTarget
 	};
 }
 
 void logRuntimeBattleSimulationStats(PlayerColor playerID, const RuntimeBattleSimulationStats & stats)
 {
-	if(!stats.requests)
+	if(!stats.requests && !stats.skippedNoTarget)
 		return;
 
 	logAi->info(
-		"Runtime battle simulation stats for player %d (%s): requests %llu, complete %llu, incomplete %llu, safe %llu, rejected %llu, invalid %llu, not available %llu",
+		"Runtime battle simulation stats for player %d (%s): requests %llu, complete %llu, incomplete %llu, safe %llu, rejected %llu, invalid %llu, not available %llu, skipped no target %llu",
 		playerID,
 		playerID.toString(),
 		static_cast<unsigned long long>(stats.requests),
@@ -154,7 +158,8 @@ void logRuntimeBattleSimulationStats(PlayerColor playerID, const RuntimeBattleSi
 		static_cast<unsigned long long>(stats.safe),
 		static_cast<unsigned long long>(stats.rejected),
 		static_cast<unsigned long long>(stats.invalidRequest),
-		static_cast<unsigned long long>(stats.notAvailable));
+		static_cast<unsigned long long>(stats.notAvailable),
+		static_cast<unsigned long long>(stats.skippedNoTarget));
 }
 
 bool movementActionMayStartBattle(EPathNodeAction action)
@@ -263,7 +268,7 @@ bool runtimeBattleSimulationRejectsVisit(
 	const int3 & tile,
 	EPathNodeAction action)
 {
-	if(!hero || !target || !aiGw.nullkiller || !aiGw.cc)
+	if(!hero || !aiGw.nullkiller || !aiGw.cc)
 		return false;
 	if(aiGw.nullkiller->settings->getBattlePredictionModel() != BattlePredictionModel::V3)
 		return false;
@@ -271,6 +276,11 @@ bool runtimeBattleSimulationRejectsVisit(
 	const int sampleCount = aiGw.nullkiller->settings->getBattlePredictionSimulationSamples();
 	if(sampleCount <= 0)
 		return false;
+	if(!target)
+	{
+		runtimeBattleSimulationSkippedNoTarget.fetch_add(1, std::memory_order_relaxed);
+		return false;
+	}
 
 	BattleOutcomeSimulationThresholds thresholds;
 	runtimeBattleSimulationRequests.fetch_add(1, std::memory_order_relaxed);
