@@ -322,6 +322,71 @@ void appendTownFortifications(std::ostream & out, const CGTownInstance * town)
 	out << '}';
 }
 
+void appendWallState(
+	std::ostream & out,
+	EWallState keep,
+	EWallState bottomTower,
+	EWallState bottomWall,
+	EWallState belowGate,
+	EWallState overGate,
+	EWallState upperWall,
+	EWallState upperTower,
+	EWallState gate,
+	EGateState gateState)
+{
+	out << "{";
+	out << "\"keep\":" << static_cast<int>(keep);
+	out << ",\"bottomTower\":" << static_cast<int>(bottomTower);
+	out << ",\"bottomWall\":" << static_cast<int>(bottomWall);
+	out << ",\"belowGate\":" << static_cast<int>(belowGate);
+	out << ",\"overGate\":" << static_cast<int>(overGate);
+	out << ",\"upperWall\":" << static_cast<int>(upperWall);
+	out << ",\"upperTower\":" << static_cast<int>(upperTower);
+	out << ",\"gate\":" << static_cast<int>(gate);
+	out << ",\"gateState\":" << static_cast<int>(gateState);
+	out << '}';
+}
+
+void appendInitialWallState(std::ostream & out, const CGTownInstance * town)
+{
+	if(!town)
+	{
+		out << "null";
+		return;
+	}
+
+	const auto none = EWallState::NONE;
+	auto keep = none;
+	auto bottomTower = none;
+	auto bottomWall = none;
+	auto belowGate = none;
+	auto overGate = none;
+	auto upperWall = none;
+	auto upperTower = none;
+	auto gate = none;
+	auto gateState = EGateState::NONE;
+	const auto fortifications = town->fortificationsLevel();
+
+	if(fortifications.wallsHealth != 0)
+	{
+		gateState = EGateState::CLOSED;
+		gate = EWallState::INTACT;
+		bottomWall = static_cast<EWallState>(fortifications.wallsHealth);
+		belowGate = static_cast<EWallState>(fortifications.wallsHealth);
+		overGate = static_cast<EWallState>(fortifications.wallsHealth);
+		upperWall = static_cast<EWallState>(fortifications.wallsHealth);
+
+		if(fortifications.citadelHealth != 0)
+			keep = static_cast<EWallState>(fortifications.citadelHealth);
+		if(fortifications.upperTowerHealth != 0)
+			upperTower = static_cast<EWallState>(fortifications.upperTowerHealth);
+		if(fortifications.lowerTowerHealth != 0)
+			bottomTower = static_cast<EWallState>(fortifications.lowerTowerHealth);
+	}
+
+	appendWallState(out, keep, bottomTower, bottomWall, belowGate, overGate, upperWall, upperTower, gate, gateState);
+}
+
 void appendFinalWallState(std::ostream & out, const IBattleInfo * info)
 {
 	if(!info->getDefendedTown())
@@ -330,17 +395,17 @@ void appendFinalWallState(std::ostream & out, const IBattleInfo * info)
 		return;
 	}
 
-	out << "{";
-	out << "\"keep\":" << static_cast<int>(info->getWallState(EWallPart::KEEP));
-	out << ",\"bottomTower\":" << static_cast<int>(info->getWallState(EWallPart::BOTTOM_TOWER));
-	out << ",\"bottomWall\":" << static_cast<int>(info->getWallState(EWallPart::BOTTOM_WALL));
-	out << ",\"belowGate\":" << static_cast<int>(info->getWallState(EWallPart::BELOW_GATE));
-	out << ",\"overGate\":" << static_cast<int>(info->getWallState(EWallPart::OVER_GATE));
-	out << ",\"upperWall\":" << static_cast<int>(info->getWallState(EWallPart::UPPER_WALL));
-	out << ",\"upperTower\":" << static_cast<int>(info->getWallState(EWallPart::UPPER_TOWER));
-	out << ",\"gate\":" << static_cast<int>(info->getWallState(EWallPart::GATE));
-	out << ",\"gateState\":" << static_cast<int>(info->getGateState());
-	out << '}';
+	appendWallState(
+		out,
+		info->getWallState(EWallPart::KEEP),
+		info->getWallState(EWallPart::BOTTOM_TOWER),
+		info->getWallState(EWallPart::BOTTOM_WALL),
+		info->getWallState(EWallPart::BELOW_GATE),
+		info->getWallState(EWallPart::OVER_GATE),
+		info->getWallState(EWallPart::UPPER_WALL),
+		info->getWallState(EWallPart::UPPER_TOWER),
+		info->getWallState(EWallPart::GATE),
+		info->getGateState());
 }
 
 std::string defendedHeroSource(const CGTownInstance * town, const CGHeroInstance * defenderHero)
@@ -546,7 +611,7 @@ void appendResultRow(const CBattleInfoCallback & battle, const BattleResult & re
 	const int64_t rowIndex = state.rowsWritten;
 
 	state.output << "{";
-	state.output << "\"schema\":3";
+	state.output << "\"schema\":4";
 	state.output << ",\"row\":" << rowIndex;
 	state.output << ",\"shardIndex\":" << state.config.shardIndex;
 	state.output << ",\"shardCount\":" << state.config.shardCount;
@@ -567,6 +632,8 @@ void appendResultRow(const CBattleInfoCallback & battle, const BattleResult & re
 	state.output << ",\"hasMoat\":" << (battle.hasMoat() ? "true" : "false");
 	state.output << ",\"defendedTown\":";
 	appendTown(state.output, info->getDefendedTown(), info->getSideHero(BattleSide::DEFENDER));
+	state.output << ",\"initialWallState\":";
+	appendInitialWallState(state.output, info->getDefendedTown());
 	state.output << ",\"finalWallState\":";
 	appendFinalWallState(state.output, info);
 	state.output << ",\"attackerHero\":";

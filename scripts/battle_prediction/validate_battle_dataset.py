@@ -207,9 +207,27 @@ def validate_town_fields(row: dict[str, Any]) -> list[str]:
         elif key in town:
             errors.append(f"defendedTown.{key} is not an object")
 
-    final_wall_state = row.get("finalWallState")
-    if not isinstance(final_wall_state, dict):
-        errors.append("town battle missing finalWallState object")
+    required_wall_state = [
+        "keep",
+        "bottomTower",
+        "bottomWall",
+        "belowGate",
+        "overGate",
+        "upperWall",
+        "upperTower",
+        "gate",
+        "gateState",
+    ]
+    wall_state_fields = ["finalWallState"]
+    if int(row.get("schema", 1)) >= 4:
+        wall_state_fields.append("initialWallState")
+
+    for key in wall_state_fields:
+        wall_state = row.get(key)
+        if isinstance(wall_state, dict):
+            errors.extend(f"{key} missing {part}" for part in missing_keys(wall_state, required_wall_state))
+        else:
+            errors.append(f"town battle missing {key} object")
 
     defender_hero = row.get("defenderHero")
     if type_name == "town-hero":

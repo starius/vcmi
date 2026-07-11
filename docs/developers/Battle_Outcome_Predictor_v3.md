@@ -216,10 +216,10 @@ As of 2026-07-11, the best empirical result is fallback-only deterministic repea
 - corrected 2k town-hero run (`schema3-richstats-mmai-town-hero-2k-fix-20260711`, `simulation-fallback-cxx-v3-town-allwins.txt`):
   - 3 samples: 100.00% win/loss accuracy, 95.37% safety accuracy on 367 held-out rows
   - 5 samples: 98.39% win/loss accuracy, 95.18% safety accuracy on 311 held-out rows
-- partial corrected 5k town-hero run, 57 complete shards / 2850 rows (`schema3-richstats-mmai-town-hero-5k-partial-complete-20260711T063508Z`, `simulation-fallback-cxx-v3-town-allwins.txt`):
-  - 5 samples: 97.10% win/loss accuracy, 98.20% safety accuracy on 724 held-out rows
-  - 10 samples: 97.28% win/loss accuracy, 98.64% safety accuracy on 589 held-out rows
-  - 20 samples: 96.40% win/loss accuracy, 100.00% safety accuracy on 333 held-out rows
+- partial corrected 5k town-hero run, 64 complete shards / 3200 rows (`schema3-richstats-mmai-town-hero-5k-partial-complete-20260711T064234Z`, `simulation-fallback-cxx-v3-town-allwins.txt`):
+  - 5 samples: 97.56% win/loss accuracy, 98.49% safety accuracy on 861 held-out rows
+  - 10 samples: 97.73% win/loss accuracy, 98.87% safety accuracy on 706 held-out rows
+  - 20 samples: 97.07% win/loss accuracy, 100.00% safety accuracy on 410 held-out rows
 
 The best static models are not merge-ready: current cxx-v3 was about 69.39% / Brier 0.287 on corrected 5k non-town deployed-static holdout rows and about 58.76% / Brier 0.363 on corrected 2k town-hero holdout rows. Skill/spell static features are promising but overfit in the current small generated datasets. The practical direction is therefore a server-owned runtime simulation fallback, with static prediction kept as a cheap coarse estimate until a better validated model exists.
 
@@ -262,8 +262,9 @@ Observed pattern:
 - the corrected schema3 MMAI mixed run also passes the schema3 rich-field gate: attacker/defender raw mana, secondary skills, full spell lists, combat spell lists, primary skills, rich creature stack stats, town faction/buildings, fortifications, moat/tower shooters, tower/keep damage ranges, and final wall state are present for every applicable row.
 - the corrected 5k schema3 MMAI mixed run from 2026-07-11 has 5000 rows, 100 generated setup shards, 50 repeats per shard, 1050 hero-vs-hero rows, 2200 hero-vs-monster rows, 1750 town rows, and 0 MMAI fallback lines. It also passes the schema3 rich-field gate.
 - generated battle mode now supports explicit `town-hero` battles, and `mixed` mode includes them for future datasets. The corrected town-hero 2k run from 2026-07-11 has 2000 rows, 100 generated setup shards, 20 repeats per shard, 2000 town-hero rows with visiting defending heroes, and 0 MMAI fallback lines. It passes the schema3 rich-field gate with defender hero data, town buildings, fortifications, tower damage, and final wall state.
-- the partial corrected 5k town-hero snapshot from 2026-07-11 has 2850 rows, 57 complete generated setup shards, 91 setup groups, all town-hero rows with visiting defending heroes, and 0 MMAI fallback lines.
-- close-even diagnostics on the 57-shard town-hero snapshot found 9 groups / 215 rows with actual win rate 20-80% and cxx-v3 error at least 0.25. The worst false-safe cluster was `predicted >= 0.95`: 3 groups / 100 rows, actual average 38.00%, predicted average 99.79%.
+- the partial corrected 5k town-hero snapshot from 2026-07-11 has 3200 rows, 64 complete generated setup shards, 103 setup groups, all town-hero rows with visiting defending heroes, and 0 MMAI fallback lines.
+- schema4 battle rows add explicit `initialWallState` for town/siege battles. Schema3 kept only the post-battle `finalWallState`; schema4 records both the planner input wall state derived by the same rules as `BattleInfo::setupBattle` and the final wall state for analysis.
+- close-even diagnostics on the 64-shard town-hero snapshot found 9 groups / 215 rows with actual win rate 20-80% and cxx-v3 error at least 0.25. The worst false-safe cluster was `predicted >= 0.95`: 3 groups / 100 rows, actual average 38.00%, predicted average 99.79%.
 - town cxx-v3 false-safe segments are dominated by siege mechanics absent from the open-field model: moat/castle/tower/mage-guild/grail effects and defender spell access. The false-unsafe side is different: attacker combat spell advantage, flyers, shooters, high-speed stacks, and special abilities can overcome town defenses, while cxx-v3 still assigns very low probabilities.
 - cxx-v3 has no deployed static scope for town-hero rows. Town/siege prediction should remain on legacy danger plus targeted safety fixes until the runtime simulation service is available or a separately validated town model clears the same holdout and A/B gates.
 - on that corrected schema3 MMAI data, static prediction is not good enough: held-out cxx-v3 accuracy was about 69%, v3-compatible fitted accuracy about 85%, and full fitted model accuracy about 73%. The high training accuracy did not generalize.
