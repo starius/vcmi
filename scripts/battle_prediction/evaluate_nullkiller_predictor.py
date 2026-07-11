@@ -1494,6 +1494,27 @@ def town_summary(row: dict[str, Any]) -> str:
     )
 
 
+def town_pre_merge_summary(row: dict[str, Any]) -> str:
+    pre_merge = town_pre_merge_state(row)
+    if not pre_merge:
+        return "none"
+
+    town_army = town_pre_merge_army_strength(row, "townArmy")
+    hero_army = town_pre_merge_army_strength(row, "defendingHeroArmy")
+    defender_army = max(float(row.get("defenderArmyStrength") or 0.0), 1.0)
+    return (
+        f"town_army={town_army:.0f} "
+        f"hero_army={hero_army:.0f} "
+        f"town_share={town_army / defender_army:.3f} "
+        f"hero_share={hero_army / defender_army:.3f} "
+        f"town_stacks={town_pre_merge_stack_count(row, 'townArmy'):.0f} "
+        f"hero_stacks={town_pre_merge_stack_count(row, 'defendingHeroArmy'):.0f} "
+        f"town_largest={town_pre_merge_largest_share(row, 'townArmy'):.3f} "
+        f"hero_largest={town_pre_merge_largest_share(row, 'defendingHeroArmy'):.3f} "
+        f"post_town_army={town_feature(row, 'armyStrength'):.0f}"
+    )
+
+
 def compact_group_summary(group: Group, model: LogisticModel | None, safe_ratio: float) -> dict[str, Any]:
     row = group.row
     attacker = max(side_strength(row, "attacker"), EPSILON)
@@ -1515,6 +1536,7 @@ def compact_group_summary(group: Group, model: LogisticModel | None, safe_ratio:
         "attacker_hero": hero_summary(row.get("attackerHero")),
         "defender_hero": hero_summary(row.get("defenderHero")),
         "town": town_summary(row),
+        "town_pre_merge": town_pre_merge_summary(row),
         "attacker_army": army_summary(row, "attacker"),
         "defender_army": army_summary(row, "defender"),
     }
@@ -1628,6 +1650,8 @@ def print_group_report(title: str, groups: list[dict[str, Any]]) -> None:
         print(f"     defender: {group['defender_hero']} army={group['defender_army']}")
         if group["town"] != "none":
             print(f"     town: {group['town']}")
+        if group["town_pre_merge"] != "none":
+            print(f"     pre-merge: {group['town_pre_merge']}")
 
 
 def top_model_features(model: LogisticModel, names: list[str], limit: int) -> list[dict[str, float | str]]:
