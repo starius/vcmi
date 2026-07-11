@@ -216,6 +216,10 @@ As of 2026-07-11, the best empirical result is fallback-only deterministic repea
 - corrected 2k town-hero run (`schema3-richstats-mmai-town-hero-2k-fix-20260711`, `simulation-fallback-cxx-v3-town-allwins.txt`):
   - 3 samples: 100.00% win/loss accuracy, 95.37% safety accuracy on 367 held-out rows
   - 5 samples: 98.39% win/loss accuracy, 95.18% safety accuracy on 311 held-out rows
+- partial corrected 5k town-hero run, 51 complete shards / 2550 rows (`schema3-richstats-mmai-town-hero-5k-partial-complete-20260711T062737Z`, `simulation-fallback-cxx-v3-town-allwins.txt`):
+  - 5 samples: 96.83% win/loss accuracy, 98.04% safety accuracy on 662 held-out rows
+  - 10 samples: 97.02% win/loss accuracy, 98.51% safety accuracy on 537 held-out rows
+  - 20 samples: 96.01% win/loss accuracy, 100.00% safety accuracy on 301 held-out rows
 
 The best static models are not merge-ready: current cxx-v3 was about 69.39% / Brier 0.287 on corrected 5k non-town deployed-static holdout rows and about 58.76% / Brier 0.363 on corrected 2k town-hero holdout rows. Skill/spell static features are promising but overfit in the current small generated datasets. The practical direction is therefore a server-owned runtime simulation fallback, with static prediction kept as a cheap coarse estimate until a better validated model exists.
 
@@ -325,7 +329,7 @@ Current branch progress toward the service boundary:
 - `BattleSimulationRequest` and `BattleSimulationResponse` name the future server-owned evaluator boundary: battle setup, deterministic seed context, sample count, thresholds, response status, summary, interpreted evaluation, and small validity/completion checks.
 - `BattleSimulationEvaluator` is owned by `BattleProcessor` and exposed through `BattleProcessor::evaluateBattleSimulation`. It currently validates requests and returns `NOT_AVAILABLE` until state-isolated repeated simulation is implemented.
 - `BattleSimulationCache` stores simulation summaries by explicit state fingerprint plus deterministic seed/sample context. Requests require a non-zero state fingerprint so future runtime callers do not accidentally cache by object pointer identity.
-- `BattleSimulationFingerprint` provides a deterministic builder for normalized battle-state cache fingerprints; it deliberately returns `0` until callers add explicit state data.
+- `BattleSimulationFingerprint` provides deterministic normalized battle-start cache fingerprints. `BattleSimulationRequest::effectiveStateFingerprint` uses an explicit request fingerprint when present and otherwise derives one from `BattleStartInfo`.
 - This is still not a runtime Nullkiller evaluator. The remaining hard part is isolating repeated simulations from live adventure-map state and exposing them through a controlled server-owned API/cache.
 
 Batch collection caveat: when running `vcmibattlesim` with MMAI in parallel, each shard needs an isolated XDG config/cache profile. A shared profile can be rewritten by clients and silently disable the MMAI mod for later shards. Use `--xdg-config-template` and, if needed, `--xdg-profile-root` so each client starts from the same active-mod configuration.

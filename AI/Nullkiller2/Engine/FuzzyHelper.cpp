@@ -306,7 +306,17 @@ ui64 FuzzyHelper::evaluateDanger(const int3 & tile, const CGHeroInstance * visit
 		if (objWithID<Obj::TOWN>(dangerousObject))
 		{
 			auto town = dynamic_cast<const CGTownInstance*>(dangerousObject);
-			auto hero = town->getGarrisonHero();
+			auto hero = town->getVisitingHero() ? town->getVisitingHero() : town->getGarrisonHero();
+
+			// Mirror CGTownInstance::onHeroVisit when the tile resolves as the town object
+			// instead of the hero standing in it.
+			if(auto visitingHero = town->getVisitingHero())
+			{
+				if(town->getGarrisonHero())
+					objectDanger = evaluateDanger(visitingHero);
+				else
+					objectDanger += evaluateDanger(visitingHero);
+			}
 
 			if (hero)
 				objectDanger *= aiNk->heroManager->getFightingStrengthCached(hero);
