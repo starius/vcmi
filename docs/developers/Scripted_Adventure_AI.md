@@ -2082,6 +2082,13 @@ Regression harness:
   `11` were Lua losses; seed `09` was stopped after the regression was already clear. Do not reintroduce this as
   a combined policy. Future fixes should isolate one hypothesis at a time and prefer exposing/using native
   Nullkiller defense candidates over ad hoc Lua spending rules.
+- Rejected: an isolated follow-up that ran one capped native `ai:nullkillerDefensePass` before the normal bounded
+  turn slice whenever visible town-defense alerts contained a high-or-critical numeric `levelId`. This avoided
+  direct Lua build/recruit spending and used Nullkiller's own defense task generation, but focused validation on
+  the seven known loss/idle seeds regressed to seven `ScriptedAdventureAI` red losses, with retries on seeds `02`,
+  `03`, `09`, and `16`. Do not promote unconditional pre-slice defense passes; a future defense fix needs trace
+  evidence that the native defense candidate is selected at the right time and does not starve broader
+  priority/adventure planning.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions
