@@ -2717,6 +2717,66 @@ TEST(LuaAdventureScriptRunnerTest, UncaughtImperativeHostErrorFailsRunDay)
 	}), std::runtime_error);
 }
 
+TEST(LuaAdventureScriptRunnerTest, MissingBattleRetreatCallbackDelegatesToHost)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				return ai:output("end_turn")
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:missing-retreat-callback", source);
+	JsonNode input;
+	input["battleRetreat"]["nullkiller_decision_id"] = JsonNode(2);
+
+	const std::optional<JsonNode> output = runner.decideBattleRetreat(input);
+	EXPECT_FALSE(output);
+}
+
+TEST(LuaAdventureScriptRunnerTest, BattleRetreatCallbackReturnsJsonDecision)
+{
+	const std::string source = R"lua(
+		return {
+			decideBattleRetreat = function(input)
+				return {
+					decision_id = input.battleRetreat.nullkiller_decision_id,
+					seen_flee_flag = input.battleRetreat.can_flee,
+					memory_version = input.memory.version
+				}
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:retreat-callback", source);
+	JsonNode input;
+	input["memory"]["version"] = JsonNode(7);
+	input["battleRetreat"]["can_flee"] = JsonNode(true);
+	input["battleRetreat"]["nullkiller_decision_id"] = JsonNode(2);
+
+	const std::optional<JsonNode> output = runner.decideBattleRetreat(input);
+	ASSERT_TRUE(output);
+	EXPECT_EQ((*output)["decision_id"].Integer(), 2);
+	EXPECT_TRUE((*output)["seen_flee_flag"].Bool());
+	EXPECT_EQ((*output)["memory_version"].Integer(), 7);
+}
+
+TEST(LuaAdventureScriptRunnerTest, BattleRetreatCallbackErrorsSurfaceToHost)
+{
+	const std::string source = R"lua(
+		return {
+			decideBattleRetreat = function(input)
+				error("retreat policy failed")
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:retreat-callback-error", source);
+	JsonNode input;
+	EXPECT_THROW(runner.decideBattleRetreat(input), std::runtime_error);
+}
+
 TEST(LuaAdventureScriptRunnerTest, JsonPolicyFixtures)
 {
 	const std::filesystem::path fixtureRoot = std::filesystem::path(VCMI_SOURCE_DIR) / "test/testdata/ai/adventure-script";

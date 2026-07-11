@@ -12,6 +12,7 @@
 #include "../lib/ai/AdventureScript.h"
 
 #include <functional>
+#include <optional>
 
 #if __has_include(<lua.hpp>)
 #  include <lua.hpp>
@@ -38,6 +39,7 @@ public:
 	bool hasRunDay();
 	AI::AdventureScriptOutput planDay(const AI::AdventureScriptInput & input);
 	AI::AdventureScriptOutput runDayImperative(const AI::AdventureScriptInput & input, const std::function<JsonNode(const JsonNode &)> & commandHandler);
+	std::optional<JsonNode> decideBattleRetreat(const JsonNode & input);
 
 private:
 	lua_State * L = nullptr;

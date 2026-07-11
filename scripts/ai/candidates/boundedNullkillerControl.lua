@@ -214,4 +214,15 @@ function Script.planDay(input)
     }
 end
 
+function Script.decideBattleRetreat(input)
+    -- Battle retreat/surrender is a synchronous battle callback, not part of
+    -- the daily imperative action loop. This parity script intentionally keeps
+    -- Nullkiller's existing policy as the decision owner until a candidate is
+    -- explicitly experimenting with battle-preservation strategy.
+    return {
+        decision_id = 0,
+        intent = "bounded Nullkiller control delegates battle retreat policy"
+    }
+end
+
 return Script

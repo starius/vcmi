@@ -2180,6 +2180,55 @@ AI::AdventureScriptOutput LuaAdventureScriptRunner::runDayImperative(
 	}
 }
 
+std::optional<JsonNode> LuaAdventureScriptRunner::decideBattleRetreat(const JsonNode & input)
+{
+	LuaStack stack(L);
+	lua_rawgeti(L, LUA_REGISTRYINDEX, scriptTableRef);
+	lua_getfield(L, -1, "decideBattleRetreat");
+	lua_remove(L, -2);
+
+	if(lua_isnil(L, -1))
+	{
+		stack.restoreInitialTop();
+		return std::nullopt;
+	}
+
+	if(!lua_isfunction(L, -1))
+	{
+		stack.clear();
+		throw std::runtime_error("Adventure script '" + identifier + "' field decideBattleRetreat is not a function");
+	}
+
+	stack.push(input);
+
+	if(lua_pcall(L, 1, 1, 0) != 0)
+	{
+		std::string error = toStringRaw(-1);
+		stack.clear();
+		throw std::runtime_error("Adventure script '" + identifier + "' decideBattleRetreat failed: " + error);
+	}
+
+	if(lua_isnil(L, -1))
+	{
+		stack.restoreInitialTop();
+		return std::nullopt;
+	}
+
+	JsonNode rawOutput;
+	try
+	{
+		stack.get(stack.absindex(-1), rawOutput);
+	}
+	catch(const LuaApiException & e)
+	{
+		stack.clear();
+		throw std::runtime_error("Adventure script '" + identifier + "' decideBattleRetreat returned unsupported value: " + e.what());
+	}
+
+	stack.restoreInitialTop();
+	return rawOutput;
+}
+
 void LuaAdventureScriptRunner::cleanupGlobals()
 {
 	LuaStack stack(L);

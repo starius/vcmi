@@ -125,6 +125,22 @@ function Script.runDay(ai, input)
 end
 ```
 
+Scripts may also define an optional synchronous battle-preservation callback:
+
+```lua
+function Script.decideBattleRetreat(input)
+    -- Canonical decision ids:
+    -- 0 delegate to Nullkiller, 1 continue fighting, 2 retreat, 3 surrender.
+    return { decision_id = 0 }
+end
+```
+
+This callback is intentionally narrow. It receives script memory, the update journal, and
+`input.battleRetreat` with stable numeric battle/side/hero/stack ids, flee/surrender legality,
+strength totals, Nullkiller's current decision id, and legal decision ids. It does not execute
+game actions directly. Invalid decisions, missing callbacks, or Lua failures fall back to
+Nullkiller's existing retreat policy.
+
 Input:
 
 - `state`: complete visible player state or selected state sections.
@@ -400,6 +416,9 @@ Current API coverage boundary:
   list task candidates, execute a selected task, run one step, run capped passes/slices, run the priority loop once,
   run native trade, answer one or several queries, run post-object interaction, and run the exposed army/artifact
   preparation helpers. These all return control to Lua instead of intentionally letting Nullkiller finish the day.
+- Covered battle-preservation policy: Lua may implement `decideBattleRetreat(input)` to keep fighting, retreat,
+  surrender, or delegate to Nullkiller using stable integer decision ids. This covers the adventure-player callback
+  used by battle AIs when deciding whether to preserve a hero instead of continuing combat.
 - Remaining parity test: if a future script needs a strategy decision that cannot be represented by visible input,
   `analysis.nullkiller.*`, checked actions, or bounded task/helper calls, that is an API gap to add before tuning
   policy logic.
@@ -1892,6 +1911,11 @@ Regression harness:
   `objectPropertyChanged` callbacks as `object_property_will_change` and `object_property_changed`. Each update
   carries stable object/property/identifier ids, trace labels, and a gated object snapshot only when the object is
   visible or owned by the script player. This closes a read-side gap for map-control and ownership-memory policies.
+- Done: Lua can optionally answer the battle surrender/retreat callback through `decideBattleRetreat(input)`.
+  The callback uses stable integer decision ids, receives numeric battle/side/hero/stack context and Nullkiller's
+  current decision, and defaults/falls back to Nullkiller on missing hooks, Lua errors, or illegal retreat/surrender
+  choices. The default and bounded-control scripts deliberately delegate, so existing battle behavior is unchanged
+  until a script opts in.
 - Done: trace mistake mining now treats final `imperative-output` progress as part of the day-level script decision.
   Bounded `nullkiller_turn_slice` work can satisfy defense and hero-threat responses through native task
   `affectedObjectIds`, and normal imperative stop signals are no longer reported as stopped action batches. This

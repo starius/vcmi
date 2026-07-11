@@ -1447,4 +1447,23 @@ function Script.runDay(ai, input)
     error("imperative Lua policy reached command limit before ending the day")
 end
 
+function Script.decideBattleRetreat(input)
+    -- Optional synchronous battle callback. The host calls this when BattleAI
+    -- asks the adventure player whether to flee, surrender, or keep fighting.
+    -- The canonical contract is integer based:
+    --
+    --   0 = delegate to Nullkiller's current retreat policy
+    --   1 = continue fighting
+    --   2 = retreat, only legal when input.battleRetreat.can_flee is true
+    --   3 = surrender, only legal when input.battleRetreat.can_surrender is true
+    --
+    -- This default script deliberately delegates. That preserves existing
+    -- battle behavior while making the hook visible and easy for future script
+    -- variants to override without rebuilding the engine.
+    return {
+        decision_id = 0,
+        intent = "default adventure delegates battle retreat policy"
+    }
+end
+
 return Script

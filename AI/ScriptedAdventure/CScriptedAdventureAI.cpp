@@ -18,6 +18,9 @@
 #include "../../lib/StartInfo.h"
 #include "../../lib/UnlockGuard.h"
 #include "../../lib/VCMIDirs.h"
+#include "../../lib/battle/BattleStateInfoForRetreat.h"
+#include "../../lib/battle/CPlayerBattleCallback.h"
+#include "../../lib/battle/Unit.h"
 #include "../../lib/bonuses/Bonus.h"
 #include "../../lib/filesystem/Filesystem.h"
 #include "../../lib/entities/building/CBuilding.h"
@@ -2406,6 +2409,118 @@ std::string battleResultName(EBattleResult result)
 		return "surrender";
 	}
 	return "unknown";
+}
+
+enum class ScriptBattleRetreatDecision : int32_t
+{
+	DELEGATE_NULLKILLER = 0,
+	CONTINUE_FIGHTING = 1,
+	RETREAT = 2,
+	SURRENDER = 3
+};
+
+std::string scriptBattleRetreatDecisionName(ScriptBattleRetreatDecision decision)
+{
+	switch(decision)
+	{
+	case ScriptBattleRetreatDecision::DELEGATE_NULLKILLER:
+		return "delegate_nullkiller";
+	case ScriptBattleRetreatDecision::CONTINUE_FIGHTING:
+		return "continue_fighting";
+	case ScriptBattleRetreatDecision::RETREAT:
+		return "retreat";
+	case ScriptBattleRetreatDecision::SURRENDER:
+		return "surrender";
+	}
+	return "unknown";
+}
+
+ScriptBattleRetreatDecision scriptBattleRetreatDecisionFromAction(const std::optional<BattleAction> & action)
+{
+	if(!action)
+		return ScriptBattleRetreatDecision::CONTINUE_FIGHTING;
+	if(action->actionType == EActionType::RETREAT)
+		return ScriptBattleRetreatDecision::RETREAT;
+	if(action->actionType == EActionType::SURRENDER)
+		return ScriptBattleRetreatDecision::SURRENDER;
+	return ScriptBattleRetreatDecision::DELEGATE_NULLKILLER;
+}
+
+ScriptBattleRetreatDecision scriptBattleRetreatDecisionFromString(const std::string & value)
+{
+	const std::string normalized = toLowerAscii(value);
+	if(normalized == "nullkiller" || normalized == "delegate" || normalized == "delegate_nullkiller" || normalized == "fallback")
+		return ScriptBattleRetreatDecision::DELEGATE_NULLKILLER;
+	if(normalized == "continue" || normalized == "continue_fighting" || normalized == "fight" || normalized == "none")
+		return ScriptBattleRetreatDecision::CONTINUE_FIGHTING;
+	if(normalized == "retreat" || normalized == "flee")
+		return ScriptBattleRetreatDecision::RETREAT;
+	if(normalized == "surrender")
+		return ScriptBattleRetreatDecision::SURRENDER;
+	throw std::invalid_argument("Unknown battle retreat decision: " + value);
+}
+
+ScriptBattleRetreatDecision readScriptBattleRetreatDecision(const JsonNode & output)
+{
+	int32_t decisionID = 0;
+	if(output.isNumber())
+		decisionID = readIntegerValue(output, "battle retreat decision");
+	else if(output.isString())
+		return scriptBattleRetreatDecisionFromString(output.String());
+	else if(hasField(output, "decision_id"))
+		decisionID = readInteger(output, "decision_id");
+	else if(hasField(output, "decisionId"))
+		decisionID = readInteger(output, "decisionId");
+	else if(output["decision"].isString())
+		return scriptBattleRetreatDecisionFromString(output["decision"].String());
+	else
+		throw std::invalid_argument("Battle retreat decision must return decision_id");
+
+	switch(decisionID)
+	{
+	case static_cast<int32_t>(ScriptBattleRetreatDecision::DELEGATE_NULLKILLER):
+		return ScriptBattleRetreatDecision::DELEGATE_NULLKILLER;
+	case static_cast<int32_t>(ScriptBattleRetreatDecision::CONTINUE_FIGHTING):
+		return ScriptBattleRetreatDecision::CONTINUE_FIGHTING;
+	case static_cast<int32_t>(ScriptBattleRetreatDecision::RETREAT):
+		return ScriptBattleRetreatDecision::RETREAT;
+	case static_cast<int32_t>(ScriptBattleRetreatDecision::SURRENDER):
+		return ScriptBattleRetreatDecision::SURRENDER;
+	default:
+		throw std::invalid_argument("Unknown battle retreat decision_id: " + std::to_string(decisionID));
+	}
+}
+
+JsonNode jsonBattleRetreatStack(const battle::Unit * stack)
+{
+	JsonNode node;
+	if(!stack)
+		return node;
+
+	const CreatureID creatureID = stack->creatureId();
+	node["unit_id"] = JsonNode(static_cast<int32_t>(stack->unitId()));
+	node["side_id"] = JsonNode(static_cast<int32_t>(stack->unitSide()));
+	node["side"] = JsonNode(battleSideName(stack->unitSide()));
+	node["creature_id"] = JsonNode(creatureID.getNum());
+	node["creatureIdentifier"] = JsonNode(stableIdentifier(creatureID));
+	node["count"] = JsonNode(stack->getCount());
+	node["availableHealth"] = JsonNode(static_cast<int64_t>(stack->getAvailableHealth()));
+	node["totalHealth"] = JsonNode(static_cast<int64_t>(stack->getTotalHealth()));
+	node["firstHpLeft"] = JsonNode(stack->getFirstHPleft());
+	node["position"] = JsonNode(stack->getPosition().toInt());
+	node["doubleWide"] = JsonNode(stack->doubleWide());
+	node["canShoot"] = JsonNode(stack->canShoot());
+	node["canCast"] = JsonNode(stack->canCast());
+	return node;
+}
+
+JsonNode jsonBattleRetreatStacks(const battle::Units & stacks)
+{
+	JsonNode node;
+	node.Vector();
+	for(const battle::Unit * stack : stacks)
+		node.Vector().push_back(jsonBattleRetreatStack(stack));
+	return node;
 }
 
 std::string diggingStatusName(EDiggingStatus status)
@@ -5767,6 +5882,176 @@ void CScriptedAdventureAI::battleEnd(const BattleID & battleID, const BattleResu
 	AIGateway::battleEnd(battleID, br, queryID);
 }
 
+std::optional<BattleAction> CScriptedAdventureAI::makeSurrenderRetreatDecision(const BattleID & battleID, const BattleStateInfoForRetreat & battleState)
+{
+	const std::optional<BattleAction> nullkillerDecision = AIGateway::makeSurrenderRetreatDecision(battleID, battleState);
+	const ScriptBattleRetreatDecision nullkillerDecisionID = scriptBattleRetreatDecisionFromAction(nullkillerDecision);
+
+	const uint64_t ourStrength = battleState.getOurStrength();
+	const uint64_t enemyStrength = battleState.getEnemyStrength();
+	const double fightRatio = enemyStrength > 0
+		? static_cast<double>(ourStrength) / static_cast<double>(enemyStrength)
+		: 0.0;
+
+	JsonNode context;
+	context["battle_id"] = JsonNode(battleID.getNum());
+	context["can_flee"] = JsonNode(battleState.canFlee);
+	context["can_surrender"] = JsonNode(battleState.canSurrender);
+	context["is_last_turn_before_die"] = JsonNode(battleState.isLastTurnBeforeDie);
+	context["our_side_id"] = JsonNode(static_cast<int32_t>(battleState.ourSide));
+	context["our_side"] = JsonNode(battleSideName(battleState.ourSide));
+	context["our_strength"] = JsonNode(static_cast<int64_t>(ourStrength));
+	context["enemy_strength"] = JsonNode(static_cast<int64_t>(enemyStrength));
+	context["fight_ratio"].Float() = fightRatio;
+	context["turns_skipped_by_defense"] = JsonNode(battleState.turnsSkippedByDefense);
+	context["our_hero_id"] = battleState.ourHero ? JsonNode(battleState.ourHero->id.getNum()) : JsonNode();
+	context["enemy_hero_id"] = battleState.enemyHero ? JsonNode(battleState.enemyHero->id.getNum()) : JsonNode();
+	context["our_stacks"] = jsonBattleRetreatStacks(battleState.ourStacks);
+	context["enemy_stacks"] = jsonBattleRetreatStacks(battleState.enemyStacks);
+	context["nullkiller_decision_id"] = JsonNode(static_cast<int32_t>(nullkillerDecisionID));
+	context["nullkiller_decision"] = JsonNode(scriptBattleRetreatDecisionName(nullkillerDecisionID));
+	context["decisions"].Vector();
+	for(const auto decision : {
+		ScriptBattleRetreatDecision::DELEGATE_NULLKILLER,
+		ScriptBattleRetreatDecision::CONTINUE_FIGHTING,
+		ScriptBattleRetreatDecision::RETREAT,
+		ScriptBattleRetreatDecision::SURRENDER
+	})
+	{
+		JsonNode option;
+		option["decision_id"] = JsonNode(static_cast<int32_t>(decision));
+		option["decision"] = JsonNode(scriptBattleRetreatDecisionName(decision));
+		option["legal"] = JsonNode(decision != ScriptBattleRetreatDecision::RETREAT || battleState.canFlee);
+		if(decision == ScriptBattleRetreatDecision::SURRENDER)
+			option["legal"] = JsonNode(battleState.canSurrender);
+		context["decisions"].Vector().push_back(option);
+	}
+	if(cc)
+	{
+		context["own_town_count"] = JsonNode(static_cast<int32_t>(cc->getTownsInfo().size()));
+		if(auto battle = cc->getBattle(battleID))
+			context["surrender_cost"] = JsonNode(battle->battleGetSurrenderCost());
+	}
+
+	JsonNode updateData;
+	updateData["battleRetreat"] = context;
+	updateData["used_decision_id"] = JsonNode(static_cast<int32_t>(nullkillerDecisionID));
+	updateData["used_decision"] = JsonNode(scriptBattleRetreatDecisionName(nullkillerDecisionID));
+	updateData["source"] = JsonNode("nullkiller");
+
+	auto finish = [&](const std::optional<BattleAction> & decision, const ScriptBattleRetreatDecision decisionID, const std::string & source) -> std::optional<BattleAction>
+	{
+		updateData["used_decision_id"] = JsonNode(static_cast<int32_t>(decisionID));
+		updateData["used_decision"] = JsonNode(scriptBattleRetreatDecisionName(decisionID));
+		updateData["source"] = JsonNode(source);
+		const bool notableDecision = source == "script" || hasField(updateData, "error");
+		if(notableDecision)
+			appendScriptUpdate("battle_retreat_decision", updateData, false);
+		return decision;
+	};
+
+	try
+	{
+		const int currentDay = cc ? cc->getCalendar().getCurrentDay() : 0;
+		if(disabledUntilDay > currentDay)
+		{
+			updateData["error"] = JsonNode("script disabled after repeated failures");
+			return finish(nullkillerDecision, nullkillerDecisionID, "nullkiller");
+		}
+
+		const auto source = getScriptSource();
+		if(!source)
+		{
+			updateData["error"] = JsonNode("script source is not available");
+			return finish(nullkillerDecision, nullkillerDecisionID, "nullkiller");
+		}
+
+		JsonNode input;
+		input["memory"] = scriptMemory;
+		input["updates"] = makeScriptUpdates(false);
+		input["opponentUpdates"] = makeScriptUpdates(true);
+		input["battleRetreat"] = context;
+		if(cc)
+		{
+			const Calendar calendar = cc->getCalendar();
+			input["state"]["day"] = JsonNode(calendar.getCurrentDay());
+			input["state"]["dayOfWeek"] = JsonNode(calendar.getDayOfWeek());
+			input["state"]["week"] = JsonNode(calendar.getWeek());
+			input["state"]["month"] = JsonNode(calendar.getMonth());
+			input["state"]["player"]["id"] = JsonNode(playerID.getNum());
+			input["state"]["player"]["color"] = JsonNode(playerID.toString());
+			input["state"]["battle"]["state"] = JsonNode(battleStateName(status.getBattle()));
+		}
+
+		if(scriptConfig.trace)
+		{
+			JsonNode trace;
+			trace["input"] = input;
+			writeTraceEvent("battle-retreat-input", trace);
+		}
+
+		std::optional<JsonNode> scriptOutput;
+		{
+			std::unique_ptr<scripting::LuaAdventureScriptRunner> transientRunner;
+			scripting::LuaAdventureScriptRunner * runner = nullptr;
+			std::lock_guard battleRunnerLock(battleCallbackRunnerMutex);
+			if(scriptConfig.reloadScriptEachTurn)
+			{
+				transientRunner = makeRunner(*source);
+				runner = transientRunner.get();
+			}
+			else
+			{
+				if(!cachedBattleCallbackRunner)
+					cachedBattleCallbackRunner = makeRunner(*source);
+				runner = cachedBattleCallbackRunner.get();
+			}
+			scriptOutput = runner->decideBattleRetreat(input);
+		}
+		if(!scriptOutput)
+			return finish(nullkillerDecision, nullkillerDecisionID, "nullkiller");
+
+		if(scriptConfig.trace)
+		{
+			JsonNode trace;
+			trace["output"] = *scriptOutput;
+			writeTraceEvent("battle-retreat-output", trace);
+		}
+
+		const ScriptBattleRetreatDecision scriptDecision = readScriptBattleRetreatDecision(*scriptOutput);
+		updateData["script_output"] = *scriptOutput;
+		updateData["script_decision_id"] = JsonNode(static_cast<int32_t>(scriptDecision));
+		updateData["script_decision"] = JsonNode(scriptBattleRetreatDecisionName(scriptDecision));
+
+		switch(scriptDecision)
+		{
+		case ScriptBattleRetreatDecision::DELEGATE_NULLKILLER:
+			return finish(nullkillerDecision, nullkillerDecisionID, "script_delegate_nullkiller");
+		case ScriptBattleRetreatDecision::CONTINUE_FIGHTING:
+			return finish(std::nullopt, ScriptBattleRetreatDecision::CONTINUE_FIGHTING, "script");
+		case ScriptBattleRetreatDecision::RETREAT:
+			if(!battleState.canFlee)
+				throw std::invalid_argument("Script requested retreat when fleeing is not legal");
+			return finish(BattleAction::makeRetreat(battleState.ourSide), ScriptBattleRetreatDecision::RETREAT, "script");
+		case ScriptBattleRetreatDecision::SURRENDER:
+			if(!battleState.canSurrender)
+				throw std::invalid_argument("Script requested surrender when surrender is not legal");
+			return finish(BattleAction::makeSurrender(battleState.ourSide), ScriptBattleRetreatDecision::SURRENDER, "script");
+		}
+	}
+	catch(const std::exception & e)
+	{
+		updateData["error"] = JsonNode(e.what());
+		{
+			std::lock_guard battleRunnerLock(battleCallbackRunnerMutex);
+			cachedBattleCallbackRunner.reset();
+		}
+		logAi->warn("ScriptedAdventureAI battle retreat decision failed, using Nullkiller decision: %s", e.what());
+	}
+
+	return finish(nullkillerDecision, nullkillerDecisionID, "nullkiller");
+}
+
 void CScriptedAdventureAI::battleResultsApplied()
 {
 	JsonNode data;
@@ -6707,6 +6992,10 @@ void CScriptedAdventureAI::makeScriptedTurn()
 	catch(const std::exception & e)
 	{
 		cachedRunner.reset();
+		{
+			std::lock_guard battleRunnerLock(battleCallbackRunnerMutex);
+			cachedBattleCallbackRunner.reset();
+		}
 		fallbackToNullkiller(e.what());
 		AIGateway::makeTurn();
 	}
@@ -6734,6 +7023,10 @@ bool CScriptedAdventureAI::tryMakeScriptedTurn()
 	if(scriptConfig.reloadScriptEachTurn)
 	{
 		cachedRunner.reset();
+		{
+			std::lock_guard battleRunnerLock(battleCallbackRunnerMutex);
+			cachedBattleCallbackRunner.reset();
+		}
 		transientRunner = makeRunner(*source);
 		runner = transientRunner.get();
 	}
@@ -10701,6 +10994,10 @@ void CScriptedAdventureAI::loadConfig()
 				scriptPath = normalizeScriptPath(*script);
 				cachedScriptSource.reset();
 				cachedRunner.reset();
+				{
+					std::lock_guard battleRunnerLock(battleCallbackRunnerMutex);
+					cachedBattleCallbackRunner.reset();
+				}
 				logAi->info("ScriptedAdventureAI applied script override from %s.", envName.c_str());
 				break;
 			}
@@ -10744,12 +11041,20 @@ void CScriptedAdventureAI::applyConfig(const JsonNode & config, const std::strin
 		scriptPath = normalizeScriptPath(readString(config, "script"));
 		cachedScriptSource.reset();
 		cachedRunner.reset();
+		{
+			std::lock_guard battleRunnerLock(battleCallbackRunnerMutex);
+			cachedBattleCallbackRunner.reset();
+		}
 	}
 
 	const bool previousReloadScriptEachTurn = scriptConfig.reloadScriptEachTurn;
 	scriptConfig.reloadScriptEachTurn = readBool(config, "reloadScriptEachTurn", scriptConfig.reloadScriptEachTurn);
 	if(scriptConfig.reloadScriptEachTurn != previousReloadScriptEachTurn || scriptConfig.reloadScriptEachTurn)
+	{
 		cachedRunner.reset();
+		std::lock_guard battleRunnerLock(battleCallbackRunnerMutex);
+		cachedBattleCallbackRunner.reset();
+	}
 	scriptConfig.trace = readBool(config, "trace", scriptConfig.trace);
 	scriptConfig.experimentalSupportActions = readBool(config, "experimentalSupportActions", scriptConfig.experimentalSupportActions);
 	maxScriptCallsPerTurn = readSize(config, "maxScriptCallsPerTurn", maxScriptCallsPerTurn, 1, 64);

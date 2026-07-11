@@ -94,6 +94,7 @@ public:
 	void playerEndsTurn(PlayerColor player) override;
 	void battleStart(const BattleID & battleID, const CCreatureSet * army1, const CCreatureSet * army2, int3 tile, const CGHeroInstance * hero1, const CGHeroInstance * hero2, BattleSide side, bool replayAllowed) override;
 	void battleEnd(const BattleID & battleID, const BattleResult * br, QueryID queryID) override;
+	std::optional<BattleAction> makeSurrenderRetreatDecision(const BattleID & battleID, const BattleStateInfoForRetreat & battleState) override;
 	void battleResultsApplied() override;
 	void battleEnded() override;
 	void showWorldViewEx(const std::vector<ObjectPosInfo> & objectPositions, bool showTerrain) override;
@@ -159,6 +160,8 @@ private:
 	ScriptConfig scriptConfig;
 	std::optional<std::string> cachedScriptSource;
 	std::unique_ptr<scripting::LuaAdventureScriptRunner> cachedRunner;
+	std::unique_ptr<scripting::LuaAdventureScriptRunner> cachedBattleCallbackRunner;
+	std::mutex battleCallbackRunnerMutex;
 	size_t traceSequence = 0;
 	size_t consecutiveScriptFailures = 0;
 	int disabledUntilDay = 0;
