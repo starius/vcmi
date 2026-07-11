@@ -52,6 +52,7 @@ struct State
 	Config config;
 	std::ofstream output;
 	int64_t rowsWritten = 0;
+	BattleSimulationSummary summary;
 	std::map<ObjectInstanceID, int32_t> initialHeroMana;
 };
 
@@ -602,6 +603,27 @@ void appendResultRow(const CBattleInfoCallback & battle, const BattleResult & re
 			state.config.outputPath);
 	}
 }
+
+void recordSummary(const BattleResult & result)
+{
+	++state.summary.rows;
+
+	switch(result.winner)
+	{
+		case BattleSide::ATTACKER:
+			++state.summary.attackerWins;
+			break;
+		case BattleSide::DEFENDER:
+			++state.summary.defenderWins;
+			break;
+		case BattleSide::NONE:
+			++state.summary.noWinner;
+			break;
+		default:
+			++state.summary.otherWinner;
+			break;
+	}
+}
 }
 
 bool isEnabled()
@@ -614,6 +636,12 @@ bool hasRecordedRows()
 {
 	initialize();
 	return state.rowsWritten > 0;
+}
+
+BattleSimulationSummary getSummary()
+{
+	initialize();
+	return state.summary;
 }
 
 int32_t getReplayInitialMana(const CGHeroInstance * hero, int32_t fallback)
@@ -636,6 +664,7 @@ bool recordResultAndShouldReplay(CGameHandler &, const CBattleInfoCallback & bat
 		return false;
 
 	appendResultRow(battle, result);
+	recordSummary(result);
 	return state.rowsWritten < state.config.maxBattles;
 }
 }
