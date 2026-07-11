@@ -309,6 +309,7 @@ Current branch progress toward the service boundary:
 - `BattleSimulationRequest` and `BattleSimulationResponse` name the future server-owned evaluator boundary: battle setup, deterministic seed context, sample count, thresholds, response status, summary, interpreted evaluation, and small validity/completion checks.
 - `BattleSimulationEvaluator` is owned by `BattleProcessor` and exposed through `BattleProcessor::evaluateBattleSimulation`. It currently validates requests and returns `NOT_AVAILABLE` until state-isolated repeated simulation is implemented.
 - `BattleSimulationCache` stores simulation summaries by explicit state fingerprint plus deterministic seed/sample context. Requests require a non-zero state fingerprint so future runtime callers do not accidentally cache by object pointer identity.
+- `BattleSimulationFingerprint` provides a deterministic builder for normalized battle-state cache fingerprints; it deliberately returns `0` until callers add explicit state data.
 - This is still not a runtime Nullkiller evaluator. The remaining hard part is isolating repeated simulations from live adventure-map state and exposing them through a controlled server-owned API/cache.
 
 Batch collection caveat: when running `vcmibattlesim` with MMAI in parallel, each shard needs an isolated XDG config/cache profile. A shared profile can be rewritten by clients and silently disable the MMAI mod for later shards. Use `--xdg-config-template` and, if needed, `--xdg-profile-root` so each client starts from the same active-mod configuration.
