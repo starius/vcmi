@@ -134,7 +134,7 @@ class DefensePressureMistakeTest(unittest.TestCase):
         )
         self.assertNotIn("defense_pressure_without_response", {item["type"] for item in mistakes})
 
-    def test_native_task_touching_alert_town_counts_as_defensive_response(self) -> None:
+    def test_native_task_touching_alert_town_counts_as_defensive_response_when_no_matching_candidate_remains(self) -> None:
         progress = {
             "executed": [
                 {
@@ -166,7 +166,7 @@ class DefensePressureMistakeTest(unittest.TestCase):
                     {
                         "planAction": {
                             "type": "recruit",
-                            "town_id": 10,
+                            "town_id": 20,
                             "level": 0,
                         }
                     }
@@ -176,6 +176,51 @@ class DefensePressureMistakeTest(unittest.TestCase):
             progress,
         )
         self.assertNotIn("defense_pressure_without_response", {item["type"] for item in mistakes})
+
+    def test_native_task_touching_alert_town_does_not_hide_remaining_matching_recruit(self) -> None:
+        progress = {
+            "executed": [
+                {
+                    "type": "nullkiller_turn_slice",
+                    "didWork": True,
+                    "passes": [
+                        {
+                            "adventure": {
+                                "didExecute": True,
+                                "attemptedTasks": [
+                                    {
+                                        "executed": True,
+                                        "task": {
+                                            "affectedObjectIds": [10],
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                }
+            ],
+            "failed": [],
+            "remaining": [],
+        }
+        mistakes = self.mistakes_for(
+            {
+                "recruitOptions": [
+                    {
+                        "source_id": 10,
+                        "amount": 12,
+                        "planAction": {
+                            "type": "recruit",
+                            "source_id": 10,
+                            "level": 0,
+                        }
+                    }
+                ]
+            },
+            [],
+            progress,
+        )
+        self.assertIn("defense_pressure_without_response", {item["type"] for item in mistakes})
 
 
 class HeroThreatMistakeTest(unittest.TestCase):

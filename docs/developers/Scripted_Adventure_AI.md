@@ -2165,6 +2165,12 @@ Regression harness:
   14 terminal results, 5 `ScriptedAdventureAI` wins, 9 `Nullkiller2` wins, and 2 infrastructure idles
   (`/root/script-ai-runs/defensive-bounded-full16-notrace-20260711`). It did flip seed `14` from a baseline loss
   to a Lua win, but lost too much elsewhere, so it remains an experiment rather than a champion.
+- Done: tightened trace mining for town-defense misses. Earlier same-day progress touching a threatened town no
+  longer suppresses `defense_pressure_without_response` when the current input still exposes a matching recruit,
+  build, or reinforce-town candidate. Re-summarizing the fresh traced baseline now surfaces repeated defense misses
+  in the previous "no important mistake" losses: seeds `02`, `07`, `10`, and `15`. This explains why the simple
+  defensive candidate had a real target but was still too blunt; the next defense policy needs to decide when
+  continued defense spending is worth delaying native expansion, not merely spend once whenever pressure exists.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions

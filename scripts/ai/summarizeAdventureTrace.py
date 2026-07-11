@@ -526,6 +526,40 @@ def has_defensive_response_candidate(action_space: Any) -> bool:
     return any(is_reinforce_transfer_candidate(candidate) for candidate in as_list(data.get("armyTransferOptions")))
 
 
+def candidate_town_id(candidate: Any, action_fields: tuple[str, ...]) -> int:
+    data = as_dict(candidate)
+    action = candidate_action(data)
+    for field in action_fields:
+        value = data.get(field, action.get(field))
+        town_id = as_int(value, -1)
+        if town_id != -1:
+            return town_id
+    return -1
+
+
+def candidate_matches_alert_town(candidate: Any, alert: Any, action_fields: tuple[str, ...]) -> bool:
+    town_id = as_int(as_dict(alert).get("town_id"), -1)
+    return town_id != -1 and candidate_town_id(candidate, action_fields) == town_id
+
+
+def has_matching_defensive_response_candidate(action_space: Any, alerts: Any) -> bool:
+    data = as_dict(action_space)
+    alert_list = as_list(alerts)
+    for option in as_list(data.get("buildOptions")):
+        if any(candidate_matches_alert_town(option, alert, ("town_id", "townId")) for alert in alert_list):
+            return True
+    for option in as_list(data.get("recruitOptions")):
+        if any(candidate_matches_alert_town(option, alert, ("source_id", "sourceId", "town_id", "townId")) for alert in alert_list):
+            return True
+    for option in as_list(data.get("armyTransferOptions")):
+        if is_reinforce_transfer_candidate(option) and any(
+            candidate_matches_alert_town(option, alert, ("destination_id", "destinationId", "town_id", "townId"))
+            for alert in alert_list
+        ):
+            return True
+    return False
+
+
 def output_has_defensive_response(actions: Any, action_space: Any) -> bool:
     action_counts = action_type_counts(actions)
     if (
@@ -914,7 +948,10 @@ def analyze_mistakes(
             high_defense
             and has_defensive_response_candidate(action_space)
             and not output_has_defensive_response(all_actions, action_space)
-            and not progress_touches_any_object(progress, [alert.get("town_id") for alert in high_defense])
+            and (
+                has_matching_defensive_response_candidate(action_space, high_defense)
+                or not progress_touches_any_object(progress, [alert.get("town_id") for alert in high_defense])
+            )
         ):
             details = {
                 "name": "defense-pressure-without-response",
