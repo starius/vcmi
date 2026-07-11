@@ -2175,6 +2175,14 @@ Regression harness:
   (`/root/script-ai-runs/defensive-bounded-desperation-full16-notrace-20260711`). This is better than the broad
   defense experiment and slightly above the earlier 9-win bounded-control screen, but it is still below the
   intended promotion bar because six seeds remain clear losses and retry noise is high.
+- Rejected / not promoted: a follow-up critical-only exact-town defense variant removed the no-map-tempo gate when
+  the threatened town had a legal recruit/build option. It recovered some defense-loss seeds (`02`, `14`) but
+  regressed too many previous wins; the 16-map no-trace screen produced 16 terminal results, 7
+  `ScriptedAdventureAI` wins, 9 `Nullkiller2` wins, 0 timeouts, 0 idle failures, and 3 infrastructure retries
+  (`/root/script-ai-runs/defensive-bounded-critical-town-full16-notrace-20260711`). The result argues against
+  pre-slice defense spending while map tempo remains available; the next defense attempt should expose or call a
+  bounded Nullkiller defense/reinforcement subroutine for the threatened town instead of spending generic
+  build/recruit options from Lua.
 - Done: tightened trace mining for town-defense misses. Earlier same-day progress touching a threatened town no
   longer suppresses `defense_pressure_without_response` when the current input still exposes a matching recruit,
   build, or reinforce-town candidate. Re-summarizing the fresh traced baseline now surfaces repeated defense misses
