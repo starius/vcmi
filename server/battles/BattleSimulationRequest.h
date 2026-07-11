@@ -31,6 +31,9 @@ struct BattleSimulationResponse
 	BattleSimulationEvaluation evaluation;
 };
 
+bool isValidRequest(const BattleSimulationRequest & request);
+bool isCompleteResponse(const BattleSimulationRequest & request, const BattleSimulationResponse & response);
+
 BattleSimulationResponse makeResponse(
 	const BattleSimulationSummary & summary,
 	const BattleSimulationDecisionThresholds & thresholds = {});
