@@ -1883,6 +1883,11 @@ Regression harness:
 - Done: the imperative Lua facade refreshes its `type` to `type_id` mapping from host-provided
   `actionSpace.acceptedActions`, including after `ai:refresh()`. The hardcoded Lua ids remain a compatibility
   fallback, but normal play now uses the host-advertised integer action contract.
+- Done: trace mistake mining now treats final `imperative-output` progress as part of the day-level script decision.
+  Bounded `nullkiller_turn_slice` work can satisfy defense and hero-threat responses through native task
+  `affectedObjectIds`, and normal imperative stop signals are no longer reported as stopped action batches. This
+  keeps API-parity probes from looking idle when Lua deliberately called a bounded native subroutine and regained
+  control before ending the turn.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions

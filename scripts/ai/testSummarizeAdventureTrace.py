@@ -26,22 +26,25 @@ def input_record(script_input: dict) -> dict:
     }
 
 
-def output_record(actions: list[dict]) -> dict:
-    return {
+def output_record(actions: list[dict], progress: dict | None = None, status: str = "need_replan") -> dict:
+    record = {
         "path": "output.json",
         "player": "red",
         "script": "scripts/ai/defaultAdventure.lua",
         "day": 1,
         "callIndex": 0,
         "output": {
-            "status": "need_replan",
+            "status": status,
             "actions": actions,
         },
     }
+    if progress is not None:
+        record["progress"] = progress
+    return record
 
 
 class DefensePressureMistakeTest(unittest.TestCase):
-    def mistakes_for(self, action_space: dict, actions: list[dict]) -> list[dict]:
+    def mistakes_for(self, action_space: dict, actions: list[dict], progress: dict | None = None) -> list[dict]:
         key = ("red", 1, 0)
         script_input = {
             "analysis": {
@@ -56,7 +59,7 @@ class DefensePressureMistakeTest(unittest.TestCase):
         }
         return analyze_mistakes(
             {key: input_record(script_input)},
-            {key: output_record(actions)},
+            {key: output_record(actions, progress)},
             {},
         )
 
@@ -131,9 +134,52 @@ class DefensePressureMistakeTest(unittest.TestCase):
         )
         self.assertNotIn("defense_pressure_without_response", {item["type"] for item in mistakes})
 
+    def test_native_task_touching_alert_town_counts_as_defensive_response(self) -> None:
+        progress = {
+            "executed": [
+                {
+                    "type": "nullkiller_turn_slice",
+                    "didWork": True,
+                    "passes": [
+                        {
+                            "adventure": {
+                                "didExecute": True,
+                                "attemptedTasks": [
+                                    {
+                                        "executed": True,
+                                        "task": {
+                                            "affectedObjectIds": [10],
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                }
+            ],
+            "failed": [],
+            "remaining": [],
+        }
+        mistakes = self.mistakes_for(
+            {
+                "recruitOptions": [
+                    {
+                        "planAction": {
+                            "type": "recruit",
+                            "town_id": 10,
+                            "level": 0,
+                        }
+                    }
+                ]
+            },
+            [],
+            progress,
+        )
+        self.assertNotIn("defense_pressure_without_response", {item["type"] for item in mistakes})
+
 
 class HeroThreatMistakeTest(unittest.TestCase):
-    def mistakes_for(self, movement_options: list[dict], actions: list[dict]) -> list[dict]:
+    def mistakes_for(self, movement_options: list[dict], actions: list[dict], progress: dict | None = None) -> list[dict]:
         key = ("red", 1, 0)
         script_input = {
             "analysis": {
@@ -166,7 +212,7 @@ class HeroThreatMistakeTest(unittest.TestCase):
         }
         return analyze_mistakes(
             {key: input_record(script_input)},
-            {key: output_record(actions)},
+            {key: output_record(actions, progress)},
             {},
         )
 
@@ -298,6 +344,55 @@ class HeroThreatMistakeTest(unittest.TestCase):
         )
         self.assertNotIn("hero_threat_without_escape", {item["type"] for item in mistakes})
 
+    def test_native_task_touching_threatened_hero_counts_as_progress(self) -> None:
+        progress = {
+            "executed": [
+                {
+                    "type": "nullkiller_turn_slice",
+                    "didWork": True,
+                    "passes": [
+                        {
+                            "adventure": {
+                                "didExecute": True,
+                                "attemptedTasks": [
+                                    {
+                                        "executed": True,
+                                        "task": {
+                                            "affectedObjectIds": [5],
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                }
+            ],
+            "failed": [],
+            "remaining": [],
+        }
+        mistakes = self.mistakes_for(
+            [
+                {
+                    "hero_id": 5,
+                    "safe": True,
+                    "planAction": {
+                        "type": "move_hero",
+                        "hero_id": 5,
+                    },
+                    "path": {
+                        "destination": {
+                            "x": 5,
+                            "y": 0,
+                            "z": 0,
+                        }
+                    },
+                }
+            ],
+            [],
+            progress,
+        )
+        self.assertNotIn("hero_threat_without_escape", {item["type"] for item in mistakes})
+
 
 class ImperativeTraceSummaryTest(unittest.TestCase):
     def test_imperative_trace_labels_are_counted(self) -> None:
@@ -375,6 +470,112 @@ class ImperativeTraceSummaryTest(unittest.TestCase):
         self.assertEqual(summary["requested_actions"]["build"], 1)
         self.assertEqual(summary["executed_actions"]["build"], 1)
         self.assertEqual(summary["output_intents"]["delegate"], 1)
+
+    def test_imperative_output_progress_suppresses_false_idle_and_stopped_mistakes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            input_path = root / "player-red-day-1-event-0-imperative-input.json"
+            input_path.write_text(
+                json.dumps(
+                    {
+                        "label": "imperative-input",
+                        "player": "red",
+                        "script": "ai/boundedNullkillerControl.lua",
+                        "payload": {
+                            "input": {
+                                "state": {"heroes": [], "towns": [], "resources": {}},
+                                "updates": {"events": []},
+                                "opponentUpdates": {"events": []},
+                                "analysis": {},
+                                "actionSpace": {
+                                    "movementOptions": [
+                                        {
+                                            "planAction": {
+                                                "type": "move_hero",
+                                                "hero_id": 5,
+                                            }
+                                        }
+                                    ]
+                                },
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            command_path = root / "player-red-day-1-event-1-imperative-command.json"
+            command_path.write_text(
+                json.dumps(
+                    {
+                        "label": "imperative-command",
+                        "player": "red",
+                        "script": "ai/boundedNullkillerControl.lua",
+                        "payload": {
+                            "commandIndex": 0,
+                            "command": {
+                                "kind": "execute",
+                                "payload": {"type": "nullkiller_turn_slice"},
+                            },
+                            "response": {
+                                "ok": True,
+                                "result": {"ok": True, "type": "nullkiller_turn_slice", "stop": True},
+                            },
+                            "progress": {
+                                "executed": [
+                                    {
+                                        "type": "nullkiller_turn_slice",
+                                        "didWork": False,
+                                        "shouldStopTurn": True,
+                                    }
+                                ],
+                                "failed": [],
+                                "remaining": [],
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            output_path = root / "player-red-day-1-event-2-imperative-output.json"
+            output_path.write_text(
+                json.dumps(
+                    {
+                        "label": "imperative-output",
+                        "player": "red",
+                        "script": "ai/boundedNullkillerControl.lua",
+                        "payload": {
+                            "output": {
+                                "status": "end_turn",
+                                "actions": [],
+                                "intent": "bounded native stop",
+                            },
+                            "progress": {
+                                "executed": [
+                                    {
+                                        "type": "nullkiller_turn_slice",
+                                        "didWork": True,
+                                    },
+                                    {
+                                        "type": "nullkiller_turn_slice",
+                                        "didWork": False,
+                                        "shouldStopTurn": True,
+                                    },
+                                ],
+                                "failed": [],
+                                "remaining": [],
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            summary = summarize([input_path, command_path, output_path])
+
+        mistakes = summary["mistakes"]["counts"]
+        self.assertNotIn("idle_with_candidates", mistakes)
+        self.assertNotIn("stopped_batch", mistakes)
 
     def test_map_progress_deltas_are_summarized(self) -> None:
         def write_input(

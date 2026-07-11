@@ -322,6 +322,122 @@ def action_type_counts(actions: Any) -> Counter[str]:
     return counter
 
 
+def progress_executed_actions(progress: Any) -> list[Any]:
+    return as_list(as_dict(progress).get("executed"))
+
+
+def native_slice_did_work(action: Any) -> bool:
+    data = as_dict(action)
+    return (
+        data.get("didWork") is True
+        or as_int(data.get("priorityTasksExecuted")) > 0
+        or as_int(data.get("adventureStepsExecuted")) > 0
+        or as_int(data.get("adventureReplanSteps")) > 0
+        or as_int(data.get("tradePasses")) > 0
+        or data.get("paused") is True
+    )
+
+
+def native_slice_should_end_turn(action: Any) -> bool:
+    data = as_dict(action)
+    return (
+        data.get("type") == "nullkiller_turn_slice"
+        and (
+            data.get("shouldStopTurn") is True
+            or as_int(data.get("adventureStopTurnSteps")) > 0
+            or (data.get("exhaustedCandidates") is True and not native_slice_did_work(data))
+        )
+    )
+
+
+def progress_has_native_stop(progress: Any) -> bool:
+    native_slices = [
+        as_dict(action)
+        for action in progress_executed_actions(progress)
+        if as_dict(action).get("type") == "nullkiller_turn_slice"
+    ]
+    return bool(native_slices and native_slice_should_end_turn(native_slices[-1]))
+
+
+def append_task(tasks: list[dict[str, Any]], task: Any) -> None:
+    task_data = as_dict(task)
+    if task_data:
+        tasks.append(task_data)
+
+
+def append_native_step_tasks(tasks: list[dict[str, Any]], step: Any) -> None:
+    step_data = as_dict(step)
+    if step_data.get("didExecute") is True:
+        append_task(tasks, step_data.get("selectedTask"))
+    for attempt in as_list(step_data.get("attemptedTasks")):
+        attempt_data = as_dict(attempt)
+        if attempt_data.get("executed") is True:
+            append_task(tasks, attempt_data.get("task"))
+
+
+def native_tasks_from_action(action: Any) -> list[dict[str, Any]]:
+    data = as_dict(action)
+    tasks: list[dict[str, Any]] = []
+    action_type = data.get("type")
+
+    if action_type == "nullkiller_priority_pass" and as_int(data.get("executed")) > 0:
+        append_task(tasks, data.get("lastTask"))
+    elif action_type == "nullkiller_step":
+        append_native_step_tasks(tasks, data)
+    elif action_type == "nullkiller_pass":
+        for step in as_list(data.get("steps")):
+            append_native_step_tasks(tasks, step)
+    elif action_type == "nullkiller_turn_slice":
+        for turn_pass in as_list(data.get("passes")):
+            pass_data = as_dict(turn_pass)
+            priority = as_dict(pass_data.get("priority"))
+            if as_int(priority.get("executed")) > 0:
+                append_task(tasks, priority.get("lastTask"))
+            append_native_step_tasks(tasks, pass_data.get("adventure"))
+
+    return tasks
+
+
+def progress_native_tasks(progress: Any) -> list[dict[str, Any]]:
+    tasks: list[dict[str, Any]] = []
+    for action in progress_executed_actions(progress):
+        tasks.extend(native_tasks_from_action(action))
+    return tasks
+
+
+def task_touches_object(task: Any, object_id: Any) -> bool:
+    task_data = as_dict(task)
+    object_id = as_int(object_id, -1)
+    if object_id < 0:
+        return False
+
+    for field in ("object_id", "town_id", "hero_id"):
+        if field in task_data and as_int(task_data.get(field), -2) == object_id:
+            return True
+
+    for touched_id in as_list(task_data.get("affectedObjectIds")):
+        if as_int(touched_id, -2) == object_id:
+            return True
+
+    nested_goal = as_dict(task_data.get("goal"))
+    if nested_goal:
+        return task_touches_object(nested_goal, object_id)
+    return False
+
+
+def progress_touches_object(progress: Any, object_id: Any) -> bool:
+    for task in progress_native_tasks(progress):
+        if task_touches_object(task, object_id):
+            return True
+    return False
+
+
+def progress_touches_any_object(progress: Any, object_ids: Any) -> bool:
+    ids = {as_int(object_id, -1) for object_id in as_list(object_ids)}
+    ids.discard(-1)
+    return any(progress_touches_object(progress, object_id) for object_id in ids)
+
+
 def action_matches(action: Any, action_type: str, field: str | None = None, value: Any = None) -> bool:
     data = as_dict(action)
     if data.get("type") != action_type:
@@ -392,7 +508,13 @@ def has_defensive_response_candidate(action_space: Any) -> bool:
 
 def output_has_defensive_response(actions: Any, action_space: Any) -> bool:
     action_counts = action_type_counts(actions)
-    if action_counts["build"] or action_counts["recruit"]:
+    if (
+        action_counts["build"]
+        or action_counts["recruit"]
+        or action_counts["nullkiller_build_army"]
+        or action_counts["nullkiller_recruit_creatures"]
+        or action_counts["nullkiller_move_creatures_to_hero"]
+    ):
         return True
 
     transfer_candidates = candidate_by_action(as_dict(action_space).get("armyTransferOptions"))
@@ -655,14 +777,17 @@ def analyze_mistakes(
 
         output = as_dict(output_record.get("output"))
         actions = as_list(output.get("actions"))
-        action_counts = action_type_counts(actions)
+        progress = as_dict(output_record.get("progress"))
+        progress_actions = progress_executed_actions(progress)
+        all_actions = actions + progress_actions
+        action_counts = action_type_counts(all_actions)
         script = str(output_record.get("script") or input_record.get("script") or "")
 
         if output.get("status") == "fallback":
             details = {"name": "fallback-output", "description": "Script explicitly requested fallback."}
             mistakes.append(make_mistake("fallback_output", 5, output_record, details["description"], details))
 
-        if output.get("status") == "end_turn" and has_relevant_candidates(action_space):
+        if output.get("status") == "end_turn" and has_relevant_candidates(action_space) and not progress_has_native_stop(progress):
             details = {
                 "name": "idle-with-candidates",
                 "description": "Script ended the turn while build, recruit, movement, or object candidates were available.",
@@ -678,7 +803,7 @@ def analyze_mistakes(
 
         object_candidates = candidate_by_action(action_space.get("reachableObjects"))
         move_candidates = candidate_by_action(action_space.get("movementOptions"))
-        for action in actions:
+        for action in all_actions:
             action_data = as_dict(action)
             key_for_action = plan_action_key(action_data)
             if action_data.get("type") == "visit_object":
@@ -737,10 +862,13 @@ def analyze_mistakes(
         ]
         moved_heroes = {
             as_dict(action).get("hero_id")
-            for action in actions
+            for action in all_actions
             if as_dict(action).get("type") == "move_hero"
         }
-        if actionable_threats and not any(alert.get("hero_id") in moved_heroes for alert in actionable_threats):
+        if actionable_threats and not any(
+            alert.get("hero_id") in moved_heroes or progress_touches_object(progress, alert.get("hero_id"))
+            for alert in actionable_threats
+        ):
             alert = actionable_threats[0]
             hero_id = alert.get("hero_id")
             details = {
@@ -760,7 +888,8 @@ def analyze_mistakes(
         if (
             high_defense
             and has_defensive_response_candidate(action_space)
-            and not output_has_defensive_response(actions, action_space)
+            and not output_has_defensive_response(all_actions, action_space)
+            and not progress_touches_any_object(progress, [alert.get("town_id") for alert in high_defense])
         ):
             details = {
                 "name": "defense-pressure-without-response",
@@ -869,6 +998,9 @@ def summarize(files: list[Path], max_mistakes: int = 100) -> dict[str, Any]:
             output = as_dict(payload.get("output"))
             output_record = dict(record)
             output_record["output"] = output
+            progress = as_dict(payload.get("progress"))
+            if progress:
+                output_record["progress"] = progress
             outputs_by_key[key] = output_record
             output_statuses[str(output.get("status", "<missing>"))] += 1
             if output.get("intent"):
@@ -895,7 +1027,7 @@ def summarize(files: list[Path], max_mistakes: int = 100) -> dict[str, Any]:
             if progress := as_dict(payload.get("progress")):
                 progress_record = dict(record)
                 progress_record["progress"] = progress
-                progress_record["stopped"] = bool(result.get("stop"))
+                progress_record["stopped"] = False
                 progresses_by_key[(player, day, as_int(payload.get("commandIndex")))] = progress_record
         elif label == "progress":
             progress = as_dict(payload.get("progress"))
