@@ -1767,6 +1767,9 @@ Regression harness:
   game-interface callback declarations, verifies that ScriptedAdventureAI either overrides them or documents a
   deliberate inherited/plumbing exception, and checks that implemented callbacks publish a Lua update/query or
   have an explicit non-state reason.
+- Done: `scripts/ai/auditAdventureScriptDelegation.py` guards the normal Lua policy boundary: direct full-day
+  `ai:nullkiller()` delegation is allowed only in the explicit all-fallback control script. Other scripts must use
+  bounded helpers or raise a catchable script failure so Lua regains control between native subroutines.
 - Done: Lua can invoke Nullkiller's local object-interaction helper for one owned hero at one visible current
   object, then regain control. This exposes native post-visit handling for towns and hill forts as a bounded
   subroutine instead of requiring full-day delegation.
