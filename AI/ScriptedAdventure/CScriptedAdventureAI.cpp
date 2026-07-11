@@ -8018,7 +8018,12 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		if(!town || town->tempOwner != playerID || !cc->isVisibleFor(town, playerID))
 			throw std::invalid_argument("Unknown town, town is not visible, or town is not owned by scripted AI");
 
-		buildArmyIn(town);
+		{
+			std::shared_lock gameStateLock(CGameState::mutex);
+			std::lock_guard sharedStorageLock(NK2AI::AISharedStorage::locker);
+			NK2AI::Nullkiller::ScriptVisibleOnlyScope visibleOnly(*nullkiller);
+			buildArmyIn(town);
+		}
 		actionResult["town_id"] = JsonNode(town->id.getNum());
 		if(!waitTillFreeForScriptAction(actionResult, type))
 			return false;
@@ -8032,7 +8037,13 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		if(!cc->isVisibleFor(army, playerID))
 			throw std::invalid_argument("Army holder is not visible to scripted AI");
 
-		const bool upgraded = makePossibleUpgrades(army);
+		bool upgraded = false;
+		{
+			std::shared_lock gameStateLock(CGameState::mutex);
+			std::lock_guard sharedStorageLock(NK2AI::AISharedStorage::locker);
+			NK2AI::Nullkiller::ScriptVisibleOnlyScope visibleOnly(*nullkiller);
+			upgraded = makePossibleUpgrades(army);
+		}
 		actionResult["army_id"] = JsonNode(army->id.getNum());
 		actionResult["didUpgrade"] = JsonNode(upgraded);
 		if(!waitTillFreeForScriptAction(actionResult, type))
@@ -8055,7 +8066,12 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		if(!destination || destination->tempOwner != playerID || !cc->isVisibleFor(destination, playerID))
 			throw std::invalid_argument("Unknown recruitment destination, destination is not visible, or destination is not owned by scripted AI");
 
-		recruitCreatures(dwelling, destination);
+		{
+			std::shared_lock gameStateLock(CGameState::mutex);
+			std::lock_guard sharedStorageLock(NK2AI::AISharedStorage::locker);
+			NK2AI::Nullkiller::ScriptVisibleOnlyScope visibleOnly(*nullkiller);
+			recruitCreatures(dwelling, destination);
+		}
 		actionResult["source_id"] = JsonNode(sourceObject->id.getNum());
 		actionResult["destination_id"] = JsonNode(destination->id.getNum());
 		if(!waitTillFreeForScriptAction(actionResult, type))
@@ -8076,7 +8092,12 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		if(!town->armedGarrison())
 			throw std::invalid_argument("Town garrison has no creatures to move to the visiting hero");
 
-		moveCreaturesToHero(town);
+		{
+			std::shared_lock gameStateLock(CGameState::mutex);
+			std::lock_guard sharedStorageLock(NK2AI::AISharedStorage::locker);
+			NK2AI::Nullkiller::ScriptVisibleOnlyScope visibleOnly(*nullkiller);
+			moveCreaturesToHero(town);
+		}
 		actionResult["town_id"] = JsonNode(town->id.getNum());
 		actionResult["hero_id"] = JsonNode(visitingHero->id.getNum());
 		if(!waitTillFreeForScriptAction(actionResult, type))
@@ -8105,6 +8126,8 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		ObjectInstanceID selectedHeroID = ObjectInstanceID::NONE;
 		{
 			std::shared_lock gameStateLock(CGameState::mutex);
+			std::lock_guard sharedStorageLock(NK2AI::AISharedStorage::locker);
+			NK2AI::Nullkiller::ScriptVisibleOnlyScope visibleOnly(*nullkiller);
 			std::unique_lock aiLock(nullkiller->aiStateMutex);
 			nullkiller->heroManager->update();
 			if(!requireCapReached || nullkiller->heroManager->heroCapReached())
