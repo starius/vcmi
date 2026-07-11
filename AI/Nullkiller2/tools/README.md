@@ -128,7 +128,9 @@ python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
   --testdays 28 \
   --adjudicate-testdays \
   --require-runtime-simulation candidate \
-  --min-runtime-simulation-planning-decisions 1
+  --min-runtime-simulation-planning-decisions 2 \
+  --min-runtime-simulation-planning-vetoes 1 \
+  --min-runtime-simulation-planning-rescues 1
 ```
 
 Summary files include `runtimeBattleSimulation` totals by model. The

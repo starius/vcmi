@@ -416,7 +416,7 @@ Current branch progress toward the service boundary:
 - Schema5 battle setup captures pre-merge town siege state before `CGTownInstance::mergeGarrisonOnSiege`: town army snapshot, defending hero army snapshot, and the IDs needed to match the next started battle. The isolated runtime runner can now support visiting-hero inside sieges by applying that merge only inside the cloned game state and recomputing layout before battle start.
 - `CClient::evaluateBattleSimulationForVisit` provides the current runtime Nullkiller evaluator by cloning the client's mirrored `CGameState`, remapping the battle setup into the clone, and running an isolated MMAI-backed simulation runner. This is linked through `vcmiclientcommon`'s existing dependency on `vcmiservercommon`, not through the Nullkiller2 AI object library.
 - Nullkiller's `battlePredictionSimulationSamples` final movement gate currently calls through `CCallback` to `IClient::evaluateBattleSimulationForVisit`. This setting defaults to 0, so normal games use static danger only. When samples are configured, the AI logs bounded incomplete-request diagnostics and aggregate status counters, so A/B runs do not silently look like they are using runtime simulation.
-- `AI/Nullkiller2/tools/compare_battle_predictors.py` records `runtimeBattleSimulation` totals by model in `summary.json`. Use `--candidate-ai Nullkiller2V3Simulation` and `--require-runtime-simulation candidate` for V3 runtime A/B runs so the script fails if candidate games do not show simulation requests or if fewer than 90% of those requests complete. Add `--min-runtime-simulation-planning-decisions` when the run must prove that planner-side simulation produced completed accepted or rejected decisions.
+- `AI/Nullkiller2/tools/compare_battle_predictors.py` records `runtimeBattleSimulation` totals by model in `summary.json`. Use `--candidate-ai Nullkiller2V3Simulation` and `--require-runtime-simulation candidate` for V3 runtime A/B runs so the script fails if candidate games do not show simulation requests or if fewer than 90% of those requests complete. Add `--min-runtime-simulation-planning-decisions`, `--min-runtime-simulation-planning-vetoes`, and `--min-runtime-simulation-planning-rescues` when the run must prove that planner-side simulation produced completed verdicts and actually exercised both static false-safe vetoes and static false-unsafe rescues.
 - Runtime target selection now mirrors server-side request eligibility more closely: final-gate simulation is only attempted for neutral/enemy armed objects with actual stacks, enemy defended towns, or valid guards. This avoids counting unguarded reward objects, friendly blocking visits, and battle-marked movement to non-simulatable visitable objects as failed runtime simulation requests.
 - Runtime stats also count `skippedNoTarget`: movement steps that may start a battle while runtime simulation is enabled but where target selection finds no enemy/neutral armed object, defended enemy town, or valid guard. This keeps real requests clean while still showing whether the planner is generating battle-like movement that cannot be simulated.
 
@@ -436,7 +436,9 @@ python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
   --testdays 28 \
   --adjudicate-testdays \
   --require-runtime-simulation candidate \
-  --min-runtime-simulation-planning-decisions 1
+  --min-runtime-simulation-planning-decisions 2 \
+  --min-runtime-simulation-planning-vetoes 1 \
+  --min-runtime-simulation-planning-rescues 1
 ```
 
 Batch collection caveat: when running `vcmibattlesim` with MMAI in parallel, each shard needs an isolated XDG config/cache profile. A shared profile can be rewritten by clients and silently disable the MMAI mod for later shards. Use `--xdg-config-template` and, if needed, `--xdg-profile-root` so each client starts from the same active-mod configuration.
