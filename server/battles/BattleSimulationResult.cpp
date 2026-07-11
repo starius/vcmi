@@ -70,4 +70,20 @@ bool BattleSimulationSummary::defenderWonAllSamples() const
 {
 	return hasSamples() && defenderWins == rows;
 }
+
+BattleSimulationEvaluation evaluateSummary(
+	const BattleSimulationSummary & summary,
+	const BattleSimulationDecisionThresholds & thresholds)
+{
+	BattleSimulationEvaluation result;
+	result.sampleCount = summary.rows;
+	result.attackerWinProbability = summary.attackerWinRate();
+	result.attackerWilsonLowerBound = summary.attackerWilsonLowerBound(thresholds.wilsonZ);
+	result.attackerLikelyWins = result.attackerWinProbability >= thresholds.likelyWinProbability;
+	result.attackerProbabilitySafe = result.attackerWinProbability >= thresholds.safeWinProbability;
+	result.attackerAllWinsSafe = summary.attackerWonAllSamples();
+	result.attackerWilsonSafe = result.attackerWilsonLowerBound >= thresholds.wilsonSafeProbability;
+	result.defenderWonAllSamples = summary.defenderWonAllSamples();
+	return result;
+}
 }

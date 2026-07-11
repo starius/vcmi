@@ -36,4 +36,28 @@ struct BattleSimulationRecordResult
 	bool shouldReplay = false;
 	BattleSimulationSummary summary;
 };
+
+struct BattleSimulationDecisionThresholds
+{
+	double likelyWinProbability = 0.5;
+	double safeWinProbability = 0.95;
+	double wilsonZ = 1.2815515655446004;
+	double wilsonSafeProbability = 0.60;
+};
+
+struct BattleSimulationEvaluation
+{
+	int64_t sampleCount = 0;
+	double attackerWinProbability = 0.0;
+	double attackerWilsonLowerBound = 0.0;
+	bool attackerLikelyWins = false;
+	bool attackerProbabilitySafe = false;
+	bool attackerAllWinsSafe = false;
+	bool attackerWilsonSafe = false;
+	bool defenderWonAllSamples = false;
+};
+
+BattleSimulationEvaluation evaluateSummary(
+	const BattleSimulationSummary & summary,
+	const BattleSimulationDecisionThresholds & thresholds = {});
 }
