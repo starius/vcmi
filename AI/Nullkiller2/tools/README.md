@@ -111,7 +111,7 @@ python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
 
 To test V3 with runtime battle simulation enabled, keep `--legacy-ai
 Nullkiller2` and use `--candidate-ai Nullkiller2V3Simulation`. This alias uses
-V3 with 15 runtime samples and planner ratio `1.0`, leaving the default
+V3 with 20 runtime samples and planner ratio `1.0`, leaving the default
 `Nullkiller2` and `Nullkiller2V3` settings unchanged:
 
 ```sh
@@ -203,6 +203,9 @@ candidate sweeps vs 37 legacy sweeps, 175 splits, and two-sided sign-test p
 `1.0`. Runtime evidence was active, with 256/257 requests complete. This proves
 the harness and runtime gate are working at scale, but not that the current gate
 improves end-to-end Nullkiller strength.
+The next large run should use the current `Nullkiller2V3Simulation` alias at 20
+samples, which is the cleanest town/siege safety point in the latest offline
+fallback proxy.
 
 With `--adjudicate-testdays`, games that reach the completed-day limit without
 a standard winner are scored deterministically from the run-local

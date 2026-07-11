@@ -29,7 +29,7 @@
 #ifdef ENABLE_NULLKILLER2_AI
 namespace
 {
-constexpr int NULLKILLER2_V3_SIMULATION_SAMPLES = 15;
+constexpr int NULLKILLER2_V3_SIMULATION_SAMPLES = 20;
 constexpr float NULLKILLER2_V3_SIMULATION_PLANNING_SAFE_ATTACK_RATIO = 1.0f;
 
 std::shared_ptr<CGlobalAI> createNullkiller2Gateway(
