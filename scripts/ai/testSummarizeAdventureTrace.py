@@ -376,6 +376,112 @@ class ImperativeTraceSummaryTest(unittest.TestCase):
         self.assertEqual(summary["executed_actions"]["build"], 1)
         self.assertEqual(summary["output_intents"]["delegate"], 1)
 
+    def test_map_progress_deltas_are_summarized(self) -> None:
+        def write_input(
+            path: Path,
+            explored: int,
+            ratio: float,
+            visible_objects: int,
+            passable: int,
+            roads: int,
+            control: list[dict],
+            kinds: list[dict],
+        ) -> None:
+            path.write_text(
+                json.dumps(
+                    {
+                        "label": "imperative-input",
+                        "player": "red",
+                        "script": "ai/defaultAdventure.lua",
+                        "payload": {
+                            "input": {
+                                "state": {
+                                    "heroes": [],
+                                    "towns": [],
+                                    "resources": {},
+                                    "map": {
+                                        "totalTiles": 100,
+                                        "exploredTilesCount": explored,
+                                        "exploredRatio": ratio,
+                                        "visibleObjectsCount": visible_objects,
+                                        "exploredPassableTilesCount": passable,
+                                        "exploredRoadTilesCount": roads,
+                                        "visibleControl": {
+                                            "objectCountsByControl": control,
+                                            "objectCountsByKind": kinds,
+                                            "objectCountsByOwner": [
+                                                {"ownerId": 0, "count": 1},
+                                            ],
+                                        },
+                                    },
+                                },
+                                "updates": {"events": []},
+                                "opponentUpdates": {"events": []},
+                                "analysis": {},
+                                "actionSpace": {},
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first_path = root / "player-red-day-1-event-0-imperative-input.json"
+            final_path = root / "player-red-day-3-event-0-imperative-input.json"
+            write_input(
+                first_path,
+                10,
+                0.10,
+                2,
+                6,
+                1,
+                [
+                    {"controlId": 0, "count": 1},
+                    {"controlId": 3, "count": 1},
+                ],
+                [
+                    {"kindId": 2, "count": 1},
+                    {"kindId": 3, "count": 1},
+                ],
+            )
+            write_input(
+                final_path,
+                25,
+                0.25,
+                5,
+                16,
+                3,
+                [
+                    {"controlId": 0, "count": 2},
+                    {"controlId": 2, "count": 1},
+                    {"controlId": 3, "count": 2},
+                ],
+                [
+                    {"kindId": 2, "count": 2},
+                    {"kindId": 3, "count": 2},
+                    {"kindId": 5, "count": 1},
+                ],
+            )
+
+            summary = summarize([first_path, final_path])
+
+        progress = summary["mapProgress"]
+        self.assertEqual(progress["players"], 1)
+        self.assertEqual(progress["score"], 118)
+        self.assertEqual(progress["totals"]["exploredTilesDelta"], 15)
+        self.assertEqual(progress["totals"]["finalExploredTiles"], 25)
+        self.assertEqual(progress["totals"]["visibleObjectsDelta"], 3)
+        self.assertEqual(progress["totals"]["selfVisibleObjectsDelta"], 1)
+        self.assertEqual(progress["totals"]["enemyVisibleObjectsDelta"], 1)
+        self.assertEqual(progress["totals"]["mineObjectsDelta"], 1)
+        self.assertEqual(progress["totals"]["townObjectsDelta"], 1)
+        delta = progress["perPlayer"][0]["delta"]
+        self.assertAlmostEqual(delta["exploredRatio"], 0.15)
+        self.assertEqual(delta["objectCountsByControlId"]["2"], 1)
+        self.assertEqual(delta["objectCountsByKindId"]["5"], 1)
+
 
 class IgnoredBetterObjectMistakeTest(unittest.TestCase):
     def mistakes_for(self, memory: dict | None = None) -> list[dict]:

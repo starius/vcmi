@@ -162,6 +162,7 @@ def run_metrics(results: list[dict[str, Any]], summary: dict[str, Any]) -> dict[
     build_actions = nested_int(summary, "executed_actions", "build")
     recruit_actions = nested_int(summary, "executed_actions", "recruit")
     quality_score = deep_int(summary, "quality", "score")
+    map_progress_score = deep_int(summary, "mapProgress", "score")
     mistakes = deep_int(summary, "mistakes", "total")
     important_mistakes = deep_int(summary, "mistakes", "important")
     outcomes = outcome_counts(results)
@@ -184,7 +185,7 @@ def run_metrics(results: list[dict[str, Any]], summary: dict[str, Any]) -> dict[
     )
     mistake_penalty = mistakes * 40 + important_mistakes * 160
     outcome_score = outcomes["red_win"] * 4000 - outcomes["red_loss"] * 4000
-    score = safety_score + activity_score + quality_score + outcome_score - mistake_penalty
+    score = safety_score + activity_score + quality_score + map_progress_score + outcome_score - mistake_penalty
 
     return {
         "runs": len(results),
@@ -202,6 +203,7 @@ def run_metrics(results: list[dict[str, Any]], summary: dict[str, Any]) -> dict[
         "buildActions": build_actions,
         "recruitActions": recruit_actions,
         "qualityScore": quality_score,
+        "mapProgressScore": map_progress_score,
         "mistakes": mistakes,
         "importantMistakes": important_mistakes,
         "outcomes": dict(outcomes),
@@ -219,6 +221,7 @@ def metric_delta(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[st
     fields = (
         "score",
         "qualityScore",
+        "mapProgressScore",
         "mistakes",
         "importantMistakes",
         "fallbackOutputs",
@@ -355,7 +358,8 @@ def print_metrics(label: str, metrics: dict[str, Any]) -> None:
         f"{label}: score={metrics['score']} completed={metrics['completed']}/{metrics['runs']} "
         f"timeouts={metrics['timeouts']} failed_actions={metrics['failedActions']} "
         f"fallbacks={metrics['fallbackOutputs']} executed={metrics['executedActions']} "
-        f"quality={metrics['qualityScore']} mistakes={metrics['mistakes']}/{metrics['importantMistakes']} "
+        f"quality={metrics['qualityScore']} map={metrics['mapProgressScore']} "
+        f"mistakes={metrics['mistakes']}/{metrics['importantMistakes']} "
         f"red_w/l={metrics['redWins']}/{metrics['redLosses']}"
     )
 
@@ -409,6 +413,7 @@ def main() -> int:
     buckets = scenario_buckets(args.trace, scenarios, baseline_results, candidate_results)
     score_delta = candidate_metrics["score"] - baseline_metrics["score"]
     quality_delta = candidate_metrics["qualityScore"] - baseline_metrics["qualityScore"]
+    map_progress_delta = candidate_metrics["mapProgressScore"] - baseline_metrics["mapProgressScore"]
     promotion = promotion_verdict(args, baseline_metrics, candidate_metrics, buckets)
 
     evaluation = {
@@ -430,8 +435,9 @@ def main() -> int:
         "traceEnabled": args.trace,
         "scoreDelta": score_delta,
         "qualityDelta": quality_delta,
+        "mapProgressDelta": map_progress_delta,
         "promotion": promotion,
-        "scoreNotes": "Iteration score combines safety, useful actions, final visible-state quality, mined mistake penalties, and outcomes when traces are enabled. With --no-trace, trace-local quality, action, and mistake metrics are zeroed and the score is outcome/safety focused. Hard promotion gates reject crashes, parse errors, extra fallbacks, extra failed actions, and extra important mistakes.",
+        "scoreNotes": "Iteration score combines safety, useful actions, final visible-state quality, longitudinal map-progress/control deltas, mined mistake penalties, and outcomes when traces are enabled. With --no-trace, trace-local quality, map-progress, action, and mistake metrics are zeroed and the score is outcome/safety focused. Hard promotion gates reject crashes, parse errors, extra fallbacks, extra failed actions, and extra important mistakes.",
     }
 
     (args.output / "evaluation.json").write_text(json.dumps(evaluation, indent=2, sort_keys=True), encoding="utf-8")
@@ -443,6 +449,7 @@ def main() -> int:
         marker = "improved" if score_delta > 0 else "regressed" if score_delta < 0 else "unchanged"
         print(f"score delta: {score_delta} ({marker})")
         print(f"quality delta: {quality_delta}")
+        print(f"map progress delta: {map_progress_delta}")
         print(f"promotion verdict: {promotion['verdict']} ({', '.join(promotion['reasons']) or 'all gates passed'})")
         print(f"evaluation: {args.output / 'evaluation.json'}")
 

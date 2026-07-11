@@ -1060,14 +1060,16 @@ scripts/ai/summarizeAdventureTrace.py <user-log-dir>/scriptedAdventureAI
 
 It reports player/script/day counts, script output statuses, requested/executed/failed action types, failure
 messages, visible update/opponent-update event types, defense-alert totals, hero-threat totals, candidate risks,
-script intents, final visible-state quality, and mined policy-mistake counts. Imperative runs emit
+script intents, final visible-state quality, longitudinal map-progress/control deltas, and mined policy-mistake counts. Imperative runs emit
 `imperative-input`, `imperative-command`, and `imperative-output` trace events. Add `--json` for
 machine-readable output.
 
 The current quality score is intentionally trace-local and explainable. It uses the final visible input for each
-scripted player and combines resources, towns, heroes, army strength, movement, useful candidates, and visible
-threat pressure. It is not a replacement for win/loss, but it gives the improvement loop a stable control signal
-before full map-control metrics exist.
+scripted run/player series and combines resources, towns, heroes, army strength, movement, useful candidates, and
+visible threat pressure. The separate `mapProgress` metric compares the first and final visible map snapshots for
+each run/player series, including explored tile deltas, terrain-class deltas, and visible object control/kind/owner
+deltas. These metrics are not replacements for win/loss, but they give the improvement loop stable control signals
+between full outcome runs.
 
 Trace sets from two script versions can be compared with:
 
@@ -1076,8 +1078,8 @@ scripts/ai/compareAdventureTrace.py <baseline-trace-dir> --candidate <candidate-
 ```
 
 The comparison reports deltas for fallback outputs, failed actions, unsafe candidates, hero/town threat alerts,
-executed actions, mined mistakes, important mistakes, and trace-local quality. This is intentionally trace-based
-so it can compare script versions without rebuilding.
+executed actions, mined mistakes, important mistakes, trace-local quality, and map-progress score. This is
+intentionally trace-based so it can compare script versions without rebuilding.
 
 Headless batches can be launched with:
 
@@ -1162,19 +1164,20 @@ scripts/ai/evaluateAdventureAIScripts.py \
 
 The evaluator snapshots script files into the output directory when possible, writes `evaluation.json`, and prints
 a heuristic score delta, quality delta, and promotion verdict. Tracing is enabled by default for trace-local
-quality, action, and mistake metrics, but promotion/control runs can pass `--no-trace` to avoid trace I/O changing
-timing-sensitive full-game outcomes. With `--no-trace`, trace-local metrics are zeroed and scoring is focused on
-run safety plus win/loss outcomes. Use traced reruns on selected failures for diagnosis and JSON fixture mining.
+quality, map-progress, action, and mistake metrics, but promotion/control runs can pass `--no-trace` to avoid trace
+I/O changing timing-sensitive full-game outcomes. With `--no-trace`, trace-local metrics are zeroed and scoring is
+focused on run safety plus win/loss outcomes. Use traced reruns on selected failures for diagnosis and JSON fixture
+mining.
 The score is not a gameplay rating; it is an iteration signal that rewards completed runs, useful actions, final
-visible-state quality when traces are enabled, and real red-player wins while penalizing timeouts, nonzero exits,
-parse errors, fallbacks, failed actions, stopped batches, mined mistakes, and red-player losses. The evaluator
-writes global metrics plus bucketed metrics by `group`, `stage`, and `kind`.
+visible-state quality and map-progress/control gains when traces are enabled, and real red-player wins while
+penalizing timeouts, nonzero exits, parse errors, fallbacks, failed actions, stopped batches, mined mistakes, and
+red-player losses. The evaluator writes global metrics plus bucketed metrics by `group`, `stage`, and `kind`.
 
 Promotion gates now encode the training/held-out workflow: the candidate must improve on the `training` bucket and
 must not regress on the `heldout` bucket when those buckets are present. The fixed-seed random-map entries should be
 generated once and kept stable, then split between training and held-out groups. Script authors may iterate against
-training maps, but promotion should continue to require held-out non-regression. Higher-level map-control metrics
-should replace or augment the current trace-local quality score as the host exposes richer state.
+training maps, but promotion should continue to require held-out non-regression. Trace-local quality and
+`mapProgress` remain control metrics; decisive promotion still requires outcome runs.
 
 Trace mistakes can be mined into review notes and draft JSON policy fixtures:
 
@@ -1838,11 +1841,13 @@ Regression harness:
 - Done: `state.map` now includes compact explored-area and visible-control summaries derived from the existing
   visible tile/object snapshot. Scripts can reason over exploration progress, terrain composition, and visible
   control balance without rescanning raw tile/object arrays or looking at hidden map state.
+- Done: trace summaries and script evaluations now report longitudinal `mapProgress` metrics from the first and
+  final visible map snapshots per run/player series. The evaluator folds the map-progress score into traced
+  iteration scoring and comparison deltas.
 - Done: after adding explicit `nullkiller_reset`, a 16-map, 1-day traced integration smoke completed all scenarios
   at the day limit with 16 `end_turn` outputs, 20 bounded `nullkiller_turn_slice` calls, 145 checked `visit_object`
   actions, 18 bounded query answers, zero failed checked actions, and zero fallback outputs.
-- Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus, then add
-  longitudinal map-control deltas to the evaluation traces.
+- Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions
 

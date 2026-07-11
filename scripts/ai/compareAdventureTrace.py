@@ -47,6 +47,8 @@ def compare(baseline_paths: list[str], candidate_paths: list[str]) -> dict[str, 
         "delta": {
             "parsed": candidate["parsed"] - baseline["parsed"],
             "quality_score": deep_int(candidate, "quality", "score") - deep_int(baseline, "quality", "score"),
+            "map_progress_score": deep_int(candidate, "mapProgress", "score")
+            - deep_int(baseline, "mapProgress", "score"),
             "mistakes": deep_int(candidate, "mistakes", "total") - deep_int(baseline, "mistakes", "total"),
             "important_mistakes": deep_int(candidate, "mistakes", "important") - deep_int(baseline, "mistakes", "important"),
             "fallback_outputs": nested_int(candidate, "output_statuses", "fallback")
@@ -70,6 +72,7 @@ def print_text(result: dict[str, Any]) -> None:
     candidate = result["candidate"]
     print_delta("parsed files", baseline["parsed"], candidate["parsed"])
     print_delta("quality score", deep_int(baseline, "quality", "score"), deep_int(candidate, "quality", "score"))
+    print_delta("map progress score", deep_int(baseline, "mapProgress", "score"), deep_int(candidate, "mapProgress", "score"))
     print_delta("mistakes", deep_int(baseline, "mistakes", "total"), deep_int(candidate, "mistakes", "total"), lower_is_better=True)
     print_delta(
         "important mistakes",

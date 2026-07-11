@@ -135,6 +135,163 @@ def resource_score(resources: Any) -> int:
     return sum(as_int(data.get(name)) * value for name, value in RESOURCE_VALUES.items())
 
 
+MAP_PROGRESS_FIELDS = (
+    "exploredTiles",
+    "visibleObjects",
+    "exploredLandTiles",
+    "exploredWaterTiles",
+    "exploredRockTiles",
+    "exploredPassableTiles",
+    "exploredBlockedTiles",
+    "exploredVisitableTiles",
+    "exploredRoadTiles",
+    "selfVisibleObjects",
+    "allyVisibleObjects",
+    "enemyVisibleObjects",
+    "neutralVisibleObjects",
+    "unflaggableVisibleObjects",
+    "townObjects",
+    "heroObjects",
+    "mineObjects",
+    "resourceObjects",
+    "artifactObjects",
+)
+
+
+def count_map_entries(entries: Any, id_field: str) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for entry in as_list(entries):
+        data = as_dict(entry)
+        if id_field not in data:
+            continue
+        key = str(as_int(data.get(id_field)))
+        result[key] = result.get(key, 0) + as_int(data.get("count"))
+    return result
+
+
+def map_count_delta(first: dict[str, int], final: dict[str, int]) -> dict[str, int]:
+    keys = sorted(set(first) | set(final), key=lambda item: (as_int(item), item))
+    return {key: final.get(key, 0) - first.get(key, 0) for key in keys}
+
+
+def map_snapshot_from_input(record: dict[str, Any]) -> dict[str, Any] | None:
+    script_input = as_dict(record.get("input"))
+    state = as_dict(script_input.get("state"))
+    map_state = as_dict(state.get("map"))
+    if not map_state:
+        return None
+
+    visible_control = as_dict(map_state.get("visibleControl"))
+    counts_by_control = count_map_entries(visible_control.get("objectCountsByControl"), "controlId")
+    counts_by_kind = count_map_entries(visible_control.get("objectCountsByKind"), "kindId")
+    counts_by_owner = count_map_entries(visible_control.get("objectCountsByOwner"), "ownerId")
+    explored_tiles = as_int(map_state.get("exploredTilesCount"), as_int(map_state.get("visibleTilesCount")))
+
+    return {
+        "player": record.get("player"),
+        "day": record.get("day"),
+        "trace": record.get("path"),
+        "totalTiles": as_int(map_state.get("totalTiles")),
+        "exploredTiles": explored_tiles,
+        "exploredRatio": as_float(map_state.get("exploredRatio")),
+        "visibleObjects": as_int(map_state.get("visibleObjectsCount")),
+        "exploredLandTiles": as_int(map_state.get("exploredLandTilesCount")),
+        "exploredWaterTiles": as_int(map_state.get("exploredWaterTilesCount")),
+        "exploredRockTiles": as_int(map_state.get("exploredRockTilesCount")),
+        "exploredPassableTiles": as_int(map_state.get("exploredPassableTilesCount")),
+        "exploredBlockedTiles": as_int(map_state.get("exploredBlockedTilesCount")),
+        "exploredVisitableTiles": as_int(map_state.get("exploredVisitableTilesCount")),
+        "exploredRoadTiles": as_int(map_state.get("exploredRoadTilesCount")),
+        "selfVisibleObjects": counts_by_control.get("0", 0),
+        "allyVisibleObjects": counts_by_control.get("1", 0),
+        "enemyVisibleObjects": counts_by_control.get("2", 0),
+        "neutralVisibleObjects": counts_by_control.get("3", 0),
+        "unflaggableVisibleObjects": counts_by_control.get("4", 0),
+        "townObjects": counts_by_kind.get("5", 0),
+        "heroObjects": counts_by_kind.get("6", 0),
+        "mineObjects": counts_by_kind.get("3", 0),
+        "resourceObjects": counts_by_kind.get("2", 0),
+        "artifactObjects": counts_by_kind.get("4", 0),
+        "objectCountsByControlId": counts_by_control,
+        "objectCountsByKindId": counts_by_kind,
+        "objectCountsByOwnerId": counts_by_owner,
+        "exploredByLevel": as_list(map_state.get("exploredByLevel")),
+    }
+
+
+def map_snapshot_delta(first: dict[str, Any], final: dict[str, Any]) -> dict[str, Any]:
+    delta: dict[str, Any] = {
+        "days": as_int(final.get("day")) - as_int(first.get("day")),
+        "exploredRatio": as_float(final.get("exploredRatio")) - as_float(first.get("exploredRatio")),
+        "objectCountsByControlId": map_count_delta(
+            as_dict(first.get("objectCountsByControlId")),
+            as_dict(final.get("objectCountsByControlId")),
+        ),
+        "objectCountsByKindId": map_count_delta(
+            as_dict(first.get("objectCountsByKindId")),
+            as_dict(final.get("objectCountsByKindId")),
+        ),
+        "objectCountsByOwnerId": map_count_delta(
+            as_dict(first.get("objectCountsByOwnerId")),
+            as_dict(final.get("objectCountsByOwnerId")),
+        ),
+    }
+    for field in MAP_PROGRESS_FIELDS:
+        delta[field] = as_int(final.get(field)) - as_int(first.get(field))
+    return delta
+
+
+def map_progress_score(delta: dict[str, Any]) -> int:
+    return (
+        as_int(delta.get("exploredTiles")) * 2
+        + as_int(delta.get("exploredPassableTiles"))
+        + as_int(delta.get("exploredRoadTiles")) * 2
+        + as_int(delta.get("visibleObjects")) * 5
+        + as_int(delta.get("selfVisibleObjects")) * 15
+        + as_int(delta.get("allyVisibleObjects")) * 10
+        + as_int(delta.get("enemyVisibleObjects")) * 10
+        + as_int(delta.get("neutralVisibleObjects")) * 4
+        + as_int(delta.get("mineObjects")) * 10
+        + as_int(delta.get("townObjects")) * 20
+    )
+
+
+def aggregate_map_progress(
+    first_inputs: dict[tuple[str, str], dict[str, Any]],
+    latest_inputs: dict[tuple[str, str], dict[str, Any]],
+) -> dict[str, Any]:
+    per_player: list[dict[str, Any]] = []
+    totals: Counter[str] = Counter()
+    score = 0
+
+    for series_key in sorted(latest_inputs):
+        final = map_snapshot_from_input(latest_inputs[series_key])
+        if not final:
+            continue
+        first = map_snapshot_from_input(first_inputs.get(series_key, latest_inputs[series_key])) or final
+        delta = map_snapshot_delta(first, final)
+        item_score = map_progress_score(delta)
+        score += item_score
+        for field in MAP_PROGRESS_FIELDS:
+            totals[f"{field}Delta"] += as_int(delta.get(field))
+            totals[f"final{field[0].upper()}{field[1:]}"] += as_int(final.get(field))
+        per_player.append({
+            "series": series_key[0],
+            "player": series_key[1],
+            "score": item_score,
+            "first": first,
+            "final": final,
+            "delta": delta,
+        })
+
+    return {
+        "score": score,
+        "players": len(per_player),
+        "totals": dict(totals),
+        "perPlayer": per_player,
+    }
+
+
 def alert_counts(alerts: Any) -> Counter[str]:
     counts: Counter[str] = Counter()
     for alert in as_list(alerts):
@@ -675,7 +832,8 @@ def summarize(files: list[Path], max_mistakes: int = 100) -> dict[str, Any]:
     inputs_by_key: dict[tuple[str, int, int], dict[str, Any]] = {}
     outputs_by_key: dict[tuple[str, int, int], dict[str, Any]] = {}
     progresses_by_key: dict[tuple[str, int, int], dict[str, Any]] = {}
-    latest_inputs: dict[str, dict[str, Any]] = {}
+    first_inputs: dict[tuple[str, str], dict[str, Any]] = {}
+    latest_inputs: dict[tuple[str, str], dict[str, Any]] = {}
 
     for path in files:
         try:
@@ -763,9 +921,13 @@ def summarize(files: list[Path], max_mistakes: int = 100) -> dict[str, Any]:
             input_record = dict(record)
             input_record["input"] = script_input
             inputs_by_key[key] = input_record
-            latest = latest_inputs.get(player)
+            series_key = (str(path.parent), player)
+            first = first_inputs.get(series_key)
+            if not first or (day_number(path), event) < (as_int(first.get("day"), 10**9), as_int(first.get("event"), 10**9)):
+                first_inputs[series_key] = input_record
+            latest = latest_inputs.get(series_key)
             if not latest or (day_number(path), event) >= (as_int(latest.get("day"), -1), as_int(latest.get("event"), -1)):
-                latest_inputs[player] = input_record
+                latest_inputs[series_key] = input_record
             updates = as_list(nested(script_input, "updates", "events"))
             opponent_updates = as_list(nested(script_input, "opponentUpdates", "events"))
             analysis = as_dict(script_input.get("analysis"))
@@ -813,6 +975,7 @@ def summarize(files: list[Path], max_mistakes: int = 100) -> dict[str, Any]:
         "update_types": counter_to_dict(update_types),
         "opponent_update_types": counter_to_dict(opponent_update_types),
         "quality": aggregate_quality(latest_inputs),
+        "mapProgress": aggregate_map_progress(first_inputs, latest_inputs),
         "mistakes": {
             "total": len(mistakes),
             "important": sum(1 for item in mistakes if item.get("type") in IMPORTANT_MISTAKE_TYPES),
@@ -851,6 +1014,9 @@ def print_text(summary: dict[str, Any], limit: int) -> None:
     quality = as_dict(summary.get("quality"))
     print(f"quality score: {quality.get('score', 0)}")
     print_counter("quality totals", as_dict(quality.get("totals")), limit)
+    map_progress = as_dict(summary.get("mapProgress"))
+    print(f"map progress score: {map_progress.get('score', 0)}")
+    print_counter("map progress totals", as_dict(map_progress.get("totals")), limit)
     print_counter("mistakes", as_dict(nested(summary, "mistakes", "counts")), limit)
     print_counter("intents", summary["output_intents"], limit)
     if summary["parse_errors"]:
