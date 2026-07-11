@@ -142,6 +142,12 @@ requests complete.
 The planning ratio replacement only affects offensive planning when V3 runtime
 simulation is enabled; it lets more candidate attacks reach the final simulator
 gate without changing defensive threat checks.
+When planner-side simulation is active, summaries also include
+`planningAccepted`, `planningRejected`, and `planningIncomplete` counters under
+`runtimeBattleSimulation`. These count statically unsafe capture targets that
+were rechecked before movement planning: accepted targets were rescued by
+simulation, rejected targets stayed unsafe, and incomplete targets could not get
+a complete simulation verdict.
 
 Latest large run note: a 250-pair generated-map A/B with 15 runtime samples and
 planning ratio `1.0` finished neutral: candidate 251-249 by games, 38
