@@ -276,6 +276,7 @@ void BattleFlowProcessor::onTacticsEnded(const CBattleInfoCallback & battle)
 	}
 
 	castOpeningSpells(battle);
+	owner->updateBattleStartSnapshot(battle);
 
 	// it is possible that due to opening spells one side was eliminated -> check for end of battle
 	if (owner->checkBattleStateChanges(battle))

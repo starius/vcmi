@@ -10,6 +10,7 @@
 #pragma once
 
 #include "../../lib/battle/BattleLayout.h"
+#include "../../lib/constants/EntityIdentifiers.h"
 #include "../../lib/GameConstants.h"
 #include "../../lib/int3.h"
 
@@ -93,9 +94,31 @@ struct BattleStartStackStateSnapshot
 	bool summoned = false;
 };
 
+struct BattleStartObstacleSnapshot
+{
+	int32_t uniqueId = -1;
+	int32_t id = -1;
+	int32_t type = 0;
+	int32_t position = BattleHex::INVALID;
+	int32_t trigger = -1;
+	int32_t turnsRemaining = -1;
+	int32_t spellLevel = -1;
+	int32_t casterSide = static_cast<int32_t>(BattleSide::NONE);
+	bool blocksTiles = false;
+	bool stopsMovement = false;
+	bool triggersEffects = false;
+	bool hidden = false;
+	bool passable = false;
+	bool trap = false;
+	bool removeOnTrigger = false;
+	bool revealed = false;
+	std::vector<int32_t> affectedTiles;
+};
+
 struct BattleStartStateSnapshot
 {
 	std::vector<BattleStartStackStateSnapshot> stacks;
+	std::vector<BattleStartObstacleSnapshot> obstacles;
 };
 
 struct BattleStartInfo

@@ -58,6 +58,7 @@ class BattleProcessor : boost::noncopyable
 
 	void updateGateState(const CBattleInfoCallback & battle);
 	void engageIntoBattle(PlayerColor player);
+	void updateBattleStartSnapshot(const CBattleInfoCallback & battle);
 
 	bool checkBattleStateChanges(const CBattleInfoCallback & battle);
 	BattleID setupBattle(int3 tile, BattleSideArray<const CArmedInstance *> armies, BattleSideArray<const CGHeroInstance *> heroes, const BattleLayout & layout, const CGTownInstance *town);

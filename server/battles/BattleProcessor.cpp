@@ -227,7 +227,6 @@ void BattleProcessor::startBattle(const BattleStartInfo & setup)
 			gameHandler->sendAndApply(giveBonus);
 		}
 	}
-	battleStartSnapshots[battleID] = makeBattleStartStateSnapshot(*battle);
 
 	auto attackerQuery = gameHandler->queries->topQuery(battle->getSide(BattleSide::ATTACKER).color);
 	auto * topBattleQuery = gameHandler->queries->queryAs<CBattleQuery>(attackerQuery);
@@ -291,6 +290,15 @@ void BattleProcessor::discardBattleSnapshots(const BattleID & battleID)
 {
 	townPreMergeSnapshots.erase(battleID);
 	battleStartSnapshots.erase(battleID);
+}
+
+void BattleProcessor::updateBattleStartSnapshot(const CBattleInfoCallback & battle)
+{
+	const auto * info = battle.getBattle();
+	if(!info)
+		return;
+
+	battleStartSnapshots[info->getBattleID()] = makeBattleStartStateSnapshot(*info);
 }
 
 BattleID BattleProcessor::setupBattle(int3 tile, BattleSideArray<const CArmedInstance *> armies, BattleSideArray<const CGHeroInstance *> heroes, const BattleLayout & layout, const CGTownInstance *town)

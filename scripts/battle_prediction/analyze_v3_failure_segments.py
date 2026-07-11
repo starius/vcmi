@@ -15,6 +15,7 @@ from evaluate_nullkiller_predictor import (
     V3_SAFE_PROBABILITY,
     army_power_by_creature,
     army_rich_stats,
+    battle_start_obstacle_stats,
     battle_start_stack_stats,
     battle_type,
     cxx_v3_probability,
@@ -298,6 +299,7 @@ def segments_for(row: dict[str, Any], actual: float, predicted: float) -> list[s
         buildings = town_buildings(row)
         attacker_start = battle_start_stack_stats(row, "attacker")
         defender_start = battle_start_stack_stats(row, "defender")
+        obstacles = battle_start_obstacle_stats(row)
         result.extend(
             [
                 f"town_faction={town_feature(row, 'faction')}",
@@ -334,6 +336,22 @@ def segments_for(row: dict[str, Any], actual: float, predicted: float) -> list[s
             )
         else:
             result.append("battle_start_stacks=0")
+        if obstacles["available"]:
+            result.extend(
+                [
+                    "battle_start_obstacles=1",
+                    f"battle_start_obstacle_count={bucket(obstacles['count'], [1, 3, 6, 10])}",
+                    f"battle_start_blocking_tiles={bucket(obstacles['blocking_tiles'], [1, 4, 8, 12])}",
+                    f"battle_start_stopping_tiles={bucket(obstacles['stopping_tiles'], [1, 4, 8, 12])}",
+                    f"battle_start_trigger_count={bucket(obstacles['trigger_count'], [1, 3, 6])}",
+                    f"battle_start_hidden_count={bucket(obstacles['hidden_count'], [1, 3, 6])}",
+                    f"battle_start_trap_count={bucket(obstacles['trap_count'], [1, 3, 6])}",
+                    f"battle_start_moat_tiles={bucket(obstacles['moat_tiles'], [1, 4, 8, 12])}",
+                    f"battle_start_obstacle_x={bucket(obstacles['position_x_avg'], [4, 8, 12])}",
+                ]
+            )
+        else:
+            result.append("battle_start_obstacles=0")
         result.extend(f"town_building={town_building_label(building_id)}" for building_id in sorted(buildings))
         if pre_merge:
             defender_army = max(float(row.get("defenderArmyStrength") or 0.0), 1.0)

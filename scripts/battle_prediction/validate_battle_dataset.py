@@ -247,11 +247,12 @@ def validate_battle_start_stacks(row: dict[str, Any]) -> list[str]:
     if int(row.get("schema", 1)) < 6:
         return []
 
+    errors = []
     stacks = row.get("battleStartStacks")
     if not isinstance(stacks, list):
-        return ["schema6 row missing battleStartStacks array"]
+        errors.append("schema6 row missing battleStartStacks array")
+        stacks = []
 
-    errors = []
     required_stack = [
         "unitId",
         "side",
@@ -302,6 +303,38 @@ def validate_battle_start_stacks(row: dict[str, Any]) -> list[str]:
             errors.append(f"battleStartStacks[{index}] is not an object")
             continue
         errors.extend(f"battleStartStacks[{index}] missing {key}" for key in missing_keys(stack, required_stack))
+
+    obstacles = row.get("battleStartObstacles")
+    if not isinstance(obstacles, list):
+        errors.append("schema6 row missing battleStartObstacles array")
+        obstacles = []
+
+    required_obstacle = [
+        "uniqueId",
+        "id",
+        "type",
+        "position",
+        "trigger",
+        "turnsRemaining",
+        "spellLevel",
+        "casterSide",
+        "blocksTiles",
+        "stopsMovement",
+        "triggersEffects",
+        "hidden",
+        "passable",
+        "trap",
+        "removeOnTrigger",
+        "revealed",
+        "affectedTiles",
+    ]
+    for index, obstacle in enumerate(obstacles):
+        if not isinstance(obstacle, dict):
+            errors.append(f"battleStartObstacles[{index}] is not an object")
+            continue
+        errors.extend(f"battleStartObstacles[{index}] missing {key}" for key in missing_keys(obstacle, required_obstacle))
+        if "affectedTiles" in obstacle and not isinstance(obstacle["affectedTiles"], list):
+            errors.append(f"battleStartObstacles[{index}].affectedTiles is not an array")
     return errors
 
 

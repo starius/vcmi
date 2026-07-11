@@ -335,6 +335,53 @@ void appendBattleStartStacks(std::ostream & out, const BattleStartStateSnapshot 
 	out << ']';
 }
 
+void appendBattleStartObstacles(std::ostream & out, const BattleStartStateSnapshot * snapshot)
+{
+	if(!snapshot)
+	{
+		out << "null";
+		return;
+	}
+
+	out << '[';
+	bool firstObstacle = true;
+	for(const auto & obstacle : snapshot->obstacles)
+	{
+		if(!firstObstacle)
+			out << ',';
+		firstObstacle = false;
+
+		out << "{";
+		out << "\"uniqueId\":" << obstacle.uniqueId;
+		out << ",\"id\":" << obstacle.id;
+		out << ",\"type\":" << obstacle.type;
+		out << ",\"position\":" << obstacle.position;
+		out << ",\"trigger\":" << obstacle.trigger;
+		out << ",\"turnsRemaining\":" << obstacle.turnsRemaining;
+		out << ",\"spellLevel\":" << obstacle.spellLevel;
+		out << ",\"casterSide\":" << obstacle.casterSide;
+		out << ",\"blocksTiles\":" << (obstacle.blocksTiles ? "true" : "false");
+		out << ",\"stopsMovement\":" << (obstacle.stopsMovement ? "true" : "false");
+		out << ",\"triggersEffects\":" << (obstacle.triggersEffects ? "true" : "false");
+		out << ",\"hidden\":" << (obstacle.hidden ? "true" : "false");
+		out << ",\"passable\":" << (obstacle.passable ? "true" : "false");
+		out << ",\"trap\":" << (obstacle.trap ? "true" : "false");
+		out << ",\"removeOnTrigger\":" << (obstacle.removeOnTrigger ? "true" : "false");
+		out << ",\"revealed\":" << (obstacle.revealed ? "true" : "false");
+		out << ",\"affectedTiles\":[";
+		bool firstTile = true;
+		for(const auto tile : obstacle.affectedTiles)
+		{
+			if(!firstTile)
+				out << ',';
+			firstTile = false;
+			out << tile;
+		}
+		out << "]}";
+	}
+	out << ']';
+}
+
 void appendSpellList(std::ostream & out, const std::set<SpellID> & spells, bool combatOnly)
 {
 	out << '[';
@@ -749,6 +796,8 @@ void appendResultRow(CGameHandler & gameHandler, const CBattleInfoCallback & bat
 	appendTownPreMergeState(state.output, townPreMerge);
 	state.output << ",\"battleStartStacks\":";
 	appendBattleStartStacks(state.output, battleStart);
+	state.output << ",\"battleStartObstacles\":";
+	appendBattleStartObstacles(state.output, battleStart);
 	state.output << ",\"initialWallState\":";
 	appendInitialWallState(state.output, info->getDefendedTown());
 	state.output << ",\"finalWallState\":";

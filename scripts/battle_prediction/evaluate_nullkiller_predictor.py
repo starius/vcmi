@@ -355,6 +355,46 @@ def battle_start_stack_stats(row: dict[str, Any], side: str) -> dict[str, float]
     return result
 
 
+def battle_start_obstacle_stats(row: dict[str, Any]) -> dict[str, float]:
+    obstacles = row.get("battleStartObstacles") or []
+    result = defaultdict(float)
+
+    for obstacle in obstacles:
+        if not isinstance(obstacle, dict):
+            continue
+
+        result["available"] = 1.0
+        result["count"] += 1.0
+        affected_tiles = obstacle.get("affectedTiles") or []
+        affected_count = float(len(affected_tiles)) if isinstance(affected_tiles, list) else 0.0
+        result["affected_tiles"] += affected_count
+        position = int(obstacle.get("position", -1))
+        if position >= 0:
+            result["position_x_sum"] += float(position % 17)
+            result["position_y_sum"] += float(position // 17)
+
+        if obstacle.get("blocksTiles"):
+            result["blocking_count"] += 1.0
+            result["blocking_tiles"] += affected_count
+        if obstacle.get("stopsMovement"):
+            result["stopping_count"] += 1.0
+            result["stopping_tiles"] += affected_count
+        if obstacle.get("triggersEffects"):
+            result["trigger_count"] += 1.0
+        if obstacle.get("hidden"):
+            result["hidden_count"] += 1.0
+        if obstacle.get("trap"):
+            result["trap_count"] += 1.0
+        if int(obstacle.get("type", -1)) == 3:
+            result["moat_count"] += 1.0
+            result["moat_tiles"] += affected_count
+
+    count = max(result["count"], 1.0)
+    result["position_x_avg"] = result["position_x_sum"] / count
+    result["position_y_avg"] = result["position_y_sum"] / count
+    return result
+
+
 def mana_ratio(hero: dict[str, Any] | None) -> float:
     if not hero:
         return 0.0
@@ -805,6 +845,7 @@ def town_rich_deployable_feature_vector(row: dict[str, Any]) -> list[float]:
     defender_rich = army_rich_stats(row, "defender")
     attacker_start = battle_start_stack_stats(row, "attacker")
     defender_start = battle_start_stack_stats(row, "defender")
+    obstacles = battle_start_obstacle_stats(row)
     attacker_hero = row.get("attackerHero")
     defender_hero = row.get("defenderHero")
 
@@ -906,6 +947,22 @@ def town_rich_deployable_feature_vector(row: dict[str, Any]) -> list[float]:
         defender_start["turret_damage"] * log_strength_ratio,
         defender_start["turret_count"] * fort_level,
         defender_start["turret_count"] * tower_total,
+        obstacles["available"],
+        obstacles["count"],
+        obstacles["blocking_count"],
+        obstacles["blocking_tiles"],
+        obstacles["stopping_count"],
+        obstacles["stopping_tiles"],
+        obstacles["trigger_count"],
+        obstacles["hidden_count"],
+        obstacles["trap_count"],
+        obstacles["moat_count"],
+        obstacles["moat_tiles"],
+        obstacles["position_x_avg"],
+        obstacles["position_y_avg"],
+        obstacles["blocking_tiles"] * log_strength_ratio,
+        obstacles["moat_tiles"] * log_strength_ratio,
+        obstacles["moat_tiles"] * attacker_flying,
     ])
     values.extend(1.0 if building_id in buildings else 0.0 for building_id in TOWN_BUILDING_IDS)
     return values
@@ -1113,6 +1170,22 @@ TOWN_RICH_DEPLOYABLE_EXTRA_NAMES = [
     "battle_start_defender_turret_damage_x_log_strength_ratio",
     "battle_start_defender_turret_count_x_fort_level",
     "battle_start_defender_turret_count_x_initial_tower_health",
+    "battle_start_obstacles_available",
+    "battle_start_obstacle_count",
+    "battle_start_blocking_obstacle_count",
+    "battle_start_blocking_obstacle_tiles",
+    "battle_start_stopping_obstacle_count",
+    "battle_start_stopping_obstacle_tiles",
+    "battle_start_trigger_obstacle_count",
+    "battle_start_hidden_obstacle_count",
+    "battle_start_trap_obstacle_count",
+    "battle_start_moat_obstacle_count",
+    "battle_start_moat_obstacle_tiles",
+    "battle_start_obstacle_position_x_avg",
+    "battle_start_obstacle_position_y_avg",
+    "battle_start_blocking_obstacle_tiles_x_log_strength_ratio",
+    "battle_start_moat_obstacle_tiles_x_log_strength_ratio",
+    "battle_start_moat_obstacle_tiles_x_attacker_flying_share",
 ]
 TOWN_RICH_DEPLOYABLE_EXTRA_NAMES += [f"town_building_{building_id}" for building_id in TOWN_BUILDING_IDS]
 
@@ -1280,6 +1353,15 @@ def setup_key(row: dict[str, Any]) -> str:
             if isinstance(stack, dict)
         ]
 
+    def clean_battle_start_obstacles(obstacles: list[dict[str, Any]] | None) -> Any:
+        if not isinstance(obstacles, list):
+            return None
+        return [
+            {key: obstacle.get(key) for key in sorted(obstacle) if key != "uniqueId"}
+            for obstacle in obstacles
+            if isinstance(obstacle, dict)
+        ]
+
     stable = {
         "battleType": battle_type(row),
         "terrain": row.get("terrain"),
@@ -1287,6 +1369,7 @@ def setup_key(row: dict[str, Any]) -> str:
         "defendedTown": clean_town(row.get("defendedTown")),
         "townPreMergeState": clean_town_pre_merge(row.get("townPreMergeState")) if row.get("schema", 1) >= 5 else None,
         "battleStartStacks": clean_battle_start_stacks(row.get("battleStartStacks")) if row.get("schema", 1) >= 6 else None,
+        "battleStartObstacles": clean_battle_start_obstacles(row.get("battleStartObstacles")) if row.get("schema", 1) >= 6 else None,
         "initialWallState": row.get("initialWallState") if row.get("schema", 1) >= 4 else None,
         "attackerHero": clean_hero(row.get("attackerHero")),
         "defenderHero": clean_hero(row.get("defenderHero")),
