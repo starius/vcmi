@@ -9,6 +9,8 @@
  */
 #pragma once
 
+#include "../../lib/battle/BattleSide.h"
+
 #include <cstdint>
 
 class CGameHandler;
@@ -25,6 +27,12 @@ struct BattleSimulationSummary
 	int64_t defenderWins = 0;
 	int64_t noWinner = 0;
 	int64_t otherWinner = 0;
+
+	void recordWinner(BattleSide winner);
+	bool hasSamples() const;
+	double attackerWinRate() const;
+	bool attackerWonAllSamples() const;
+	bool defenderWonAllSamples() const;
 };
 
 struct BattleSimulationRecordResult

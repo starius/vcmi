@@ -33,6 +33,47 @@
 
 namespace BattleSimulationBatch
 {
+void BattleSimulationSummary::recordWinner(BattleSide winner)
+{
+	++rows;
+
+	switch(winner)
+	{
+		case BattleSide::ATTACKER:
+			++attackerWins;
+			break;
+		case BattleSide::DEFENDER:
+			++defenderWins;
+			break;
+		case BattleSide::NONE:
+			++noWinner;
+			break;
+		default:
+			++otherWinner;
+			break;
+	}
+}
+
+bool BattleSimulationSummary::hasSamples() const
+{
+	return rows > 0;
+}
+
+double BattleSimulationSummary::attackerWinRate() const
+{
+	return hasSamples() ? static_cast<double>(attackerWins) / rows : 0.0;
+}
+
+bool BattleSimulationSummary::attackerWonAllSamples() const
+{
+	return hasSamples() && attackerWins == rows;
+}
+
+bool BattleSimulationSummary::defenderWonAllSamples() const
+{
+	return hasSamples() && defenderWins == rows;
+}
+
 namespace
 {
 struct Config
@@ -606,23 +647,7 @@ void appendResultRow(const CBattleInfoCallback & battle, const BattleResult & re
 
 void recordSummary(const BattleResult & result)
 {
-	++state.summary.rows;
-
-	switch(result.winner)
-	{
-		case BattleSide::ATTACKER:
-			++state.summary.attackerWins;
-			break;
-		case BattleSide::DEFENDER:
-			++state.summary.defenderWins;
-			break;
-		case BattleSide::NONE:
-			++state.summary.noWinner;
-			break;
-		default:
-			++state.summary.otherWinner;
-			break;
-	}
+	state.summary.recordWinner(result.winner);
 }
 }
 
