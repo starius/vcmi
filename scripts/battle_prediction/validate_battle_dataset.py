@@ -508,6 +508,18 @@ def scan_logs(path: str) -> LogScan:
     return result
 
 
+def has_stack_side(stacks: Any, side: int) -> bool:
+    if not isinstance(stacks, list):
+        return False
+    return any(isinstance(stack, dict) and stack.get("side") == side for stack in stacks)
+
+
+def wall_part(state: Any, part: str) -> Any:
+    if not isinstance(state, dict):
+        return None
+    return state.get(part)
+
+
 def load_summary(path: str, group_key: str) -> dict[str, Any]:
     schemas: Counter[int] = Counter()
     battle_types: Counter[str] = Counter()
@@ -517,6 +529,7 @@ def load_summary(path: str, group_key: str) -> dict[str, Any]:
     town_fort_levels: Counter[int] = Counter()
     town_hero_sources: Counter[str] = Counter()
     town_has_fortifications: Counter[str] = Counter()
+    schema6_battle_start: Counter[str] = Counter()
     rows = 0
 
     for row in iter_json_lines(path):
@@ -534,6 +547,33 @@ def load_summary(path: str, group_key: str) -> dict[str, Any]:
                 town_fort_levels[int(town["fortLevel"])] += 1
             town_hero_sources[str(town.get("defendingHeroSource", "missing"))] += 1
             town_has_fortifications[str(bool(row.get("hasFortifications"))).lower()] += 1
+        if int(row.get("schema", 1)) >= 6:
+            schema6_battle_start["rows"] += 1
+            stacks = row.get("battleStartStacks")
+            obstacles = row.get("battleStartObstacles")
+            wall_state = row.get("battleStartWallState")
+            initial_wall_state = row.get("initialWallState")
+            if isinstance(stacks, list):
+                schema6_battle_start["stacks_array"] += 1
+                schema6_battle_start["stack_count"] += len(stacks)
+                schema6_battle_start["nonempty_stacks"] += int(bool(stacks))
+                schema6_battle_start["attacker_stack_rows"] += int(has_stack_side(stacks, 0))
+                schema6_battle_start["defender_stack_rows"] += int(has_stack_side(stacks, 1))
+                schema6_battle_start["turret_rows"] += int(any(isinstance(stack, dict) and stack.get("turret") for stack in stacks))
+            if isinstance(obstacles, list):
+                schema6_battle_start["obstacles_array"] += 1
+                schema6_battle_start["obstacle_count"] += len(obstacles)
+                schema6_battle_start["nonempty_obstacles"] += int(bool(obstacles))
+            if isinstance(wall_state, dict):
+                schema6_battle_start["wall_state_rows"] += 1
+                wall_parts = ["keep", "bottomTower", "bottomWall", "belowGate", "overGate", "upperWall", "upperTower", "gate", "gateState"]
+                schema6_battle_start["wall_changed_rows"] += int(
+                    any(wall_part(initial_wall_state, part) != wall_part(wall_state, part) for part in wall_parts)
+                )
+                schema6_battle_start["gate_changed_rows"] += int(
+                    wall_part(initial_wall_state, "gate") != wall_part(wall_state, "gate")
+                    or wall_part(initial_wall_state, "gateState") != wall_part(wall_state, "gateState")
+                )
 
     active_groups = shard_groups if group_key == "shard" else setup_groups
 
@@ -558,6 +598,7 @@ def load_summary(path: str, group_key: str) -> dict[str, Any]:
         "town_fort_levels": dict(sorted(town_fort_levels.items())),
         "town_hero_sources": dict(sorted(town_hero_sources.items())),
         "town_has_fortifications": dict(sorted(town_has_fortifications.items())),
+        "schema6_battle_start": dict(sorted(schema6_battle_start.items())),
     }
 
 
@@ -647,6 +688,8 @@ def main() -> int:
                 f"town_hero_sources={summary['town_hero_sources']} "
                 f"town_has_fortifications={summary['town_has_fortifications']}"
             )
+        if summary["schema6_battle_start"]:
+            print(f"schema6_battle_start={summary['schema6_battle_start']}")
         if rich_fields:
             print(
                 f"schema3_rich_fields rows_checked={rich_fields['rows_checked']} "
