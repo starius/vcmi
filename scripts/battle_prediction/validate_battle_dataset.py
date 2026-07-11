@@ -243,6 +243,68 @@ def validate_town_pre_merge_state(row: dict[str, Any], town: dict[str, Any]) -> 
     return errors
 
 
+def validate_battle_start_stacks(row: dict[str, Any]) -> list[str]:
+    if int(row.get("schema", 1)) < 6:
+        return []
+
+    stacks = row.get("battleStartStacks")
+    if not isinstance(stacks, list):
+        return ["schema6 row missing battleStartStacks array"]
+
+    errors = []
+    required_stack = [
+        "unitId",
+        "side",
+        "slot",
+        "creature",
+        "count",
+        "baseAmount",
+        "position",
+        "initialPosition",
+        "availableHealth",
+        "totalHealth",
+        "maxHealth",
+        "firstHPLeft",
+        "meleeAttack",
+        "rangedAttack",
+        "meleeDefense",
+        "rangedDefense",
+        "meleeDamageMin",
+        "meleeDamageMax",
+        "rangedDamageMin",
+        "rangedDamageMax",
+        "speed",
+        "movementRange",
+        "morale",
+        "luck",
+        "shotsAvailable",
+        "shotsTotal",
+        "castsAvailable",
+        "castsTotal",
+        "retaliationsAvailable",
+        "retaliationsTotal",
+        "alive",
+        "validTarget",
+        "doubleWide",
+        "shooter",
+        "canShoot",
+        "caster",
+        "canCast",
+        "turret",
+        "catapult",
+        "ballista",
+        "firstAidTent",
+        "ammoCart",
+        "summoned",
+    ]
+    for index, stack in enumerate(stacks):
+        if not isinstance(stack, dict):
+            errors.append(f"battleStartStacks[{index}] is not an object")
+            continue
+        errors.extend(f"battleStartStacks[{index}] missing {key}" for key in missing_keys(stack, required_stack))
+    return errors
+
+
 def validate_town_fields(row: dict[str, Any]) -> list[str]:
     type_name = battle_type(row)
     if not type_name.startswith("town"):
@@ -350,6 +412,7 @@ def validate_schema3_rich_fields(path: str, max_examples: int = 20) -> dict[str,
         row_errors.extend(validate_hero_fields(row, "defender"))
         row_errors.extend(validate_army_fields(row, "attacker"))
         row_errors.extend(validate_army_fields(row, "defender"))
+        row_errors.extend(validate_battle_start_stacks(row))
         row_errors.extend(validate_town_fields(row))
 
         for key in ["attackerArmyStrength", "defenderArmyStrength", "battleType", "hasFortifications", "hasMoat"]:

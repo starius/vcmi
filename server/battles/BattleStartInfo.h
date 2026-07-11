@@ -46,6 +46,58 @@ struct BattleStartTownPreMergeSnapshot
 	BattleStartArmySnapshot defendingHeroArmy;
 };
 
+struct BattleStartStackStateSnapshot
+{
+	uint32_t unitId = 0;
+	BattleSide side = BattleSide::NONE;
+	SlotID slot;
+	CreatureID creature;
+	TQuantity count = 0;
+	int32_t baseAmount = 0;
+	int32_t position = BattleHex::INVALID;
+	int32_t initialPosition = BattleHex::INVALID;
+	int64_t availableHealth = 0;
+	int64_t totalHealth = 0;
+	int32_t maxHealth = 0;
+	int32_t firstHPLeft = 0;
+	int32_t meleeAttack = 0;
+	int32_t rangedAttack = 0;
+	int32_t meleeDefense = 0;
+	int32_t rangedDefense = 0;
+	int32_t meleeDamageMin = 0;
+	int32_t meleeDamageMax = 0;
+	int32_t rangedDamageMin = 0;
+	int32_t rangedDamageMax = 0;
+	int32_t speed = 0;
+	int32_t movementRange = 0;
+	int32_t morale = 0;
+	int32_t luck = 0;
+	int32_t shotsAvailable = 0;
+	int32_t shotsTotal = 0;
+	int32_t castsAvailable = 0;
+	int32_t castsTotal = 0;
+	int32_t retaliationsAvailable = 0;
+	int32_t retaliationsTotal = 0;
+	bool alive = false;
+	bool validTarget = false;
+	bool doubleWide = false;
+	bool shooter = false;
+	bool canShoot = false;
+	bool caster = false;
+	bool canCast = false;
+	bool turret = false;
+	bool catapult = false;
+	bool ballista = false;
+	bool firstAidTent = false;
+	bool ammoCart = false;
+	bool summoned = false;
+};
+
+struct BattleStartStateSnapshot
+{
+	std::vector<BattleStartStackStateSnapshot> stacks;
+};
+
 struct BattleStartInfo
 {
 	BattleSideArray<const CArmedInstance *> armies{nullptr, nullptr};
@@ -62,3 +114,4 @@ BattleStartArmySnapshot makeBattleStartArmySnapshot(const CArmedInstance * army)
 std::optional<BattleStartTownPreMergeSnapshot> makeBattleStartTownPreMergeSnapshot(
 	const CGTownInstance * town,
 	const CGHeroInstance * defendingHero);
+BattleStartStateSnapshot makeBattleStartStateSnapshot(const IBattleInfo & battle);

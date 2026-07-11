@@ -54,6 +54,7 @@ class BattleProcessor : boost::noncopyable
 	std::unique_ptr<BattleSimulation::BattleSimulationEvaluator> simulationEvaluator;
 	std::optional<BattleStartTownPreMergeSnapshot> nextTownPreMergeSnapshot;
 	std::map<BattleID, BattleStartTownPreMergeSnapshot> townPreMergeSnapshots;
+	std::map<BattleID, BattleStartStateSnapshot> battleStartSnapshots;
 
 	void updateGateState(const CBattleInfoCallback & battle);
 	void engageIntoBattle(PlayerColor player);
@@ -78,6 +79,8 @@ public:
 	/// Stores pre-merge town/visiting hero army state for the next matching siege battle
 	void setNextBattleTownPreMergeState(const CGTownInstance * town, const CGHeroInstance * defendingHero);
 	const BattleStartTownPreMergeSnapshot * getTownPreMergeSnapshot(const BattleID & battleID) const;
+	const BattleStartStateSnapshot * getBattleStartSnapshot(const BattleID & battleID) const;
+	void discardBattleSnapshots(const BattleID & battleID);
 	/// Restart ongoing battle and end previous battle
 	void restartBattle(const BattleID & battleID, const CArmedInstance *army1, const CArmedInstance *army2, int3 tile, const CGHeroInstance *hero1, const CGHeroInstance *hero2, const BattleLayout & layout, const CGTownInstance *town);
 	/// Restart ongoing battle and end previous battle using specified setup

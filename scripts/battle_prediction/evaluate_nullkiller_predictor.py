@@ -292,6 +292,69 @@ def army_rich_stats(row: dict[str, Any], side: str) -> dict[str, float]:
     return result
 
 
+def battle_start_stack_stats(row: dict[str, Any], side: str) -> dict[str, float]:
+    side_id = 0 if side == "attacker" else 1
+    stacks = row.get("battleStartStacks") or []
+    result = defaultdict(float)
+
+    for stack in stacks:
+        if not isinstance(stack, dict) or int(stack.get("side", -1)) != side_id:
+            continue
+
+        result["available"] = 1.0
+        is_turret = bool(stack.get("turret"))
+        count = float(stack.get("count") or 0.0)
+        health = max(float(stack.get("availableHealth") or stack.get("totalHealth") or 0.0), 0.0)
+        if health <= 0.0:
+            health = count * max(float(stack.get("maxHealth") or 0.0), 0.0)
+        damage = count * (float(stack.get("meleeDamageMin") or 0.0) + float(stack.get("meleeDamageMax") or 0.0)) / 2.0
+        ranged_damage = count * (float(stack.get("rangedDamageMin") or 0.0) + float(stack.get("rangedDamageMax") or 0.0)) / 2.0
+        position = int(stack.get("position", -1))
+        x = float(position % 17) if position >= 0 else 0.0
+        y = float(position // 17) if position >= 0 else 0.0
+
+        if is_turret:
+            result["turret_count"] += 1.0
+            result["turret_health"] += health
+            result["turret_damage"] += damage
+            continue
+
+        weight = max(health, 1.0)
+        result["stack_count"] += 1.0
+        result["total_health"] += health
+        result["damage"] += damage
+        result["ranged_damage"] += ranged_damage
+        result["weight"] += weight
+        result["attack_weighted"] += weight * float(stack.get("meleeAttack") or 0.0)
+        result["defense_weighted"] += weight * float(stack.get("meleeDefense") or 0.0)
+        result["speed_weighted"] += weight * float(stack.get("speed") or 0.0)
+        result["morale_weighted"] += weight * float(stack.get("morale") or 0.0)
+        result["luck_weighted"] += weight * float(stack.get("luck") or 0.0)
+        result["position_x_weighted"] += weight * x
+        result["position_y_weighted"] += weight * y
+        result["max_speed"] = max(result["max_speed"], float(stack.get("speed") or 0.0))
+
+        for key in ["shooter", "canShoot", "caster", "canCast", "doubleWide"]:
+            if stack.get(key):
+                result[f"{key}_health"] += health
+
+    weight = max(result["weight"], 1.0)
+    result["attack_avg"] = result["attack_weighted"] / weight
+    result["defense_avg"] = result["defense_weighted"] / weight
+    result["speed_avg"] = result["speed_weighted"] / weight
+    result["morale_avg"] = result["morale_weighted"] / weight
+    result["luck_avg"] = result["luck_weighted"] / weight
+    result["position_x_avg"] = result["position_x_weighted"] / weight
+    result["position_y_avg"] = result["position_y_weighted"] / weight
+    result["damage_per_health"] = result["damage"] / max(result["total_health"], 1.0)
+    result["ranged_damage_share"] = result["ranged_damage"] / max(result["damage"], 1.0)
+
+    for key in ["shooter", "canShoot", "caster", "canCast", "doubleWide"]:
+        result[f"{key}_share"] = result[f"{key}_health"] / max(result["total_health"], 1.0)
+
+    return result
+
+
 def mana_ratio(hero: dict[str, Any] | None) -> float:
     if not hero:
         return 0.0
@@ -740,6 +803,8 @@ def town_rich_deployable_feature_vector(row: dict[str, Any]) -> list[float]:
     defender = max(side_strength(row, "defender"), EPSILON)
     attacker_rich = army_rich_stats(row, "attacker")
     defender_rich = army_rich_stats(row, "defender")
+    attacker_start = battle_start_stack_stats(row, "attacker")
+    defender_start = battle_start_stack_stats(row, "defender")
     attacker_hero = row.get("attackerHero")
     defender_hero = row.get("defenderHero")
 
@@ -818,6 +883,29 @@ def town_rich_deployable_feature_vector(row: dict[str, Any]) -> list[float]:
         pre_merge_not_in_battle_share * tower_total,
         post_merge_town_army_share * tower_total,
         pre_merge_participating_share * log_strength_ratio,
+        min(attacker_start["available"], defender_start["available"]),
+        math.log1p(attacker_start["total_health"]) - math.log1p(defender_start["total_health"]),
+        math.log1p(attacker_start["damage"]) - math.log1p(defender_start["damage"]),
+        attacker_start["damage_per_health"] - defender_start["damage_per_health"],
+        attacker_start["attack_avg"] - defender_start["attack_avg"],
+        attacker_start["defense_avg"] - defender_start["defense_avg"],
+        attacker_start["speed_avg"] - defender_start["speed_avg"],
+        attacker_start["max_speed"] - defender_start["max_speed"],
+        attacker_start["morale_avg"] - defender_start["morale_avg"],
+        attacker_start["luck_avg"] - defender_start["luck_avg"],
+        attacker_start["shooter_share"] - defender_start["shooter_share"],
+        attacker_start["canShoot_share"] - defender_start["canShoot_share"],
+        attacker_start["caster_share"] - defender_start["caster_share"],
+        attacker_start["canCast_share"] - defender_start["canCast_share"],
+        attacker_start["doubleWide_share"] - defender_start["doubleWide_share"],
+        attacker_start["position_x_avg"] - defender_start["position_x_avg"],
+        attacker_start["position_y_avg"] - defender_start["position_y_avg"],
+        defender_start["turret_count"],
+        math.log1p(defender_start["turret_health"]),
+        math.log1p(defender_start["turret_damage"]),
+        defender_start["turret_damage"] * log_strength_ratio,
+        defender_start["turret_count"] * fort_level,
+        defender_start["turret_count"] * tower_total,
     ])
     values.extend(1.0 if building_id in buildings else 0.0 for building_id in TOWN_BUILDING_IDS)
     return values
@@ -1002,6 +1090,29 @@ TOWN_RICH_DEPLOYABLE_EXTRA_NAMES = [
     "pre_merge_not_in_battle_share_x_initial_tower_health",
     "post_merge_town_army_share_x_initial_tower_health",
     "pre_merge_participating_share_x_log_strength_ratio",
+    "battle_start_available",
+    "battle_start_total_health_log_diff",
+    "battle_start_damage_log_diff",
+    "battle_start_damage_per_health_diff",
+    "battle_start_attack_avg_diff",
+    "battle_start_defense_avg_diff",
+    "battle_start_speed_avg_diff",
+    "battle_start_max_speed_diff",
+    "battle_start_morale_avg_diff",
+    "battle_start_luck_avg_diff",
+    "battle_start_shooter_share_diff",
+    "battle_start_can_shoot_share_diff",
+    "battle_start_caster_share_diff",
+    "battle_start_can_cast_share_diff",
+    "battle_start_double_wide_share_diff",
+    "battle_start_position_x_avg_diff",
+    "battle_start_position_y_avg_diff",
+    "battle_start_defender_turret_count",
+    "battle_start_defender_turret_health_log",
+    "battle_start_defender_turret_damage_log",
+    "battle_start_defender_turret_damage_x_log_strength_ratio",
+    "battle_start_defender_turret_count_x_fort_level",
+    "battle_start_defender_turret_count_x_initial_tower_health",
 ]
 TOWN_RICH_DEPLOYABLE_EXTRA_NAMES += [f"town_building_{building_id}" for building_id in TOWN_BUILDING_IDS]
 
@@ -1160,12 +1271,22 @@ def setup_key(row: dict[str, Any]) -> str:
             "defendingHeroArmy": clean_army_snapshot(pre_merge.get("defendingHeroArmy")),
         }
 
+    def clean_battle_start_stacks(stacks: list[dict[str, Any]] | None) -> Any:
+        if not isinstance(stacks, list):
+            return None
+        return [
+            {key: stack.get(key) for key in sorted(stack) if key != "unitId"}
+            for stack in stacks
+            if isinstance(stack, dict)
+        ]
+
     stable = {
         "battleType": battle_type(row),
         "terrain": row.get("terrain"),
         "battlefield": row.get("battlefield"),
         "defendedTown": clean_town(row.get("defendedTown")),
         "townPreMergeState": clean_town_pre_merge(row.get("townPreMergeState")) if row.get("schema", 1) >= 5 else None,
+        "battleStartStacks": clean_battle_start_stacks(row.get("battleStartStacks")) if row.get("schema", 1) >= 6 else None,
         "initialWallState": row.get("initialWallState") if row.get("schema", 1) >= 4 else None,
         "attackerHero": clean_hero(row.get("attackerHero")),
         "defenderHero": clean_hero(row.get("defenderHero")),

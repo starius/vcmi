@@ -15,6 +15,7 @@ from evaluate_nullkiller_predictor import (
     V3_SAFE_PROBABILITY,
     army_power_by_creature,
     army_rich_stats,
+    battle_start_stack_stats,
     battle_type,
     cxx_v3_probability,
     cxx_v3_static_calibration_applies,
@@ -295,6 +296,8 @@ def segments_for(row: dict[str, Any], actual: float, predicted: float) -> list[s
         initial_tower_total = wall_total(row, "initialWallState", ["bottomTower", "upperTower"])
         pre_merge = town_pre_merge_state(row)
         buildings = town_buildings(row)
+        attacker_start = battle_start_stack_stats(row, "attacker")
+        defender_start = battle_start_stack_stats(row, "defender")
         result.extend(
             [
                 f"town_faction={town_feature(row, 'faction')}",
@@ -311,6 +314,26 @@ def segments_for(row: dict[str, Any], actual: float, predicted: float) -> list[s
                 f"town_initial_gate_state={wall_state(row, 'initialWallState', 'gateState')}",
             ]
         )
+        if min(attacker_start["available"], defender_start["available"]):
+            result.extend(
+                [
+                    "battle_start_stacks=1",
+                    f"battle_start_health_log_ratio={bucket(math.log((attacker_start['total_health'] + 1.0) / (defender_start['total_health'] + 1.0)), [-2, -1, 0, 1, 2])}",
+                    f"battle_start_damage_log_ratio={bucket(math.log((attacker_start['damage'] + 1.0) / (defender_start['damage'] + 1.0)), [-2, -1, 0, 1, 2])}",
+                    f"battle_start_attack_diff={bucket(attacker_start['attack_avg'] - defender_start['attack_avg'], [-10, -5, 0, 5, 10])}",
+                    f"battle_start_defense_diff={bucket(attacker_start['defense_avg'] - defender_start['defense_avg'], [-10, -5, 0, 5, 10])}",
+                    f"battle_start_speed_diff={bucket(attacker_start['speed_avg'] - defender_start['speed_avg'], [-5, -2, 0, 2, 5])}",
+                    f"battle_start_morale_diff={bucket(attacker_start['morale_avg'] - defender_start['morale_avg'], [-3, -1, 0, 1, 3])}",
+                    f"battle_start_luck_diff={bucket(attacker_start['luck_avg'] - defender_start['luck_avg'], [-3, -1, 0, 1, 3])}",
+                    f"battle_start_can_shoot_diff={bucket(attacker_start['canShoot_share'] - defender_start['canShoot_share'], [-0.5, -0.1, 0.1, 0.5])}",
+                    f"battle_start_can_cast_diff={bucket(attacker_start['canCast_share'] - defender_start['canCast_share'], [-0.5, -0.1, 0.1, 0.5])}",
+                    f"battle_start_position_x_diff={bucket(attacker_start['position_x_avg'] - defender_start['position_x_avg'], [-8, -4, 0, 4, 8])}",
+                    f"battle_start_defender_turrets={bucket(defender_start['turret_count'], [1, 2, 3])}",
+                    f"battle_start_defender_turret_damage={bucket(defender_start['turret_damage'], [1, 50, 150, 300])}",
+                ]
+            )
+        else:
+            result.append("battle_start_stacks=0")
         result.extend(f"town_building={town_building_label(building_id)}" for building_id in sorted(buildings))
         if pre_merge:
             defender_army = max(float(row.get("defenderArmyStrength") or 0.0), 1.0)

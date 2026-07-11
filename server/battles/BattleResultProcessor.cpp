@@ -349,6 +349,7 @@ void BattleResultProcessor::endBattleConfirm(const CBattleInfoCallback & battle)
 		gameHandler->battles->restartBattle(*battle.getBattle());
 		return;
 	}
+	gameHandler->battles->discardBattleSnapshots(battle.getBattle()->getBattleID());
 
 	//calculate casualties before deleting battle
 	CasualtiesAfterBattle cab1(battle, BattleSide::ATTACKER);

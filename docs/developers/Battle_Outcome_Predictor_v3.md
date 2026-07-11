@@ -323,6 +323,7 @@ Observed pattern:
 - the completed corrected 5k town-hero run from 2026-07-11 has 5000 rows, 100 complete generated setup shards, 159 setup groups, all town-hero rows with visiting defending heroes, and 0 MMAI fallback lines. It passes the schema3 rich-field gate with defender hero data, town buildings, fortifications, tower damage, and final wall state.
 - schema4 battle rows add explicit `initialWallState` for town/siege battles. Schema3 kept only the post-battle `finalWallState`; schema4 records both the planner input wall state derived by the same rules as `BattleInfo::setupBattle` and the final wall state for analysis.
 - schema5 battle rows add `townPreMergeState` for visiting-hero inside sieges. This fixes the schema3/schema4 blind spot where the town garrison had already been merged into the defending hero before JSONL recording, leaving `defendedTown.armyStrength` as zero and making static town features unable to see the original town/hero split.
+- schema6 battle rows add `battleStartStacks`, a start-of-combat snapshot of every non-ghost battle stack including effective attack/defense/damage/speed, morale/luck, current health, initial hex, shooting/casting capability, war-machine/tower flags, and turret aggregates. This targets a remaining root-cause gap: schema5 still has base creature stats and army power, but not the effective stack values after hero, town, terrain, artifact, and battle-start bonuses are applied.
 - close-even diagnostics on the completed 5k town-hero run found 11 groups / 315 rows with actual win rate 25-75% and cxx-v3 error at least 0.25. The worst false-safe cluster was `predicted >= 0.95`: 5 groups / 200 rows, actual average 37.00%, predicted average 98.82%.
 - town cxx-v3 false-safe segments are dominated by siege mechanics absent from the open-field model: moat/castle/tower/mage-guild/grail effects and defender spell access. The false-unsafe side is different: attacker combat spell advantage, flyers, shooters, high-speed stacks, and special abilities can overcome town defenses, while cxx-v3 still assigns very low probabilities.
 - cxx-v3 has no deployed static scope for town-hero rows. Town/siege prediction should remain on legacy danger plus targeted safety fixes until the runtime simulation service is available or a separately validated town model clears the same holdout and A/B gates.
@@ -333,6 +334,7 @@ Observed pattern:
 - corrected schema3 worst cxx-v3 errors include confident sign mistakes: e.g. predicted probabilities below 1% for setups that MMAI won 100% of the time, and a 98.5% predicted win for a setup lost 100% of the time. This points to root-cause modeling gaps, not a threshold-only problem.
 - close/even diagnostics on the corrected 5k slice show the same confident-static-error shape: one non-town 47.6% empirical hero-vs-hero setup was predicted at 0.94%, and town close/even errors include high-fort/mage/moat sieges predicted above 88-96% despite empirical win rates around 38-47%.
 - close/even diagnostics on the corrected town-hero 2k run show 9 close/even groups with cxx-v3 absolute error above 0.25. Examples include a 30% attacker win rate predicted at 99.9% against a visiting defender with several combat spells, and a 72.7% attacker win rate predicted at 6.7% into a fort-3/mage-4/grail town. The failures are bidirectional and siege-specific, not a threshold-only issue.
+- close/even diagnostics on the live schema5 town-hero run at 51 complete shards / 2550 complete-shard rows found only 2 groups in the 25-75% empirical win-rate band with cxx-v3 error at least 0.25, both false-safe. The worst current group had actual attacker win rate 30.00% and cxx-v3 prediction 99.51% against a fort-3/castle/moat town with a visiting defender, large defender mana advantage, and town pre-merge participation loss. This remains small-sample evidence until the run completes.
 - on the same corrected schema3 data, fallback-only repeated simulation with an all-wins safety rule reached 97.6% win/loss accuracy and 100% safety accuracy with 3 samples, 98.5% / 100% with 5 samples, and 100% / 100% with 10 samples on eligible held-out rows. The dataset is still small, but it matches the broader 100k proxy direction.
 - using current deployed cxx-v3 coefficients as the static/hybrid baseline on the corrected 5k run, fallback-only repeated simulation still clears the target: on non-town deployed-static holdout rows, all-wins fallback reached about 97.2% win/loss accuracy and 100% safety accuracy with 3 samples, 97.8% / 97.3% with 10 samples, and 99.7% / 98.4% with 20 samples. On town rows it reached 100% / 100% with 1-3 samples, 95.2% / 100% with 5 samples, and 100% / 100% with 10 samples. These are still proxy numbers, but they show the fix must be runtime simulation, not another cxx-v3 coefficient patch.
 - on the corrected town-hero 2k run, current cxx-v3 alone reached only about 58.8% held-out win/loss accuracy, 56.5% safety accuracy, and Brier score 0.363. Fallback-only repeated simulation with all-wins safety reached 100% win/loss accuracy and 95.4% safety accuracy with 3 samples, and 98.4% / 95.2% with 5 samples. Ten-sample results had fewer eligible holdout groups and stayed 100% win/loss but only 88.3% safety because of one false-safe and one false-unsafe group.
@@ -453,6 +455,7 @@ Current live remote schema5 run:
 - initial partial validation on the live run passed with 173/173 schema5 town-hero rows, 173/173 pre-merge snapshots, rich fields present, and 0 MMAI fallback lines
 - restarted on 2026-07-11 from jobs=2 to jobs=8 after confirming completed shards are skipped exactly and incomplete shards are deterministically rerun from clean profiles with output truncation
 - shard clients currently exit 139 after writing their complete rows and cleanly logging `Client stopped`; `vcmibattlesim` accepts the shard when the row count is complete. Treat this as a shutdown issue to investigate separately, not as invalid MMAI label evidence by itself.
+- live validation snapshot on 2026-07-11: 2764 schema5 town-hero rows, 59 shard logs with MMAI initialized, 0 MMAI fallback lines, and 51 complete shards / 2550 complete-shard rows usable for `--complete-shards-only` analysis
 
 Then validate and inspect the schema5 model failures:
 
@@ -495,6 +498,24 @@ python3 scripts/battle_prediction/analyze_v3_failure_segments.py \
   --actual-max 0.75 \
   --error-min 0.25 \
   --print-groups 40
+```
+
+Next schema6 collection should use the same generated `town-hero` setup once a build with schema6 support is available. Validate it with the same gate but `--expected-schema 6`; `--require-schema3-rich-fields` now also requires `battleStartStacks` on schema6 rows. The rich town prototype and segment analyzer consume schema6 start-stack aggregates automatically and emit `battle_start_*` features/segments:
+
+```bash
+python3 scripts/battle_prediction/validate_battle_dataset.py \
+  /root/vcmi-nk-ratio-results/schema6-mmai-town-hero-20k-20260711 \
+  --expected-rows 20000 \
+  --expected-schema 6 \
+  --expected-shards 400 \
+  --expected-shard-size 50 \
+  --group-key shard \
+  --expected-groups 400 \
+  --require-complete-shards \
+  --require-battle-types town-hero \
+  --require-no-mmai-fallback \
+  --require-mmai-initialized \
+  --require-schema3-rich-fields
 ```
 
 The schema4 run can still be validated and inspected for wall-state-only evidence:

@@ -270,6 +270,71 @@ void appendTownPreMergeState(std::ostream & out, const BattleStartTownPreMergeSn
 	out << '}';
 }
 
+void appendBattleStartStacks(std::ostream & out, const BattleStartStateSnapshot * snapshot)
+{
+	if(!snapshot)
+	{
+		out << "null";
+		return;
+	}
+
+	out << '[';
+	bool first = true;
+	for(const auto & stack : snapshot->stacks)
+	{
+		if(!first)
+			out << ',';
+		first = false;
+
+		out << "{";
+		out << "\"unitId\":" << stack.unitId;
+		out << ",\"side\":" << static_cast<int>(stack.side);
+		out << ",\"slot\":" << stack.slot.getNum();
+		out << ",\"creature\":" << stack.creature.getNum();
+		out << ",\"count\":" << stack.count;
+		out << ",\"baseAmount\":" << stack.baseAmount;
+		out << ",\"position\":" << stack.position;
+		out << ",\"initialPosition\":" << stack.initialPosition;
+		out << ",\"availableHealth\":" << stack.availableHealth;
+		out << ",\"totalHealth\":" << stack.totalHealth;
+		out << ",\"maxHealth\":" << stack.maxHealth;
+		out << ",\"firstHPLeft\":" << stack.firstHPLeft;
+		out << ",\"meleeAttack\":" << stack.meleeAttack;
+		out << ",\"rangedAttack\":" << stack.rangedAttack;
+		out << ",\"meleeDefense\":" << stack.meleeDefense;
+		out << ",\"rangedDefense\":" << stack.rangedDefense;
+		out << ",\"meleeDamageMin\":" << stack.meleeDamageMin;
+		out << ",\"meleeDamageMax\":" << stack.meleeDamageMax;
+		out << ",\"rangedDamageMin\":" << stack.rangedDamageMin;
+		out << ",\"rangedDamageMax\":" << stack.rangedDamageMax;
+		out << ",\"speed\":" << stack.speed;
+		out << ",\"movementRange\":" << stack.movementRange;
+		out << ",\"morale\":" << stack.morale;
+		out << ",\"luck\":" << stack.luck;
+		out << ",\"shotsAvailable\":" << stack.shotsAvailable;
+		out << ",\"shotsTotal\":" << stack.shotsTotal;
+		out << ",\"castsAvailable\":" << stack.castsAvailable;
+		out << ",\"castsTotal\":" << stack.castsTotal;
+		out << ",\"retaliationsAvailable\":" << stack.retaliationsAvailable;
+		out << ",\"retaliationsTotal\":" << stack.retaliationsTotal;
+		out << ",\"alive\":" << (stack.alive ? "true" : "false");
+		out << ",\"validTarget\":" << (stack.validTarget ? "true" : "false");
+		out << ",\"doubleWide\":" << (stack.doubleWide ? "true" : "false");
+		out << ",\"shooter\":" << (stack.shooter ? "true" : "false");
+		out << ",\"canShoot\":" << (stack.canShoot ? "true" : "false");
+		out << ",\"caster\":" << (stack.caster ? "true" : "false");
+		out << ",\"canCast\":" << (stack.canCast ? "true" : "false");
+		out << ",\"turret\":" << (stack.turret ? "true" : "false");
+		out << ",\"catapult\":" << (stack.catapult ? "true" : "false");
+		out << ",\"ballista\":" << (stack.ballista ? "true" : "false");
+		out << ",\"firstAidTent\":" << (stack.firstAidTent ? "true" : "false");
+		out << ",\"ammoCart\":" << (stack.ammoCart ? "true" : "false");
+		out << ",\"summoned\":" << (stack.summoned ? "true" : "false");
+		out << "}";
+	}
+	out << ']';
+}
+
 void appendSpellList(std::ostream & out, const std::set<SpellID> & spells, bool combatOnly)
 {
 	out << '[';
@@ -656,9 +721,10 @@ void appendResultRow(CGameHandler & gameHandler, const CBattleInfoCallback & bat
 	const auto * info = battle.getBattle();
 	const int64_t rowIndex = state.replay.recordedSamples();
 	const auto * townPreMerge = gameHandler.battles->getTownPreMergeSnapshot(info->getBattleID());
+	const auto * battleStart = gameHandler.battles->getBattleStartSnapshot(info->getBattleID());
 
 	state.output << "{";
-	state.output << "\"schema\":5";
+	state.output << "\"schema\":6";
 	state.output << ",\"row\":" << rowIndex;
 	state.output << ",\"shardIndex\":" << state.config.shardIndex;
 	state.output << ",\"shardCount\":" << state.config.shardCount;
@@ -681,6 +747,8 @@ void appendResultRow(CGameHandler & gameHandler, const CBattleInfoCallback & bat
 	appendTown(state.output, info->getDefendedTown(), info->getSideHero(BattleSide::DEFENDER));
 	state.output << ",\"townPreMergeState\":";
 	appendTownPreMergeState(state.output, townPreMerge);
+	state.output << ",\"battleStartStacks\":";
+	appendBattleStartStacks(state.output, battleStart);
 	state.output << ",\"initialWallState\":";
 	appendInitialWallState(state.output, info->getDefendedTown());
 	state.output << ",\"finalWallState\":";
