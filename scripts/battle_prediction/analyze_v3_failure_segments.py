@@ -20,6 +20,10 @@ from evaluate_nullkiller_predictor import (
     deployed_safe_prediction,
     hero_strength,
     load_groups,
+    town_pre_merge_army_strength,
+    town_pre_merge_largest_share,
+    town_pre_merge_stack_count,
+    town_pre_merge_state,
 )
 
 
@@ -218,6 +222,7 @@ def segments_for(row: dict[str, Any], actual: float, predicted: float) -> list[s
     if type_name.startswith("town"):
         initial_wall_total = wall_total(row, "initialWallState", ["bottomWall", "belowGate", "overGate", "upperWall"])
         initial_tower_total = wall_total(row, "initialWallState", ["bottomTower", "upperTower"])
+        pre_merge = town_pre_merge_state(row)
         result.extend(
             [
                 f"town_faction={town_feature(row, 'faction')}",
@@ -233,6 +238,25 @@ def segments_for(row: dict[str, Any], actual: float, predicted: float) -> list[s
                 f"town_initial_gate_state={wall_state(row, 'initialWallState', 'gateState')}",
             ]
         )
+        if pre_merge:
+            defender_army = max(float(row.get("defenderArmyStrength") or 0.0), 1.0)
+            town_army = town_pre_merge_army_strength(row, "townArmy")
+            hero_army = town_pre_merge_army_strength(row, "defendingHeroArmy")
+            not_in_battle = max(0.0, town_army + hero_army - defender_army)
+            result.extend(
+                [
+                    "town_pre_merge=1",
+                    f"town_pre_merge_town_share={bucket(town_army / defender_army, [0.25, 0.5, 0.75, 1.0])}",
+                    f"town_pre_merge_hero_share={bucket(hero_army / defender_army, [0.25, 0.5, 0.75, 1.0])}",
+                    f"town_pre_merge_not_in_battle={bucket(not_in_battle, [1, 5000, 15000, 30000])}",
+                    f"town_pre_merge_town_stacks={bucket(town_pre_merge_stack_count(row, 'townArmy'), [1, 4, 7])}",
+                    f"town_pre_merge_hero_stacks={bucket(town_pre_merge_stack_count(row, 'defendingHeroArmy'), [1, 4, 7])}",
+                    f"town_pre_merge_town_largest={bucket(town_pre_merge_largest_share(row, 'townArmy'), [0.25, 0.5, 0.75, 1.0])}",
+                    f"town_pre_merge_hero_largest={bucket(town_pre_merge_largest_share(row, 'defendingHeroArmy'), [0.25, 0.5, 0.75, 1.0])}",
+                ]
+            )
+        else:
+            result.append("town_pre_merge=0")
 
     return result
 
@@ -338,6 +362,26 @@ def town_summary(row: dict[str, Any]) -> str:
     )
 
 
+def town_pre_merge_summary(row: dict[str, Any]) -> str:
+    if not town_pre_merge_state(row):
+        return "none"
+
+    town_army = town_pre_merge_army_strength(row, "townArmy")
+    hero_army = town_pre_merge_army_strength(row, "defendingHeroArmy")
+    defender_army = max(float(row.get("defenderArmyStrength") or 0.0), 1.0)
+    not_in_battle = max(0.0, town_army + hero_army - defender_army)
+    return (
+        f"town_army={town_army:.0f} hero_army={hero_army:.0f} "
+        f"battle_defender_army={defender_army:.0f} not_in_battle={not_in_battle:.0f} "
+        f"town_share={town_army / defender_army:.3f} hero_share={hero_army / defender_army:.3f} "
+        f"town_stacks={town_pre_merge_stack_count(row, 'townArmy'):.0f} "
+        f"hero_stacks={town_pre_merge_stack_count(row, 'defendingHeroArmy'):.0f} "
+        f"town_largest={town_pre_merge_largest_share(row, 'townArmy'):.3f} "
+        f"hero_largest={town_pre_merge_largest_share(row, 'defendingHeroArmy'):.3f} "
+        f"post_town_army={float(town_feature(row, 'armyStrength', 0) or 0):.0f}"
+    )
+
+
 def print_group_detail(index: int, group: Any, predicted: float) -> None:
     row = group.row
     attacker_strength = army_strength(row, "attacker")
@@ -354,6 +398,8 @@ def print_group_detail(index: int, group: Any, predicted: float) -> None:
     print(f"  defender hero: {hero_summary(row.get('defenderHero'))}")
     if battle_type(row).startswith("town"):
         print(f"  town: {town_summary(row)}")
+        if town_pre_merge_state(row):
+            print(f"  pre-merge: {town_pre_merge_summary(row)}")
     for side in ("attacker", "defender"):
         print(f"  {side} army:")
         for line in army_summary(row, side):
