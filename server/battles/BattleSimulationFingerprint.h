@@ -11,12 +11,15 @@
 
 #include <cstdint>
 
+struct BattleStartInfo;
+
 namespace BattleSimulation
 {
 constexpr uint64_t INVALID_STATE_FINGERPRINT = 0;
 
 bool isValidStateFingerprint(uint64_t fingerprint);
 uint64_t combineFingerprint(uint64_t fingerprint, uint64_t value);
+uint64_t fingerprintBattleStartInfo(const BattleStartInfo & setup);
 
 class BattleSimulationFingerprintBuilder
 {
