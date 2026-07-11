@@ -410,6 +410,34 @@ def town_pre_merge_largest_share(row: dict[str, Any], key: str) -> float:
     return max(powers) / total if powers else 0.0
 
 
+def town_pre_merge_total_army_strength(row: dict[str, Any]) -> float:
+    return town_pre_merge_army_strength(row, "townArmy") + town_pre_merge_army_strength(row, "defendingHeroArmy")
+
+
+def town_pre_merge_not_in_battle_strength(row: dict[str, Any]) -> float:
+    total = town_pre_merge_total_army_strength(row)
+    defender_army = max(float(row.get("defenderArmyStrength") or 0.0), 0.0)
+    return max(0.0, total - defender_army)
+
+
+def town_pre_merge_participating_share(row: dict[str, Any]) -> float:
+    total = town_pre_merge_total_army_strength(row)
+    if total <= 0.0:
+        return 1.0
+    defender_army = max(float(row.get("defenderArmyStrength") or 0.0), 0.0)
+    return max(0.0, min(1.0, defender_army / total))
+
+
+def town_pre_merge_not_in_battle_share(row: dict[str, Any]) -> float:
+    total = town_pre_merge_total_army_strength(row)
+    return town_pre_merge_not_in_battle_strength(row) / max(total, 1.0)
+
+
+def town_post_merge_army_share(row: dict[str, Any]) -> float:
+    total = town_pre_merge_total_army_strength(row)
+    return town_feature(row, "armyStrength") / max(total, 1.0)
+
+
 def feature_vector(row: dict[str, Any]) -> list[float]:
     attacker = max(side_strength(row, "attacker"), EPSILON)
     defender = max(side_strength(row, "defender"), EPSILON)
@@ -571,6 +599,10 @@ def town_deployable_feature_vector(row: dict[str, Any]) -> list[float]:
     battlefield = int(row.get("battlefield") if row.get("battlefield") is not None else -1)
     pre_merge_town_army = town_pre_merge_army_strength(row, "townArmy")
     pre_merge_hero_army = town_pre_merge_army_strength(row, "defendingHeroArmy")
+    pre_merge_not_in_battle = town_pre_merge_not_in_battle_strength(row)
+    pre_merge_not_in_battle_share = town_pre_merge_not_in_battle_share(row)
+    pre_merge_participating_share = town_pre_merge_participating_share(row)
+    post_merge_town_army_share = town_post_merge_army_share(row)
     defender_army_denominator = max(defender_army, 1.0)
 
     values = [
@@ -591,6 +623,10 @@ def town_deployable_feature_vector(row: dict[str, Any]) -> list[float]:
         town_pre_merge_stack_count(row, "defendingHeroArmy"),
         town_pre_merge_largest_share(row, "townArmy"),
         town_pre_merge_largest_share(row, "defendingHeroArmy"),
+        math.log1p(pre_merge_not_in_battle),
+        pre_merge_not_in_battle_share,
+        pre_merge_participating_share,
+        post_merge_town_army_share,
         math.log((attacker_stats["stacks"] + 1.0) / (defender_stats["stacks"] + 1.0)),
         attacker_stats["max_share"] - defender_stats["max_share"],
         primary(attacker_hero, 0) - primary(defender_hero, 0),
@@ -641,6 +677,9 @@ def town_rich_deployable_feature_vector(row: dict[str, Any]) -> list[float]:
     keep_health = town_initial_wall_state(row, "keep")
     gate_health = town_initial_wall_state(row, "gate")
     gate_state = town_initial_wall_state(row, "gateState")
+    pre_merge_not_in_battle_share = town_pre_merge_not_in_battle_share(row)
+    pre_merge_participating_share = town_pre_merge_participating_share(row)
+    post_merge_town_army_share = town_post_merge_army_share(row)
     attacker_flying = attacker_rich["flying_share"]
     attacker_shooter = attacker_rich["shooter_share"]
     attacker_spellcaster = attacker_rich["spellcaster_share"]
@@ -699,6 +738,11 @@ def town_rich_deployable_feature_vector(row: dict[str, Any]) -> list[float]:
         spell_power_diff * mage_guild_level,
         current_mana_diff * mage_guild_level,
         spell_count_diff * mage_guild_level,
+        pre_merge_not_in_battle_share * fort_level,
+        pre_merge_not_in_battle_share * wall_total,
+        pre_merge_not_in_battle_share * tower_total,
+        post_merge_town_army_share * tower_total,
+        pre_merge_participating_share * log_strength_ratio,
     ])
     return values
 
@@ -798,6 +842,10 @@ TOWN_DEPLOYABLE_FEATURE_NAMES = [
     "pre_merge_defending_hero_stack_count",
     "pre_merge_town_largest_stack_share",
     "pre_merge_defending_hero_largest_stack_share",
+    "log_pre_merge_not_in_battle_army",
+    "pre_merge_not_in_battle_share",
+    "pre_merge_participating_share",
+    "post_merge_town_army_share",
     "log_stack_count_ratio",
     "max_stack_share_diff",
     "attack_diff",
@@ -873,6 +921,11 @@ TOWN_RICH_DEPLOYABLE_EXTRA_NAMES = [
     "spell_power_diff_x_mage_guild_level",
     "current_mana_diff_x_mage_guild_level",
     "combat_spell_count_diff_x_mage_guild_level",
+    "pre_merge_not_in_battle_share_x_fort_level",
+    "pre_merge_not_in_battle_share_x_initial_wall_total",
+    "pre_merge_not_in_battle_share_x_initial_tower_health",
+    "post_merge_town_army_share_x_initial_tower_health",
+    "pre_merge_participating_share_x_log_strength_ratio",
 ]
 
 TOWN_RICH_DEPLOYABLE_FEATURE_NAMES = TOWN_DEPLOYABLE_FEATURE_NAMES + TOWN_RICH_DEPLOYABLE_EXTRA_NAMES
@@ -1563,13 +1616,16 @@ def town_pre_merge_summary(row: dict[str, Any]) -> str:
         f"hero_army={hero_army:.0f} "
         f"battle_defender_army={defender_army:.0f} "
         f"not_in_battle={max(0.0, pre_merge_total - defender_army):.0f} "
+        f"not_in_battle_share={town_pre_merge_not_in_battle_share(row):.3f} "
+        f"participating_share={town_pre_merge_participating_share(row):.3f} "
         f"town_share={town_army / defender_army:.3f} "
         f"hero_share={hero_army / defender_army:.3f} "
         f"town_stacks={town_pre_merge_stack_count(row, 'townArmy'):.0f} "
         f"hero_stacks={town_pre_merge_stack_count(row, 'defendingHeroArmy'):.0f} "
         f"town_largest={town_pre_merge_largest_share(row, 'townArmy'):.3f} "
         f"hero_largest={town_pre_merge_largest_share(row, 'defendingHeroArmy'):.3f} "
-        f"post_town_army={town_feature(row, 'armyStrength'):.0f}"
+        f"post_town_army={town_feature(row, 'armyStrength'):.0f} "
+        f"post_town_army_share={town_post_merge_army_share(row):.3f}"
     )
 
 

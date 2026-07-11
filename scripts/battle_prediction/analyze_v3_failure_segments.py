@@ -24,6 +24,9 @@ from evaluate_nullkiller_predictor import (
     load_groups,
     town_pre_merge_army_strength,
     town_pre_merge_largest_share,
+    town_pre_merge_not_in_battle_share,
+    town_pre_merge_participating_share,
+    town_post_merge_army_share,
     town_pre_merge_stack_count,
     town_pre_merge_state,
 )
@@ -256,6 +259,9 @@ def segments_for(row: dict[str, Any], actual: float, predicted: float) -> list[s
                     f"town_pre_merge_town_share={bucket(town_army / defender_army, [0.25, 0.5, 0.75, 1.0])}",
                     f"town_pre_merge_hero_share={bucket(hero_army / defender_army, [0.25, 0.5, 0.75, 1.0])}",
                     f"town_pre_merge_not_in_battle={bucket(not_in_battle, [1, 5000, 15000, 30000])}",
+                    f"town_pre_merge_not_in_battle_share={bucket(town_pre_merge_not_in_battle_share(row), [0.1, 0.25, 0.5, 0.75])}",
+                    f"town_pre_merge_participating_share={bucket(town_pre_merge_participating_share(row), [0.25, 0.5, 0.75, 0.9, 1.0])}",
+                    f"town_post_merge_army_share={bucket(town_post_merge_army_share(row), [0.1, 0.25, 0.5, 0.75])}",
                     f"town_pre_merge_town_stacks={bucket(town_pre_merge_stack_count(row, 'townArmy'), [1, 4, 7])}",
                     f"town_pre_merge_hero_stacks={bucket(town_pre_merge_stack_count(row, 'defendingHeroArmy'), [1, 4, 7])}",
                     f"town_pre_merge_town_largest={bucket(town_pre_merge_largest_share(row, 'townArmy'), [0.25, 0.5, 0.75, 1.0])}",
@@ -380,12 +386,15 @@ def town_pre_merge_summary(row: dict[str, Any]) -> str:
     return (
         f"town_army={town_army:.0f} hero_army={hero_army:.0f} "
         f"battle_defender_army={defender_army:.0f} not_in_battle={not_in_battle:.0f} "
+        f"not_in_battle_share={town_pre_merge_not_in_battle_share(row):.3f} "
+        f"participating_share={town_pre_merge_participating_share(row):.3f} "
         f"town_share={town_army / defender_army:.3f} hero_share={hero_army / defender_army:.3f} "
         f"town_stacks={town_pre_merge_stack_count(row, 'townArmy'):.0f} "
         f"hero_stacks={town_pre_merge_stack_count(row, 'defendingHeroArmy'):.0f} "
         f"town_largest={town_pre_merge_largest_share(row, 'townArmy'):.3f} "
         f"hero_largest={town_pre_merge_largest_share(row, 'defendingHeroArmy'):.3f} "
-        f"post_town_army={float(town_feature(row, 'armyStrength', 0) or 0):.0f}"
+        f"post_town_army={float(town_feature(row, 'armyStrength', 0) or 0):.0f} "
+        f"post_town_army_share={town_post_merge_army_share(row):.3f}"
     )
 
 

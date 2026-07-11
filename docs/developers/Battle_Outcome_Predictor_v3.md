@@ -233,7 +233,7 @@ The best static models are not merge-ready: current cxx-v3 was about 69.39% / Br
 
 ### Static Town Prototype
 
-A compact `town-deployable` evaluator prototype was added to `scripts/battle_prediction/evaluate_nullkiller_predictor.py`. It uses features that are plausible to port into Nullkiller2 danger evaluation: deployed town danger ratio, raw army strengths, hero primary/mana/spell counts, stack shape, fortification state, town faction, terrain, and battlefield buckets. Schema5 rows also expose pre-merge visiting-hero siege components: separate town-garrison and defending-hero army strengths, stack counts, and largest-stack shares before `mergeGarrisonOnSiege`.
+A compact `town-deployable` evaluator prototype was added to `scripts/battle_prediction/evaluate_nullkiller_predictor.py`. It uses features that are plausible to port into Nullkiller2 danger evaluation: deployed town danger ratio, raw army strengths, hero primary/mana/spell counts, stack shape, fortification state, town faction, terrain, and battlefield buckets. Schema5 rows also expose pre-merge visiting-hero siege components: separate town-garrison and defending-hero army strengths, stack counts, largest-stack shares before `mergeGarrisonOnSiege`, and derived merge-loss features such as pre-merge army left outside the started battle, participating share, and post-merge town-army share.
 
 On the completed corrected 5k town-hero run:
 
@@ -251,6 +251,8 @@ On the same run grouped by generated shard (`--group-key shard`, 73 train shards
 - broader skill/spell static features reached 88.89% held-out win/loss accuracy, Brier 0.1073, but remain diagnostic-only rather than a deployable Nullkiller2 model
 
 Conservative thresholds can eliminate false-safe groups on this small town holdout, but they do not approach 95% win/loss accuracy and introduce false-unsafe groups. This is not merge-ready as a production town predictor by itself.
+
+Early schema5 smoke check on the live 20k town-hero run, at only 21 complete shards / 1050 complete-shard rows, shows the new merge-loss features are wired end-to-end but does not prove generalization. In that small snapshot, current cxx-v3 remained unsafe for town rows (`test` 0/2 groups, two false-safe groups), while the deployable town prototype fit the two held-out groups. This should be treated as a feature-path check only until substantially more schema5 shards complete.
 
 The main observed static-model failure mode is interaction-heavy siege behavior: creature composition, battlefield layout, and terrain can change outcomes substantially for otherwise similar army/town setups. Repeated MMAI simulation remains the only result above the 95% target.
 
