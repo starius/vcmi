@@ -10,6 +10,8 @@
 #include "StdInc.h"
 #include "CCallback.h"
 
+#include "IClient.h"
+
 #include "../gameState/CGameState.h"
 #include "../mapObjects/CGHeroInstance.h"
 #include "../mapObjects/CGTownInstance.h"
@@ -378,6 +380,19 @@ int3 CCallback::getGuardingCreaturePosition(int3 tile)
 		return int3(-1,-1,-1);
 
 	return gameState().getMap().guardingCreaturePositions[tile];
+}
+
+BattleOutcomeSimulationResult CCallback::evaluateBattleSimulationForVisit(
+	const CGHeroInstance * attacker,
+	const CGObjectInstance * target,
+	int64_t gameSeed,
+	int32_t sampleCount,
+	const BattleOutcomeSimulationThresholds & thresholds) const
+{
+	if(!client())
+		return {};
+
+	return client()->evaluateBattleSimulationForVisit(attacker, target, gameSeed, sampleCount, thresholds);
 }
 
 void CCallback::dig( const CGObjectInstance *hero )

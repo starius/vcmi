@@ -484,6 +484,7 @@ set(lib_MAIN_HEADERS
 	callback/CBattleCallback.h
 	callback/CBattleGameInterface.h
 	callback/AIFactory.h
+	callback/BattleOutcomeSimulation.h
 	callback/CCallback.h
 	callback/CGameInfoCallback.h
 	callback/CGameInterface.h

@@ -12,6 +12,7 @@
 #include "CPlayerSpecificInfoCallback.h"
 #include "CBattleCallback.h"
 #include "IGameActionCallback.h"
+#include "BattleOutcomeSimulation.h"
 
 class IBattleEventsReceiver;
 
@@ -29,6 +30,12 @@ public:
 	//client-specific functionalities (pathfinding)
 	bool canMoveBetween(const int3 &a, const int3 &b);
 	int3 getGuardingCreaturePosition(int3 tile);
+	BattleOutcomeSimulationResult evaluateBattleSimulationForVisit(
+		const CGHeroInstance * attacker,
+		const CGObjectInstance * target,
+		int64_t gameSeed,
+		int32_t sampleCount,
+		const BattleOutcomeSimulationThresholds & thresholds) const;
 
 	std::optional<PlayerColor> getPlayerID() const override;
 

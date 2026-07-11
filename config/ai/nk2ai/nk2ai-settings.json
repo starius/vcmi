@@ -35,6 +35,7 @@
 	// - general formula: heroStrength > dangerStrength * safeAttackRatio
 	// battlePredictionModel: "legacy" uses safeAttackRatio directly, "ratio" derives safeAttackRatio from a fitted strength-ratio model, "v2"/"v3" calibrate hero/monster danger in FuzzyHelper
 	// battlePredictionSafeProbability: minimum model probability used by the "ratio" battlePredictionModel
+	// battlePredictionSimulationSamples: MMAI runtime simulation samples for v3 final battle-visit safety checks; 0 disables runtime simulation
 	// maxArmyLossTarget: how much (% of army) the AI is willing to lose before it considers getting into a battle
 	// - this is an approximation and doesn't guarantee winning the battle due to many army particularities and battle styles
 	// - this becomes 100% if AI player loses all towns, it's willing to risk it all

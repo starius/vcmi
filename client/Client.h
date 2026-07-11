@@ -12,6 +12,7 @@
 #include <memory>
 #include <vcmi/Environment.h>
 
+#include "../lib/callback/BattleOutcomeSimulation.h"
 #include "../lib/callback/IClient.h"
 #include "../lib/callback/CGameInfoCallback.h"
 #include "../lib/ConditionalWait.h"
@@ -28,6 +29,12 @@ class BattleInfo;
 struct BankConfig;
 class CCallback;
 class CBattleCallback;
+
+namespace BattleSimulation
+{
+	class BattleSimulationEvaluator;
+	class IBattleSimulationActionProviderFactory;
+}
 
 namespace events
 {
@@ -114,6 +121,9 @@ class CClient : public Environment, public IClient
 	std::shared_ptr<CGameState> gamestate;
 	int requestCounter = 1;
 	std::set<PlayerColor> advInterfaceReadySent;
+	std::unique_ptr<BattleSimulation::BattleSimulationEvaluator> battleSimulationEvaluator;
+	std::shared_ptr<BattleSimulation::IBattleSimulationActionProviderFactory> battleSimulationActionProviderFactory;
+	std::mutex battleSimulationEvaluatorMutex;
 
 public:
 	std::map<PlayerColor, std::shared_ptr<CGameInterface>> playerint;
@@ -159,6 +169,12 @@ public:
 	void handlePack(CPackForClient & pack); //applies the given pack and deletes it
 	int sendRequest(const CPackForServer & request, PlayerColor player, bool waitTillRealize) override; //returns ID given to that request
 	std::optional<BattleAction> makeSurrenderRetreatDecision(PlayerColor player, const BattleID & battleID, const BattleStateInfoForRetreat & battleState) override;
+	BattleOutcomeSimulationResult evaluateBattleSimulationForVisit(
+		const CGHeroInstance * attacker,
+		const CGObjectInstance * target,
+		int64_t gameSeed,
+		int32_t sampleCount,
+		const BattleOutcomeSimulationThresholds & thresholds) override;
 
 	void battleStarted(const BattleID & battle);
 	void battleFinished(const BattleID & battleID);

@@ -13,12 +13,14 @@
 #include "../../lib/UnlockGuard.h"
 #include "../../lib/StartInfo.h"
 #include "../../lib/battle/CPlayerBattleCallback.h"
+#include "../../lib/callback/CCallback.h"
 #include "../../lib/entities/artifact/ArtifactUtils.h"
 #include "../../lib/entities/artifact/CArtifact.h"
 #include "../../lib/entities/building/CBuilding.h"
 #include "../../lib/mapObjects/MapObjects.h"
 #include "../../lib/mapObjects/ObjectTemplate.h"
 #include "../../lib/mapObjects/CGHeroInstance.h"
+#include "../../lib/mapObjects/army/CArmedInstance.h"
 #include "../../lib/mapping/TerrainTile.h"
 #include "../../lib/CConfigHandler.h"
 #include "../../lib/IGameSettings.h"
@@ -38,6 +40,112 @@
 
 namespace NK2AI
 {
+namespace
+{
+constexpr int64_t RUNTIME_SIMULATION_GAME_SEED = 0;
+
+bool movementActionMayStartBattle(EPathNodeAction action)
+{
+	return action == EPathNodeAction::BATTLE
+		|| action == EPathNodeAction::BLOCKING_VISIT
+		|| action == EPathNodeAction::TELEPORT_BATTLE
+		|| action == EPathNodeAction::TELEPORT_BLOCKING_VISIT;
+}
+
+const CGObjectInstance * strongestGuard(const CCallback & callback, const int3 & tile)
+{
+	const CGObjectInstance * result = nullptr;
+	uint64_t bestStrength = 0;
+
+	for(const auto * guard : callback.getGuardingCreatures(tile))
+	{
+		const auto * army = dynamic_cast<const CArmedInstance *>(guard);
+		const uint64_t strength = army ? army->getArmyStrength() : 0;
+		if(!result || strength > bestStrength)
+		{
+			result = guard;
+			bestStrength = strength;
+		}
+	}
+
+	return result;
+}
+
+bool canBuildBattleSimulationRequestForObject(const CGObjectInstance * object)
+{
+	return dynamic_cast<const CArmedInstance *>(object) != nullptr
+		|| dynamic_cast<const CGTownInstance *>(object) != nullptr;
+}
+
+const CGObjectInstance * chooseBattleSimulationTarget(
+	const CCallback & callback,
+	const CGHeroInstance * hero,
+	const int3 & tile,
+	EPathNodeAction action)
+{
+	const auto * guard = strongestGuard(callback, tile);
+	auto visitableObjects = callback.getVisitableObjs(tile, false);
+	if(vstd::contains_if(visitableObjects, objWithID<Obj::HERO>))
+	{
+		vstd::erase_if(visitableObjects, [](const CGObjectInstance * obj) -> bool
+		{
+			return !objWithID<Obj::HERO>(obj);
+		});
+	}
+
+	const auto * visitableObject = vstd::backOrNull(visitableObjects);
+	if(visitableObject == hero)
+		visitableObject = nullptr;
+
+	if(action == EPathNodeAction::BATTLE || action == EPathNodeAction::TELEPORT_BATTLE)
+		return guard ? guard : visitableObject;
+
+	if(visitableObject && canBuildBattleSimulationRequestForObject(visitableObject))
+		return visitableObject;
+
+	return guard;
+}
+
+bool runtimeBattleSimulationRejectsVisit(
+	const AIGateway & aiGw,
+	const CGHeroInstance * hero,
+	const CGObjectInstance * target)
+{
+	if(!hero || !target || !aiGw.nullkiller || !aiGw.cc)
+		return false;
+	if(aiGw.nullkiller->settings->getBattlePredictionModel() != BattlePredictionModel::V3)
+		return false;
+
+	const int sampleCount = aiGw.nullkiller->settings->getBattlePredictionSimulationSamples();
+	if(sampleCount <= 0)
+		return false;
+
+	BattleOutcomeSimulationThresholds thresholds;
+	const auto simulation = aiGw.cc->evaluateBattleSimulationForVisit(
+		hero,
+		target,
+		RUNTIME_SIMULATION_GAME_SEED,
+		sampleCount,
+		thresholds);
+	if(simulation.status != BattleOutcomeSimulationStatus::COMPLETE || simulation.sampleCount < sampleCount)
+		return false;
+
+	const bool safe = simulation.attackerAllWinsSafe || (simulation.attackerProbabilitySafe && simulation.attackerWilsonSafe);
+	if(safe)
+		return false;
+
+	logAi->warn(
+		"Runtime battle simulation rejected %s visiting %s: samples %lld, attacker wins %lld, defender wins %lld, win rate %.3f",
+		hero->getNameTranslated().c_str(),
+		target->getObjectName().c_str(),
+		static_cast<long long>(simulation.sampleCount),
+		static_cast<long long>(simulation.attackerWins),
+		static_cast<long long>(simulation.defenderWins),
+		simulation.attackerWinProbability);
+
+	return true;
+}
+}
 
 AIGateway::AIGateway(std::optional<BattlePredictionModel> battlePredictionModelOverride)
 	:status(this)
@@ -1187,6 +1295,14 @@ bool AIGateway::moveHeroToTile(const int3 dst, const HeroPtr & heroPtr)
 			int3 endpos = path.nodes[i - 1].coord;
 			if(endpos == heroPtr->visitablePos())
 				continue;
+
+			const auto nextAction = path.nodes[i - 1].action;
+			if(movementActionMayStartBattle(nextAction))
+			{
+				const auto * battleTarget = chooseBattleSimulationTarget(*cc, heroPtr.get(), endpos, nextAction);
+				if(runtimeBattleSimulationRejectsVisit(*this, heroPtr.get(), battleTarget))
+					throw cannotFulfillGoalException("Runtime battle simulation rejected battle visit.");
+			}
 
 			bool isConnected = false;
 			bool isNextObjectTeleport = false;

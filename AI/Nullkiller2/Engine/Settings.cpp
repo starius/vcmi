@@ -87,6 +87,7 @@ namespace NK2AI
 		retreatThresholdAbsolute(10000),
 		safeAttackRatio(1.1),
 		battlePredictionSafeProbability(0.65f),
+		battlePredictionSimulationSamples(0),
 		maxArmyLossTarget(0.35f),
 		battlePredictionModel(BattlePredictionModel::LEGACY),
 		allowObjectGraph(true),
@@ -115,6 +116,8 @@ namespace NK2AI
 		battlePredictionModel = parseBattlePredictionModel(node["battlePredictionModel"]);
 		if(!node["battlePredictionSafeProbability"].isNull())
 			battlePredictionSafeProbability = std::clamp(static_cast<float>(node["battlePredictionSafeProbability"].Float()), 0.01f, 0.99f);
+		if(!node["battlePredictionSimulationSamples"].isNull())
+			battlePredictionSimulationSamples = std::clamp(static_cast<int>(node["battlePredictionSimulationSamples"].Integer()), 0, 100);
 		allowObjectGraph = node["allowObjectGraph"].Bool();
 		updateHitmapOnTileReveal = node["updateHitmapOnTileReveal"].Bool();
 		openMap = node["openMap"].Bool();

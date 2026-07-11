@@ -24,6 +24,7 @@ class DLL_LINKAGE CBattleCallback : public IBattleCallback
 
 protected:
 	int sendRequest(const CPackForServer & request); //returns requestID (that'll be matched to requestID in PackageApplied)
+	IClient * client() const { return cl; }
 
 public:
 	CBattleCallback(std::optional<PlayerColor> player, IClient * C);

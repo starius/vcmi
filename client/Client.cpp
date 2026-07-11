@@ -40,6 +40,11 @@
 #include "../lib/mapping/CMapService.h"
 #include "../lib/pathfinder/CGPathNode.h"
 #include "../lib/serializer/GameConnection.h"
+#include "../server/battles/BattleSimulationEvaluator.h"
+#include "../server/battles/BattleSimulationGameInterfaceAdapter.h"
+#include "../server/battles/BattleSimulationIsolatedState.h"
+#include "../server/battles/BattleSimulationRunner.h"
+#include "../server/battles/BattleSimulationSetup.h"
 
 #include <memory>
 #include <vcmi/events/EventBus.h>
@@ -48,6 +53,96 @@
 #ifdef VCMI_ANDROID
 #include "lib/CAndroidVMHelper.h"
 #endif
+
+namespace
+{
+static const std::string BATTLE_OUTCOME_SIMULATION_AI = "MMAI";
+constexpr int32_t CLIENT_BATTLE_SIMULATION_MAX_ACTIONS_PER_SAMPLE = 256;
+
+std::shared_ptr<CBattleGameInterface> createBattleOutcomeSimulationAI(PlayerColor)
+{
+	try
+	{
+		return AIFactory::createBattleAI(BATTLE_OUTCOME_SIMULATION_AI);
+	}
+	catch(const std::exception & e)
+	{
+		logAi->warn("Failed to create %s for client battle outcome simulation: %s. Falling back to BattleAI.", BATTLE_OUTCOME_SIMULATION_AI.c_str(), e.what());
+		return AIFactory::createBattleAI("BattleAI");
+	}
+}
+
+class SnapshotBattleSimulationRunner final : public BattleSimulation::IBattleSimulationRunner
+{
+public:
+	SnapshotBattleSimulationRunner(
+		std::shared_ptr<CGameState> sourceState,
+		std::shared_ptr<BattleSimulation::IBattleSimulationActionProviderFactory> actionProviderFactory)
+		: sourceState(std::move(sourceState))
+		, actionProviderFactory(std::move(actionProviderFactory))
+	{
+	}
+
+	std::optional<BattleSimulation::BattleSimulationSummary> run(const BattleSimulation::BattleSimulationRequest & request) override
+	{
+		if(!sourceState)
+			return std::nullopt;
+
+		BattleSimulation::BattleSimulationRunnerOptions options;
+		options.maxActionsPerSample = CLIENT_BATTLE_SIMULATION_MAX_ACTIONS_PER_SAMPLE;
+		BattleSimulation::IsolatedBattleSimulationRunner runner(*sourceState, actionProviderFactory, options);
+		return runner.run(request);
+	}
+
+private:
+	std::shared_ptr<CGameState> sourceState;
+	std::shared_ptr<BattleSimulation::IBattleSimulationActionProviderFactory> actionProviderFactory;
+};
+
+BattleOutcomeSimulationStatus convertBattleOutcomeSimulationStatus(BattleSimulation::BattleSimulationResponseStatus status)
+{
+	switch(status)
+	{
+		case BattleSimulation::BattleSimulationResponseStatus::INVALID_REQUEST:
+			return BattleOutcomeSimulationStatus::INVALID_REQUEST;
+		case BattleSimulation::BattleSimulationResponseStatus::COMPLETE:
+			return BattleOutcomeSimulationStatus::COMPLETE;
+		case BattleSimulation::BattleSimulationResponseStatus::NOT_AVAILABLE:
+			return BattleOutcomeSimulationStatus::NOT_AVAILABLE;
+	}
+
+	return BattleOutcomeSimulationStatus::NOT_AVAILABLE;
+}
+
+BattleOutcomeSimulationResult convertBattleOutcomeSimulationResponse(const BattleSimulation::BattleSimulationResponse & response)
+{
+	BattleOutcomeSimulationResult result;
+	result.status = convertBattleOutcomeSimulationStatus(response.status);
+	result.sampleCount = response.summary.rows;
+	result.attackerWins = response.summary.attackerWins;
+	result.defenderWins = response.summary.defenderWins;
+	result.noWinner = response.summary.noWinner;
+	result.otherWinner = response.summary.otherWinner;
+	result.attackerWinProbability = response.evaluation.attackerWinProbability;
+	result.attackerWilsonLowerBound = response.evaluation.attackerWilsonLowerBound;
+	result.attackerLikelyWins = response.evaluation.attackerLikelyWins;
+	result.attackerProbabilitySafe = response.evaluation.attackerProbabilitySafe;
+	result.attackerAllWinsSafe = response.evaluation.attackerAllWinsSafe;
+	result.attackerWilsonSafe = response.evaluation.attackerWilsonSafe;
+	result.defenderWonAllSamples = response.evaluation.defenderWonAllSamples;
+	return result;
+}
+
+BattleSimulation::BattleSimulationDecisionThresholds convertBattleOutcomeSimulationThresholds(const BattleOutcomeSimulationThresholds & thresholds)
+{
+	BattleSimulation::BattleSimulationDecisionThresholds result;
+	result.likelyWinProbability = thresholds.likelyWinProbability;
+	result.safeWinProbability = thresholds.safeWinProbability;
+	result.wilsonZ = thresholds.wilsonZ;
+	result.wilsonSafeProbability = thresholds.wilsonSafeProbability;
+	return result;
+}
+}
 
 CPlayerEnvironment::CPlayerEnvironment(PlayerColor player_, CClient * cl_, std::shared_ptr<CCallback> mainCallback_)
 	: player(player_),
@@ -365,6 +460,68 @@ void CClient::handlePack(CPackForClient & pack)
 std::optional<BattleAction> CClient::makeSurrenderRetreatDecision(PlayerColor player, const BattleID & battleID, const BattleStateInfoForRetreat & battleState)
 {
 	return playerint[player]->makeSurrenderRetreatDecision(battleID, battleState);
+}
+
+BattleOutcomeSimulationResult CClient::evaluateBattleSimulationForVisit(
+	const CGHeroInstance * attacker,
+	const CGObjectInstance * target,
+	int64_t gameSeed,
+	int32_t sampleCount,
+	const BattleOutcomeSimulationThresholds & thresholds)
+{
+	if(!gamestate || !attacker || !target || sampleCount <= 0)
+	{
+		BattleOutcomeSimulationResult result;
+		result.status = BattleOutcomeSimulationStatus::INVALID_REQUEST;
+		return result;
+	}
+
+	std::optional<BattleSimulation::BattleSimulationRequest> request;
+	std::shared_ptr<CGameState> snapshot;
+	{
+		std::unique_lock lock(CGameState::mutex);
+		request = BattleSimulation::makeBattleSimulationRequestForVisit(
+			*gamestate,
+			attacker,
+			target,
+			gameSeed,
+			sampleCount,
+			convertBattleOutcomeSimulationThresholds(thresholds));
+		if(!request)
+		{
+			BattleOutcomeSimulationResult result;
+			result.status = BattleOutcomeSimulationStatus::INVALID_REQUEST;
+			return result;
+		}
+
+		snapshot = BattleSimulation::cloneGameStateForSimulation(*gamestate);
+		if(!snapshot)
+			return {};
+
+		auto snapshotSetup = BattleSimulation::remapBattleStartInfo(*snapshot, request->setup);
+		if(!snapshotSetup)
+		{
+			BattleOutcomeSimulationResult result;
+			result.status = BattleOutcomeSimulationStatus::INVALID_REQUEST;
+			return result;
+		}
+		request->setup = *snapshotSetup;
+	}
+
+	std::unique_lock evaluatorLock(battleSimulationEvaluatorMutex);
+	if(!battleSimulationActionProviderFactory)
+	{
+		battleSimulationActionProviderFactory = std::make_shared<BattleSimulation::BattleSimulationGameInterfaceActionProviderFactory>(
+			&createBattleOutcomeSimulationAI);
+	}
+	if(!battleSimulationEvaluator)
+		battleSimulationEvaluator = std::make_unique<BattleSimulation::BattleSimulationEvaluator>();
+
+	auto runner = std::make_shared<SnapshotBattleSimulationRunner>(std::move(snapshot), battleSimulationActionProviderFactory);
+	battleSimulationEvaluator->setRunner(runner);
+	const auto response = battleSimulationEvaluator->evaluate(*request);
+	battleSimulationEvaluator->setRunner(nullptr);
+	return convertBattleOutcomeSimulationResponse(response);
 }
 
 int CClient::sendRequest(const CPackForServer & request, PlayerColor player, bool waitTillRealize)
