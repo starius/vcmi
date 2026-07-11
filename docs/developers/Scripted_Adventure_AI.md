@@ -1142,13 +1142,19 @@ shorthand.
 Use `--jobs N` to run independent headless games in parallel. Each run writes a `run.json`, raw stdout, logs, and
 trace files under its run directory; the batch root also gets `manifest.json` and a compact `results.json` with
 winner, outcome, completed-day, seed, script, AI order, and trace paths for downstream analysis.
+Use `--infrastructure-retries N` to retry runs that end with known infrastructure signatures, currently
+`battle_ai_creation` and `battle_ai_creation_invalid_stack`, after an `idle_timeout`, broad timeout, or nonzero
+exit. Retries are opt-in and do not hide the failed attempts: the final result records `infrastructureRetriesUsed`
+and compact `previousAttempts`, while unrecovered failures keep `infrastructureFailure = true`. This is for noisy
+headless evaluation, not for changing game behavior.
 Use `--scenario-file scripts/ai/evaluationScenarios.json` to run the graduated evaluation ladder instead of
 repeating `--map` options. Scenario entries define:
 
 - `stage`: `smoke`, `early`, `mid`, or `outcome`
 - `group`: `training` or `heldout`
 - `kind`: `handcrafted`, generated random-map experiments, or fixed random-map artifacts
-- `gameSeed`, `runs`, `testdays`, `timeout`, tags, and optional fixed random-map seed/template metadata
+- `gameSeed`, `runs`, `testdays`, `timeout`, `idleTimeout`, `infrastructureRetries`, tags, and optional fixed
+  random-map seed/template metadata
 
 Scenario entries can set `randomMap` instead of `map`/`save` to generate a map at run time. The random-map fields
 are `size`, `levels`, `players`, `teams`, `compOnlyPlayers`, `compOnlyTeams`, `water`, `monsterStrength`,
@@ -1969,6 +1975,11 @@ Regression harness:
   time since last output, and a coarse `tailSignature` such as `battle_ai_creation` or
   `battle_ai_creation_invalid_stack`; compact batch results include that signature. This makes battle/client stalls
   machine-readable instead of requiring manual SIGTERM or waiting for the broad per-run timeout.
+- Done: the batch/evaluation runner can now retry known infrastructure signatures with opt-in
+  `--infrastructure-retries` or per-scenario `infrastructureRetries` / `infraRetries`. Retryable failures are
+  restricted to non-terminal safety outcomes (`idle_timeout`, broad timeout, or nonzero exit) whose tail signature
+  matches `battle_ai_creation` or `battle_ai_creation_invalid_stack`; strategic red wins/losses are never retried.
+  Final JSON keeps `previousAttempts` so promotion analysis can see how much infrastructure noise was skipped.
 - Done: rerunning the five previously stalled seeds (`02`, `04`, `08`, `10`, `12`) with a 90-second idle timeout
   completed all five without an idle timeout. The rerun outcomes were two red losses (`02`, `04`) and three red wins
   (`08`, `10`, `12`), finishing in roughly 43-107 seconds. Treat the earlier battle-creation stalls as

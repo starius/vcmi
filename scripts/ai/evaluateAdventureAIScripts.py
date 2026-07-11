@@ -16,7 +16,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from compareAdventureTrace import compare  # noqa: E402
-from runAdventureAIBatch import load_scenarios, normalize_ai_names, run_one, safe_name, scenario_source, script_override_value  # noqa: E402
+from runAdventureAIBatch import load_scenarios, normalize_ai_names, run_one_with_infrastructure_retries, safe_name, scenario_source, script_override_value  # noqa: E402
 
 
 def nested_int(summary: dict[str, Any], section: str, key: str) -> int:
@@ -77,6 +77,7 @@ def make_side_args(args: argparse.Namespace, side_output: Path, script: str, sce
         testdays=scenario["testdays"],
         timeout=scenario["timeout"],
         idle_timeout=scenario["idle_timeout"],
+        infrastructure_retries=scenario["infrastructure_retries"],
         exit_grace_after_outcome=args.exit_grace_after_outcome,
         output=side_output,
         cwd=args.cwd,
@@ -106,6 +107,10 @@ def run_side(args: argparse.Namespace, label: str, script: str, scenarios: list[
         result["side"] = label
         results.append(result)
         status = "timeout" if result["timedOut"] else f"exit {result['returnCode']}"
+        if result.get("infrastructureFailure"):
+            status += f", infrastructure={result.get('infrastructureFailureReason')}"
+        if result.get("infrastructureRetriesUsed"):
+            status += f", retries={result['infrastructureRetriesUsed']}"
         parsed = result["traceSummary"]["parsed"]
         source_type, source = scenario_source(scenario)
         trace_status = f"traces parsed={parsed}" if args.trace else "traces disabled"
@@ -117,11 +122,11 @@ def run_side(args: argparse.Namespace, label: str, script: str, scenarios: list[
     jobs = max(1, int(args.jobs))
     if jobs == 1:
         for scenario_args, scenario, run_index in tasks:
-            finish_result(scenario, run_one(scenario_args, scenario, run_index))
+            finish_result(scenario, run_one_with_infrastructure_retries(scenario_args, scenario, run_index))
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as executor:
             future_to_scenario = {
-                executor.submit(run_one, scenario_args, scenario, run_index): scenario
+                executor.submit(run_one_with_infrastructure_retries, scenario_args, scenario, run_index): scenario
                 for scenario_args, scenario, run_index in tasks
             }
             for future in concurrent.futures.as_completed(future_to_scenario):
@@ -153,6 +158,8 @@ def run_metrics(results: list[dict[str, Any]], summary: dict[str, Any]) -> dict[
     idle_timeouts = sum(1 for result in results if result.get("idleTimedOut"))
     nonzero = sum(1 for result in results if not result["timedOut"] and result["returnCode"] != 0)
     completed = sum(1 for result in results if not result["timedOut"] and result["returnCode"] == 0)
+    infrastructure_failures = sum(1 for result in results if result.get("infrastructureFailure"))
+    infrastructure_retried_attempts = sum(len(result.get("previousAttempts", [])) for result in results)
     elapsed = sum(float(result["elapsedSeconds"]) for result in results)
     parse_errors = len(summary.get("parse_errors", []))
     fallback_outputs = nested_int(summary, "output_statuses", "fallback")
@@ -196,6 +203,8 @@ def run_metrics(results: list[dict[str, Any]], summary: dict[str, Any]) -> dict[
         "timeouts": timeouts,
         "idleTimeouts": idle_timeouts,
         "nonzeroExit": nonzero,
+        "infrastructureFailures": infrastructure_failures,
+        "infrastructureRetriedAttempts": infrastructure_retried_attempts,
         "elapsedSeconds": round(elapsed, 3),
         "parseErrors": parse_errors,
         "fallbackOutputs": fallback_outputs,
@@ -230,6 +239,8 @@ def metric_delta(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[st
         "importantMistakes",
         "fallbackOutputs",
         "failedActions",
+        "infrastructureFailures",
+        "infrastructureRetriedAttempts",
         "redWins",
         "redLosses",
     )
@@ -362,7 +373,9 @@ def promotion_verdict(
 def print_metrics(label: str, metrics: dict[str, Any]) -> None:
     print(
         f"{label}: score={metrics['score']} completed={metrics['completed']}/{metrics['runs']} "
-        f"timeouts={metrics['timeouts']} idle_timeouts={metrics['idleTimeouts']} failed_actions={metrics['failedActions']} "
+        f"timeouts={metrics['timeouts']} idle_timeouts={metrics['idleTimeouts']} "
+        f"infra={metrics['infrastructureFailures']} retried={metrics['infrastructureRetriedAttempts']} "
+        f"failed_actions={metrics['failedActions']} "
         f"fallbacks={metrics['fallbackOutputs']} executed={metrics['executedActions']} "
         f"quality={metrics['qualityScore']} map={metrics['mapProgressScore']} "
         f"mistakes={metrics['mistakes']}/{metrics['importantMistakes']} "
@@ -386,6 +399,7 @@ def main() -> int:
     parser.add_argument("--testdays", type=int, default=7, help="Completed adventure days before each client exits.")
     parser.add_argument("--timeout", type=int, default=300, help="Seconds before stopping one run.")
     parser.add_argument("--idle-timeout", type=float, default=0.0, help="Seconds without stdout progress before stopping one run. Disabled at 0.")
+    parser.add_argument("--infrastructure-retries", type=int, default=0, help="Retry runs that end in known infrastructure signatures such as battle AI creation stalls.")
     parser.add_argument("--exit-grace-after-outcome", type=float, default=10.0, help="Seconds to wait for clean client exit after a terminal game outcome appears in stdout.")
     parser.add_argument("--output", type=Path, default=Path("scripted-ai-evaluation"), help="Evaluation output directory.")
     parser.add_argument("--cwd", default=None, help="Working directory for vcmiclient.")

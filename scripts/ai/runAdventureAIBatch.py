@@ -28,6 +28,8 @@ TERMINAL_OUTCOME_MARKERS = (
     "Red player won. Ending game.",
     "Red player lost. Ending game.",
 )
+INFRASTRUCTURE_FAILURE_OUTCOMES = {"idle_timeout", "timeout", "nonzero_exit"}
+INFRASTRUCTURE_FAILURE_TAIL_SIGNATURES = {"battle_ai_creation", "battle_ai_creation_invalid_stack"}
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 AI_NAME_ALIASES = {
     "Nullkiller": "Nullkiller2",
@@ -245,6 +247,10 @@ def normalize_scenario(raw: dict[str, Any], index: int, args: argparse.Namespace
         "testdays": int(raw.get("testdays", args.testdays)),
         "timeout": int(raw.get("timeout", args.timeout)),
         "idle_timeout": float(raw.get("idleTimeout", raw.get("idle_timeout", args.idle_timeout))),
+        "infrastructure_retries": int(raw.get(
+            "infrastructureRetries",
+            raw.get("infrastructure_retries", raw.get("infraRetries", args.infrastructure_retries)),
+        )),
         "extra_arg": list(args.extra_arg) + string_list(raw.get("extraArg")),
         "enabled": bool(raw.get("enabled", True)),
         "tags": string_list(raw.get("tags")),
@@ -327,6 +333,7 @@ def load_scenarios(args: argparse.Namespace) -> list[dict[str, Any]]:
         scenario["testdays"] = max(0, int(scenario["testdays"]))
         scenario["timeout"] = max(1, int(scenario["timeout"]))
         scenario["idle_timeout"] = max(0.0, float(scenario["idle_timeout"]))
+        scenario["infrastructure_retries"] = max(0, int(scenario["infrastructure_retries"]))
     return scenarios
 
 
@@ -339,6 +346,7 @@ def args_for_scenario(args: argparse.Namespace, scenario: dict[str, Any]) -> arg
         testdays=scenario["testdays"],
         timeout=scenario["timeout"],
         idle_timeout=scenario["idle_timeout"],
+        infrastructure_retries=scenario["infrastructure_retries"],
         exit_grace_after_outcome=args.exit_grace_after_outcome,
         output=args.output / safe_name(str(scenario["name"])),
         cwd=args.cwd,
@@ -377,7 +385,30 @@ def run_outcome(stdout_path: Path, timed_out: bool, idle_timed_out: bool, return
     return outcome
 
 
-def run_one(args: argparse.Namespace, scenario_or_map: dict[str, Any] | str, run_index: int) -> dict[str, Any]:
+def infrastructure_failure_reason(result: dict[str, Any]) -> str | None:
+    outcome = str(as_dict(result.get("outcome")).get("result", "unknown"))
+    if outcome not in INFRASTRUCTURE_FAILURE_OUTCOMES:
+        return None
+
+    tail_signature = str(as_dict(result.get("stdoutSummary")).get("tailSignature", "unknown"))
+    if tail_signature in INFRASTRUCTURE_FAILURE_TAIL_SIGNATURES:
+        return tail_signature
+    return None
+
+
+def annotate_infrastructure_failure(result: dict[str, Any]) -> dict[str, Any]:
+    reason = infrastructure_failure_reason(result)
+    result["infrastructureFailure"] = reason is not None
+    if reason:
+        result["infrastructureFailureReason"] = reason
+    return result
+
+
+def persist_run_result(result: dict[str, Any]) -> None:
+    (Path(str(result["runDir"])) / "run.json").write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def run_one(args: argparse.Namespace, scenario_or_map: dict[str, Any] | str, run_index: int, attempt: int = 1) -> dict[str, Any]:
     if isinstance(scenario_or_map, dict):
         scenario = scenario_or_map
     else:
@@ -397,7 +428,8 @@ def run_one(args: argparse.Namespace, scenario_or_map: dict[str, Any] | str, run
         }
     source_type, source = scenario_source(scenario)
     safe_map = safe_name(source)
-    run_dir = args.output / f"{safe_map}-run-{run_index:03d}"
+    attempt_suffix = "" if attempt <= 1 else f"-retry-{attempt:02d}"
+    run_dir = args.output / f"{safe_map}-run-{run_index:03d}{attempt_suffix}"
     if run_dir.exists() and args.clean:
         shutil.rmtree(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -486,6 +518,7 @@ def run_one(args: argparse.Namespace, scenario_or_map: dict[str, Any] | str, run
         "template": scenario.get("template"),
         "tags": scenario.get("tags", []),
         "run": run_index,
+        "attempt": attempt,
         "runDir": str(run_dir),
         "command": command,
         "script": script_override_value(args.script),
@@ -505,8 +538,29 @@ def run_one(args: argparse.Namespace, scenario_or_map: dict[str, Any] | str, run
         "traceSummary": trace_summary,
         "outcome": outcome,
     }
-    (run_dir / "run.json").write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+    annotate_infrastructure_failure(result)
+    persist_run_result(result)
     return result
+
+
+def run_one_with_infrastructure_retries(args: argparse.Namespace, scenario: dict[str, Any], run_index: int) -> dict[str, Any]:
+    max_attempts = max(1, int(getattr(args, "infrastructure_retries", 0)) + 1)
+    previous_attempts: list[dict[str, Any]] = []
+
+    for attempt in range(1, max_attempts + 1):
+        result = run_one(args, scenario, run_index, attempt)
+        result["attemptsAllowed"] = max_attempts
+        result["infrastructureRetriesUsed"] = len(previous_attempts)
+
+        if not result.get("infrastructureFailure") or attempt == max_attempts:
+            if previous_attempts:
+                result["previousAttempts"] = previous_attempts
+                persist_run_result(result)
+            return result
+
+        previous_attempts.append(compact_result(result))
+
+    raise RuntimeError("Infrastructure retry loop ended without a result")
 
 
 def result_winner(result: dict[str, Any]) -> str | None:
@@ -534,6 +588,10 @@ def compact_result(result: dict[str, Any]) -> dict[str, Any]:
         "terminatedAfterOutcome": result.get("terminatedAfterOutcome"),
         "returnCode": result.get("returnCode"),
         "elapsedSeconds": result.get("elapsedSeconds"),
+        "attempt": result.get("attempt", 1),
+        "infrastructureFailure": result.get("infrastructureFailure", False),
+        "infrastructureFailureReason": result.get("infrastructureFailureReason"),
+        "infrastructureRetriesUsed": result.get("infrastructureRetriesUsed", 0),
         "stdoutTailSignature": as_dict(result.get("stdoutSummary")).get("tailSignature"),
         "sourceType": result.get("sourceType"),
         "source": result.get("source"),
@@ -553,11 +611,13 @@ def compact_result(result: dict[str, Any]) -> dict[str, Any]:
 def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     winners: dict[str, int] = {}
     outcomes: dict[str, int] = {}
+    infrastructure_retried_attempts = 0
     for result in results:
         winner = result_winner(result) or "none"
         winners[winner] = winners.get(winner, 0) + 1
         outcome = str(as_dict(result.get("outcome")).get("result", "unknown"))
         outcomes[outcome] = outcomes.get(outcome, 0) + 1
+        infrastructure_retried_attempts += len(as_list(result.get("previousAttempts")))
 
     completed_days = [
         int(as_dict(result.get("outcome")).get("completedDays"))
@@ -570,6 +630,8 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         "outcomes": outcomes,
         "timeouts": sum(1 for result in results if result.get("timedOut")),
         "idleTimeouts": sum(1 for result in results if result.get("idleTimedOut")),
+        "infrastructureFailures": sum(1 for result in results if result.get("infrastructureFailure")),
+        "infrastructureRetriedAttempts": infrastructure_retried_attempts,
         "terminatedAfterOutcome": sum(1 for result in results if result.get("terminatedAfterOutcome")),
         "nonzeroExit": sum(1 for result in results if not result.get("timedOut") and result.get("returnCode") != 0),
         "completedDayMin": min(completed_days) if completed_days else None,
@@ -581,6 +643,10 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
 
 def print_run_status(scenario: dict[str, Any], result: dict[str, Any]) -> None:
     status = "timeout" if result["timedOut"] else "idle-timeout" if result.get("idleTimedOut") else f"exit {result['returnCode']}"
+    if result.get("infrastructureFailure"):
+        status += f", infrastructure={result.get('infrastructureFailureReason')}"
+    if result.get("infrastructureRetriesUsed"):
+        status += f", retries={result['infrastructureRetriesUsed']}"
     parsed = result["traceSummary"]["parsed"]
     winner = result_winner(result) or "<none>"
     days = as_dict(result.get("outcome")).get("completedDays")
@@ -605,6 +671,7 @@ def main() -> int:
     parser.add_argument("--testdays", type=int, default=0, help="Completed adventure days before the client exits.")
     parser.add_argument("--timeout", type=int, default=300, help="Seconds before stopping one run.")
     parser.add_argument("--idle-timeout", type=float, default=0.0, help="Seconds without stdout progress before stopping one run. Disabled at 0.")
+    parser.add_argument("--infrastructure-retries", type=int, default=0, help="Retry runs that end in known infrastructure signatures such as battle AI creation stalls.")
     parser.add_argument("--exit-grace-after-outcome", type=float, default=10.0, help="Seconds to wait for clean client exit after a terminal game outcome appears in stdout.")
     parser.add_argument("--output", type=Path, default=Path("scripted-ai-runs"), help="Directory for run outputs.")
     parser.add_argument("--cwd", default=None, help="Working directory for vcmiclient.")
@@ -635,14 +702,14 @@ def main() -> int:
 
     if jobs == 1:
         for scenario_args, scenario, run_index in tasks:
-            result = run_one(scenario_args, scenario, run_index)
+            result = run_one_with_infrastructure_retries(scenario_args, scenario, run_index)
             results.append(result)
             if not args.json:
                 print_run_status(scenario, result)
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as executor:
             future_to_scenario = {
-                executor.submit(run_one, scenario_args, scenario, run_index): scenario
+                executor.submit(run_one_with_infrastructure_retries, scenario_args, scenario, run_index): scenario
                 for scenario_args, scenario, run_index in tasks
             }
             for future in concurrent.futures.as_completed(future_to_scenario):
