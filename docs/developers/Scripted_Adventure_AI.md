@@ -1802,6 +1802,10 @@ Regression harness:
   useful priority, adventure, replan, trade, or pause work. If a bounded helper exhausts one generated candidate set
   after doing useful work, Lua refreshes and asks for another bounded slice, matching native Nullkiller's day-loop
   semantics more closely than immediate full-day fallback or immediate end-turn.
+- Done: `scripts/ai/candidates/boundedNullkillerAdventure.lua` now stays on the bounded-helper contract too. Native
+  no-task and stop-turn signals become Lua-controlled end-turn outputs, while unexpected helper failures or exhausted
+  bounded budgets raise script errors for the host safety path instead of explicitly delegating the rest of the day to
+  Nullkiller.
 - Done: a traced 16-map, 14-day parity run of `boundedNullkillerControl.lua` against `Nullkiller2` reached the day
   limit in all scenarios with zero fallback outputs and zero failed checked actions. The trace set contained 225
   bounded `nullkiller_turn_slice` calls, 69 bounded query answers, and 224 script-requested end turns. A no-trace

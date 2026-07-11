@@ -2394,6 +2394,78 @@ TEST(LuaAdventureScriptRunnerTest, BundledAdventureScriptVariantsRun)
 	}
 }
 
+TEST(LuaAdventureScriptRunnerTest, BoundedNullkillerAdventureEndsTurnWithoutFullFallback)
+{
+	const std::string source = readAdventureScript("scripts/ai/candidates/boundedNullkillerAdventure.lua");
+	scripting::LuaAdventureScriptRunner runner("test:bounded-nullkiller-adventure-idle", source);
+
+	AI::AdventureScriptInput input = makeInput();
+	input.state["turn"]["active"] = JsonNode(true);
+	input.limits["maxActions"] = JsonNode(4);
+
+	std::vector<JsonNode> commands;
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		if(command["payload"]["type"].String() == "nullkiller_step")
+		{
+			response["result"]["didExecute"] = JsonNode(false);
+			response["result"]["shouldStopTurn"] = JsonNode(false);
+			response["result"]["outcomeId"] = JsonNode(0);
+		}
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 2);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_step");
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "end_turn");
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "bounded Nullkiller policy found no executable native task");
+}
+
+TEST(LuaAdventureScriptRunnerTest, BoundedNullkillerAdventureErrorsWhenBudgetExhausted)
+{
+	const std::string source = readAdventureScript("scripts/ai/candidates/boundedNullkillerAdventure.lua");
+	scripting::LuaAdventureScriptRunner runner("test:bounded-nullkiller-adventure-budget", source);
+
+	AI::AdventureScriptInput input = makeInput();
+	input.state["turn"]["active"] = JsonNode(true);
+	input.limits["maxActions"] = JsonNode(1);
+
+	std::vector<JsonNode> commands;
+	EXPECT_THROW(runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		if(command["kind"].String() == "refresh")
+		{
+			response["input"] = input.toJson();
+			return response;
+		}
+
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		if(command["payload"]["type"].String() == "nullkiller_step")
+		{
+			response["result"]["didExecute"] = JsonNode(true);
+			response["result"]["shouldStopTurn"] = JsonNode(false);
+		}
+		return response;
+	}), std::runtime_error);
+
+	ASSERT_EQ(commands.size(), 2);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_step");
+	EXPECT_EQ(commands[1]["kind"].String(), "refresh");
+}
+
 TEST(LuaAdventureScriptRunnerTest, BundledPersonalityScriptsRunImperatively)
 {
 	const std::vector<std::string> scripts = {
