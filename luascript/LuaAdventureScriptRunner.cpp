@@ -1163,6 +1163,123 @@ local function skillPriority(skillId, preferredSkillIds)
 	return nil
 end
 
+local function optionFieldNumber(option, ...)
+	for _, field in ipairs({ ... }) do
+		local value = option[field]
+		if value ~= nil then
+			return tonumber(value)
+		end
+	end
+	return nil
+end
+
+local function optionHasPlanAction(option)
+	return type(option) == "table" and type(option.planAction) == "table"
+end
+
+local function queryOptionAllowed(option, config)
+	if not optionHasPlanAction(option) then
+		return false
+	end
+	if config.allow_unaffordable == true or config.allowUnaffordable == true then
+		return true
+	end
+	if option.buyable == false then
+		return false
+	end
+	if option.affordable == false then
+		return false
+	end
+	if option.canLearn == false then
+		return false
+	end
+	if option.amount ~= nil and (tonumber(option.amount) or 0) <= 0 then
+		return false
+	end
+	if option.affordable ~= nil and type(option.affordable) ~= "boolean" and (tonumber(option.affordable) or 0) <= 0 then
+		return false
+	end
+	return true
+end
+
+local function preferredIdBonus(value, preferredIds)
+	if value == nil or type(preferredIds) ~= "table" then
+		return 0
+	end
+	for index, preferred in ipairs(preferredIds) do
+		if tonumber(preferred) == tonumber(value) then
+			return 100000 - index
+		end
+	end
+	return 0
+end
+
+local function scoreQueryPlanOption(option, config)
+	local score = 0
+	score = score + preferredIdBonus(option.skill_id or option.skillId, config.preferred_skill_ids or config.preferredSkillIds)
+	score = score + preferredIdBonus(option.creature_id or option.creatureId, config.preferred_creature_ids or config.preferredCreatureIds)
+	score = score + preferredIdBonus(option.hero_type_id or option.heroTypeId, config.preferred_hero_type_ids or config.preferredHeroTypeIds)
+	score = score + (tonumber(option.nullkillerSkillScore or option.nullkiller_skill_score or 0) or 0)
+	score = score + ((optionFieldNumber(option, "totalStrength", "heroStrength", "armyStrength") or 0) / 1000)
+	score = score + (optionFieldNumber(option, "amount", "available") or 0)
+	score = score - ((optionFieldNumber(option, "goldCost") or 0) / 100000)
+	return score
+end
+
+local function selectQueryPlanOption(options, config)
+	local best
+	local bestScore
+	for _, option in ipairs(options or {}) do
+		if queryOptionAllowed(option, config) then
+			local score = scoreQueryPlanOption(option, config)
+			if best == nil or score > bestScore then
+				best = option
+				bestScore = score
+			end
+		end
+	end
+	return best
+end
+
+function ai:defaultQueryDecision(query, policy)
+	local config = copyFields(policy)
+	if type(query) ~= "table" then
+		return nil
+	end
+
+	local typeId = queryTypeId(query)
+	if typeId == self.queryTypes.artifactAssemblyPrompt then
+		return { ignore = true }
+	end
+
+	if config.use_plan_actions == false or config.usePlanActions == false then
+		return nil
+	end
+
+	if typeId == self.queryTypes.marketWindow or typeId == self.queryTypes.universityWindow then
+		local option = selectQueryPlanOption(query.skillOptions or query.skill_options, config)
+		if option then
+			return { planAction = option.planAction, selectedOption = option }
+		end
+	end
+
+	if typeId == self.queryTypes.recruitmentDialog then
+		local option = selectQueryPlanOption(query.recruitOptions or query.recruit_options, config)
+		if option then
+			return { planAction = option.planAction, selectedOption = option }
+		end
+	end
+
+	if typeId == self.queryTypes.tavernWindow then
+		local option = selectQueryPlanOption(query.hireHeroOptions or query.hire_hero_options, config)
+		if option then
+			return { planAction = option.planAction, selectedOption = option }
+		end
+	end
+
+	return nil
+end
+
 function ai:defaultQueryAnswer(query, policy)
 	local config = copyFields(policy)
 	local defaultAnswer = config.default_answer
@@ -1311,6 +1428,11 @@ function ai:answerQueryByPolicy(query, policy)
 		if resolved ~= nil then
 			return resolved
 		end
+	end
+
+	local decision = dispatchQueryDecision(self, query, self:defaultQueryDecision(query, config), config)
+	if decision ~= nil then
+		return decision
 	end
 
 	local answer = self:defaultQueryAnswer(query, config)

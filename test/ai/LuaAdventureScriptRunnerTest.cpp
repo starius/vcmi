@@ -3261,6 +3261,174 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanAnswerPendingQueriesWithPolic
 	EXPECT_FALSE(output.memory["truncated"].Bool());
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanRunRichQueryPlanActionsWithPolicy)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				local result = ai:answerPendingQueriesByPolicy({
+					preferred_skill_ids = { 5 },
+					preferred_creature_ids = { 42 },
+					use_plan_actions = true
+				}, { max_queries = 4 })
+				return {
+					status = "end_turn",
+					memory = {
+						version = 1,
+						count = result.count,
+						truncated = result.truncated
+					},
+					actions = {}
+				}
+			end
+		}
+	)lua";
+
+	auto makeInputWithRemainingQueries = [](int firstRemainingIndex)
+	{
+		AI::AdventureScriptInput input = makeInput();
+		input.state["turn"]["queries"].Vector();
+
+		if(firstRemainingIndex <= 0)
+		{
+			JsonNode query;
+			query["query_id"] = JsonNode(90);
+			query["typeId"] = JsonNode(10);
+			query["type"] = JsonNode("university_window");
+			query["skillOptions"].Vector();
+
+			JsonNode logistics;
+			logistics["skill_id"] = JsonNode(5);
+			logistics["buyable"] = JsonNode(true);
+			logistics["affordable"] = JsonNode(true);
+			logistics["canLearn"] = JsonNode(true);
+			logistics["nullkillerSkillScore"].Float() = 2.0;
+			logistics["planAction"]["type"] = JsonNode("market_trade");
+			logistics["planAction"]["market_id"] = JsonNode(16);
+			logistics["planAction"]["mode_id"] = JsonNode(8);
+			logistics["planAction"]["hero_id"] = JsonNode(7);
+			logistics["planAction"]["skill_id"] = JsonNode(5);
+			query["skillOptions"].Vector().push_back(logistics);
+
+			JsonNode mysticism;
+			mysticism["skill_id"] = JsonNode(13);
+			mysticism["buyable"] = JsonNode(true);
+			mysticism["affordable"] = JsonNode(true);
+			mysticism["canLearn"] = JsonNode(true);
+			mysticism["nullkillerSkillScore"].Float() = 50.0;
+			mysticism["planAction"]["type"] = JsonNode("market_trade");
+			mysticism["planAction"]["market_id"] = JsonNode(16);
+			mysticism["planAction"]["mode_id"] = JsonNode(8);
+			mysticism["planAction"]["hero_id"] = JsonNode(7);
+			mysticism["planAction"]["skill_id"] = JsonNode(13);
+			query["skillOptions"].Vector().push_back(mysticism);
+
+			input.state["turn"]["queries"].Vector().push_back(query);
+		}
+
+		if(firstRemainingIndex <= 1)
+		{
+			JsonNode query;
+			query["query_id"] = JsonNode(91);
+			query["typeId"] = JsonNode(9);
+			query["type"] = JsonNode("recruitment_dialog");
+			query["recruitOptions"].Vector();
+
+			JsonNode weak;
+			weak["creature_id"] = JsonNode(4);
+			weak["amount"] = JsonNode(20);
+			weak["affordable"] = JsonNode(20);
+			weak["planAction"]["type"] = JsonNode("recruit");
+			weak["planAction"]["source_id"] = JsonNode(30);
+			weak["planAction"]["destination_id"] = JsonNode(7);
+			weak["planAction"]["level"] = JsonNode(0);
+			weak["planAction"]["creature_id"] = JsonNode(4);
+			weak["planAction"]["amount"] = JsonNode(20);
+			query["recruitOptions"].Vector().push_back(weak);
+
+			JsonNode preferred;
+			preferred["creature_id"] = JsonNode(42);
+			preferred["amount"] = JsonNode(3);
+			preferred["affordable"] = JsonNode(3);
+			preferred["planAction"]["type"] = JsonNode("recruit");
+			preferred["planAction"]["source_id"] = JsonNode(30);
+			preferred["planAction"]["destination_id"] = JsonNode(7);
+			preferred["planAction"]["level"] = JsonNode(5);
+			preferred["planAction"]["creature_id"] = JsonNode(42);
+			preferred["planAction"]["amount"] = JsonNode(3);
+			query["recruitOptions"].Vector().push_back(preferred);
+
+			input.state["turn"]["queries"].Vector().push_back(query);
+		}
+
+		if(firstRemainingIndex <= 2)
+		{
+			JsonNode query;
+			query["query_id"] = JsonNode(92);
+			query["typeId"] = JsonNode(6);
+			query["type"] = JsonNode("tavern_window");
+			query["hireHeroOptions"].Vector();
+
+			JsonNode scout;
+			scout["hero_type_id"] = JsonNode(22);
+			scout["totalStrength"] = JsonNode(1000);
+			scout["planAction"]["type"] = JsonNode("hire_hero");
+			scout["planAction"]["source_id"] = JsonNode(40);
+			scout["planAction"]["hero_type_id"] = JsonNode(22);
+			query["hireHeroOptions"].Vector().push_back(scout);
+
+			JsonNode fighter;
+			fighter["hero_type_id"] = JsonNode(31);
+			fighter["totalStrength"] = JsonNode(5000);
+			fighter["planAction"]["type"] = JsonNode("hire_hero");
+			fighter["planAction"]["source_id"] = JsonNode(40);
+			fighter["planAction"]["hero_type_id"] = JsonNode(31);
+			query["hireHeroOptions"].Vector().push_back(fighter);
+
+			input.state["turn"]["queries"].Vector().push_back(query);
+		}
+
+		return input;
+	};
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-rich-query-policy", source);
+	std::vector<JsonNode> commands;
+	int handledQueries = 0;
+	int refreshes = 0;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInputWithRemainingQueries(0), [&](const JsonNode & command)
+	{
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+
+		if(command["kind"].String() == "refresh")
+		{
+			++refreshes;
+			response["input"] = makeInputWithRemainingQueries(handledQueries).toJson();
+			return response;
+		}
+
+		commands.push_back(command);
+		++handledQueries;
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 3);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "market_trade");
+	EXPECT_EQ(commands[0]["payload"]["skill_id"].Integer(), 5);
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "recruit");
+	EXPECT_EQ(commands[1]["payload"]["creature_id"].Integer(), 42);
+	EXPECT_EQ(commands[1]["payload"]["amount"].Integer(), 3);
+	EXPECT_EQ(commands[2]["payload"]["type"].String(), "hire_hero");
+	EXPECT_EQ(commands[2]["payload"]["hero_type_id"].Integer(), 31);
+	EXPECT_EQ(refreshes, 3);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_EQ(output.memory["count"].Integer(), 3);
+	EXPECT_FALSE(output.memory["truncated"].Bool());
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeHostErrorsAreCatchable)
 {
 	const std::string source = R"lua(

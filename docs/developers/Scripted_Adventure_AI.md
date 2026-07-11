@@ -824,9 +824,13 @@ preparation.
 Dialog/query handling is scriptable at two levels. Scripts can still answer a pending query with raw checked
 `answer_query`, `cancel_query`, or `ignore_script_query` actions, or ask `nullkiller_answer_query` to handle one
 dialog using native heuristics. For editable policy, the Lua facade also provides `ai:defaultQueryAnswer`,
-`ai:answerQueryByPolicy`, and `ai:answerPendingQueriesByPolicy`. These helpers branch on stable numeric query,
-component, resource, and skill ids, accept a Lua resolver callback for special cases, refresh between answered
-queries, and can delegate only a specific dialog to Nullkiller without giving away the rest of the day.
+`ai:defaultQueryDecision`, `ai:answerQueryByPolicy`, and `ai:answerPendingQueriesByPolicy`. These helpers branch
+on stable numeric query, component, resource, creature, hero-type, and skill ids, accept a Lua resolver callback
+for special cases, refresh between answered queries, and can delegate only a specific dialog to Nullkiller without
+giving away the rest of the day. For rich windows, the same policy path can choose and execute host-published
+`planAction` payloads such as buying a university/market skill, recruiting from a dwelling dialog, or hiring a
+tavern hero; the resulting request is still the normal checked action (`market_trade`, `recruit`, `hire_hero`,
+etc.).
 
 The intentionally excluded `IGameActionCallback` methods are meta/client operations rather than adventure strategy:
 save, pause, chat/message sending, and raw local-state writes. Script-owned memory replaces raw local-state writes,
@@ -2258,6 +2262,9 @@ Regression harness:
 - Done: the bounded-control candidate scripts now use the shared query-policy helper for their existing
   Nullkiller-per-query behavior. This keeps the current champion path on the same scriptable dialog surface that
   future policies will tune, instead of maintaining separate hand-written pending-query loops.
+- Done: the shared query-policy helper now supports rich dialog/window `planAction` choices. Scripts can select
+  university/market skill purchases, dwelling recruitment, and tavern hero hire options by stable ids and advisory
+  scores, then execute the already-published checked action without writing bespoke per-window loops.
 
 ## Open Design Questions
 
