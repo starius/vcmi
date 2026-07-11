@@ -1079,8 +1079,11 @@ public:
 			if (target->ID == Obj::TOWN)
 				evaluationContext.defenseValue = dynamic_cast<const CGTownInstance*>(target)->fortLevel();
 			evaluationContext.goldCost += evaluationContext.evaluator.getGoldCost(target, hero, army);
-			if(evaluationContext.danger > 0)
-				evaluationContext.skillReward += (float)evaluationContext.danger / (float)hero->getArmyStrength();
+			const uint64_t skillRewardDanger = targetBattleSimulationAccepted
+				? path.getTotalDanger()
+				: evaluationContext.danger;
+			if(skillRewardDanger > 0)
+				evaluationContext.skillReward += (float)skillRewardDanger / (float)hero->getArmyStrength();
 		}
 		evaluationContext.armyInvolvement += army->getArmyCost();
 
