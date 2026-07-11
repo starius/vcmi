@@ -1989,6 +1989,42 @@ Regression harness:
   losses, and 4 idle timeouts, but had zero command-budget failures. The remaining idle signatures were
   `battle_ai_creation` for seed `03` and `battle_ai_creation_invalid_stack` for seeds `08`, `15`, and `16`; the
   only fallback lines were benign `Thread termination requested` messages after terminal script wins.
+- Done: a native Nullkiller2-vs-Nullkiller2 mirror on the same 16-map corpus completed without idle timeouts and
+  produced 10 red wins and 6 red losses. On the same seeds, the bounded Lua control script with the 256-command
+  budget produced 4 red/script wins, 8 red/script losses, and 4 idle timeouts. This shows the remaining gap is not
+  only random-map side bias or command-budget exhaustion.
+- Done: traced seed `01`, where bounded Lua control lost but the native mirror red player won. The Lua trace ran to
+  a normal terminal red loss on day 55 with 244 bounded native-turn-slice commands, no failed Lua actions, no local
+  miner mistake candidates, and no command-budget failure. Final visible quality showed red reduced to one hero and
+  one town while seeing three enemy towns and four enemy heroes. This points at host/helper parity or strategic
+  policy gaps rather than malformed Lua commands.
+- Done: tightened the `boundedNullkillerControl.lua` parity script to respect native Nullkiller's configured
+  `maxPass` day limit. The Lua helper already runs native passes one at a time, but when all configured passes did
+  work it could previously refresh and restart pass numbering from Lua. Native Nullkiller stops the day when the
+  configured pass loop is consumed, even if more low-priority work might remain.
+- Done: added Lua runner coverage for the max-pass parity contract and tightened `ai:nullkillerBoundedDay` so it
+  refreshes only between native passes, not after the final configured pass. A focused traced seed `01` run flipped
+  from the earlier Lua loss to a Lua win after the max-pass fix, but the following full 16-game no-trace batch still
+  produced 4 red/script wins, 8 red/script losses, and 4 idle timeouts, so this was not the only parity issue.
+- Done: fixed bounded Nullkiller task execution to use pass-local failure state like native `Nullkiller::makeTurn()`.
+  The previous helper carried "some scripted task succeeded earlier today" into later native passes, which could
+  turn a current-pass task failure into an early replan instead of trying the next candidate. A full 16-game
+  no-trace batch after this fix produced 5 red/script wins, 8 red/script losses, and 3 idle timeouts.
+- Done: fixed execution-mode Nullkiller candidate generation to preserve non-positive-priority native tasks. Native
+  Nullkiller uses those tasks to trigger `ScanDepth::ALL_FULL` replanning when heroes still have movement; the
+  script-facing helper had filtered them out and could report no candidates instead. Read-only candidate inspection
+  remains positive-priority by default, while execution-mode bounded helpers keep the native replan path available.
+  A focused traced four-seed rerun after this fix produced Lua wins on seeds `06` and `10`, a Lua loss on seed `09`,
+  and a Lua loss on seed `01`.
+- Done: the full 16-game no-trace control batch after the non-positive-priority candidate fix produced 6 red/script
+  wins, 4 red/script losses, and 6 idle timeouts. All idle timeouts had the known battle/client signatures:
+  `battle_ai_creation` for seeds `01`, `04`, `08`, `13`, and `15`, and `battle_ai_creation_invalid_stack` for seed
+  `11`. This is the best completed-game result so far at 6/10 terminal Lua wins, but unresolved idle classification
+  still blocks using it as a clean promotion metric.
+- Done: rerunning those six idle seeds with a 180-second idle watchdog classified four of them: Lua won seeds `04`
+  and `13`, Nullkiller2 won seeds `01` and `11`, while seeds `08` and `15` still idled. A final two-seed rerun for
+  `08` and `15` with a 300-second idle watchdog also ended in idle timeouts. Treat the current best-effort result
+  as 8 Lua wins, 6 Nullkiller2 wins, and 2 unresolved infrastructure stalls, not as a clean 16/16 terminal batch.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions
