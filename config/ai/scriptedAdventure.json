@@ -5,6 +5,8 @@
 	"maxActionsPerPlan": 256,
 	"maxMemoryBytes": 262144,
 	"maxUpdateEvents": 256,
+	"actionWaitTimeoutMs": 30000,
+	"battleActionWaitTimeoutMs": 60000,
 	"maxConsecutiveFailures": 3,
 	"disableTurnsAfterFailures": 3,
 	"experimentalSupportActions": true,

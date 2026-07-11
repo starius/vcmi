@@ -965,12 +965,20 @@ Example configuration fields:
   "maxActionsPerPlan": 256,
   "maxMemoryBytes": 262144,
   "maxUpdateEvents": 256,
+  "actionWaitTimeoutMs": 30000,
+  "battleActionWaitTimeoutMs": 60000,
   "trace": true
 }
 ```
 
 For development, add an opt-in reload mode so behavior can be edited and rerun without rebuilding. For normal
 games, load once per map/session for deterministic behavior.
+
+`actionWaitTimeoutMs` bounds normal checked action side-effect waits. `battleActionWaitTimeoutMs` bounds waits
+after an action has entered battle or another blocking native state. These timeouts are part of the Lua binding
+contract: side-effect blockers should surface as checked action failures that Lua can catch with `ai:tryCall` /
+`ai:tryExecute`, or as uncaught script failures that fall back to Nullkiller2. A process watchdog is still required
+for engine/client stalls that do not return through the script boundary.
 
 Per-player entries override the global script and limits for a specific computer player. Keys can be color
 names such as `red`/`blue` or numeric player ids. Keep personality profiles such as `aggressiveAdventure.lua`,
@@ -2025,6 +2033,25 @@ Regression harness:
   and `13`, Nullkiller2 won seeds `01` and `11`, while seeds `08` and `15` still idled. A final two-seed rerun for
   `08` and `15` with a 300-second idle watchdog also ended in idle timeouts. Treat the current best-effort result
   as 8 Lua wins, 6 Nullkiller2 wins, and 2 unresolved infrastructure stalls, not as a clean 16/16 terminal batch.
+- Done: after a rejected emergency-defense Lua experiment, the tree was restored to the bounded-control parity
+  script and rerun on the 16-map small underground/no-water corpus with the valid `--script` override. The restored
+  no-trace run produced 2 Lua/red wins, 8 Nullkiller2/blue wins, and 6 idle timeouts. A traced rerun showed the
+  remaining idles usually stopped while a `nullkiller_turn_slice` command was still in flight, with tail signatures
+  such as `battle_ai_creation` or `battle_ai_creation_invalid_stack`; Lua had not received a host response yet.
+  Script optimization is therefore still blocked by native-helper return/catchability, not just by policy scoring.
+- Done: scripted action waits are now configurable through `actionWaitTimeoutMs` and `battleActionWaitTimeoutMs`.
+  The default battle/native-blocker wait is below the batch idle watchdog so side-effect stalls can be reported as
+  checked action failures or script fallback events before the outer process watchdog classifies them as
+  infrastructure idles.
+- Rejected: a per-helper watchdog-thread experiment around bounded Nullkiller native helpers. It sometimes made a
+  native helper timeout catchable, but parallel validation then regressed into battle/client infrastructure
+  failures: one 16-map run produced 1 Lua win, 1 nonzero exit, and 14 idle timeouts, almost all with
+  `battle_ai_creation` / `battle_ai_creation_invalid_stack` signatures and no scripted watchdog warning. Do not
+  reintroduce per-action watchdog threads without a lower-overhead design.
+- Done: after removing that watchdog-thread experiment, the side-effect-timeout patch was rebuilt and retested.
+  The focused Lua runner suite passed, and a three-seed validation over the current idle bucket produced one
+  Lua/red win (`15`) plus two battle/client idle timeouts (`04`, `14`). Treat those idles as infrastructure
+  blockers for the evaluation loop, not as script policy losses.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions

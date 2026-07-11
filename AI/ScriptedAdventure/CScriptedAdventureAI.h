@@ -13,6 +13,7 @@
 #include "../../lib/ai/AdventureScript.h"
 
 #include <condition_variable>
+#include <chrono>
 #include <deque>
 #include <functional>
 #include <map>
@@ -112,6 +113,8 @@ private:
 		bool experimentalSupportActions = false;
 		size_t maxConsecutiveFailures = 3;
 		int disableTurnsAfterFailures = 3;
+		std::chrono::milliseconds actionWaitTimeout = std::chrono::seconds(30);
+		std::chrono::milliseconds battleActionWaitTimeout = std::chrono::seconds(60);
 	};
 
 	struct RoutePlan

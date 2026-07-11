@@ -6237,14 +6237,14 @@ JsonNode CScriptedAdventureAI::jsonRequestWaitResult(const RequestWaitResult & r
 
 bool CScriptedAdventureAI::waitTillFreeForScriptAction(JsonNode & actionResult, const std::string & actionType)
 {
-	static constexpr auto SCRIPT_ACTION_STATUS_TIMEOUT = std::chrono::seconds(30);
-	static constexpr auto SCRIPT_ACTION_BATTLE_STATUS_TIMEOUT = std::chrono::minutes(30);
 	static constexpr auto SCRIPT_ACTION_STATUS_POLL = std::chrono::milliseconds(100);
 	const auto started = std::chrono::steady_clock::now();
+	const auto timeout = status.getBattle() == NK2AI::NO_BATTLE
+		? scriptConfig.actionWaitTimeout
+		: scriptConfig.battleActionWaitTimeout;
 
 	while(true)
 	{
-		const auto timeout = status.getBattle() == NK2AI::NO_BATTLE ? SCRIPT_ACTION_STATUS_TIMEOUT : SCRIPT_ACTION_BATTLE_STATUS_TIMEOUT;
 		if(std::chrono::steady_clock::now() - started >= timeout)
 			break;
 
@@ -6268,9 +6268,15 @@ bool CScriptedAdventureAI::waitTillFreeForScriptAction(JsonNode & actionResult, 
 	}
 
 	const std::string blockers = status.describeBlockers();
-	logAi->warn("ScriptedAdventureAI timed out waiting after %s action. Blockers: %s", actionType.c_str(), blockers.c_str());
+	logAi->warn(
+		"ScriptedAdventureAI timed out after %lld ms waiting after %s action. Blockers: %s",
+		static_cast<long long>(timeout.count()),
+		actionType.c_str(),
+		blockers.c_str());
 	actionResult["ok"] = JsonNode(false);
 	actionResult["error"] = JsonNode("Timed out waiting for action side effects to finish: " + blockers);
+	actionResult["timeoutMs"] = JsonNode(static_cast<int64_t>(timeout.count()));
+	actionResult["blockers"] = JsonNode(blockers);
 	return false;
 }
 
@@ -10846,6 +10852,8 @@ JsonNode CScriptedAdventureAI::makeScriptInputLimits() const
 	node["maxActions"] = JsonNode(static_cast<int32_t>(limits.maxActions));
 	node["maxMemoryBytes"] = JsonNode(static_cast<int32_t>(limits.maxMemoryBytes));
 	node["maxScriptCallsPerTurn"] = JsonNode(static_cast<int32_t>(maxScriptCallsPerTurn));
+	node["actionWaitTimeoutMs"] = JsonNode(static_cast<int64_t>(scriptConfig.actionWaitTimeout.count()));
+	node["battleActionWaitTimeoutMs"] = JsonNode(static_cast<int64_t>(scriptConfig.battleActionWaitTimeout.count()));
 	return node;
 }
 
@@ -11014,7 +11022,7 @@ void CScriptedAdventureAI::loadConfig()
 		}
 
 		logAi->info(
-			"ScriptedAdventureAI config loaded: script '%s', reload per turn %d, trace %d, support actions %d, max calls %d, max actions %d, max memory bytes %d, max failures %d, disable turns %d",
+			"ScriptedAdventureAI config loaded: script '%s', reload per turn %d, trace %d, support actions %d, max calls %d, max actions %d, max memory bytes %d, action wait %lld ms, battle action wait %lld ms, max failures %d, disable turns %d",
 			scriptPath.c_str(),
 			scriptConfig.reloadScriptEachTurn,
 			scriptConfig.trace,
@@ -11022,6 +11030,8 @@ void CScriptedAdventureAI::loadConfig()
 			static_cast<int>(maxScriptCallsPerTurn),
 			static_cast<int>(limits.maxActions),
 			static_cast<int>(limits.maxMemoryBytes),
+			static_cast<long long>(scriptConfig.actionWaitTimeout.count()),
+			static_cast<long long>(scriptConfig.battleActionWaitTimeout.count()),
 			static_cast<int>(scriptConfig.maxConsecutiveFailures),
 			scriptConfig.disableTurnsAfterFailures);
 	}
@@ -11063,6 +11073,18 @@ void CScriptedAdventureAI::applyConfig(const JsonNode & config, const std::strin
 	maxScriptUpdateJournal = readSize(config, "maxUpdateEvents", maxScriptUpdateJournal, 16, 4096);
 	scriptConfig.maxConsecutiveFailures = readSize(config, "maxConsecutiveFailures", scriptConfig.maxConsecutiveFailures, 1, 100);
 	scriptConfig.disableTurnsAfterFailures = static_cast<int>(readSize(config, "disableTurnsAfterFailures", scriptConfig.disableTurnsAfterFailures, 1, 100));
+	scriptConfig.actionWaitTimeout = std::chrono::milliseconds(readSize(
+		config,
+		"actionWaitTimeoutMs",
+		static_cast<size_t>(scriptConfig.actionWaitTimeout.count()),
+		1000,
+		10 * 60 * 1000));
+	scriptConfig.battleActionWaitTimeout = std::chrono::milliseconds(readSize(
+		config,
+		"battleActionWaitTimeoutMs",
+		static_cast<size_t>(scriptConfig.battleActionWaitTimeout.count()),
+		1000,
+		10 * 60 * 1000));
 
 	logAi->debug("ScriptedAdventureAI applied %s config section.", sourceLabel.c_str());
 }

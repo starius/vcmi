@@ -3231,6 +3231,12 @@ TEST(LuaAdventureScriptRunnerTest, PackagedConfigUsesBoundedControlScript)
 	ASSERT_TRUE(config["reloadScriptEachTurn"].isBool());
 	EXPECT_FALSE(config["reloadScriptEachTurn"].Bool())
 		<< "Normal AI runtime should keep one Lua runner instance per game; reload mode is an explicit development override.";
+	ASSERT_TRUE(config["actionWaitTimeoutMs"].isNumber());
+	EXPECT_GT(config["actionWaitTimeoutMs"].Integer(), 0);
+	ASSERT_TRUE(config["battleActionWaitTimeoutMs"].isNumber());
+	EXPECT_GT(config["battleActionWaitTimeoutMs"].Integer(), 0);
+	EXPECT_LT(config["battleActionWaitTimeoutMs"].Integer(), 180000)
+		<< "Scripted battle/blocker waits should return as checked action failures before the batch idle watchdog kills the process.";
 	EXPECT_FALSE(hasField(config, "players"))
 		<< "Experimental personality scripts should stay opt-in until they beat the bounded control.";
 }
