@@ -20,11 +20,21 @@ class CGameState;
 
 namespace BattleSimulation
 {
+class IBattleSimulationPackListener
+{
+public:
+	virtual ~IBattleSimulationPackListener() = default;
+
+	virtual void beforeApply(CPackForClient & pack) {}
+	virtual void afterApply(CPackForClient & pack) {}
+};
+
 class BattleSimulationLocalGameServer final : public IGameServer
 {
 	CGameState & gameState;
 	EServerState state = EServerState::GAMEPLAY;
 	std::vector<BattleResult> battleResults;
+	std::vector<IBattleSimulationPackListener *> packListeners;
 
 public:
 	explicit BattleSimulationLocalGameServer(CGameState & gameState);
@@ -32,6 +42,7 @@ public:
 	std::optional<BattleResult> lastBattleResult() const;
 	std::vector<BattleResult> takeBattleResults();
 	void clearBattleResults();
+	void addPackListener(IBattleSimulationPackListener & listener);
 
 	void setState(EServerState value) override;
 	EServerState getState() const override;

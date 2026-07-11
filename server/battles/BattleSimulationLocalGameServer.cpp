@@ -37,6 +37,11 @@ void BattleSimulationLocalGameServer::clearBattleResults()
 	battleResults.clear();
 }
 
+void BattleSimulationLocalGameServer::addPackListener(IBattleSimulationPackListener & listener)
+{
+	packListeners.push_back(&listener);
+}
+
 void BattleSimulationLocalGameServer::setState(EServerState value)
 {
 	state = value;
@@ -64,10 +69,16 @@ bool BattleSimulationLocalGameServer::hasBothPlayersAtSameConnection(PlayerColor
 
 void BattleSimulationLocalGameServer::applyPack(CPackForClient & pack)
 {
+	for(auto * listener : packListeners)
+		listener->beforeApply(pack);
+
 	if(const auto * battleResult = dynamic_cast<const BattleResult *>(&pack))
 		battleResults.push_back(*battleResult);
 
 	gameState.apply(pack);
+
+	for(auto * listener : packListeners)
+		listener->afterApply(pack);
 }
 
 void BattleSimulationLocalGameServer::sendPack(CPackForClient &, GameConnectionID)

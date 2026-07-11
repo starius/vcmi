@@ -23,6 +23,8 @@ class BattleID;
 
 namespace BattleSimulation
 {
+class IBattleSimulationPackListener;
+
 class IBattleSimulationRunner
 {
 public:
@@ -37,6 +39,7 @@ public:
 	virtual ~IBattleSimulationActionProvider() = default;
 
 	virtual std::optional<BattleAction> makeAction(CGameHandler & gameHandler, const CBattleInfoCallback & battle) = 0;
+	virtual IBattleSimulationPackListener * packListener() { return nullptr; }
 };
 
 class IBattleSimulationActionProviderFactory

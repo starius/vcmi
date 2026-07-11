@@ -65,19 +65,21 @@ std::optional<BattleResult> runSingleSample(
 	if(!setup)
 		return std::nullopt;
 
+	const auto battleID = clonedState->nextBattleID;
+	auto actionProvider = actionProviderFactory.create(gameHandler, sampleRequest, battleID);
+	if(!actionProvider)
+		return std::nullopt;
+
+	if(auto * packListener = actionProvider->packListener())
+		localServer.addPackListener(*packListener);
+
 	localServer.clearBattleResults();
 	gameHandler.battles->startBattle(*setup);
 
 	if(auto result = localServer.lastBattleResult())
 		return result;
 
-	const auto * initialBattle = getOnlyCurrentBattle(*clonedState);
-	if(!initialBattle)
-		return std::nullopt;
-
-	const auto battleID = initialBattle->getBattleID();
-	auto actionProvider = actionProviderFactory.create(gameHandler, sampleRequest, battleID);
-	if(!actionProvider)
+	if(!getOnlyCurrentBattle(*clonedState))
 		return std::nullopt;
 
 	for(int32_t actionIndex = 0; actionIndex < options.maxActionsPerSample; ++actionIndex)
