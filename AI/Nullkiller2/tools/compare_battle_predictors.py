@@ -266,6 +266,24 @@ def parse_args() -> argparse.Namespace:
 		default=None,
 		help="Maximum incomplete planner-side simulation responses allowed for each --require-runtime-simulation model.",
 	)
+	parser.add_argument(
+		"--max-candidate-better-p",
+		type=float,
+		default=None,
+		help="Maximum one-sided paired sign-test p-value allowed for the candidate-better hypothesis.",
+	)
+	parser.add_argument(
+		"--min-candidate-win-rate",
+		type=float,
+		default=None,
+		help="Minimum valid-game candidate win rate required.",
+	)
+	parser.add_argument(
+		"--min-candidate-win-rate-wilson-lower",
+		type=float,
+		default=None,
+		help="Minimum Wilson 95% lower bound for the valid-game candidate win rate.",
+	)
 	parser.add_argument("--keep-engine-logs", action="store_true", help="Keep VCMI log files in each run directory. Stdout and summaries are always kept.")
 	parser.add_argument("--require-clean-exit", action="store_true", help="Mark nonzero vcmiclient exits as failed games.")
 	args = parser.parse_args()
@@ -304,6 +322,14 @@ def parse_args() -> argparse.Namespace:
 	):
 		if getattr(args, option_name) is not None and getattr(args, option_name) < 0:
 			parser.error("--" + option_name.replace("_", "-") + " must be non-negative")
+	for option_name in (
+		"max_candidate_better_p",
+		"min_candidate_win_rate",
+		"min_candidate_win_rate_wilson_lower",
+	):
+		value = getattr(args, option_name)
+		if value is not None and not 0.0 <= value <= 1.0:
+			parser.error("--" + option_name.replace("_", "-") + " must be between 0 and 1")
 
 	return args
 
@@ -1003,6 +1029,18 @@ def analyze_results(args: argparse.Namespace, results: list[GameResult]) -> dict
 				"models": args.require_runtime_simulation,
 				"minRequests": args.min_runtime_simulation_requests,
 				"minCompleteRate": args.min_runtime_simulation_complete_rate,
+				"maxIncomplete": args.max_runtime_simulation_incomplete,
+				"maxInvalid": args.max_runtime_simulation_invalid,
+				"maxNotAvailable": args.max_runtime_simulation_not_available,
+				"minPlanningDecisions": args.min_runtime_simulation_planning_decisions,
+				"minPlanningVetoes": args.min_runtime_simulation_planning_vetoes,
+				"minPlanningRescues": args.min_runtime_simulation_planning_rescues,
+				"maxPlanningIncomplete": args.max_runtime_simulation_planning_incomplete,
+			},
+			"outcomeRequirements": {
+				"maxCandidateBetterP": args.max_candidate_better_p,
+				"minCandidateWinRate": args.min_candidate_win_rate,
+				"minCandidateWinRateWilsonLower": args.min_candidate_win_rate_wilson_lower,
 			},
 			"configReplacements": [
 				{"file": str(replacement.file), "old": replacement.old, "new": replacement.new}
@@ -1129,6 +1167,59 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 	}
 
 
+def evaluate_outcome_requirements(args: argparse.Namespace, analysis: dict) -> dict:
+	errors: list[str] = []
+	games = analysis["games"]
+	paired = analysis["pairedSamples"]
+
+	if args.max_candidate_better_p is not None:
+		p_value = paired["oneSidedCandidateBetterP"]
+		if p_value is None:
+			errors.append("candidate-better p-value is unavailable")
+		elif p_value > args.max_candidate_better_p:
+			errors.append(
+				f"candidate-better p-value {p_value:.6g} above allowed "
+				f"{args.max_candidate_better_p:.6g}"
+			)
+
+	if args.min_candidate_win_rate is not None:
+		win_rate = games["candidateWinRate"]
+		if win_rate is None:
+			errors.append("candidate win rate is unavailable")
+		elif win_rate < args.min_candidate_win_rate:
+			errors.append(
+				f"candidate win rate {win_rate:.6g} below required "
+				f"{args.min_candidate_win_rate:.6g}"
+			)
+
+	if args.min_candidate_win_rate_wilson_lower is not None:
+		wilson_lower = games["candidateWinRateWilson95"][0]
+		if wilson_lower is None:
+			errors.append("candidate win-rate Wilson lower bound is unavailable")
+		elif wilson_lower < args.min_candidate_win_rate_wilson_lower:
+			errors.append(
+				f"candidate win-rate Wilson lower bound {wilson_lower:.6g} below required "
+				f"{args.min_candidate_win_rate_wilson_lower:.6g}"
+			)
+
+	required = any(
+		value is not None
+		for value in (
+			args.max_candidate_better_p,
+			args.min_candidate_win_rate,
+			args.min_candidate_win_rate_wilson_lower,
+		)
+	)
+	return {
+		"required": required,
+		"maxCandidateBetterP": args.max_candidate_better_p,
+		"minCandidateWinRate": args.min_candidate_win_rate,
+		"minCandidateWinRateWilsonLower": args.min_candidate_win_rate_wilson_lower,
+		"ok": not errors,
+		"errors": errors,
+	}
+
+
 def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 	fieldnames = [
 		"sample",
@@ -1234,6 +1325,10 @@ def print_summary(analysis: dict, output_dir: Path) -> None:
 	if requirements and requirements["required"]:
 		status = "ok" if requirements["ok"] else "failed"
 		print(f"runtime simulation requirements: {status}")
+	outcome_requirements = analysis.get("outcomeRequirements")
+	if outcome_requirements and outcome_requirements["required"]:
+		status = "ok" if outcome_requirements["ok"] else "failed"
+		print(f"outcome requirements: {status}")
 	print(f"raw logs and summaries: {output_dir}")
 
 
@@ -1245,6 +1340,7 @@ def main() -> int:
 	originals: dict[Path, bytes] = {}
 	results: list[GameResult] = []
 	runtime_requirements: dict | None = None
+	outcome_requirements: dict | None = None
 	previous_signal_handlers = install_config_restore_signal_handlers(originals) if replacements else {}
 
 	try:
@@ -1283,10 +1379,14 @@ def main() -> int:
 		analysis = analyze_results(args, results)
 		runtime_requirements = evaluate_runtime_simulation_requirements(args, analysis)
 		analysis["runtimeBattleSimulation"]["requirements"] = runtime_requirements
+		outcome_requirements = evaluate_outcome_requirements(args, analysis)
+		analysis["outcomeRequirements"] = outcome_requirements
 		(output_dir / "summary.json").write_text(json.dumps(analysis, indent=2) + "\n")
 		print_summary(analysis, output_dir)
 		for error in runtime_requirements["errors"]:
 			print(f"runtime simulation requirement failed: {error}", file=sys.stderr)
+		for error in outcome_requirements["errors"]:
+			print(f"outcome requirement failed: {error}", file=sys.stderr)
 	finally:
 		restore_config_files(originals)
 		restore_signal_handlers(previous_signal_handlers)
@@ -1298,6 +1398,8 @@ def main() -> int:
 		return 1
 	if runtime_requirements and not runtime_requirements["ok"]:
 		return 3
+	if outcome_requirements and not outcome_requirements["ok"]:
+		return 4
 	return 0
 
 
