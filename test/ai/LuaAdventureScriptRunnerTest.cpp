@@ -3153,6 +3153,114 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanChooseChestRewardByComponentI
 	EXPECT_EQ(*output.intent, "picked chest experience");
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanAnswerPendingQueriesWithPolicy)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				local result = ai:answerPendingQueriesByPolicy({
+					component_preferences = {
+						{ type_id = ai.componentTypes.resource, subtype_id = ai.resourceIds.gold }
+					},
+					on_query = function(self, query)
+						if self:queryHasType(query, self.queryTypes.marketWindow) then
+							return { useNullkiller = true, default_answer = 9 }
+						end
+						return nil
+					end
+				}, { max_queries = 3 })
+				return {
+					status = "end_turn",
+					memory = {
+						version = 1,
+						count = result.count,
+						truncated = result.truncated
+					},
+					actions = {}
+				}
+			end
+		}
+	)lua";
+
+	auto makeInputWithRemainingQueries = [](int firstRemainingIndex)
+	{
+		AI::AdventureScriptInput input = makeInput();
+		input.state["turn"]["queries"].Vector();
+
+		if(firstRemainingIndex <= 0)
+		{
+			JsonNode query;
+			query["query_id"] = JsonNode(88);
+			query["typeId"] = JsonNode(3);
+			query["type"] = JsonNode("blocking_dialog");
+			query["selection"] = JsonNode(true);
+			query["components"].Vector();
+
+			JsonNode gold;
+			gold["typeId"] = JsonNode(2);
+			gold["subtypeId"] = JsonNode(6);
+			gold["value"] = JsonNode(1000);
+			gold["answer"] = JsonNode(1);
+			query["components"].Vector().push_back(gold);
+
+			JsonNode experience;
+			experience["typeId"] = JsonNode(8);
+			experience["value"] = JsonNode(500);
+			experience["answer"] = JsonNode(2);
+			query["components"].Vector().push_back(experience);
+
+			input.state["turn"]["queries"].Vector().push_back(query);
+		}
+
+		if(firstRemainingIndex <= 1)
+		{
+			JsonNode query;
+			query["query_id"] = JsonNode(89);
+			query["typeId"] = JsonNode(11);
+			query["type"] = JsonNode("market_window");
+			input.state["turn"]["queries"].Vector().push_back(query);
+		}
+
+		return input;
+	};
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-query-policy", source);
+	std::vector<JsonNode> commands;
+	int answeredQueries = 0;
+	int refreshes = 0;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInputWithRemainingQueries(0), [&](const JsonNode & command)
+	{
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+
+		if(command["kind"].String() == "refresh")
+		{
+			++refreshes;
+			response["input"] = makeInputWithRemainingQueries(answeredQueries).toJson();
+			return response;
+		}
+
+		commands.push_back(command);
+		++answeredQueries;
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 2);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "answer_query");
+	EXPECT_EQ(commands[0]["payload"]["query_id"].Integer(), 88);
+	EXPECT_EQ(commands[0]["payload"]["answer"].Integer(), 1);
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "nullkiller_answer_query");
+	EXPECT_EQ(commands[1]["payload"]["query_id"].Integer(), 89);
+	EXPECT_EQ(commands[1]["payload"]["default_answer"].Integer(), 9);
+	EXPECT_EQ(refreshes, 2);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_EQ(output.memory["count"].Integer(), 2);
+	EXPECT_FALSE(output.memory["truncated"].Bool());
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeHostErrorsAreCatchable)
 {
 	const std::string source = R"lua(

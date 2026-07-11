@@ -821,6 +821,13 @@ single-creature stack setup, whirlpool formation, siege formation, one-query and
 interaction callbacks, artifact preparation, all-hero artifact optimization, creature preparation, and combined hero
 preparation.
 
+Dialog/query handling is scriptable at two levels. Scripts can still answer a pending query with raw checked
+`answer_query`, `cancel_query`, or `ignore_script_query` actions, or ask `nullkiller_answer_query` to handle one
+dialog using native heuristics. For editable policy, the Lua facade also provides `ai:defaultQueryAnswer`,
+`ai:answerQueryByPolicy`, and `ai:answerPendingQueriesByPolicy`. These helpers branch on stable numeric query,
+component, resource, and skill ids, accept a Lua resolver callback for special cases, refresh between answered
+queries, and can delegate only a specific dialog to Nullkiller without giving away the rest of the day.
+
 The intentionally excluded `IGameActionCallback` methods are meta/client operations rather than adventure strategy:
 save, pause, chat/message sending, and raw local-state writes. Script-owned memory replaces raw local-state writes,
 and chat/message sending is not exposed because it can trigger cheat-like text commands in some contexts. If future
@@ -2238,6 +2245,16 @@ Regression harness:
   training bucket for the 10/10 improvement target; seeds `53011`-`53016` with game seeds `63011`-`63016` are the
   held-out promotion guard. All entries are disabled by default and selected intentionally with
   `--include-disabled --stage outcome --kind generated-random` plus `--group training` or `--group heldout`.
+- Done: the current champion control script was measured on the explicit 10-map training bucket. The run produced
+  10 terminal results after one recovered infrastructure retry: 5 `ScriptedAdventureAI` wins, 5 `Nullkiller2`
+  wins, no final timeouts, and no final infrastructure failures
+  (`/root/script-ai-runs/champion-training10-notrace-20260711`). The earlier 16-map screen for the same champion
+  remains 16 terminal games with 10 `ScriptedAdventureAI` wins and 6 `Nullkiller2` wins, so the policy is a useful
+  baseline but not near the requested 16/16 promotion bar.
+- Done: added policy-level query helpers to the Lua facade. `ai:answerPendingQueriesByPolicy` lets scripts express
+  dialog preferences using numeric ids, provide a resolver callback, delegate individual dialogs to
+  `nullkiller_answer_query`, and refresh after each answer. This is an API-parity step for scriptable dialogs, not
+  a strategy promotion.
 
 ## Open Design Questions
 

@@ -1088,6 +1088,300 @@ defineNullkillerModeHelpers("GatherArmy", ai.nullkillerTaskModes.gatherArmy)
 defineNullkillerModeHelpers("Exploration", ai.nullkillerTaskModes.exploration)
 defineNullkillerModeHelpers("Startup", ai.nullkillerTaskModes.startup)
 
+local function queryTypeId(query)
+	if type(query) ~= "table" then
+		return nil
+	end
+	return query.typeId or query.type_id
+end
+
+function ai:queryHasType(query, typeId)
+	local actual = queryTypeId(query)
+	return actual ~= nil and typeId ~= nil and tonumber(actual) == tonumber(typeId)
+end
+
+local function optionAnswer(option)
+	if type(option) == "table" and option.answer ~= nil then
+		return option.answer
+	end
+	return nil
+end
+
+local function firstOptionAnswer(options)
+	for _, option in ipairs(options or {}) do
+		local answer = optionAnswer(option)
+		if answer ~= nil then
+			return answer
+		end
+	end
+	return nil
+end
+
+local function preferenceMatchesComponent(component, preference)
+	if type(component) ~= "table" then
+		return false
+	end
+
+	if type(preference) == "number" then
+		return tonumber(component.typeId or component.type_id) == tonumber(preference)
+	end
+
+	if type(preference) ~= "table" then
+		return false
+	end
+
+	local expectedType = preference.type_id or preference.typeId or preference[1]
+	local expectedSubtype = preference.subtype_id or preference.subtypeId or preference[2]
+	local minValue = preference.min_value or preference.minValue
+	local maxValue = preference.max_value or preference.maxValue
+
+	if expectedType ~= nil and tonumber(component.typeId or component.type_id) ~= tonumber(expectedType) then
+		return false
+	end
+	if expectedSubtype ~= nil and tonumber(component.subtypeId or component.subtype_id) ~= tonumber(expectedSubtype) then
+		return false
+	end
+	if minValue ~= nil and (tonumber(component.value or 0) or 0) < tonumber(minValue) then
+		return false
+	end
+	if maxValue ~= nil and (tonumber(component.value or 0) or 0) > tonumber(maxValue) then
+		return false
+	end
+
+	return true
+end
+
+local function skillPriority(skillId, preferredSkillIds)
+	if skillId == nil or type(preferredSkillIds) ~= "table" then
+		return nil
+	end
+	for index, preferred in ipairs(preferredSkillIds) do
+		if tonumber(preferred) == tonumber(skillId) then
+			return index
+		end
+	end
+	return nil
+end
+
+function ai:defaultQueryAnswer(query, policy)
+	local config = copyFields(policy)
+	local defaultAnswer = config.default_answer
+	if defaultAnswer == nil then
+		defaultAnswer = config.defaultAnswer
+	end
+	if type(query) ~= "table" then
+		return defaultAnswer or 0
+	end
+
+	local typeId = queryTypeId(query)
+	if typeId == self.queryTypes.artifactAssemblyPrompt then
+		return nil
+	end
+
+	if typeId == self.queryTypes.heroLevelUp or typeId == self.queryTypes.commanderLevelUp then
+		local options = query.skill_options or query.skills or {}
+		local preferredSkillIds = config.preferred_skill_ids or config.preferredSkillIds
+		local best
+		local bestPriority
+		local bestScore
+		for _, option in ipairs(options) do
+			local answer = optionAnswer(option)
+			if answer ~= nil and best == nil then
+				best = answer
+			end
+
+			local priority = skillPriority(option.skill_id or option.skillId, preferredSkillIds)
+			local score = tonumber(option.nullkillerSkillScore or option.nullkiller_skill_score or 0) or 0
+			if answer ~= nil and priority ~= nil and (bestPriority == nil or priority < bestPriority) then
+				best = answer
+				bestPriority = priority
+				bestScore = score
+			elseif answer ~= nil and bestPriority == nil and config.use_nullkiller_skill_score ~= false and config.useNullkillerSkillScore ~= false then
+				if bestScore == nil or score > bestScore then
+					best = answer
+					bestScore = score
+				end
+			end
+		end
+		return best or defaultAnswer or 0
+	end
+
+	if typeId == self.queryTypes.blockingDialog then
+		local components = query.components or {}
+		local preferences = config.component_preferences or config.componentPreferences
+		if preferences == nil then
+			preferences = {
+				{ type_id = self.componentTypes.experience },
+				{ type_id = self.componentTypes.resource, subtype_id = self.resourceIds.gold }
+			}
+		end
+
+		for _, preference in ipairs(preferences) do
+			for _, component in ipairs(components) do
+				if preferenceMatchesComponent(component, preference) then
+					local answer = optionAnswer(component)
+					if answer ~= nil then
+						return answer
+					end
+				end
+			end
+		end
+
+		if query.selection and #components > 0 then
+			return optionAnswer(components[#components]) or firstOptionAnswer(components) or defaultAnswer or 0
+		end
+		if query.cancel then
+			return config.cancel_answer or config.cancelAnswer or 1
+		end
+		return defaultAnswer or 0
+	end
+
+	if typeId == self.queryTypes.teleportDialog then
+		if query.impassable then
+			return config.impassable_answer or config.impassableAnswer or -1
+		end
+		return firstOptionAnswer(query.exits or {}) or defaultAnswer or 0
+	end
+
+	if typeId == self.queryTypes.mapObjectSelect then
+		return firstOptionAnswer(query.objects or {}) or defaultAnswer or 0
+	end
+
+	return defaultAnswer
+end
+
+local function dispatchQueryDecision(aiObject, query, decision, policy)
+	if decision == nil then
+		return nil
+	end
+	if decision == false then
+		return { ok = true, handled = false, query_id = query and query.query_id, reason = "query_deferred" }
+	end
+	if type(decision) == "number" then
+		return aiObject:answerQuery(query.query_id, decision)
+	end
+	if type(decision) ~= "table" then
+		return nil
+	end
+
+	if decision.handled == false then
+		return decision
+	end
+	if type(decision.action) == "table" then
+		return aiObject:runAction(decision.action)
+	end
+	if type(decision.planAction) == "table" then
+		return aiObject:runAction(decision.planAction)
+	end
+	if decision.answer ~= nil then
+		return aiObject:answerQuery(query.query_id, decision.answer)
+	end
+	if decision.cancel == true then
+		return aiObject:cancelQuery(query.query_id)
+	end
+	if decision.ignore == true or decision.ignore_script_query == true or decision.ignoreScriptQuery == true then
+		return aiObject:ignoreScriptDecision(query.query_id)
+	end
+	if decision.native == true or decision.use_nullkiller == true or decision.useNullkiller == true then
+		local defaultAnswer = decision.default_answer or decision.defaultAnswer
+		if defaultAnswer == nil and type(policy) == "table" then
+			defaultAnswer = policy.default_answer or policy.defaultAnswer
+		end
+		return aiObject:nullkillerAnswerQuery(query, defaultAnswer)
+	end
+
+	return nil
+end
+
+function ai:answerQueryByPolicy(query, policy)
+	local config = {}
+	if type(policy) == "function" then
+		config.on_query = policy
+	else
+		config = copyFields(policy)
+	end
+
+	if type(query) ~= "table" or query.query_id == nil then
+		error("ai:answerQueryByPolicy expects a pending query with query_id", 2)
+	end
+
+	local resolver = config.on_query or config.onQuery or config.resolve or config.resolver
+	if type(resolver) == "function" then
+		local resolved = dispatchQueryDecision(self, query, resolver(self, query, config), config)
+		if resolved ~= nil then
+			return resolved
+		end
+	end
+
+	local answer = self:defaultQueryAnswer(query, config)
+	if answer ~= nil then
+		return self:answerQuery(query.query_id, answer)
+	end
+
+	if self:queryHasType(query, self.queryTypes.artifactAssemblyPrompt) and config.ignore_script_decisions ~= false and config.ignoreScriptDecisions ~= false then
+		return self:ignoreScriptDecision(query.query_id)
+	end
+
+	if config.native_fallback ~= false and config.nativeFallback ~= false then
+		return self:nullkillerAnswerQuery(query, config.default_answer or config.defaultAnswer)
+	end
+
+	return { ok = true, handled = false, query_id = query.query_id, reason = "unsupported_query_type" }
+end
+
+ai.answerQueryWithPolicy = ai.answerQueryByPolicy
+ai.handleQuery = ai.answerQueryByPolicy
+
+function ai:answerPendingQueriesByPolicy(policy, options)
+	local config = {}
+	if type(policy) == "function" then
+		config.on_query = policy
+	else
+		config = copyFields(policy)
+	end
+
+	local opts = copyFields(options)
+	if type(options) == "number" then
+		opts.max_queries = options
+	end
+
+	local limit = tonumber(opts.max_queries or opts.maxQueries or config.max_queries or config.maxQueries or 16) or 16
+	limit = math.max(0, math.floor(limit))
+	local handled = {}
+
+	for _ = 1, limit do
+		local queries = self:pendingQueries()
+		if #queries == 0 then
+			return {
+				count = #handled,
+				handled = handled,
+				truncated = false
+			}
+		end
+
+		local result = self:answerQueryByPolicy(queries[1], config)
+		handled[#handled + 1] = result
+		if type(result) == "table" and result.handled == false then
+			return {
+				count = #handled - 1,
+				handled = handled,
+				deferred = true,
+				truncated = true
+			}
+		end
+		self:refresh()
+	end
+
+	return {
+		count = #handled,
+		handled = handled,
+		truncated = #self:pendingQueries() > 0
+	}
+end
+
+ai.answerPendingQueriesWithPolicy = ai.answerPendingQueriesByPolicy
+ai.handlePendingQueries = ai.answerPendingQueriesByPolicy
+
 function ai:nullkillerAnswerQuery(query, defaultAnswer)
 	local action = copyFields(query)
 	if type(query) ~= "table" then
