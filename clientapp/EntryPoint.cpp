@@ -41,11 +41,15 @@
 #include "../lib/entities/hero/CHero.h"
 #include "../lib/entities/hero/CHeroClass.h"
 #include "../lib/entities/hero/CHeroHandler.h"
+#include "../lib/entities/faction/CTownHandler.h"
+#include "../lib/entities/faction/CTown.h"
+#include "../lib/CSkillHandler.h"
 #include "../lib/logging/CBasicLogConfigurator.h"
 #include "../lib/mapObjectConstructors/AObjectTypeHandler.h"
 #include "../lib/mapObjectConstructors/CObjectClassesHandler.h"
 #include "../lib/mapObjects/CGCreature.h"
 #include "../lib/mapObjects/CGHeroInstance.h"
+#include "../lib/mapObjects/CGTownInstance.h"
 #include "../lib/mapping/CMap.h"
 #include "../lib/mapping/CMapEditManager.h"
 #include "../lib/mapping/MapFormat.h"
@@ -57,6 +61,7 @@
 #include "../lib/rmg/CRmgTemplate.h"
 #include "../lib/rmg/CRmgTemplateStorage.h"
 #include "../lib/rmg/CMapGenOptions.h"
+#include "../lib/spells/CSpellHandler.h"
 #include "../lib/texts/CGeneralTextHandler.h"
 #include "../lib/texts/MetaString.h"
 #include "../lib/GameLibrary.h"
@@ -69,6 +74,7 @@
 #include <algorithm>
 #include <cctype>
 #include <random>
+#include <set>
 
 #include <SDL_main.h>
 #include <SDL.h>
@@ -98,6 +104,12 @@ static Identifier randomElement(std::mt19937_64 & rng, const std::vector<Identif
 	return values.at(static_cast<size_t>(randomInt(rng, 0, static_cast<int64_t>(values.size() - 1))));
 }
 
+template<typename Identifier>
+static std::vector<Identifier> toVector(const std::set<Identifier> & values)
+{
+	return std::vector<Identifier>(values.begin(), values.end());
+}
+
 static void fillBattleSimulationArmy(CArmedInstance & army, std::mt19937_64 & rng, const std::vector<CreatureID> & creatures, int64_t budget)
 {
 	army.clearSlots();
@@ -110,6 +122,44 @@ static void fillBattleSimulationArmy(CArmedInstance & army, std::mt19937_64 & rn
 		const int64_t stackBudget = std::max<int64_t>(100, budget / stacks * randomInt(rng, 60, 160) / 100);
 		const auto count = static_cast<TQuantity>(std::clamp<int64_t>(stackBudget / std::max<int32_t>(1, creature->getAIValue()), 1, 100000));
 		army.setCreature(SlotID(slot), creatureId, count);
+	}
+}
+
+static void randomizeBattleSimulationHeroDetails(CGHeroInstance & hero, CMap & map, std::mt19937_64 & rng)
+{
+	hero.secSkills.clear();
+	auto skills = toVector(LIBRARY->skillh->getDefaultAllowed());
+	std::shuffle(skills.begin(), skills.end(), rng);
+
+	const int skillCount = static_cast<int>(std::min<int64_t>(randomInt(rng, 0, 8), skills.size()));
+	for(int index = 0; index < skillCount; ++index)
+		hero.setSecSkillLevel(skills[index], static_cast<int>(randomInt(rng, 1, static_cast<int64_t>(MasteryLevel::EXPERT))), ChangeValueMode::ABSOLUTE);
+
+	if(randomInt(rng, 0, 99) < 70)
+	{
+		if(!hero.getArt(ArtifactPosition::SPELLBOOK))
+			hero.putArtifact(ArtifactPosition::SPELLBOOK, map.createArtifact(ArtifactID::SPELLBOOK));
+
+		std::vector<SpellID> combatSpells;
+		for(auto spellID : LIBRARY->spellh->getDefaultAllowed())
+		{
+			const auto * spell = spellID.toSpell();
+			if(spell && spell->isCombat())
+				combatSpells.push_back(spellID);
+		}
+
+		std::shuffle(combatSpells.begin(), combatSpells.end(), rng);
+		const int spellCount = static_cast<int>(std::min<int64_t>(randomInt(rng, 1, 10), combatSpells.size()));
+		for(int index = 0; index < spellCount; ++index)
+			hero.addSpellToSpellbook(combatSpells[index]);
+
+		const auto manaLimit = std::max<si32>(hero.manaLimit(), 0);
+		hero.mana = static_cast<si32>(manaLimit * randomInt(rng, 25, 100) / 100);
+	}
+	else
+	{
+		hero.removeAllSpells();
+		hero.mana = 0;
 	}
 }
 
@@ -133,6 +183,7 @@ static std::shared_ptr<CGHeroInstance> createBattleSimulationHero(
 	for(size_t i = 0; i < GameConstants::PRIMARY_SKILLS; ++i)
 		obj->pushPrimSkill(PrimarySkill(i), static_cast<int>(randomInt(rng, 0, 20)));
 
+	randomizeBattleSimulationHeroDetails(*obj, map, rng);
 	fillBattleSimulationArmy(*obj, rng, creatures, armyBudget);
 	map.getEditManager()->insertObject(obj);
 	return obj;
@@ -162,8 +213,81 @@ static std::shared_ptr<CGCreature> createBattleSimulationMonster(
 	return obj;
 }
 
+static std::vector<CreatureID> getFactionCreatures(FactionID faction, const std::vector<CreatureID> & fallback)
+{
+	std::vector<CreatureID> result;
+	if(faction.hasValue() && faction.toFaction()->town)
+	{
+		for(const auto & tier : faction.toFaction()->town->creatures)
+			for(const auto & creature : tier)
+				if(creature.hasValue())
+					result.push_back(creature);
+	}
+	return result.empty() ? fallback : result;
+}
+
+static void addTownBuildingIfAvailable(CGTownInstance & town, BuildingID building)
+{
+	if(vstd::contains(town.getTown()->buildings, building))
+		town.addBuilding(building);
+}
+
+static std::shared_ptr<CGTownInstance> createBattleSimulationTown(
+	EditorCallback & callback,
+	CMap & map,
+	std::mt19937_64 & rng,
+	const std::vector<FactionID> & factions,
+	const std::vector<CreatureID> & fallbackCreatures,
+	PlayerColor owner,
+	int3 position,
+	int64_t armyBudget)
+{
+	const auto faction = randomElement(rng, factions);
+	auto factory = LIBRARY->objtypeh->getHandlerFor(Obj::TOWN, faction);
+	auto obj = std::dynamic_pointer_cast<CGTownInstance>(factory->create(&callback, factory->getTemplates().front()));
+	obj->CGObjectInstance::setOwner(owner);
+	obj->pos = position;
+	obj->addBuilding(BuildingID::DEFAULT);
+
+	const int fortLevel = static_cast<int>(randomInt(rng, 0, 3));
+	if(fortLevel >= 1)
+		addTownBuildingIfAvailable(*obj, BuildingID::FORT);
+	if(fortLevel >= 2)
+		addTownBuildingIfAvailable(*obj, BuildingID::CITADEL);
+	if(fortLevel >= 3)
+		addTownBuildingIfAvailable(*obj, BuildingID::CASTLE);
+
+	if(randomInt(rng, 0, 99) < 60)
+		addTownBuildingIfAvailable(*obj, BuildingID::TAVERN);
+	if(randomInt(rng, 0, 99) < 20)
+		addTownBuildingIfAvailable(*obj, BuildingID::GRAIL);
+
+	const int mageGuildLevel = static_cast<int>(randomInt(rng, 0, 5));
+	for(int level = 1; level <= mageGuildLevel; ++level)
+		addTownBuildingIfAvailable(*obj, BuildingID(static_cast<int32_t>(BuildingID::MAGES_GUILD_1) + level - 1));
+
+	for(int level = 0; level < 7; ++level)
+	{
+		if(randomInt(rng, 0, 99) < 55)
+			addTownBuildingIfAvailable(*obj, BuildingID::getDwellingFromLevel(level, 0));
+		if(randomInt(rng, 0, 99) < 25)
+			addTownBuildingIfAvailable(*obj, BuildingID::getDwellingFromLevel(level, 1));
+	}
+
+	for(auto spellID : LIBRARY->spellh->getDefaultAllowed())
+		obj->possibleSpells.push_back(spellID);
+
+	const auto factionCreatures = getFactionCreatures(faction, fallbackCreatures);
+	fillBattleSimulationArmy(*obj, rng, factionCreatures, armyBudget);
+	map.getEditManager()->insertObject(obj);
+	return obj;
+}
+
 static std::string createBattleSimulationMap(int64_t seed, const std::string & mode)
 {
+	if(mode != "mixed" && mode != "hero" && mode != "monster" && mode != "town")
+		throw std::runtime_error("Unknown battle simulation generated mode: " + mode);
+
 	std::mt19937_64 rng(static_cast<uint64_t>(seed));
 
 	auto map = std::make_unique<CMap>(nullptr);
@@ -186,10 +310,14 @@ static std::string createBattleSimulationMap(int64_t seed, const std::string & m
 	std::vector<HeroTypeID> heroes(allowedHeroes.begin(), allowedHeroes.end());
 	auto allowedCreatures = LIBRARY->creh->getDefaultAllowed();
 	std::vector<CreatureID> creatures(allowedCreatures.begin(), allowedCreatures.end());
-	if(heroes.empty() || creatures.empty())
-		throw std::runtime_error("Unable to create battle simulation map without allowed heroes and creatures");
+	auto allowedFactions = LIBRARY->townh->getDefaultAllowed();
+	std::vector<FactionID> factions(allowedFactions.begin(), allowedFactions.end());
+	if(heroes.empty() || creatures.empty() || factions.empty())
+		throw std::runtime_error("Unable to create battle simulation map without allowed heroes, creatures, and factions");
 
-	const bool monsterBattle = mode == "monster" || (mode != "hero" && randomInt(rng, 0, 1) == 1);
+	const int battleKind = static_cast<int>(randomInt(rng, 0, 2));
+	const bool townBattle = mode == "town" || (mode == "mixed" && battleKind == 2);
+	const bool monsterBattle = !townBattle && (mode == "monster" || (mode == "mixed" && battleKind == 1));
 	map->players[0].canComputerPlay = true;
 	map->players[0].canHumanPlay = true;
 	if(!monsterBattle)
@@ -200,7 +328,9 @@ static std::string createBattleSimulationMap(int64_t seed, const std::string & m
 	const int64_t defenderBudget = baseBudget * randomInt(rng, 70, 140) / 100;
 
 	createBattleSimulationHero(callback, *map, rng, heroes, creatures, PlayerColor(0), int3(5, 6, 0), attackerBudget);
-	if(monsterBattle)
+	if(townBattle)
+		createBattleSimulationTown(callback, *map, rng, factions, creatures, PlayerColor(1), int3(5, 5, 0), defenderBudget);
+	else if(monsterBattle)
 		createBattleSimulationMonster(callback, *map, rng, creatures, int3(5, 5, 0), defenderBudget);
 	else
 		createBattleSimulationHero(callback, *map, rng, heroes, creatures, PlayerColor(1), int3(5, 5, 0), defenderBudget);
@@ -484,7 +614,7 @@ int main(int argc, char * argv[])
 		("battle-sim-global-seed", po::value<si64>(), "battle simulation global seed for output metadata")
 		("battle-sim-combat-ai", po::value<std::string>(), "battle AI used by simulated AI players")
 		("battle-sim-generate-map", "generate a deterministic battle-only map for battle simulation")
-		("battle-sim-generated-mode", po::value<std::string>(), "generated battle mode: mixed, hero, or monster")
+		("battle-sim-generated-mode", po::value<std::string>(), "generated battle mode: mixed, hero, monster, or town")
 		("autoSkip", "automatically skip turns in GUI")
 		("disable-video", "disable video player")
 		("nointro,i", "skips intro movies")

@@ -192,6 +192,84 @@ End-to-end validation:
 - compare old predictor vs new predictor with confidence intervals
 - treat battle-level improvement and game-level improvement as separate evidence
 
+## Current Empirical Findings
+
+Recent MMAI-labeled datasets show that simple global ratio/logistic tuning is not enough for the 95% target.
+
+Remote analysis outputs:
+
+- `/root/vcmi-battle-results/mmai-schema2-5k-evaluation-v3-compatible.txt`
+- `/root/vcmi-battle-results/mmai-schema2-5k-evaluation-composition-diff.txt`
+- `/root/vcmi-battle-results/mmai-100k-creature-value-model.txt`
+- `/root/vcmi-battle-results/mmai-100k-creature-value-pair100-model.txt`
+- `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-mixed-2k/evaluation-richstats.txt`
+- `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-mixed-2k/simulation-fallback-all-cxx.txt`
+- `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-mixed-2k/simulation-fallback-allwins-diagnostics.txt`
+- `/root/vcmi-battle-results/mmai-100k-simulation-fallback.txt`
+- `/root/vcmi-battle-results/mmai-100k-simulation-fallback-safe095.txt`
+- `/root/vcmi-battle-results/mmai-100k-simulation-fallback-prob095-diagnostics.txt`
+- `/root/vcmi-battle-results/mmai-100k-simulation-fallback-allwins-diagnostics.txt`
+- `/root/vcmi-battle-results/mmai-100k-simulation-fallback-wilson093-diagnostics.txt`
+- `/root/vcmi-battle-results/mmai-100k-simulation-fallback-wilson094-diagnostics.txt`
+
+Observed pattern:
+
+- current v3-compatible features are around the high-80% range on held-out battle setups
+- naive raw creature composition features overfit badly
+- learned per-creature strength multipliers improve held-out 50% accuracy to about 92%, but safety accuracy remains below 90%
+- exact dominant-creature pair biases do not generalize enough on the 100k dataset
+- schema3 stack stats and richer aggregate creature features improve a small mixed/town 2k held-out set to about 89% at threshold 0.5 and about 94% at the best threshold, but still miss the 95% target
+- repeated simulation is the first approach that clears the 95% win/loss target on broad data: on the 100k MMAI set, using existing repeated rows as a proxy, fallback-only sampling gives about 96% win/loss accuracy with 1 sample, 98% with 3 samples, and 98-99% with 5+ samples
+- safety decisions need a more conservative threshold than the current 0.60 probability cutoff: with a 0.95 cutoff, 5 simulated samples give about 98.6% win/loss accuracy and 96.6% safety accuracy on the 100k set, while 10 samples give about 98.8% and 97.1%
+- the 100k fallback diagnostics show why safety should not be driven only by the sampled win-rate probability: at 50 samples, accepting `sampleWinRate >= 0.95` still produced 4 false-safe groups / 155 false-safe holdout rows; those were mostly 48/50 or 49/50 sampled-win cases whose holdout win rates were only 80-92%
+- an all-wins safety policy is conservative but directly attacks false-safe risk: at 50 samples on the 100k holdout it kept 99.38% win/loss accuracy and produced 0 false-safe rows, at the cost of 10 false-unsafe groups / 266 rows
+- Wilson lower-bound policies give a tunable version of the same tradeoff: with one-sided 90% Wilson lower bound and threshold 0.94, 50 samples again produced 0 false-safe rows and 10 false-unsafe groups / 266 rows; threshold 0.93 allowed one 49/50 sampled-win false-safe case
+- the schema3 mixed dataset with town battles is still too small, but all-wins safety had 100% win/loss and safety accuracy on its eligible held-out rows at 5 and 10 samples, including town rows
+- worst errors are repeated matchup/special-case failures, not just calibration threshold mistakes
+
+The next likely useful model needs either a stronger non-linear model with better generalization evidence or a deterministic simulation fallback for high-impact uncertain battles. Another global ratio-only coefficient update is unlikely to reach the target by itself.
+
+## Runtime Simulation Fallback Direction
+
+Measured fallback behavior uses repeated MMAI outcomes as a proxy for running a battle several times at decision time. This is not a direct implementation yet, but it gives a target:
+
+- use the static v3/rich model as a cheap first pass
+- invoke battle simulation for high-impact decisions and for probabilities below a conservative safety cutoff, not for every object on every path
+- use deterministic seeds derived from game seed, hero id, target object id, turn, and fallback sample index
+- evaluate at least 5 samples for win/loss prediction; use 10+ samples or a stricter all-wins style rule for safety-sensitive attacks
+- treat win/loss probability and safety as separate outputs:
+  - use sampled win rate, possibly calibrated/shrunk, for expected-value decisions
+  - use `all samples won` or a Wilson lower-bound threshold for safety-sensitive attacks, especially when the army loss or strategic exposure is high
+- cache simulation results per `(hero army state, hero stats, target state, battle context, model seed)` so pathfinding does not replay the same battle repeatedly
+- expose the fallback behind a setting until end-to-end AI games prove it improves outcomes
+
+Architecture caveat: current quick combat/autofight goes through normal battle flow with server/client combat AI interfaces. There is no small in-process Nullkiller API that clones an arbitrary visible battle state and returns a deterministic win distribution. The next implementation step is therefore to build a reusable headless battle-evaluation service from the existing battle simulation batch path, not to call client quick combat directly from pathfinding.
+
+## Runtime Simulation Service Plan
+
+The runtime fallback should be implemented as a separate branch after the schema/tooling work is committed cleanly. Keep the experimental Nullkiller heuristic coefficient changes separate from the data-generation and analysis tools.
+
+Implementation outline:
+
+1. Extract the reusable parts of `BattleSimulationBatch` into a server-side battle-evaluation service that can run a fixed battle setup repeatedly and return aggregate counts, not JSONL-only side effects.
+2. Keep the first implementation process-isolated or server-owned. Nullkiller should ask for an evaluation through a controlled API/cache; it should not mutate live game state or call client quick combat directly.
+3. Define deterministic seed derivation from stable context: game seed, player, hero instance id, target object id, battle type, turn, and sample index.
+4. Store an evaluation cache keyed by a normalized battle state fingerprint: attacker army/stats/mana/spells, defender army/stats/mana/spells, town/siege state, terrain/battlefield, and evaluator version.
+5. Return at least:
+   - simulated sample count
+   - attacker win count
+   - no-winner count
+   - empirical win probability
+   - all-wins safety flag
+   - Wilson lower-bound safety score
+   - optional expected surviving army value / loss distribution
+6. Add a Nullkiller setting for fallback mode:
+   - disabled
+   - uncertain-only
+   - high-impact-only
+   - always for attack decisions
+7. Run paired end-to-end AI games with old predictor vs static-v3+fallback before making it default. The battle-level proxy proves the fallback can predict outcomes; it does not by itself prove better adventure-map play.
+
 ## Merge Strategy
 
 Start with the safest mergeable step:

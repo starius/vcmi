@@ -16,8 +16,10 @@
 #include "../../lib/battle/BattleInfo.h"
 #include "../../lib/battle/CBattleInfoCallback.h"
 #include "../../lib/battle/IBattleState.h"
+#include "../../lib/bonuses/IBonusBearer.h"
 #include "../../lib/constants/Enumerations.h"
 #include "../../lib/mapObjects/CGHeroInstance.h"
+#include "../../lib/mapObjects/CGTownInstance.h"
 #include "../../lib/mapObjects/army/CCreatureSet.h"
 #include "../../lib/mapObjects/army/CStackInstance.h"
 #include "../../lib/networkPacks/PacksForClientBattle.h"
@@ -26,6 +28,7 @@
 #include <fstream>
 #include <iomanip>
 #include <map>
+#include <set>
 #include <sstream>
 
 namespace BattleSimulationBatch
@@ -86,6 +89,15 @@ std::string quote(const std::string & value)
 	return out.str();
 }
 
+template<typename Identifier>
+void appendNullableIdentifier(std::ostream & out, const Identifier & identifier)
+{
+	if(identifier.hasValue())
+		out << identifier.getNum();
+	else
+		out << "null";
+}
+
 std::string battleSideToString(BattleSide side)
 {
 	switch(side)
@@ -116,6 +128,73 @@ std::string battleResultToString(EBattleResult result)
 	}
 }
 
+std::string battleTypeToString(const IBattleInfo * info)
+{
+	if(info->getDefendedTown())
+		return info->getSideHero(BattleSide::DEFENDER) ? "town-hero" : "town";
+	if(info->getSideHero(BattleSide::DEFENDER))
+		return "hero-hero";
+	return "hero-monster";
+}
+
+bool hasCreatureBonus(const Creature * creature, BonusType type)
+{
+	const auto * bearer = dynamic_cast<const IBonusBearer *>(creature);
+	return bearer && bearer->hasBonusOfType(type);
+}
+
+int creatureBonusValue(const Creature * creature, BonusType type)
+{
+	const auto * bearer = dynamic_cast<const IBonusBearer *>(creature);
+	return bearer ? bearer->valOfBonuses(type) : 0;
+}
+
+void appendCreatureStats(std::ostream & out, const Creature * creature)
+{
+	if(!creature)
+	{
+		out << "null";
+		return;
+	}
+
+	out << "{";
+	out << "\"level\":" << creature->getLevel();
+	out << ",\"faction\":" << creature->getFactionID().getNum();
+	out << ",\"fightValue\":" << creature->getFightValue();
+	out << ",\"aiValue\":" << creature->getAIValue();
+	out << ",\"growth\":" << creature->getGrowth();
+	out << ",\"attack\":" << creature->getBaseAttack();
+	out << ",\"defense\":" << creature->getBaseDefense();
+	out << ",\"damageMin\":" << creature->getBaseDamageMin();
+	out << ",\"damageMax\":" << creature->getBaseDamageMax();
+	out << ",\"hitPoints\":" << creature->getBaseHitPoints();
+	out << ",\"speed\":" << creature->getBaseSpeed();
+	out << ",\"shots\":" << creature->getBaseShots();
+	out << ",\"spellPoints\":" << creature->getBaseSpellPoints();
+	out << ",\"doubleWide\":" << (creature->isDoubleWide() ? "true" : "false");
+	out << ",\"shooter\":" << (hasCreatureBonus(creature, BonusType::SHOOTER) ? "true" : "false");
+	out << ",\"flying\":" << (hasCreatureBonus(creature, BonusType::FLYING) ? "true" : "false");
+	out << ",\"blocksRetaliation\":" << (hasCreatureBonus(creature, BonusType::BLOCKS_RETALIATION) ? "true" : "false");
+	out << ",\"unlimitedRetaliations\":" << (hasCreatureBonus(creature, BonusType::UNLIMITED_RETALIATIONS) ? "true" : "false");
+	out << ",\"additionalAttack\":" << creatureBonusValue(creature, BonusType::ADDITIONAL_ATTACK);
+	out << ",\"additionalRetaliation\":" << creatureBonusValue(creature, BonusType::ADDITIONAL_RETALIATION);
+	out << ",\"returnAfterStrike\":" << (hasCreatureBonus(creature, BonusType::RETURN_AFTER_STRIKE) ? "true" : "false");
+	out << ",\"twoHexAttackBreath\":" << (hasCreatureBonus(creature, BonusType::TWO_HEX_ATTACK_BREATH) ? "true" : "false");
+	out << ",\"attacksAllAdjacent\":" << (hasCreatureBonus(creature, BonusType::ATTACKS_ALL_ADJACENT) ? "true" : "false");
+	out << ",\"threeHeadedAttack\":" << (hasCreatureBonus(creature, BonusType::THREE_HEADED_ATTACK) ? "true" : "false");
+	out << ",\"spellAfterAttack\":" << (hasCreatureBonus(creature, BonusType::SPELL_AFTER_ATTACK) ? "true" : "false");
+	out << ",\"spellcaster\":" << (hasCreatureBonus(creature, BonusType::SPELLCASTER) ? "true" : "false");
+	out << ",\"mindImmune\":" << (hasCreatureBonus(creature, BonusType::MIND_IMMUNITY) ? "true" : "false");
+	out << ",\"undead\":" << (hasCreatureBonus(creature, BonusType::UNDEAD) ? "true" : "false");
+	out << ",\"nonLiving\":" << (hasCreatureBonus(creature, BonusType::NON_LIVING) ? "true" : "false");
+	out << ",\"magicResistance\":" << creatureBonusValue(creature, BonusType::MAGIC_RESISTANCE);
+	out << ",\"levelSpellImmunity\":" << creatureBonusValue(creature, BonusType::LEVEL_SPELL_IMMUNITY);
+	out << ",\"spellDamageReduction\":" << creatureBonusValue(creature, BonusType::SPELL_DAMAGE_REDUCTION);
+	out << ",\"blockAllMagic\":" << (hasCreatureBonus(creature, BonusType::BLOCK_ALL_MAGIC) ? "true" : "false");
+	out << ",\"spellSchoolImmunity\":" << (hasCreatureBonus(creature, BonusType::SPELL_SCHOOL_IMMUNITY) ? "true" : "false");
+	out << "}";
+}
+
 void appendArmy(std::ostream & out, const CCreatureSet * army)
 {
 	out << '[';
@@ -133,11 +212,184 @@ void appendArmy(std::ostream & out, const CCreatureSet * army)
 			out << ",\"creature\":" << stack->getCreatureID().getNum();
 			out << ",\"count\":" << stack->getCount();
 			out << ",\"power\":" << stack->getPower();
+			out << ",\"stats\":";
+			appendCreatureStats(out, stack->getType());
 			out << ",\"experience\":" << stack->getTotalExperience();
 			out << "}";
 		}
 	}
 	out << ']';
+}
+
+void appendSpellList(std::ostream & out, const std::set<SpellID> & spells, bool combatOnly)
+{
+	out << '[';
+	bool first = true;
+	for(const auto & spellID : spells)
+	{
+		const auto * spell = spellID.toSpell();
+		if(combatOnly && (!spell || !spell->isCombat()))
+			continue;
+
+		if(!first)
+			out << ',';
+		first = false;
+		out << spellID.getNum();
+	}
+	out << ']';
+}
+
+void appendSpellList(std::ostream & out, const std::vector<SpellID> & spells)
+{
+	out << '[';
+	bool first = true;
+	for(const auto & spellID : spells)
+	{
+		if(!first)
+			out << ',';
+		first = false;
+		out << spellID.getNum();
+	}
+	out << ']';
+}
+
+void appendSecondarySkills(std::ostream & out, const CGHeroInstance * hero)
+{
+	out << '[';
+	bool first = true;
+	if(hero)
+	{
+		for(const auto & [skillID, level] : hero->secSkills)
+		{
+			if(!skillID.hasValue())
+				continue;
+
+			if(!first)
+				out << ',';
+			first = false;
+			out << "{\"skill\":" << skillID.getNum() << ",\"level\":" << static_cast<int>(level) << '}';
+		}
+	}
+	out << ']';
+}
+
+void appendDamageRange(std::ostream & out, const DamageRange & damage)
+{
+	out << "{\"min\":" << damage.min << ",\"max\":" << damage.max << '}';
+}
+
+void appendTownBuildings(std::ostream & out, const CGTownInstance * town)
+{
+	out << '[';
+	bool first = true;
+	if(town)
+	{
+		for(const auto & building : town->getBuildings())
+		{
+			if(!first)
+				out << ',';
+			first = false;
+			out << building.getNum();
+		}
+	}
+	out << ']';
+}
+
+void appendTownFortifications(std::ostream & out, const CGTownInstance * town)
+{
+	if(!town)
+	{
+		out << "null";
+		return;
+	}
+
+	const auto fortifications = town->fortificationsLevel();
+	out << "{";
+	out << "\"wallsHealth\":" << static_cast<int>(fortifications.wallsHealth);
+	out << ",\"citadelHealth\":" << static_cast<int>(fortifications.citadelHealth);
+	out << ",\"upperTowerHealth\":" << static_cast<int>(fortifications.upperTowerHealth);
+	out << ",\"lowerTowerHealth\":" << static_cast<int>(fortifications.lowerTowerHealth);
+	out << ",\"hasMoat\":" << (fortifications.hasMoat ? "true" : "false");
+	out << ",\"citadelShooter\":";
+	appendNullableIdentifier(out, fortifications.citadelShooter);
+	out << ",\"upperTowerShooter\":";
+	appendNullableIdentifier(out, fortifications.upperTowerShooter);
+	out << ",\"lowerTowerShooter\":";
+	appendNullableIdentifier(out, fortifications.lowerTowerShooter);
+	out << ",\"moatSpell\":";
+	appendNullableIdentifier(out, fortifications.moatSpell);
+	out << '}';
+}
+
+void appendFinalWallState(std::ostream & out, const IBattleInfo * info)
+{
+	if(!info->getDefendedTown())
+	{
+		out << "null";
+		return;
+	}
+
+	out << "{";
+	out << "\"keep\":" << static_cast<int>(info->getWallState(EWallPart::KEEP));
+	out << ",\"bottomTower\":" << static_cast<int>(info->getWallState(EWallPart::BOTTOM_TOWER));
+	out << ",\"bottomWall\":" << static_cast<int>(info->getWallState(EWallPart::BOTTOM_WALL));
+	out << ",\"belowGate\":" << static_cast<int>(info->getWallState(EWallPart::BELOW_GATE));
+	out << ",\"overGate\":" << static_cast<int>(info->getWallState(EWallPart::OVER_GATE));
+	out << ",\"upperWall\":" << static_cast<int>(info->getWallState(EWallPart::UPPER_WALL));
+	out << ",\"upperTower\":" << static_cast<int>(info->getWallState(EWallPart::UPPER_TOWER));
+	out << ",\"gate\":" << static_cast<int>(info->getWallState(EWallPart::GATE));
+	out << ",\"gateState\":" << static_cast<int>(info->getGateState());
+	out << '}';
+}
+
+std::string defendedHeroSource(const CGTownInstance * town, const CGHeroInstance * defenderHero)
+{
+	if(!town || !defenderHero)
+		return "none";
+
+	const auto * visitingHero = town->getVisitingHero();
+	if(visitingHero && visitingHero->id == defenderHero->id)
+		return "visiting";
+
+	const auto * garrisonHero = town->getGarrisonHero();
+	if(garrisonHero && garrisonHero->id == defenderHero->id)
+		return "garrison";
+
+	return "unknown";
+}
+
+void appendTown(std::ostream & out, const CGTownInstance * town, const CGHeroInstance * defenderHero)
+{
+	if(!town)
+	{
+		out << "null";
+		return;
+	}
+
+	out << "{";
+	out << "\"objectId\":" << town->id.getNum();
+	out << ",\"faction\":" << town->getFactionID().getNum();
+	out << ",\"name\":" << quote(town->getNameTranslated());
+	out << ",\"fortLevel\":" << static_cast<int>(town->fortLevel());
+	out << ",\"hallLevel\":" << town->hallLevel();
+	out << ",\"mageGuildLevel\":" << town->mageGuildLevel();
+	out << ",\"hasFort\":" << (town->hasFort() ? "true" : "false");
+	out << ",\"hasBuiltTavern\":" << (town->hasBuilt(BuildingID::TAVERN) ? "true" : "false");
+	out << ",\"hasBuiltGrail\":" << (town->hasBuilt(BuildingID::GRAIL) ? "true" : "false");
+	out << ",\"hasVisitingHero\":" << (town->getVisitingHero() ? "true" : "false");
+	out << ",\"hasGarrisonHero\":" << (town->getGarrisonHero() ? "true" : "false");
+	out << ",\"defendingHeroSource\":" << quote(defendedHeroSource(town, defenderHero));
+	out << ",\"battleTerrain\":" << town->getBattleTerrain().getNum();
+	out << ",\"armyStrength\":" << town->getArmyStrength();
+	out << ",\"buildings\":";
+	appendTownBuildings(out, town);
+	out << ",\"fortifications\":";
+	appendTownFortifications(out, town);
+	out << ",\"towerDamage\":";
+	appendDamageRange(out, town->getTowerDamageRange());
+	out << ",\"keepDamage\":";
+	appendDamageRange(out, town->getKeepDamageRange());
+	out << '}';
 }
 
 void appendCasualties(std::ostream & out, const std::map<CreatureID, si32> & casualties)
@@ -226,6 +478,12 @@ void appendHero(std::ostream & out, const CGHeroInstance * hero, int32_t initial
 	out << ",\"fightingStrength\":" << std::setprecision(12) << fightingStrength;
 	out << ",\"magicStrength\":" << std::setprecision(12) << magicStrength;
 	out << ",\"heroStrength\":" << std::setprecision(12) << fightingStrength * magicStrength;
+	out << ",\"secondary\":";
+	appendSecondarySkills(out, hero);
+	out << ",\"spells\":";
+	appendSpellList(out, hero->getSpellsInSpellbook(), false);
+	out << ",\"combatSpells\":";
+	appendSpellList(out, hero->getSpellsInSpellbook(), true);
 	out << ",\"primary\":[";
 	for(size_t i = 0; i < GameConstants::PRIMARY_SKILLS; ++i)
 	{
@@ -287,7 +545,7 @@ void appendResultRow(const CBattleInfoCallback & battle, const BattleResult & re
 	const int64_t rowIndex = state.rowsWritten;
 
 	state.output << "{";
-	state.output << "\"schema\":2";
+	state.output << "\"schema\":3";
 	state.output << ",\"row\":" << rowIndex;
 	state.output << ",\"shardIndex\":" << state.config.shardIndex;
 	state.output << ",\"shardCount\":" << state.config.shardCount;
@@ -303,6 +561,13 @@ void appendResultRow(const CBattleInfoCallback & battle, const BattleResult & re
 	state.output << ",\"defenderPlayer\":" << info->getSidePlayer(BattleSide::DEFENDER).getNum();
 	state.output << ",\"combatEnemyAI\":" << quote(settings["ai"]["combatEnemyAI"].String());
 	state.output << ",\"combatNeutralAI\":" << quote(settings["ai"]["combatNeutralAI"].String());
+	state.output << ",\"battleType\":" << quote(battleTypeToString(info));
+	state.output << ",\"hasFortifications\":" << (battle.hasFortifications() ? "true" : "false");
+	state.output << ",\"hasMoat\":" << (battle.hasMoat() ? "true" : "false");
+	state.output << ",\"defendedTown\":";
+	appendTown(state.output, info->getDefendedTown(), info->getSideHero(BattleSide::DEFENDER));
+	state.output << ",\"finalWallState\":";
+	appendFinalWallState(state.output, info);
 	state.output << ",\"attackerHero\":";
 	appendHero(state.output, info->getSideHero(BattleSide::ATTACKER), getBattleInitialMana(info, BattleSide::ATTACKER));
 	state.output << ",\"defenderHero\":";
@@ -313,6 +578,10 @@ void appendResultRow(const CBattleInfoCallback & battle, const BattleResult & re
 	appendArmy(state.output, info->getSideArmy(BattleSide::ATTACKER));
 	state.output << ",\"defenderArmy\":";
 	appendArmy(state.output, info->getSideArmy(BattleSide::DEFENDER));
+	state.output << ",\"attackerUsedSpells\":";
+	appendSpellList(state.output, info->getUsedSpells(BattleSide::ATTACKER));
+	state.output << ",\"defenderUsedSpells\":";
+	appendSpellList(state.output, info->getUsedSpells(BattleSide::DEFENDER));
 	state.output << ",\"attackerCasualties\":";
 	appendCasualties(state.output, result.casualties[BattleSide::ATTACKER]);
 	state.output << ",\"defenderCasualties\":";

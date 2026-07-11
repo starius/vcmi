@@ -67,7 +67,7 @@ void printHelp()
 		<< "  --testmap PATH             battle-only map to run, can be repeated\n"
 		<< "  --maps-file PATH           newline-separated list of maps\n"
 		<< "  --generate-map             generate deterministic battle-only maps per shard\n"
-		<< "  --generated-mode MODE      generated map mode: mixed, hero, or monster\n"
+		<< "  --generated-mode MODE      generated map mode: mixed, hero, monster, or town\n"
 		<< "  --output-dir DIR           directory for shard JSONL and logs\n"
 		<< "  --battles N                total battle result rows to collect\n"
 		<< "  --jobs N                   concurrent client processes\n"
@@ -196,8 +196,8 @@ void validateOptions(Options & options, const std::vector<std::string> & maps)
 		throw std::runtime_error("--battles is required");
 	if(options.jobs == 0)
 		throw std::runtime_error("--jobs must be positive");
-	if(options.generatedMode != "mixed" && options.generatedMode != "hero" && options.generatedMode != "monster")
-		throw std::runtime_error("--generated-mode must be mixed, hero, or monster");
+	if(options.generatedMode != "mixed" && options.generatedMode != "hero" && options.generatedMode != "monster" && options.generatedMode != "town")
+		throw std::runtime_error("--generated-mode must be mixed, hero, monster, or town");
 	if(options.shards == 0)
 		options.shards = std::max<uint64_t>(options.jobs, options.generateMap ? 1 : maps.size());
 	if(options.shards > options.battles)
