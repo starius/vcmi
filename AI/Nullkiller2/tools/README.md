@@ -142,10 +142,10 @@ simulation is enabled; it lets more candidate attacks reach the final simulator
 gate without changing defensive threat checks.
 When planner-side simulation is active, summaries also include
 `planningAccepted`, `planningRejected`, and `planningIncomplete` counters under
-`runtimeBattleSimulation`. These count statically unsafe capture targets that
-were rechecked before movement planning: accepted targets were rescued by
-simulation, rejected targets stayed unsafe, and incomplete targets could not get
-a complete simulation verdict.
+`runtimeBattleSimulation`. These count same-turn, current-army capture targets
+that were rechecked before movement planning: accepted targets got a complete
+safe simulation verdict, rejected targets got a complete unsafe simulation
+verdict, and incomplete targets could not get a complete simulation verdict.
 Runtime and planner simulation currently treat a battle as safe only if the
 attacker wins every requested sample. This matches the best observed town/siege
 offline safety policy and avoids accepting 19/20-style near misses as safe.
