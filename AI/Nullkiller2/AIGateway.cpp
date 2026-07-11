@@ -265,7 +265,7 @@ bool runtimeBattleSimulationRejectsVisit(
 	}
 
 	runtimeBattleSimulationComplete.fetch_add(1, std::memory_order_relaxed);
-	const bool safe = simulation.attackerAllWinsSafe || (simulation.attackerProbabilitySafe && simulation.attackerWilsonSafe);
+	const bool safe = isBattleSimulationSafeForVisit(simulation);
 	if(safe)
 	{
 		runtimeBattleSimulationSafe.fetch_add(1, std::memory_order_relaxed);

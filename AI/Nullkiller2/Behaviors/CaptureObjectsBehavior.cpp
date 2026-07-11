@@ -106,8 +106,7 @@ bool plannerSimulationAcceptsUnsafeVisit(
 		return false;
 	}
 
-	const bool safe = simulation.attackerAllWinsSafe
-		|| (simulation.attackerProbabilitySafe && simulation.attackerWilsonSafe);
+	const bool safe = isBattleSimulationSafeForVisit(simulation);
 	if(!safe)
 	{
 		logAi->debug(

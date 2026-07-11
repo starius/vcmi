@@ -149,6 +149,11 @@ bool isSafeToVisit(const CGHeroInstance * h, uint64_t dangerStrength, float safe
 	return isSafeToVisit(h, h, dangerStrength, safeAttackRatio);
 }
 
+bool isBattleSimulationSafeForVisit(const BattleOutcomeSimulationResult & simulation)
+{
+	return simulation.attackerAllWinsSafe;
+}
+
 namespace
 {
 bool isEnemy(const CCallback & callback, PlayerColor left, PlayerColor right)

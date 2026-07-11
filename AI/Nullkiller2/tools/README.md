@@ -148,6 +148,9 @@ When planner-side simulation is active, summaries also include
 were rechecked before movement planning: accepted targets were rescued by
 simulation, rejected targets stayed unsafe, and incomplete targets could not get
 a complete simulation verdict.
+Runtime and planner simulation currently treat a battle as safe only if the
+attacker wins every requested sample. This matches the best observed town/siege
+offline safety policy and avoids accepting 19/20-style near misses as safe.
 
 Latest large run note: a 250-pair generated-map A/B with 15 runtime samples and
 planning ratio `1.0` finished neutral: candidate 251-249 by games, 38
