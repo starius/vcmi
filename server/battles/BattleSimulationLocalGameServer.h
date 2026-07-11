@@ -11,6 +11,11 @@
 
 #include "../IGameServer.h"
 
+#include "../../lib/networkPacks/PacksForClientBattle.h"
+
+#include <optional>
+#include <vector>
+
 class CGameState;
 
 namespace BattleSimulation
@@ -19,9 +24,14 @@ class BattleSimulationLocalGameServer final : public IGameServer
 {
 	CGameState & gameState;
 	EServerState state = EServerState::GAMEPLAY;
+	std::vector<BattleResult> battleResults;
 
 public:
 	explicit BattleSimulationLocalGameServer(CGameState & gameState);
+
+	std::optional<BattleResult> lastBattleResult() const;
+	std::vector<BattleResult> takeBattleResults();
+	void clearBattleResults();
 
 	void setState(EServerState value) override;
 	EServerState getState() const override;

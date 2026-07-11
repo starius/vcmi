@@ -19,6 +19,24 @@ BattleSimulationLocalGameServer::BattleSimulationLocalGameServer(CGameState & ga
 {
 }
 
+std::optional<BattleResult> BattleSimulationLocalGameServer::lastBattleResult() const
+{
+	if(battleResults.empty())
+		return std::nullopt;
+
+	return battleResults.back();
+}
+
+std::vector<BattleResult> BattleSimulationLocalGameServer::takeBattleResults()
+{
+	return std::move(battleResults);
+}
+
+void BattleSimulationLocalGameServer::clearBattleResults()
+{
+	battleResults.clear();
+}
+
 void BattleSimulationLocalGameServer::setState(EServerState value)
 {
 	state = value;
@@ -46,6 +64,9 @@ bool BattleSimulationLocalGameServer::hasBothPlayersAtSameConnection(PlayerColor
 
 void BattleSimulationLocalGameServer::applyPack(CPackForClient & pack)
 {
+	if(const auto * battleResult = dynamic_cast<const BattleResult *>(&pack))
+		battleResults.push_back(*battleResult);
+
 	gameState.apply(pack);
 }
 
