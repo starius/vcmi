@@ -7,8 +7,8 @@ Statistics probe adventure policy
 This candidate exists to exercise one Lua API capability, not to compete as a
 strategy profile. It requests the normal player statistics dataset, refreshes
 visible input so the response can arrive through the update journal, records a
-small amount of script-local memory, and then delegates the rest of the day to
-native Nullkiller.
+small amount of script-local memory, runs one bounded native turn slice, and
+then ends the turn itself.
 
 Useful properties:
 
@@ -16,11 +16,14 @@ Useful properties:
   player action.
 * The response is expected in `updates` as `statistics_response`; no hidden
   state is read directly by Lua.
-* Delegation after the probe prevents this script from weakening game play when
-  used as a smoke target.
+* The bounded Nullkiller slice exercises native parity without giving away the
+  rest of the day through explicit full-day fallback.
 ]]
 
 local MemoryVersion = 1
+local MaxPassesPerSlice = 4
+local MaxCandidatesPerSlice = 16
+local MaxAttemptsPerSlice = 4
 
 local function normalizedMemory(input)
     local memory = (input and input.memory) or {}
@@ -56,6 +59,20 @@ local function fallbackOutput(input)
     }
 end
 
+local function sliceDidWork(result)
+    return result.didWork == true
+        or (tonumber(result.priorityTasksExecuted or 0) or 0) > 0
+        or (tonumber(result.adventureStepsExecuted or 0) or 0) > 0
+        or (tonumber(result.adventureReplanSteps or 0) or 0) > 0
+        or (tonumber(result.tradePasses or 0) or 0) > 0
+        or result.paused == true
+end
+
+local function sliceShouldStopTurn(result)
+    return result.shouldStopTurn == true
+        or (tonumber(result.adventureStopTurnSteps or 0) or 0) > 0
+end
+
 function Script.runDay(ai, input)
     local memory = normalizedMemory(input)
     memory.statisticsRequests = memory.statisticsRequests + 1
@@ -68,7 +85,7 @@ function Script.runDay(ai, input)
     if not ok then
         memory.lastStatisticError = tostring(result)
         ai:setMemory(memory)
-        ai:nullkiller("statistics probe failed; delegate remaining turn")
+        error("statistics probe failed: " .. tostring(result), 0)
     end
 
     local refreshed = ai:refresh()
@@ -77,7 +94,22 @@ function Script.runDay(ai, input)
     memory.lastStatisticResponseSeen = responses > 0
     ai:setMemory(memory)
 
-    ai:nullkiller("statistics probe completed; delegate remaining turn")
+    local slice = ai:nullkillerTurnSlice({
+        max_passes = MaxPassesPerSlice,
+        max_candidates = MaxCandidatesPerSlice,
+        max_attempts = MaxAttemptsPerSlice
+    })
+
+    memory.lastSliceDidWork = sliceDidWork(slice)
+    memory.lastSliceRequestedStop = sliceShouldStopTurn(slice)
+    ai:setMemory(memory)
+
+    if memory.lastSliceDidWork and not memory.lastSliceRequestedStop then
+        ai:refresh()
+    end
+
+    ai:endTurn()
+    return ai:output("end_turn", "statistics probe completed through a bounded native slice", 0.5)
 end
 
 function Script.planDay(input)

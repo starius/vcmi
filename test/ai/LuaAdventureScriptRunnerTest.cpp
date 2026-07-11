@@ -2466,6 +2466,56 @@ TEST(LuaAdventureScriptRunnerTest, BoundedNullkillerAdventureErrorsWhenBudgetExh
 	EXPECT_EQ(commands[1]["kind"].String(), "refresh");
 }
 
+TEST(LuaAdventureScriptRunnerTest, StatisticsProbeAdventureUsesBoundedSliceWithoutFullFallback)
+{
+	const std::string source = readAdventureScript("scripts/ai/candidates/statisticsProbeAdventure.lua");
+	scripting::LuaAdventureScriptRunner runner("test:statistics-probe-bounded", source);
+
+	AI::AdventureScriptInput input = makeInput();
+	input.state["turn"]["active"] = JsonNode(true);
+
+	std::vector<JsonNode> commands;
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		if(command["kind"].String() == "refresh")
+		{
+			AI::AdventureScriptInput refreshed = input;
+			JsonNode update;
+			update["type"] = JsonNode("statistics_response");
+			refreshed.updates.Vector().push_back(update);
+			response["input"] = refreshed.toJson();
+			return response;
+		}
+
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		if(command["payload"]["type"].String() == "nullkiller_turn_slice")
+		{
+			response["result"]["didWork"] = JsonNode(false);
+			response["result"]["shouldStopTurn"] = JsonNode(true);
+			response["result"]["adventureStopTurnSteps"] = JsonNode(0);
+		}
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 4);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "request_statistic");
+	EXPECT_EQ(commands[1]["kind"].String(), "refresh");
+	EXPECT_EQ(commands[2]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[3]["payload"]["type"].String(), "end_turn");
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_EQ(output.memory["statisticsRequests"].Integer(), 1);
+	EXPECT_EQ(output.memory["statisticsResponses"].Integer(), 1);
+	EXPECT_TRUE(output.memory["lastStatisticResponseSeen"].Bool());
+	EXPECT_TRUE(output.memory["lastSliceRequestedStop"].Bool());
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "statistics probe completed through a bounded native slice");
+}
+
 TEST(LuaAdventureScriptRunnerTest, BundledPersonalityScriptsRunImperatively)
 {
 	const std::vector<std::string> scripts = {

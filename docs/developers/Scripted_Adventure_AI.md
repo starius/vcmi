@@ -1213,7 +1213,7 @@ the bounded control until it wins repeated training runs and does not regress he
 
 `scripts/ai/candidates/statisticsProbeAdventure.lua` is an API smoke script, not a promotion candidate. It
 requests the normal statistics dataset, refreshes to observe `statistics_response`, records a small memory flag,
-and delegates the rest of the day to Nullkiller.
+runs one bounded native turn slice, and then ends the turn through the script facade.
 
 This enables the intended loop:
 
@@ -1806,6 +1806,9 @@ Regression harness:
   no-task and stop-turn signals become Lua-controlled end-turn outputs, while unexpected helper failures or exhausted
   bounded budgets raise script errors for the host safety path instead of explicitly delegating the rest of the day to
   Nullkiller.
+- Done: `scripts/ai/candidates/statisticsProbeAdventure.lua` now exercises `ai:requestStatistic` plus one bounded
+  native turn slice without calling full-day fallback in active `runDay`. The only bundled script that intentionally
+  delegates the remaining day is the explicit fallback control.
 - Done: a traced 16-map, 14-day parity run of `boundedNullkillerControl.lua` against `Nullkiller2` reached the day
   limit in all scenarios with zero fallback outputs and zero failed checked actions. The trace set contained 225
   bounded `nullkiller_turn_slice` calls, 69 bounded query answers, and 224 script-requested end turns. A no-trace
