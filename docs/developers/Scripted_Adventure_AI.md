@@ -2202,6 +2202,24 @@ Regression harness:
   (`/root/script-ai-runs/defensive-bounded-desperation-full16-notrace-20260711`). This is better than the broad
   defense experiment and slightly above the earlier 9-win bounded-control screen, but it is still below the
   intended promotion bar because six seeds remain clear losses and retry noise is high.
+- Screened / not promoted: allowing critical matching recruitment to preempt movement while keeping construction
+  gated on low map tempo tied the 10-win result but did not improve the promotion metric. The 16-map no-trace run
+  produced 15 terminal results, 10 `ScriptedAdventureAI` wins, 5 `Nullkiller2` wins, and 1 final infrastructure
+  idle (`battle_ai_creation_invalid_stack` on seed `11`) after 6 infrastructure retries
+  (`/root/script-ai-runs/defensive-bounded-critical-recruit-full16-notrace-20260711`). It flipped seeds `02`, `15`,
+  and `16` to Lua wins, but regressed previous wins on seeds `01`, `03`, and `10`, so it remains the current
+  tested candidate rather than a champion. Tracing the remaining terminal losses showed repeated
+  `defense_pressure_without_response` with no legal matching recruit but legal matching builds, plus two
+  `hero_threat_without_escape` findings on seed `14`; those findings motivated, but did not validate, the next
+  rejected last-chance experiment.
+- Rejected / reverted: a last-chance variant allowed critical construction and safe threatened-hero movement after
+  bounded Nullkiller reported stop-turn/no-work. Focused Lua tests passed, but the 16-map no-trace screen regressed
+  badly: 12 terminal results, 4 `ScriptedAdventureAI` wins, 8 `Nullkiller2` wins, 4 idle timeouts, and 3 final
+  infrastructure failures (`/root/script-ai-runs/defensive-bounded-lastchance-full16-notrace-20260711`). Seed `10`
+  also produced a non-infrastructure idle timeout, so the policy was reverted. The lesson is that direct Lua
+  end-of-day tactical actions are too blunt here; future work should prefer a narrower host-scored operation with
+  explicit stop conditions, or improve trace mining enough to distinguish safe end-of-day interventions from
+  tempo-destroying/no-progress loops.
 - Rejected / not promoted: a follow-up critical-only exact-town defense variant removed the no-map-tempo gate when
   the threatened town had a legal recruit/build option. It recovered some defense-loss seeds (`02`, `14`) but
   regressed too many previous wins; the 16-map no-trace screen produced 16 terminal results, 7
