@@ -555,7 +555,33 @@ python3 scripts/battle_prediction/analyze_v3_failure_segments.py \
   --print-groups 40
 ```
 
-Next schema6 collection should use the same generated `town-hero` setup once a build with schema6 support is available. Validate it with the same gate but `--expected-schema 6`; `--require-schema3-rich-fields` now also requires `battleStartStacks` and `battleStartObstacles` on schema6 rows. The rich town prototype and segment analyzer consume schema6 start-stack and obstacle aggregates automatically and emit `battle_start_*` features/segments:
+Next schema6 collection should use the same generated `town-hero` setup. A real schema6 remote build is available at `/root/vcmi-schema6-real-build`; do not use `/root/vcmi-schema6-build` for collection because that directory was configured against `/root/vcmi-schema5-src` and emitted schema5 rows. The real build was configured from `/root/vcmi-schema6-src` with `ENABLE_VIDEO=OFF`, `ENABLE_EDITOR=OFF`, `ENABLE_LAUNCHER=OFF`, and `ENABLE_DISCORD=OFF`, then linked `Data` and `Maps` in `bin/` to the same data paths as the working schema5 build.
+
+A strict 4-row smoke passed on 2026-07-11:
+
+- output: `/root/vcmi-nk-ratio-results/schema6-mmai-town-hero-smoke-real-20260711`
+- command used `/root/vcmi-schema6-real-build/bin/vcmibattlesim` and `/root/vcmi-schema6-real-build/bin/vcmiclient`
+- validation: 4/4 rows schema6, 4/4 `town-hero`, 4/4 complete shards, 4/4 logs with MMAI initialized, 0 MMAI fallback lines, and `--require-schema3-rich-fields` passed
+- row inspection: the first row had 12 `battleStartStacks`, 1 `battleStartObstacles`, and `townPreMergeState`
+
+Validate schema6 data with the same gate but `--expected-schema 6`; `--require-schema3-rich-fields` now also requires `battleStartStacks` and `battleStartObstacles` on schema6 rows. The rich town prototype and segment analyzer consume schema6 start-stack and obstacle aggregates automatically and emit `battle_start_*` features/segments:
+
+```bash
+cd /root/vcmi-schema6-real-build/bin
+
+./vcmibattlesim \
+  --client ./vcmiclient \
+  --generate-map \
+  --generated-mode town-hero \
+  --output-dir /root/vcmi-nk-ratio-results/schema6-mmai-town-hero-20k-20260711 \
+  --battles 20000 \
+  --shards 400 \
+  --jobs 8 \
+  --seed 20260711 \
+  --combat-ai MMAI \
+  --xdg-config-template /root/vcmi-nk-ratio-results/schema3-richstats-mmai-town-hero-5k-20260711/profiles/shard-00000/config \
+  --skip-complete-shards
+```
 
 ```bash
 python3 scripts/battle_prediction/validate_battle_dataset.py \
