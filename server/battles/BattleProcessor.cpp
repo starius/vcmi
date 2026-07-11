@@ -115,6 +115,20 @@ void BattleProcessor::restartBattle(const BattleID & battleID, const CArmedInsta
 	startBattle(army1, army2, tile, hero1, hero2, layout, town);
 }
 
+void BattleProcessor::restartBattle(const IBattleInfo & battle)
+{
+	restartBattle(
+		battle.getBattleID(),
+		battle.getSideArmy(BattleSide::ATTACKER),
+		battle.getSideArmy(BattleSide::DEFENDER),
+		battle.getLocation(),
+		battle.getSideHero(BattleSide::ATTACKER),
+		battle.getSideHero(BattleSide::DEFENDER),
+		battle.getLayout(),
+		battle.getDefendedTown()
+	);
+}
+
 void BattleProcessor::startBattle(const CArmedInstance *army1, const CArmedInstance *army2, int3 tile,
 								const CGHeroInstance *hero1, const CGHeroInstance *hero2, const BattleLayout & layout, const CGTownInstance *town)
 {

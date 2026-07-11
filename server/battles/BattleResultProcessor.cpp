@@ -345,16 +345,7 @@ void BattleResultProcessor::endBattleConfirm(const CBattleInfoCallback & battle)
 
 	if(BattleSimulationBatch::recordResultAndShouldReplay(*gameHandler, battle, *battleResult))
 	{
-		gameHandler->battles->restartBattle(
-			battle.getBattle()->getBattleID(),
-			battle.getBattle()->getSideArmy(BattleSide::ATTACKER),
-			battle.getBattle()->getSideArmy(BattleSide::DEFENDER),
-			battle.getBattle()->getLocation(),
-			battle.getBattle()->getSideHero(BattleSide::ATTACKER),
-			battle.getBattle()->getSideHero(BattleSide::DEFENDER),
-			battle.getBattle()->getLayout(),
-			battle.getBattle()->getDefendedTown()
-		);
+		gameHandler->battles->restartBattle(*battle.getBattle());
 		return;
 	}
 

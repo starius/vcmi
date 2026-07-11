@@ -144,16 +144,7 @@ void CBattleDialogQuery::onRemoval(PlayerColor color)
 	assert(answer);
 	if(*answer == 1)
 	{
-		gh->battles->restartBattle(
-			bi->getBattleID(),
-			bi->getSideArmy(BattleSide::ATTACKER),
-			bi->getSideArmy(BattleSide::DEFENDER),
-			bi->getLocation(),
-			bi->getSideHero(BattleSide::ATTACKER),
-			bi->getSideHero(BattleSide::DEFENDER),
-			bi->getLayout(),
-			bi->getDefendedTown()
-		);
+		gh->battles->restartBattle(*bi);
 	}
 	else
 	{

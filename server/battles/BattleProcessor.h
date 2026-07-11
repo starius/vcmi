@@ -16,6 +16,7 @@
 class CGHeroInstance;
 class CGTownInstance;
 class CArmedInstance;
+class IBattleInfo;
 class BattleAction;
 class int3;
 class CBattleInfoCallback;
@@ -61,6 +62,8 @@ public:
 	void startBattle(const CArmedInstance *army1, const CArmedInstance *army2);
 	/// Restart ongoing battle and end previous battle
 	void restartBattle(const BattleID & battleID, const CArmedInstance *army1, const CArmedInstance *army2, int3 tile, const CGHeroInstance *hero1, const CGHeroInstance *hero2, const BattleLayout & layout, const CGTownInstance *town);
+	/// Restart an ongoing battle using its current setup
+	void restartBattle(const IBattleInfo & battle);
 
 	/// Processing of incoming battle action netpack
 	bool makePlayerBattleAction(const BattleID & battleID, PlayerColor player, const BattleAction & ba);
@@ -75,4 +78,3 @@ public:
 
 	}
 };
-
