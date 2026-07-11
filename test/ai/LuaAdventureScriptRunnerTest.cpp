@@ -2114,8 +2114,8 @@ TEST(LuaAdventureScriptRunnerTest, BoundedNullkillerControlEndsTurnWhenNativeSli
 	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_turn_slice");
 	EXPECT_EQ(commands[0]["payload"]["max_passes"].Integer(), 1);
 	EXPECT_EQ(commands[0]["payload"]["first_pass_index"].Integer(), 1);
-	EXPECT_EQ(commands[0]["payload"]["max_candidates"].Integer(), 64);
-	EXPECT_EQ(commands[0]["payload"]["max_attempts"].Integer(), 64);
+	EXPECT_EQ(commands[0]["payload"]["max_candidates"].Integer(), 0);
+	EXPECT_EQ(commands[0]["payload"]["max_attempts"].Integer(), 0);
 	EXPECT_EQ(commands[1]["payload"]["type"].String(), "end_turn");
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	ASSERT_TRUE(output.intent);

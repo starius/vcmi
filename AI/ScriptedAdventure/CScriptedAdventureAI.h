@@ -143,6 +143,13 @@ private:
 		uint16_t packType = 0;
 	};
 
+	struct NullkillerTaskHandle
+	{
+		int32_t id = 0;
+		NK2AI::ScriptTaskCandidate candidate;
+		JsonNode taskJson;
+	};
+
 	JsonNode scriptMemory;
 	std::string scriptPath;
 	AI::AdventureScriptLimits limits;
@@ -172,7 +179,7 @@ private:
 	bool scriptActionAutoAnswerMode = false;
 	mutable std::mutex scriptQueryMutex;
 	std::map<QueryID, JsonNode> scriptQueries;
-	std::vector<std::pair<int32_t, NK2AI::Goals::TTask>> nullkillerTaskHandles;
+	std::vector<NullkillerTaskHandle> nullkillerTaskHandles;
 	int32_t nextNullkillerTaskHandle = 1;
 	int32_t nextScriptDecisionID = -1000;
 
@@ -181,7 +188,7 @@ private:
 	bool tryMakeImperativeScriptedTurn(scripting::LuaAdventureScriptRunner & runner);
 	bool executeScriptAction(const JsonNode & action, JsonNode & actionResult);
 	JsonNode executeScriptInspect(const JsonNode & request);
-	JsonNode makeNullkillerTaskCandidates(const JsonNode & action);
+	JsonNode makeNullkillerTaskCandidates(const JsonNode & action, bool executionMode = false);
 	bool executeNullkillerTaskAction(const JsonNode & action, JsonNode & actionResult);
 	bool executeNullkillerQueryAction(const JsonNode & action, JsonNode & actionResult);
 	bool executeNullkillerStepAction(const JsonNode & action, JsonNode & actionResult);

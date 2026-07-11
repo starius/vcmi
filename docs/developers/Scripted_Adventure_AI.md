@@ -1888,6 +1888,12 @@ Regression harness:
   `affectedObjectIds`, and normal imperative stop signals are no longer reported as stopped action batches. This
   keeps API-parity probes from looking idle when Lua deliberately called a bounded native subroutine and regained
   control before ending the turn.
+- Done: bounded native task execution can now request all generated Nullkiller candidates without delegating the
+  rest of the day. For `nullkiller_step`, `nullkiller_pass`, and `nullkiller_turn_slice`, `max_candidates = 0` and
+  `max_attempts = 0` mean "use every generated native candidate/attempt"; positive values remain explicit bounds.
+  The host still caps serialized candidate details by default during execution so traces do not become enormous,
+  while `candidate_details_limit = 0` can be used by inspection-heavy scripts that deliberately want every returned
+  candidate serialized. `boundedNullkillerControl.lua` uses the all-candidates mode as the current API-parity probe.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions

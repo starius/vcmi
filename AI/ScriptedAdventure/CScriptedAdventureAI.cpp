@@ -102,6 +102,9 @@ namespace
 {
 
 const std::string SCRIPT_MEMORY_LOCAL_STATE_KEY = "scriptedAdventureAI";
+constexpr int32_t DEFAULT_NULLKILLER_TASK_CANDIDATES = 16;
+constexpr int32_t DEFAULT_NULLKILLER_SERIALIZED_TASKS = 64;
+constexpr int32_t MAX_EXPLICIT_NULLKILLER_TASK_CANDIDATES = 512;
 
 bool hasField(const JsonNode & node, const std::string & field);
 int32_t readInteger(const JsonNode & node, const std::string & field);
@@ -941,6 +944,32 @@ int32_t readInteger(const JsonNode & node, const std::string & field, int32_t de
 	if(!hasField(node, field))
 		return defaultValue;
 	return readInteger(node, field);
+}
+
+size_t readNullkillerCandidateLimit(const JsonNode & node, const std::string & field, int32_t defaultValue)
+{
+	const int32_t requested = readInteger(node, field, defaultValue);
+	if(requested == 0)
+		return std::numeric_limits<size_t>::max();
+	return static_cast<size_t>(std::clamp<int32_t>(requested, 1, MAX_EXPLICIT_NULLKILLER_TASK_CANDIDATES));
+}
+
+size_t readNullkillerSerializedTaskLimit(const JsonNode & node, size_t defaultValue)
+{
+	if(!hasField(node, "candidate_details_limit"))
+		return defaultValue;
+
+	const int32_t requested = readInteger(node, "candidate_details_limit");
+	if(requested == 0)
+		return std::numeric_limits<size_t>::max();
+	return static_cast<size_t>(std::clamp<int32_t>(requested, 1, MAX_EXPLICIT_NULLKILLER_TASK_CANDIDATES));
+}
+
+int32_t jsonNullkillerLimit(size_t limit)
+{
+	return limit == std::numeric_limits<size_t>::max()
+		? 0
+		: static_cast<int32_t>(std::min<size_t>(limit, static_cast<size_t>(std::numeric_limits<int32_t>::max())));
 }
 
 bool readBool(const JsonNode & node, const std::string & field, bool defaultValue)
@@ -5833,15 +5862,21 @@ bool CScriptedAdventureAI::waitTillFreeForScriptAction(JsonNode & actionResult, 
 	return false;
 }
 
-JsonNode CScriptedAdventureAI::makeNullkillerTaskCandidates(const JsonNode & action)
+JsonNode CScriptedAdventureAI::makeNullkillerTaskCandidates(const JsonNode & action, bool executionMode)
 {
 	const NK2AI::ScriptTaskSearchMode mode = readNullkillerTaskSearchMode(action);
-	const int32_t requestedMax = readInteger(action, "max_candidates", 16);
-	const size_t maxCandidates = static_cast<size_t>(std::clamp<int32_t>(requestedMax, 1, 64));
+	const size_t maxCandidates = readNullkillerCandidateLimit(action, "max_candidates", DEFAULT_NULLKILLER_TASK_CANDIDATES);
+	const bool unboundedCandidates = maxCandidates == std::numeric_limits<size_t>::max();
+	const size_t defaultSerializedTasks = executionMode && unboundedCandidates
+		? static_cast<size_t>(DEFAULT_NULLKILLER_SERIALIZED_TASKS)
+		: maxCandidates;
+	const size_t serializedTaskLimit = readNullkillerSerializedTaskLimit(action, defaultSerializedTasks);
 
 	JsonNode result;
 	result["modeId"] = JsonNode(static_cast<int32_t>(mode));
 	result["mode"] = JsonNode(nullkillerTaskSearchModeName(mode));
+	result["candidateLimit"] = JsonNode(jsonNullkillerLimit(maxCandidates));
+	result["serializedTaskLimit"] = JsonNode(jsonNullkillerLimit(serializedTaskLimit));
 	result["tasks"].Vector();
 
 	{
@@ -5857,12 +5892,18 @@ JsonNode CScriptedAdventureAI::makeNullkillerTaskCandidates(const JsonNode & act
 		for(const NK2AI::ScriptTaskCandidate & candidate : candidates)
 		{
 			const int32_t taskID = nextNullkillerTaskHandle++;
-			nullkillerTaskHandles.emplace_back(taskID, candidate.task);
-			result["tasks"].Vector().push_back(jsonNullkillerTaskCandidate(taskID, candidate, cc, playerID));
+			JsonNode taskJson = jsonNullkillerTaskCandidate(taskID, candidate, cc, playerID);
+			nullkillerTaskHandles.push_back(NullkillerTaskHandle{taskID, candidate, taskJson});
+			if(result["tasks"].Vector().size() < serializedTaskLimit)
+				result["tasks"].Vector().push_back(taskJson);
 		}
+
+		result["candidateCount"] = JsonNode(static_cast<int32_t>(std::min<size_t>(candidates.size(), static_cast<size_t>(std::numeric_limits<int32_t>::max()))));
 	}
 
 	result["count"] = JsonNode(static_cast<int32_t>(result["tasks"].Vector().size()));
+	result["serializedCount"] = result["count"];
+	result["truncated"] = JsonNode(nullkillerTaskHandles.size() > result["tasks"].Vector().size());
 	return result;
 }
 
@@ -5871,12 +5912,12 @@ bool CScriptedAdventureAI::executeNullkillerTaskAction(const JsonNode & action, 
 	const int32_t taskID = readInteger(action, "task_id");
 	const auto taskIter = std::ranges::find_if(nullkillerTaskHandles, [taskID](const auto & entry)
 	{
-		return entry.first == taskID;
+		return entry.id == taskID;
 	});
 	if(taskIter == nullkillerTaskHandles.end())
 		throw std::invalid_argument("Unknown or expired Nullkiller task handle");
 
-	const NK2AI::Goals::TTask task = taskIter->second;
+	const NK2AI::Goals::TTask task = taskIter->candidate.task;
 	actionResult["task_id"] = JsonNode(taskID);
 
 	bool executed = false;
@@ -6127,30 +6168,33 @@ bool CScriptedAdventureAI::executeNullkillerQueryAction(const JsonNode & action,
 
 bool CScriptedAdventureAI::executeNullkillerStepAction(const JsonNode & action, JsonNode & actionResult)
 {
-	const JsonNode candidates = makeNullkillerTaskCandidates(action);
+	const JsonNode candidates = makeNullkillerTaskCandidates(action, true);
 	actionResult["nullkiller"] = candidates;
 	const auto & tasks = candidates["tasks"].Vector();
-	if(tasks.empty())
+	if(nullkillerTaskHandles.empty())
 	{
 		actionResult["ok"] = JsonNode(true);
 		actionResult["didExecute"] = JsonNode(false);
 		return true;
 	}
 
-	const int32_t requestedMaxAttempts = readInteger(action, "max_attempts", static_cast<int32_t>(tasks.size()));
-	const size_t maxAttempts = static_cast<size_t>(std::clamp<int32_t>(requestedMaxAttempts, 1, 64));
+	const size_t maxAttempts = readNullkillerCandidateLimit(action, "max_attempts", static_cast<int32_t>(nullkillerTaskHandles.size()));
 	NK2AI::Goals::TTaskVec nativeTasks;
-	nativeTasks.reserve(tasks.size());
-	for(const JsonNode & task : tasks)
+	nativeTasks.reserve(nullkillerTaskHandles.size());
+	for(const NullkillerTaskHandle & taskHandle : nullkillerTaskHandles)
+		nativeTasks.push_back(taskHandle.candidate.task);
+
+	auto taskJsonByIndex = [&](size_t index) -> std::optional<JsonNode>
 	{
-		const int32_t taskID = static_cast<int32_t>(task["task_id"].Integer());
-		const auto taskIter = std::ranges::find_if(nullkillerTaskHandles, [taskID](const auto & entry)
-		{
-			return entry.first == taskID;
-		});
-		if(taskIter != nullkillerTaskHandles.end())
-			nativeTasks.push_back(taskIter->second);
-	}
+		if(index >= nullkillerTaskHandles.size())
+			return std::nullopt;
+
+		const NullkillerTaskHandle & taskHandle = nullkillerTaskHandles[index];
+		if(index < tasks.size() && tasks[index]["task_id"].isNumber() && tasks[index]["task_id"].Integer() == taskHandle.id)
+			return tasks[index];
+
+		return taskHandle.taskJson;
+	};
 
 	NK2AI::ScriptTaskExecutionResult result;
 	{
@@ -6164,7 +6208,7 @@ bool CScriptedAdventureAI::executeNullkillerStepAction(const JsonNode & action, 
 	actionResult["didExecute"] = JsonNode(result.executed);
 	actionResult["attempted"] = JsonNode(result.attempted);
 	actionResult["attempts"] = JsonNode(static_cast<int32_t>(result.attempts));
-	actionResult["maxAttempts"] = JsonNode(static_cast<int32_t>(maxAttempts));
+	actionResult["maxAttempts"] = JsonNode(jsonNullkillerLimit(maxAttempts));
 	actionResult["selectedTaskIndex"] = JsonNode(static_cast<int32_t>(result.selectedTaskIndex));
 	actionResult["attemptedTasks"].Vector();
 	for(const NK2AI::ScriptTaskAttemptResult & attemptResult : result.attemptResults)
@@ -6174,10 +6218,10 @@ bool CScriptedAdventureAI::executeNullkillerStepAction(const JsonNode & action, 
 		attempt["executed"] = JsonNode(attemptResult.executed);
 		attempt["failureActionId"] = JsonNode(static_cast<int32_t>(attemptResult.failureAction));
 		attempt["failureAction"] = JsonNode(nullkillerTaskFailureActionName(attemptResult.failureAction));
-		if(attemptResult.taskIndex < tasks.size())
+		if(const auto taskJson = taskJsonByIndex(attemptResult.taskIndex))
 		{
-			attempt["task"] = tasks[attemptResult.taskIndex];
-			attempt["task_id"] = tasks[attemptResult.taskIndex]["task_id"];
+			attempt["task"] = *taskJson;
+			attempt["task_id"] = (*taskJson)["task_id"];
 		}
 		if(!attemptResult.error.empty())
 			attempt["error"] = JsonNode(attemptResult.error);
@@ -6213,11 +6257,10 @@ bool CScriptedAdventureAI::executeNullkillerStepAction(const JsonNode & action, 
 	}
 	actionResult["outcomeId"] = JsonNode(outcomeID);
 	actionResult["outcome"] = JsonNode(outcome);
-	if(!tasks.empty() && result.selectedTaskIndex < tasks.size())
+	if(const auto selectedTask = taskJsonByIndex(result.selectedTaskIndex))
 	{
-		const JsonNode selectedTask = tasks[result.selectedTaskIndex];
-		actionResult["selectedTask"] = selectedTask;
-		actionResult["task_id"] = selectedTask["task_id"];
+		actionResult["selectedTask"] = *selectedTask;
+		actionResult["task_id"] = (*selectedTask)["task_id"];
 	}
 	if(!result.error.empty())
 		actionResult["error"] = JsonNode(result.error);

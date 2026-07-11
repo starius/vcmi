@@ -28,8 +28,12 @@ local DefaultMaxCommandsPerDay = 64
 local SafetyMaxSlicesPerDay = 64
 local DefaultMaxPassesPerSlice = 16
 local SafetyMaxPassesPerSlice = 64
-local DefaultMaxCandidates = 64
-local DefaultMaxAttempts = 64
+-- A zero limit asks the host to let the bounded Nullkiller helper inspect and
+-- execute every candidate generated for the current native pass. This keeps
+-- Lua in control between passes without accidentally narrowing Nullkiller's
+-- own task search to the first N serialized candidates.
+local DefaultMaxCandidates = 0
+local DefaultMaxAttempts = 0
 local MaxQueriesPerSlice = 16
 
 local function normalizeMemory(input)
