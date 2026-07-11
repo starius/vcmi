@@ -42,6 +42,7 @@ struct BattleSimulationResponse
 
 bool isValidRequest(const BattleSimulationRequest & request);
 bool isCompleteResponse(const BattleSimulationRequest & request, const BattleSimulationResponse & response);
+uint64_t effectiveStateFingerprint(const BattleSimulationRequest & request);
 
 BattleSimulationResponse makeResponse(
 	const BattleSimulationSummary & summary,

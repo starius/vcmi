@@ -39,7 +39,7 @@ size_t BattleSimulationCacheKeyHash::operator()(const BattleSimulationCacheKey &
 BattleSimulationCacheKey makeCacheKey(const BattleSimulationRequest & request)
 {
 	return BattleSimulationCacheKey{
-		request.stateFingerprint,
+		effectiveStateFingerprint(request),
 		request.seed.gameSeed,
 		request.seed.player.getNum(),
 		request.seed.heroId.getNum(),

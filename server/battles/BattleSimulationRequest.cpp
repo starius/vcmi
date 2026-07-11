@@ -13,10 +13,18 @@
 
 namespace BattleSimulation
 {
+uint64_t effectiveStateFingerprint(const BattleSimulationRequest & request)
+{
+	if(isValidStateFingerprint(request.stateFingerprint))
+		return request.stateFingerprint;
+
+	return fingerprintBattleStartInfo(request.setup);
+}
+
 bool isValidRequest(const BattleSimulationRequest & request)
 {
 	return request.sampleCount > 0
-		&& isValidStateFingerprint(request.stateFingerprint)
+		&& isValidStateFingerprint(effectiveStateFingerprint(request))
 		&& request.setup.armies[BattleSide::ATTACKER] != nullptr
 		&& request.setup.armies[BattleSide::DEFENDER] != nullptr
 		&& request.seed.sampleIndex >= 0
