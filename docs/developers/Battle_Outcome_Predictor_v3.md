@@ -570,6 +570,23 @@ python3 scripts/battle_prediction/report_v3_static_misses.py \
   --probe-town-guards \
   --guard-results 40
 
+python3 scripts/battle_prediction/evaluate_simulation_fallback.py \
+  /root/vcmi-nk-ratio-results/schema5-mmai-town-hero-20k-20260711 \
+  --scope town \
+  --group-key shard \
+  --min-group-size 50 \
+  --sample-counts 8,15,20 \
+  --static-model cxx-v3 \
+  --safe-policy all-wins \
+  --json-output /root/vcmi-nk-ratio-results/schema5-mmai-town-hero-20k-20260711/fallback-proof.json \
+  --require-fallback-sample-count 15 \
+  --min-fallback-accuracy50 0.95 \
+  --min-fallback-safety-accuracy 0.95 \
+  --max-fallback-false-safe-groups 0 \
+  --max-fallback-false-unsafe-groups 1 \
+  --print-worst 40 \
+  --print-false-safe 40
+
 python3 scripts/battle_prediction/analyze_v3_failure_segments.py \
   /root/vcmi-nk-ratio-results/schema5-mmai-town-hero-20k-20260711 \
   --scope town \

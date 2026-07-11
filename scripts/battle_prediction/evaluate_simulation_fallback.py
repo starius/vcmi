@@ -9,7 +9,9 @@ scores the estimated win probability against the remaining rows.
 from __future__ import annotations
 
 import argparse
+import json
 import math
+import sys
 from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -121,7 +123,50 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--print-worst", type=int, default=8)
     parser.add_argument("--print-false-safe", type=int, default=8)
-    return parser.parse_args()
+    parser.add_argument("--json-output", default=None, help="Optional path for a machine-readable metrics summary")
+    parser.add_argument(
+        "--require-fallback-sample-count",
+        type=int,
+        default=None,
+        help="Sample count whose fallback-only metrics must satisfy the --min/--max-fallback-* gates",
+    )
+    parser.add_argument("--min-fallback-accuracy50", type=float, default=None)
+    parser.add_argument("--min-fallback-safety-accuracy", type=float, default=None)
+    parser.add_argument("--max-fallback-brier", type=float, default=None)
+    parser.add_argument("--max-fallback-false-safe-groups", type=int, default=None)
+    parser.add_argument("--max-fallback-false-unsafe-groups", type=int, default=None)
+    args = parser.parse_args()
+
+    gated = any(
+        value is not None
+        for value in (
+            args.min_fallback_accuracy50,
+            args.min_fallback_safety_accuracy,
+            args.max_fallback_brier,
+            args.max_fallback_false_safe_groups,
+            args.max_fallback_false_unsafe_groups,
+        )
+    )
+    if gated and args.require_fallback_sample_count is None:
+        parser.error("--require-fallback-sample-count is required with --min/--max-fallback-* gates")
+    if args.require_fallback_sample_count is not None and args.require_fallback_sample_count <= 0:
+        parser.error("--require-fallback-sample-count must be positive")
+    for option_name in (
+        "min_fallback_accuracy50",
+        "min_fallback_safety_accuracy",
+        "max_fallback_brier",
+    ):
+        value = getattr(args, option_name)
+        if value is not None and not 0.0 <= value <= 1.0:
+            parser.error("--" + option_name.replace("_", "-") + " must be between 0 and 1")
+    for option_name in (
+        "max_fallback_false_safe_groups",
+        "max_fallback_false_unsafe_groups",
+    ):
+        value = getattr(args, option_name)
+        if value is not None and value < 0:
+            parser.error("--" + option_name.replace("_", "-") + " must be non-negative")
+    return args
 
 
 def parse_sample_counts(value: str) -> list[int]:
@@ -259,6 +304,100 @@ def print_metrics(metrics: Metrics, sample_count: int) -> None:
     )
 
 
+def metrics_to_dict(metrics: Metrics, sample_count: int) -> dict[str, Any]:
+    rows = metrics.holdout_rows or 1
+    return {
+        "name": metrics.name,
+        "sampleCount": sample_count,
+        "groups": metrics.groups,
+        "holdoutRows": metrics.holdout_rows,
+        "fallbackGroups": metrics.fallback_groups,
+        "fallbackRows": metrics.fallback_rows,
+        "avgSimsPerDecision": sample_count * metrics.fallback_groups / metrics.groups if metrics.groups else 0.0,
+        "accuracy50": metrics.correct50 / rows,
+        "safetyAccuracy": metrics.safety_correct / rows,
+        "brier": metrics.brier / rows,
+        "falseSafeGroups": metrics.false_safe_groups,
+        "falseSafeRows": metrics.false_safe_rows,
+        "falseUnsafeGroups": metrics.false_unsafe_groups,
+        "falseUnsafeRows": metrics.false_unsafe_rows,
+        "byType": dict(sorted((metrics.by_type or Counter()).items())),
+    }
+
+
+def evaluate_fallback_requirements(args: argparse.Namespace, summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    errors = []
+    required_sample_count = args.require_fallback_sample_count
+    required = any(
+        value is not None
+        for value in (
+            required_sample_count,
+            args.min_fallback_accuracy50,
+            args.min_fallback_safety_accuracy,
+            args.max_fallback_brier,
+            args.max_fallback_false_safe_groups,
+            args.max_fallback_false_unsafe_groups,
+        )
+    )
+    selected = None
+    if required_sample_count is not None:
+        selected = next(
+            (
+                summary
+                for summary in summaries
+                if summary["name"] == f"fallback-only:safe={args.safe_policy}"
+                and summary["sampleCount"] == required_sample_count
+            ),
+            None,
+        )
+        if selected is None:
+            errors.append(f"fallback-only sample_count={required_sample_count} metrics are unavailable")
+
+    if selected is not None and args.min_fallback_accuracy50 is not None:
+        if selected["accuracy50"] < args.min_fallback_accuracy50:
+            errors.append(
+                f"fallback accuracy50 {selected['accuracy50']:.6g} below required "
+                f"{args.min_fallback_accuracy50:.6g}"
+            )
+    if selected is not None and args.min_fallback_safety_accuracy is not None:
+        if selected["safetyAccuracy"] < args.min_fallback_safety_accuracy:
+            errors.append(
+                f"fallback safety accuracy {selected['safetyAccuracy']:.6g} below required "
+                f"{args.min_fallback_safety_accuracy:.6g}"
+            )
+    if selected is not None and args.max_fallback_brier is not None:
+        if selected["brier"] > args.max_fallback_brier:
+            errors.append(
+                f"fallback Brier {selected['brier']:.6g} above allowed "
+                f"{args.max_fallback_brier:.6g}"
+            )
+    if selected is not None and args.max_fallback_false_safe_groups is not None:
+        if selected["falseSafeGroups"] > args.max_fallback_false_safe_groups:
+            errors.append(
+                f"fallback false-safe groups {selected['falseSafeGroups']} above allowed "
+                f"{args.max_fallback_false_safe_groups}"
+            )
+    if selected is not None and args.max_fallback_false_unsafe_groups is not None:
+        if selected["falseUnsafeGroups"] > args.max_fallback_false_unsafe_groups:
+            errors.append(
+                f"fallback false-unsafe groups {selected['falseUnsafeGroups']} above allowed "
+                f"{args.max_fallback_false_unsafe_groups}"
+            )
+
+    return {
+        "required": required,
+        "sampleCount": required_sample_count,
+        "selected": selected,
+        "minAccuracy50": args.min_fallback_accuracy50,
+        "minSafetyAccuracy": args.min_fallback_safety_accuracy,
+        "maxBrier": args.max_fallback_brier,
+        "maxFalseSafeGroups": args.max_fallback_false_safe_groups,
+        "maxFalseUnsafeGroups": args.max_fallback_false_unsafe_groups,
+        "ok": not errors,
+        "errors": errors,
+    }
+
+
 def static_probabilities(groups: list[ReplayGroup], predictor: Callable[[dict[str, Any]], float]) -> dict[str, float]:
     return {group.key: predictor(group.row) for group in groups}
 
@@ -387,6 +526,7 @@ def main() -> int:
         f"scope={args.scope} group_key={args.group_key} static_model={args.static_model} "
         f"groups={len(replay_groups)} train_groups={len(train_replays)} test_groups={len(test_replays)}"
     )
+    metric_summaries: list[dict[str, Any]] = []
 
     full_model = None
     if args.static_model == "full-fitted" and train_groups:
@@ -408,6 +548,7 @@ def main() -> int:
             args.actual_safe_probability,
         )
     print_metrics(static_metrics, 0)
+    metric_summaries.append(metrics_to_dict(static_metrics, 0))
 
     final_worst: list[dict[str, Any]] = []
     final_false_safe: list[dict[str, Any]] = []
@@ -426,6 +567,7 @@ def main() -> int:
             None,
         )
         print_metrics(fallback_metrics, sample_count)
+        metric_summaries.append(metrics_to_dict(fallback_metrics, sample_count))
         if not final_worst:
             final_worst = fallback_worst
             final_title = f"worst fallback-only sample_count={sample_count}"
@@ -445,6 +587,7 @@ def main() -> int:
                 band,
             )
             print_metrics(hybrid_metrics, sample_count)
+            metric_summaries.append(metrics_to_dict(hybrid_metrics, sample_count))
             if band == bands[0] and sample_count == sample_counts[-1]:
                 final_worst = hybrid_worst
                 final_title = f"worst hybrid band={band} sample_count={sample_count}"
@@ -453,6 +596,34 @@ def main() -> int:
 
     print_worst(final_worst, args.print_worst, final_title)
     print_worst(final_false_safe, args.print_false_safe, final_false_safe_title)
+    requirements = evaluate_fallback_requirements(args, metric_summaries)
+    if requirements["required"]:
+        print(f"fallback requirements: {'ok' if requirements['ok'] else 'failed'}")
+        for error in requirements["errors"]:
+            print(f"fallback requirement failed: {error}", file=sys.stderr)
+
+    summary = {
+        "dataset": args.dataset,
+        "rows": rows,
+        "schemas": dict(sorted(schema_counts.items())),
+        "scope": args.scope,
+        "groupKey": args.group_key,
+        "staticModel": args.static_model,
+        "safePolicy": args.safe_policy,
+        "safeProbability": args.safe_probability,
+        "actualSafeProbability": args.actual_safe_probability,
+        "groups": len(replay_groups),
+        "trainGroups": len(train_replays),
+        "testGroups": len(test_replays),
+        "metrics": metric_summaries,
+        "fallbackRequirements": requirements,
+    }
+    if args.json_output:
+        with open(args.json_output, "w", encoding="utf-8") as handle:
+            json.dump(summary, handle, indent=2)
+            handle.write("\n")
+    if requirements["required"] and not requirements["ok"]:
+        return 3
     return 0
 
 
