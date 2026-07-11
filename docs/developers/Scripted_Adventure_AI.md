@@ -2209,6 +2209,17 @@ Regression harness:
   rule is now enforced again: emergency recruit/build spending requires both a critical/high defense alert and no
   practical movement options. `LuaAdventureScriptRunnerTest.DefensiveBoundedControlDoesNotSpendWhenMapTempoExists`
   covers this so defense experiments do not silently starve expansion tempo.
+- Rejected / not promoted: `nativeTownDefenseBoundedControl.lua` tried the new
+  `ai:nullkillerDefendTown(townId)` helper under the same low-tempo emergency gate, then fell back to the existing
+  recruit/build rule when native defense had no matching executed task. Unit coverage verifies both the native
+  helper path and recruit fallback. The valid 16-map no-trace screen on the 53001-53016 small underground/no-water
+  corpus produced 15 terminal results, 8 `ScriptedAdventureAI` wins, 7 `Nullkiller2` wins, and 1 final
+  infrastructure idle (`battle_ai_creation` on seed `08`) after retries
+  (`/root/script-ai-runs/native-town-defense-full16-notrace-rebuilt-20260711`). This is below the current 10-win
+  critical/no-map-tempo baseline, so do not promote it. An earlier screen in
+  `/root/script-ai-runs/native-town-defense-full16-notrace-20260711` is invalid because `vcmiclient` had not been
+  rebuilt after adding the Lua facade method; full-game evaluation after Lua/C++ facade changes must rebuild the
+  actual game binary, not only `vcmitest`.
 - Done: tightened trace mining for town-defense misses. Earlier same-day progress touching a threatened town no
   longer suppresses `defense_pressure_without_response` when the current input still exposes a matching recruit,
   build, or reinforce-town candidate. Re-summarizing the fresh traced baseline now surfaces repeated defense misses
