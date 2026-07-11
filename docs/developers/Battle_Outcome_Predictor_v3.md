@@ -216,13 +216,13 @@ As of 2026-07-11, the best empirical result is fallback-only deterministic repea
 - corrected 2k town-hero run (`schema3-richstats-mmai-town-hero-2k-fix-20260711`, `simulation-fallback-cxx-v3-town-allwins.txt`):
   - 3 samples: 100.00% win/loss accuracy, 95.37% safety accuracy on 367 held-out rows
   - 5 samples: 98.39% win/loss accuracy, 95.18% safety accuracy on 311 held-out rows
-- partial corrected 5k town-hero run, 78 complete shards / 3900 rows (`schema3-richstats-mmai-town-hero-5k-partial-complete-20260711T065855Z`, `simulation-fallback-cxx-v3-town-allwins.txt`):
-  - 5 samples: 97.94% win/loss accuracy, 94.31% safety accuracy on 1020 held-out rows
-  - 10 samples: 98.11% win/loss accuracy, 94.32% safety accuracy on 845 held-out rows
-  - 20 samples: 97.64% win/loss accuracy, 100.00% safety accuracy on 509 held-out rows
-  - 30 samples: 100.00% win/loss accuracy, 92.86% safety accuracy on 280 held-out rows; this bucket is still small and had one false-unsafe case
+- completed corrected 5k town-hero run (`schema3-richstats-mmai-town-hero-5k-20260711`, `simulation-fallback-cxx-v3-town-allwins.txt`):
+  - 5 samples: 98.33% win/loss accuracy, 95.38% safety accuracy on 1255 held-out rows
+  - 10 samples: 98.44% win/loss accuracy, 95.32% safety accuracy on 1025 held-out rows
+  - 20 samples: 97.94% win/loss accuracy, 100.00% safety accuracy on 583 held-out rows
+  - 30 samples: 100.00% win/loss accuracy, 93.33% safety accuracy on 300 held-out rows; this bucket had one false-unsafe case and no false-safe cases
 
-The best static models are not merge-ready: current cxx-v3 was about 69.39% / Brier 0.287 on corrected 5k non-town deployed-static holdout rows, about 58.76% / Brier 0.363 on corrected 2k town-hero holdout rows, and 56.82% / Brier 0.362 on the 3900-row partial corrected town-hero holdout. On the same 3900-row town-hero split, skill/spell static features reached 81.26% / Brier 0.129, but this is still offline generated-data evidence and not enough to merge as Nullkiller2 logic. The practical direction is therefore a server-owned runtime simulation fallback, with static prediction kept as a cheap coarse estimate until a better validated model exists.
+The best static models are not merge-ready: current cxx-v3 was about 69.39% / Brier 0.287 on corrected 5k non-town deployed-static holdout rows, about 58.76% / Brier 0.363 on corrected 2k town-hero holdout rows, and 54.48% / Brier 0.392 on the completed corrected 5k town-hero holdout. On the completed 5k town-hero split, skill/spell static features reached 84.92% / Brier 0.117 on holdout after about 99.43% training accuracy, so this is still overfit offline evidence and not enough to merge as Nullkiller2 logic. The practical direction is therefore a server-owned runtime simulation fallback, with static prediction kept as a cheap coarse estimate until a better validated model exists.
 
 Remote analysis outputs:
 
@@ -251,6 +251,15 @@ Remote analysis outputs:
 - `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-town-hero-5k-partial-complete-20260711T071521Z/deployed-danger-close-even-town-scope.txt`
 - `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-town-hero-5k-partial-complete-20260711T071521Z/deployed-danger-false-safe-town-scope.txt`
 - `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-town-hero-5k-partial-complete-20260711T071521Z/deployed-danger-false-unsafe-town-scope.txt`
+- `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-town-hero-5k-20260711`
+- `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-town-hero-5k-20260711/validation.txt`
+- `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-town-hero-5k-20260711/evaluation-town-scope.txt`
+- `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-town-hero-5k-20260711/evaluation-town-deployed-danger.txt`
+- `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-town-hero-5k-20260711/simulation-fallback-cxx-v3-town-allwins.txt`
+- `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-town-hero-5k-20260711/v3-close-even-town-scope.txt`
+- `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-town-hero-5k-20260711/deployed-danger-close-even-town-scope.txt`
+- `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-town-hero-5k-20260711/deployed-danger-false-safe-town-scope.txt`
+- `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-town-hero-5k-20260711/deployed-danger-false-unsafe-town-scope.txt`
 
 Observed pattern:
 
@@ -270,12 +279,12 @@ Observed pattern:
 - the corrected schema3 MMAI mixed run also passes the schema3 rich-field gate: attacker/defender raw mana, secondary skills, full spell lists, combat spell lists, primary skills, rich creature stack stats, town faction/buildings, fortifications, moat/tower shooters, tower/keep damage ranges, and final wall state are present for every applicable row.
 - the corrected 5k schema3 MMAI mixed run from 2026-07-11 has 5000 rows, 100 generated setup shards, 50 repeats per shard, 1050 hero-vs-hero rows, 2200 hero-vs-monster rows, 1750 town rows, and 0 MMAI fallback lines. It also passes the schema3 rich-field gate.
 - generated battle mode now supports explicit `town-hero` battles, and `mixed` mode includes them for future datasets. The corrected town-hero 2k run from 2026-07-11 has 2000 rows, 100 generated setup shards, 20 repeats per shard, 2000 town-hero rows with visiting defending heroes, and 0 MMAI fallback lines. It passes the schema3 rich-field gate with defender hero data, town buildings, fortifications, tower damage, and final wall state.
-- the latest partial corrected 5k town-hero snapshot from 2026-07-11 has 4400 rows, 88 complete generated setup shards, 140 setup groups, all town-hero rows with visiting defending heroes, and 0 MMAI fallback lines.
+- the completed corrected 5k town-hero run from 2026-07-11 has 5000 rows, 100 complete generated setup shards, 159 setup groups, all town-hero rows with visiting defending heroes, and 0 MMAI fallback lines. It passes the schema3 rich-field gate with defender hero data, town buildings, fortifications, tower damage, and final wall state.
 - schema4 battle rows add explicit `initialWallState` for town/siege battles. Schema3 kept only the post-battle `finalWallState`; schema4 records both the planner input wall state derived by the same rules as `BattleInfo::setupBattle` and the final wall state for analysis.
-- close-even diagnostics on the 64-shard town-hero snapshot found 9 groups / 215 rows with actual win rate 20-80% and cxx-v3 error at least 0.25. The worst false-safe cluster was `predicted >= 0.95`: 3 groups / 100 rows, actual average 38.00%, predicted average 99.79%.
+- close-even diagnostics on the completed 5k town-hero run found 11 groups / 315 rows with actual win rate 25-75% and cxx-v3 error at least 0.25. The worst false-safe cluster was `predicted >= 0.95`: 5 groups / 200 rows, actual average 37.00%, predicted average 98.82%.
 - town cxx-v3 false-safe segments are dominated by siege mechanics absent from the open-field model: moat/castle/tower/mage-guild/grail effects and defender spell access. The false-unsafe side is different: attacker combat spell advantage, flyers, shooters, high-speed stacks, and special abilities can overcome town defenses, while cxx-v3 still assigns very low probabilities.
 - cxx-v3 has no deployed static scope for town-hero rows. Town/siege prediction should remain on legacy danger plus targeted safety fixes until the runtime simulation service is available or a separately validated town model clears the same holdout and A/B gates.
-- the corrected deployed legacy town-danger mirror is weak in both directions on the 4400-row town-hero snapshot. At factor 1.0 it reached 64.54% held-out win/loss accuracy, Brier 0.325, 2 false-safe groups, and 7 false-unsafe groups. A simple town-danger multiplier changes the tradeoff but is not a root-cause fix: factor 1.25 removed held-out false-safe groups and improved held-out accuracy to 69.94%, but still left 7 false-unsafe groups; factor 3.0 removed false-safe groups on train and test but produced 25 train and 10 test false-unsafe groups. This reinforces that town/siege prediction needs runtime simulation or a richer validated town model, not only a scalar danger patch.
+- the corrected deployed legacy town-danger mirror is weak in both directions on the completed 5k town-hero run. At factor 1.0 it reached 68.15% held-out win/loss accuracy, Brier 0.292, 2 false-safe groups, and 7 false-unsafe groups. Segment reports across train and test contain 20 predicted-safe groups below 95% actual win rate and 17 predicted-unsafe groups above 95% actual win rate. This reinforces that town/siege prediction needs runtime simulation or a richer validated town model, not only a scalar danger patch.
 - on that corrected schema3 MMAI data, static prediction is not good enough: held-out cxx-v3 accuracy was about 69%, v3-compatible fitted accuracy about 85%, and full fitted model accuracy about 73%. The high training accuracy did not generalize.
 - after separating the current deployed static scope from town/siege rows, cxx-v3 is still not good enough: on corrected 5k non-town rows, held-out cxx-v3 accuracy was about 69.4% with Brier score 0.287, versus about 85.9% / 0.150 for the baseline and 85.9% / 0.120 for the ratio-only fitted model. A v3-compatible refit reached about 92.4% on training rows but only about 82.5% on held-out rows, so another C++ coefficient update is not supported.
 - adding secondary-skill identities and combat-spell identities to the corrected 5k non-town analysis improved held-out accuracy to about 93.0% and Brier score to about 0.049, but training accuracy was about 99.3%, so this is promising feature evidence rather than a mergeable static model yet.
