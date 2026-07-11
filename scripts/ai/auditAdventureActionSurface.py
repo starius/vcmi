@@ -12,6 +12,9 @@ from typing import Any
 
 PACK_RE = re.compile(r"struct\s+DLL_LINKAGE\s+(\w+)\s*:\s*public\s+CPackForServer")
 ACTION_RE = re.compile(r"\{\s*\d+\s*,\s*\"([^\"]+)\"\s*\}")
+ACTION_ID_RE = re.compile(r"\{\s*(\d+)\s*,\s*\"([^\"]+)\"\s*\}")
+LUA_ACTION_ID_RE = re.compile(r"^\s*([A-Za-z]\w*)\s*=\s*(\d+)\s*,?\s*$")
+LUA_ACTION_NAME_RE = re.compile(r"^\s*([A-Za-z]\w*)\s*=\s*ai\.actionTypeIds\.([A-Za-z]\w*)\s*,?\s*$")
 
 PACK_HEADERS = (
     "lib/networkPacks/PacksForServer.h",
@@ -79,9 +82,61 @@ def registered_action_types(repo_root: Path) -> set[str]:
     return set(ACTION_RE.findall(text))
 
 
+def registered_action_ids(repo_root: Path) -> dict[str, int]:
+    text = (repo_root / "AI/ScriptedAdventure/CScriptedAdventureAI.cpp").read_text(encoding="utf-8")
+    return {name: int(action_id) for action_id, name in ACTION_ID_RE.findall(text)}
+
+
+def table_body_after(text: str, marker: str) -> str:
+    marker_index = text.index(marker)
+    open_index = text.index("{", marker_index)
+    depth = 0
+    for index in range(open_index, len(text)):
+        char = text[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[open_index + 1:index]
+    raise ValueError(f"Lua table is not closed after marker: {marker}")
+
+
+def lua_action_ids(repo_root: Path) -> dict[str, int]:
+    text = (repo_root / "luascript/LuaAdventureScriptRunner.cpp").read_text(encoding="utf-8")
+
+    id_body = table_body_after(text, "ai.actionTypeIds =")
+    ids_by_lua_name: dict[str, int] = {}
+    for line in id_body.splitlines():
+        match = LUA_ACTION_ID_RE.match(line)
+        if match:
+            ids_by_lua_name[match.group(1)] = int(match.group(2))
+
+    name_body = table_body_after(text, "ai.actionTypeIdsByName =")
+    result: dict[str, int] = {}
+    unresolved: dict[str, str] = {}
+    for line in name_body.splitlines():
+        match = LUA_ACTION_NAME_RE.match(line)
+        if not match:
+            continue
+        action_name, lua_id_name = match.groups()
+        if lua_id_name in ids_by_lua_name:
+            result[action_name] = ids_by_lua_name[lua_id_name]
+        else:
+            unresolved[action_name] = lua_id_name
+
+    if unresolved:
+        missing = ", ".join(f"{name}->{lua_id_name}" for name, lua_id_name in sorted(unresolved.items()))
+        raise ValueError(f"Lua actionTypeIdsByName references unknown actionTypeIds entries: {missing}")
+
+    return result
+
+
 def audit(repo_root: Path) -> dict[str, Any]:
     packs = pack_for_server_types(repo_root)
     actions = registered_action_types(repo_root)
+    cpp_action_ids = registered_action_ids(repo_root)
+    lua_ids = lua_action_ids(repo_root)
 
     missing_classifications = sorted(
         pack
@@ -98,16 +153,42 @@ def audit(repo_root: Path) -> dict[str, Any]:
         for pack, action_types in sorted(PACK_ACTION_COVERAGE.items())
         if any(action not in actions for action in action_types)
     }
+    missing_lua_action_ids = {
+        action: cpp_action_ids[action]
+        for action in sorted(cpp_action_ids)
+        if action not in lua_ids
+    }
+    extra_lua_action_ids = {
+        action: lua_ids[action]
+        for action in sorted(lua_ids)
+        if action not in cpp_action_ids
+    }
+    mismatched_lua_action_ids = {
+        action: {"cpp": cpp_action_ids[action], "lua": lua_ids[action]}
+        for action in sorted(cpp_action_ids.keys() & lua_ids.keys())
+        if cpp_action_ids[action] != lua_ids[action]
+    }
 
     return {
-        "ok": not missing_classifications and not stale_classifications and not missing_registered_actions,
+        "ok": (
+            not missing_classifications
+            and not stale_classifications
+            and not missing_registered_actions
+            and not missing_lua_action_ids
+            and not extra_lua_action_ids
+            and not mismatched_lua_action_ids
+        ),
         "packCount": len(packs),
         "coveredPackCount": len(PACK_ACTION_COVERAGE),
         "excludedPackCount": len(INTENTIONAL_EXCLUSIONS),
         "registeredActionCount": len(actions),
+        "luaActionIdCount": len(lua_ids),
         "missingPackClassifications": missing_classifications,
         "stalePackClassifications": stale_classifications,
         "missingRegisteredActions": missing_registered_actions,
+        "missingLuaActionIds": missing_lua_action_ids,
+        "extraLuaActionIds": extra_lua_action_ids,
+        "mismatchedLuaActionIds": mismatched_lua_action_ids,
         "intentionalExclusions": INTENTIONAL_EXCLUSIONS,
     }
 
