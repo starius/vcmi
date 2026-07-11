@@ -89,7 +89,8 @@ void BattleProcessor::restartBattle(const BattleID & battleID, const CArmedInsta
 			BattleSideArray<const CGHeroInstance *>{hero1, hero2},
 			tile,
 			layout,
-			town
+			town,
+			std::nullopt
 		}
 	);
 }
@@ -192,7 +193,8 @@ void BattleProcessor::startBattle(const CArmedInstance *army1, const CArmedInsta
 			BattleSideArray<const CGHeroInstance *>{hero1, hero2},
 			tile,
 			layout,
-			town
+			town,
+			std::nullopt
 		}
 	);
 }

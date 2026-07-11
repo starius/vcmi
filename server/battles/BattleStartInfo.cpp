@@ -29,7 +29,8 @@ BattleStartInfo BattleStartInfo::fromBattle(const IBattleInfo & battle)
 		},
 		battle.getLocation(),
 		battle.getLayout(),
-		battle.getDefendedTown()
+		battle.getDefendedTown(),
+		std::nullopt
 	};
 }
 

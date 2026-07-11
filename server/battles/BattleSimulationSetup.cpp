@@ -85,7 +85,8 @@ std::optional<BattleStartInfo> makeFieldBattleStartInfo(
 		},
 		defender->visitablePos(),
 		BattleLayout::createDefaultLayout(gameInfo, attacker, defender),
-		nullptr
+		nullptr,
+		std::nullopt
 	};
 }
 
