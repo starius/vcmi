@@ -435,7 +435,7 @@ Current live remote schema4 run:
 
 Current live remote schema5 run:
 
-- source/build: `/root/vcmi-schema5-src` and `/root/vcmi-schema5-build`, source revision marker `eb84381e6`
+- source/build: `/root/vcmi-schema5-src` and `/root/vcmi-schema5-build`, source revision marker `7303cd79d`
 - output: `/root/vcmi-nk-ratio-results/schema5-mmai-town-hero-20k-20260711`
 - PID: `256258`
 - started after a 4-row schema5 smoke passed strict validation with 4/4 MMAI-initialized shard logs, 0 fallback lines, and `townPreMergeState` present in every row
