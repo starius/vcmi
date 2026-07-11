@@ -60,6 +60,31 @@ class RunAdventureAIBatchTest(unittest.TestCase):
             self.assertEqual(scenario["idle_timeout"], 240.0)
             self.assertEqual(scenario["infrastructure_retries"], 1)
 
+    def test_legacy_sixteen_map_corpus_uses_watchdogs(self) -> None:
+        args = argparse.Namespace(
+            scenario_file=SCRIPT_DIR / "rmgSmallUndergroundNoWater16.json",
+            map=[],
+            runs=1,
+            testdays=0,
+            timeout=300,
+            idle_timeout=0.0,
+            infrastructure_retries=0,
+            extra_arg=[],
+            group=["training"],
+            stage=["outcome"],
+            kind=["generated-random"],
+            include_disabled=True,
+        )
+
+        scenarios = load_scenarios(args)
+
+        self.assertEqual([scenario["seed"] for scenario in scenarios], list(range(53001, 53017)))
+        self.assertEqual([scenario["gameSeed"] for scenario in scenarios], list(range(63001, 63017)))
+        for scenario in scenarios:
+            self.assertEqual(scenario["timeout"], 1800)
+            self.assertEqual(scenario["idle_timeout"], 240.0)
+            self.assertEqual(scenario["infrastructure_retries"], 1)
+
     def test_run_outcome_uses_last_started_day_for_terminal_result(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             stdout = Path(temp_dir) / "stdout.log"
