@@ -627,7 +627,7 @@ A strict 4-row smoke passed on 2026-07-11:
 
 A replacement remote watcher is running as PID `299131` with log `/root/vcmi-nk-ratio-results/schema6-mmai-town-hero-20k-20260711-wallstate-watcher.log`. It replaced the earlier sleeping watcher PID `286543` after `/root/vcmi-schema6-src` was patched to include schema6 `battleStartWallState`. The watcher waits for schema5 PID `256999` to exit, validates schema5 with 20000 expected rows, schema 5, 400 complete shards, MMAI initialization, no fallback lines, and rich fields, rebuilds the patched `vcmibattlesim` target in `/root/vcmi-schema6-real-build`, then starts the schema6 20000-row town-hero collection from `/root/vcmi-schema6-real-build/bin`. As of a lightweight remote check at 13616 schema5 rows / 270 complete shards, schema5 was still running and schema6 had not started.
 
-Validate schema6 data with the same gate but `--expected-schema 6`; `--require-schema3-rich-fields` now also requires `battleStartStacks`, `battleStartObstacles`, and `battleStartWallState` on schema6 rows. The validator also reports `schema6_battle_start` coverage counters for stack arrays, both-side stack rows, turret rows, obstacle rows, wall-state rows, and rows where battle-start wall/gate state differs from initial wall/gate state. The rich town prototype and segment analyzer consume schema6 start-stack, obstacle, and battle-start wall aggregates automatically and emit `battle_start_*` and `town_battle_start_*` features/segments:
+Validate schema6 data with the same gate but `--expected-schema 6`; `--require-schema3-rich-fields` now also requires `battleStartStacks`, `battleStartObstacles`, and `battleStartWallState` on schema6 rows. The validator reports `schema6_battle_start` coverage counters for stack arrays, both-side stack rows, turret rows, obstacle rows, wall-state rows, and rows where battle-start wall/gate state differs from initial wall/gate state. Use `--min-schema6-battle-start-counter NAME=COUNT` for structural gates that must hold for the whole dataset. The rich town prototype and segment analyzer consume schema6 start-stack, obstacle, and battle-start wall aggregates automatically and emit `battle_start_*` and `town_battle_start_*` features/segments:
 
 ```bash
 cd /root/vcmi-schema6-real-build/bin
@@ -659,8 +659,19 @@ python3 scripts/battle_prediction/validate_battle_dataset.py \
   --require-battle-types town-hero \
   --require-no-mmai-fallback \
   --require-mmai-initialized \
-  --require-schema3-rich-fields
+  --require-schema3-rich-fields \
+  --min-schema6-battle-start-counter rows=20000 \
+  --min-schema6-battle-start-counter stacks_array=20000 \
+  --min-schema6-battle-start-counter nonempty_stacks=20000 \
+  --min-schema6-battle-start-counter attacker_stack_rows=20000 \
+  --min-schema6-battle-start-counter defender_stack_rows=20000 \
+  --min-schema6-battle-start-counter obstacles_array=20000 \
+  --min-schema6-battle-start-counter wall_state_rows=20000 \
+  --min-schema6-battle-start-counter turret_rows=1 \
+  --min-schema6-battle-start-counter nonempty_obstacles=1
 ```
+
+For a run that is intended to prove opening-effect wall mutation coverage, add low positive sanity gates such as `--min-schema6-battle-start-counter wall_changed_rows=1` and `--min-schema6-battle-start-counter gate_changed_rows=1`. Keep those separate from the base structural gate because a valid random batch can contain walls without necessarily containing a pre-first-turn wall or gate mutation.
 
 The schema4 run can still be validated and inspected for wall-state-only evidence:
 

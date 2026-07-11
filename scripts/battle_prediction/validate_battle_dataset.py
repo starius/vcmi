@@ -50,6 +50,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--require-complete-shards", action="store_true")
     parser.add_argument("--require-battle-types", help="Comma-separated battle types that must be present")
     parser.add_argument("--require-schema3-rich-fields", action="store_true", help="Require schema3 hero, army, and town/siege predictor fields")
+    parser.add_argument(
+        "--min-schema6-battle-start-counter",
+        action="append",
+        default=[],
+        metavar="NAME=COUNT",
+        help=(
+            "Require schema6_battle_start counter NAME to be at least COUNT. "
+            "Useful counters include rows, stacks_array, attacker_stack_rows, defender_stack_rows, "
+            "wall_state_rows, wall_changed_rows, gate_changed_rows, and nonempty_obstacles."
+        ),
+    )
     parser.add_argument("--require-no-mmai-fallback", action="store_true")
     parser.add_argument("--require-mmai-initialized", action="store_true")
     parser.add_argument("--print-fallback-lines", type=int, default=20)
@@ -61,6 +72,32 @@ def parse_required_types(value: str | None) -> set[str]:
     if not value:
         return set()
     return {part.strip() for part in value.split(",") if part.strip()}
+
+
+def parse_min_counters(values: list[str]) -> tuple[dict[str, int], list[str]]:
+    result: dict[str, int] = {}
+    errors = []
+    for value in values:
+        if "=" not in value:
+            errors.append(f"invalid --min-schema6-battle-start-counter {value!r}, expected NAME=COUNT")
+            continue
+
+        name, count_text = value.split("=", 1)
+        name = name.strip()
+        count_text = count_text.strip()
+        if not name:
+            errors.append(f"invalid --min-schema6-battle-start-counter {value!r}, empty counter name")
+            continue
+        try:
+            count = int(count_text)
+        except ValueError:
+            errors.append(f"invalid --min-schema6-battle-start-counter {value!r}, COUNT is not an integer")
+            continue
+        if count < 0:
+            errors.append(f"invalid --min-schema6-battle-start-counter {value!r}, COUNT must be non-negative")
+            continue
+        result[name] = count
+    return result, errors
 
 
 def missing_keys(node: dict[str, Any], keys: list[str]) -> list[str]:
@@ -605,6 +642,8 @@ def load_summary(path: str, group_key: str) -> dict[str, Any]:
 def validate(args: argparse.Namespace, summary: dict[str, Any], logs: LogScan, rich_fields: dict[str, Any] | None) -> list[str]:
     errors = []
     required_types = parse_required_types(args.require_battle_types)
+    min_schema6_counters, counter_errors = parse_min_counters(args.min_schema6_battle_start_counter)
+    errors.extend(counter_errors)
 
     if args.expected_rows is not None and summary["rows"] != args.expected_rows:
         errors.append(f"expected {args.expected_rows} rows, got {summary['rows']}")
@@ -648,6 +687,12 @@ def validate(args: argparse.Namespace, summary: dict[str, Any], logs: LogScan, r
 
     if args.require_schema3_rich_fields and rich_fields and rich_fields["invalid_rows"] > 0:
         errors.append(f"schema3 rich fields invalid in {rich_fields['invalid_rows']}/{rich_fields['rows_checked']} rows")
+
+    schema6_counters = summary["schema6_battle_start"]
+    for name, minimum in sorted(min_schema6_counters.items()):
+        actual = int(schema6_counters.get(name, 0))
+        if actual < minimum:
+            errors.append(f"schema6_battle_start.{name} expected at least {minimum}, got {actual}")
 
     return errors
 
