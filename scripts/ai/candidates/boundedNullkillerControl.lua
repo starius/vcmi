@@ -145,6 +145,14 @@ local function sliceShouldEndTurn(result)
         or (result.exhaustedCandidates == true and not sliceDidWork(result))
 end
 
+local function sliceReachedNativePassLimit(result)
+    -- Native Nullkiller stops the day when its configured maxPass loop is
+    -- consumed, even if more low-priority work could be found by starting a
+    -- fresh loop. Keep this parity probe aligned with that contract instead of
+    -- repeatedly restarting pass numbering from Lua.
+    return result.exhaustedBudget == true or result.status == "budget_exhausted"
+end
+
 local function runNativeSlice(ai, current)
     local settings = nullkillerSettings(current)
     local maxPasses = tonumber(settings.maxPass) or DefaultMaxPassesPerSlice
@@ -187,6 +195,11 @@ function Script.runDay(ai, input)
                 intent = "bounded Nullkiller control found no remaining native work"
             end
             return ai:output("end_turn", intent, 0.5)
+        end
+
+        if sliceReachedNativePassLimit(result) then
+            ai:endTurn()
+            return ai:output("end_turn", "bounded Nullkiller control accepted native max-pass limit", 0.5)
         end
 
         if sliceDidWork(result) then

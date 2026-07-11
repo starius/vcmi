@@ -1020,7 +1020,7 @@ function ai:nullkillerBoundedDay(options)
 			return summary
 		end
 
-		if refreshBetweenPasses then
+		if refreshBetweenPasses and passOffset < maxPasses - 1 then
 			self:refresh()
 			addCounter(summary, "refreshes", 1)
 		end

@@ -2268,6 +2268,59 @@ TEST(LuaAdventureScriptRunnerTest, BoundedNullkillerControlContinuesAfterProduct
 	EXPECT_EQ(*output.intent, "bounded Nullkiller control accepted native stop-turn signal");
 }
 
+TEST(LuaAdventureScriptRunnerTest, BoundedNullkillerControlStopsAtNativeMaxPassLimit)
+{
+	const std::string source = readAdventureScript("scripts/ai/candidates/boundedNullkillerControl.lua");
+	scripting::LuaAdventureScriptRunner runner("test:bounded-nullkiller-control-max-pass", source);
+
+	AI::AdventureScriptInput input = makeInput();
+	input.state["turn"]["active"] = JsonNode(true);
+	input.state["turn"]["queries"].Vector();
+	input.limits["maxActions"] = JsonNode(16);
+	input.analysis["nullkiller"]["settings"]["maxPass"] = JsonNode(2);
+
+	std::vector<JsonNode> commands;
+	int slices = 0;
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		const std::string kind = command["kind"].String();
+		if(kind == "refresh")
+		{
+			response["input"] = input.toJson();
+			return response;
+		}
+
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		if(command["payload"]["type"].String() == "nullkiller_turn_slice")
+		{
+			++slices;
+			response["result"]["didWork"] = JsonNode(true);
+			response["result"]["priorityTasksExecuted"] = JsonNode(1);
+			response["result"]["shouldStopTurn"] = JsonNode(false);
+			response["result"]["exhaustedCandidates"] = JsonNode(false);
+		}
+		return response;
+	});
+
+	ASSERT_EQ(slices, 2);
+	ASSERT_EQ(commands.size(), 4);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[0]["payload"]["first_pass_index"].Integer(), 1);
+	EXPECT_EQ(commands[1]["kind"].String(), "refresh");
+	EXPECT_EQ(commands[2]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[2]["payload"]["first_pass_index"].Integer(), 2);
+	EXPECT_EQ(commands[3]["payload"]["type"].String(), "end_turn");
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_EQ(output.memory["totalSlices"].Integer(), 2);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "bounded Nullkiller control accepted native max-pass limit");
+}
+
 TEST(LuaAdventureScriptRunnerTest, BoundedNullkillerControlAnswersQueriesBeforeNativeSlice)
 {
 	const std::string source = readAdventureScript("scripts/ai/candidates/boundedNullkillerControl.lua");
