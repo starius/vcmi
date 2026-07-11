@@ -6298,7 +6298,7 @@ JsonNode CScriptedAdventureAI::makeNullkillerTaskCandidates(const JsonNode & act
 		memorizeScriptVisibleVisitableObjs(nullkiller->memory, nullkiller->dangerHitMap, playerID, cc);
 		AIGateway::memorizeRevisitableObjs(nullkiller->memory, playerID, cc);
 
-		const auto candidates = nullkiller->getScriptTaskCandidates(mode, maxCandidates);
+		const auto candidates = nullkiller->getScriptTaskCandidates(mode, maxCandidates, executionMode);
 
 		nullkillerTaskHandles.clear();
 		for(const NK2AI::ScriptTaskCandidate & candidate : candidates)

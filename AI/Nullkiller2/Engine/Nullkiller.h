@@ -156,7 +156,6 @@ private:
 	bool openMap;
 	bool useObjectGraph;
 	bool pathfinderInvalidated;
-	bool scriptTaskStateHadSuccess;
 
 public:
 	class ScriptVisibleOnlyScope
@@ -206,7 +205,7 @@ public:
 	void init(const std::shared_ptr<CCallback> & cbInput, AIGateway * aiGwInput);
 	virtual void makeTurn();
 	void resetScriptTaskState();
-	std::vector<ScriptTaskCandidate> getScriptTaskCandidates(ScriptTaskSearchMode mode, size_t maxCandidates);
+	std::vector<ScriptTaskCandidate> getScriptTaskCandidates(ScriptTaskSearchMode mode, size_t maxCandidates, bool includeNonPositivePriority = false);
 	bool executeScriptTask(const Goals::TTask & task);
 	ScriptTaskExecutionResult executeScriptTaskSequence(const Goals::TTaskVec & tasks, size_t maxAttempts);
 	bool executeScriptResourceTrade();

@@ -64,7 +64,6 @@ Nullkiller::Nullkiller()
 	: activeHero(nullptr)
 	, scanDepth(ScanDepth::MAIN_FULL)
 	, useHeroChain(true)
-	, scriptTaskStateHadSuccess(false)
 	, memory(std::make_unique<AIMemory>())
 {
 
@@ -291,7 +290,10 @@ void Nullkiller::resetScriptTaskState()
 	resetState();
 }
 
-std::vector<ScriptTaskCandidate> Nullkiller::getScriptTaskCandidates(const ScriptTaskSearchMode mode, const size_t maxCandidates)
+std::vector<ScriptTaskCandidate> Nullkiller::getScriptTaskCandidates(
+	const ScriptTaskSearchMode mode,
+	const size_t maxCandidates,
+	const bool includeNonPositivePriority)
 {
 	std::vector<ScriptTaskCandidate> result;
 	if(maxCandidates == 0)
@@ -299,7 +301,7 @@ std::vector<ScriptTaskCandidate> Nullkiller::getScriptTaskCandidates(const Scrip
 
 	auto appendCandidate = [&](const Goals::TTask & task, ScriptTaskSearchMode sourceMode, int priorityTier)
 	{
-		if(!task || task->priority <= 0 || !areAffectedObjectsPresent(task))
+		if(!task || (!includeNonPositivePriority && task->priority <= 0) || !areAffectedObjectsPresent(task))
 			return;
 
 		HeroPtr heroPtr(task->getHero(), cc.get());
@@ -463,7 +465,7 @@ ScriptTaskExecutionResult Nullkiller::executeScriptTaskSequence(const Goals::TTa
 		return result;
 	}
 
-	bool hasAnySuccess = scriptTaskStateHadSuccess;
+	bool hasAnySuccess = false;
 	for(size_t index = 0; index < attemptsLimit; ++index)
 	{
 		const Goals::TTask & selectedTask = tasks[index];
@@ -531,7 +533,6 @@ ScriptTaskExecutionResult Nullkiller::executeScriptTaskSequence(const Goals::TTa
 		{
 			result.executed = true;
 			hasAnySuccess = true;
-			scriptTaskStateHadSuccess = true;
 			result.error.clear();
 			recordAttempt(index, true, TaskFailureAction::TRY_NEXT_TASK, {});
 			return result;
@@ -638,7 +639,6 @@ void Nullkiller::resetState()
 
 	lockedResources = TResources();
 	scanDepth = ScanDepth::MAIN_FULL;
-	scriptTaskStateHadSuccess = false;
 	lockedHeroes.clear();
 	dangerHitMap->resetHitmap();
 	useHeroChain = true;
