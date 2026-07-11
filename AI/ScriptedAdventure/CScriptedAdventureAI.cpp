@@ -8384,7 +8384,12 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		if(!heroVisitsTown && !heroAtObject)
 			throw std::invalid_argument("Hero must be visiting or standing at the object for Nullkiller object interaction");
 
-		performObjectInteraction(object, NK2AI::HeroPtr(hero, cc.get()));
+		{
+			std::shared_lock gameStateLock(CGameState::mutex);
+			std::lock_guard sharedStorageLock(NK2AI::AISharedStorage::locker);
+			NK2AI::Nullkiller::ScriptVisibleOnlyScope visibleOnly(*nullkiller);
+			performObjectInteraction(object, NK2AI::HeroPtr(hero, cc.get()));
+		}
 		actionResult["hero_id"] = JsonNode(hero->id.getNum());
 		actionResult["object_id"] = JsonNode(object->id.getNum());
 		if(!waitTillFreeForScriptAction(actionResult, type))
