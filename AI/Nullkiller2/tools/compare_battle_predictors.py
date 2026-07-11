@@ -205,6 +205,15 @@ def parse_args() -> argparse.Namespace:
 		default=0.9,
 		help="Minimum complete/request ratio required for each --require-runtime-simulation model.",
 	)
+	parser.add_argument(
+		"--min-runtime-simulation-planning-decisions",
+		type=int,
+		default=0,
+		help=(
+			"Minimum completed planner-side simulation decisions required for each "
+			"--require-runtime-simulation model. Counts planningAccepted + planningRejected."
+		),
+	)
 	parser.add_argument("--keep-engine-logs", action="store_true", help="Keep VCMI log files in each run directory. Stdout and summaries are always kept.")
 	parser.add_argument("--require-clean-exit", action="store_true", help="Mark nonzero vcmiclient exits as failed games.")
 	args = parser.parse_args()
@@ -969,6 +978,7 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 		requests = stats["requests"]
 		complete = stats["complete"]
 		complete_rate = complete / requests if requests else None
+		planning_decisions = stats["planningAccepted"] + stats["planningRejected"]
 		model_errors = []
 
 		if requests < args.min_runtime_simulation_requests:
@@ -981,6 +991,11 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 				f"{model}: runtime complete rate {complete_rate:.3f} below required "
 				f"{args.min_runtime_simulation_complete_rate:.3f}"
 			)
+		if planning_decisions < args.min_runtime_simulation_planning_decisions:
+			model_errors.append(
+				f"{model}: planner simulation decisions {planning_decisions} below required "
+				f"{args.min_runtime_simulation_planning_decisions}"
+			)
 
 		errors.extend(model_errors)
 		model_reports.append(
@@ -988,6 +1003,7 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 				"model": model,
 				"stats": stats,
 				"completeRate": complete_rate,
+				"planningDecisions": planning_decisions,
 				"ok": not model_errors,
 				"errors": model_errors,
 			}
@@ -998,6 +1014,7 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 		"models": model_reports,
 		"minRequests": args.min_runtime_simulation_requests,
 		"minCompleteRate": args.min_runtime_simulation_complete_rate,
+		"minPlanningDecisions": args.min_runtime_simulation_planning_decisions,
 		"ok": not errors,
 		"errors": errors,
 	}
