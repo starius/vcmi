@@ -58,6 +58,9 @@ struct RuntimeBattleSimulationStats
 	uint64_t safe = 0;
 	uint64_t rejected = 0;
 	uint64_t skippedNoTarget = 0;
+	uint64_t planningAccepted = 0;
+	uint64_t planningRejected = 0;
+	uint64_t planningIncomplete = 0;
 };
 
 std::atomic<uint64_t> runtimeBattleSimulationRequests{0};
@@ -115,6 +118,7 @@ const char * pathNodeActionName(EPathNodeAction action)
 
 RuntimeBattleSimulationStats runtimeBattleSimulationStatsSnapshot()
 {
+	const auto planningStats = battleSimulationPlanningStatsSnapshot();
 	return RuntimeBattleSimulationStats{
 		runtimeBattleSimulationRequests.load(std::memory_order_relaxed),
 		runtimeBattleSimulationComplete.load(std::memory_order_relaxed),
@@ -123,7 +127,10 @@ RuntimeBattleSimulationStats runtimeBattleSimulationStatsSnapshot()
 		runtimeBattleSimulationNotAvailable.load(std::memory_order_relaxed),
 		runtimeBattleSimulationSafe.load(std::memory_order_relaxed),
 		runtimeBattleSimulationRejected.load(std::memory_order_relaxed),
-		runtimeBattleSimulationSkippedNoTarget.load(std::memory_order_relaxed)
+		runtimeBattleSimulationSkippedNoTarget.load(std::memory_order_relaxed),
+		planningStats.accepted,
+		planningStats.rejected,
+		planningStats.incomplete
 	};
 }
 
@@ -139,17 +146,24 @@ RuntimeBattleSimulationStats runtimeBattleSimulationStatsDelta(
 		after.notAvailable - before.notAvailable,
 		after.safe - before.safe,
 		after.rejected - before.rejected,
-		after.skippedNoTarget - before.skippedNoTarget
+		after.skippedNoTarget - before.skippedNoTarget,
+		after.planningAccepted - before.planningAccepted,
+		after.planningRejected - before.planningRejected,
+		after.planningIncomplete - before.planningIncomplete
 	};
 }
 
 void logRuntimeBattleSimulationStats(PlayerColor playerID, const RuntimeBattleSimulationStats & stats)
 {
-	if(!stats.requests && !stats.skippedNoTarget)
+	if(!stats.requests
+		&& !stats.skippedNoTarget
+		&& !stats.planningAccepted
+		&& !stats.planningRejected
+		&& !stats.planningIncomplete)
 		return;
 
 	logAi->info(
-		"Runtime battle simulation stats for player %d (%s): requests %llu, complete %llu, incomplete %llu, safe %llu, rejected %llu, invalid %llu, not available %llu, skipped no target %llu",
+		"Runtime battle simulation stats for player %d (%s): requests %llu, complete %llu, incomplete %llu, safe %llu, rejected %llu, invalid %llu, not available %llu, skipped no target %llu, planning accepted %llu, planning rejected %llu, planning incomplete %llu",
 		playerID,
 		playerID.toString(),
 		static_cast<unsigned long long>(stats.requests),
@@ -159,7 +173,10 @@ void logRuntimeBattleSimulationStats(PlayerColor playerID, const RuntimeBattleSi
 		static_cast<unsigned long long>(stats.rejected),
 		static_cast<unsigned long long>(stats.invalidRequest),
 		static_cast<unsigned long long>(stats.notAvailable),
-		static_cast<unsigned long long>(stats.skippedNoTarget));
+		static_cast<unsigned long long>(stats.skippedNoTarget),
+		static_cast<unsigned long long>(stats.planningAccepted),
+		static_cast<unsigned long long>(stats.planningRejected),
+		static_cast<unsigned long long>(stats.planningIncomplete));
 }
 
 bool movementActionMayStartBattle(EPathNodeAction action)

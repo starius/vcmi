@@ -93,8 +93,9 @@ bool plannerSimulationAcceptsUnsafeVisit(
 
 	if(simulation.status != BattleOutcomeSimulationStatus::COMPLETE || simulation.sampleCount < sampleCount)
 	{
+		recordBattleSimulationPlanningIncomplete();
 		logAi->debug(
-			"Planner battle simulation incomplete for player %d (%s): %s visiting %s, target %s, status %s, samples %lld/%d",
+			"Planner battle simulation detail incomplete for player %d (%s): %s visiting %s, target %s, status %s, samples %lld/%d",
 			nullkiller->playerID,
 			playerName.c_str(),
 			hero->getNameTranslated().c_str(),
@@ -109,8 +110,9 @@ bool plannerSimulationAcceptsUnsafeVisit(
 	const bool safe = isBattleSimulationSafeForVisit(simulation);
 	if(!safe)
 	{
+		recordBattleSimulationPlanningRejected();
 		logAi->debug(
-			"Planner battle simulation rejected statically unsafe path for player %d (%s): %s visiting %s, target %s, samples %lld, attacker wins %lld, defender wins %lld, win rate %.3f",
+			"Planner battle simulation detail rejected statically unsafe path for player %d (%s): %s visiting %s, target %s, samples %lld, attacker wins %lld, defender wins %lld, win rate %.3f",
 			nullkiller->playerID,
 			playerName.c_str(),
 			hero->getNameTranslated().c_str(),
@@ -123,8 +125,9 @@ bool plannerSimulationAcceptsUnsafeVisit(
 		return false;
 	}
 
+	recordBattleSimulationPlanningAccepted();
 	logAi->debug(
-		"Planner battle simulation accepted statically unsafe path for player %d (%s): %s visiting %s, target %s, samples %lld, attacker wins %lld, defender wins %lld, win rate %.3f",
+		"Planner battle simulation detail accepted statically unsafe path for player %d (%s): %s visiting %s, target %s, samples %lld, attacker wins %lld, defender wins %lld, win rate %.3f",
 		nullkiller->playerID,
 		playerName.c_str(),
 		hero->getNameTranslated().c_str(),

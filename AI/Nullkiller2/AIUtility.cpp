@@ -27,8 +27,16 @@
 
 #include <vcmi/CreatureService.h>
 
+#include <atomic>
+
 namespace NK2AI
 {
+namespace
+{
+std::atomic<uint64_t> battleSimulationPlanningAccepted{0};
+std::atomic<uint64_t> battleSimulationPlanningRejected{0};
+std::atomic<uint64_t> battleSimulationPlanningIncomplete{0};
+}
 
 const CGObjectInstance * ObjectIdRef::operator->() const
 {
@@ -152,6 +160,30 @@ bool isSafeToVisit(const CGHeroInstance * h, uint64_t dangerStrength, float safe
 bool isBattleSimulationSafeForVisit(const BattleOutcomeSimulationResult & simulation)
 {
 	return simulation.attackerAllWinsSafe;
+}
+
+void recordBattleSimulationPlanningAccepted()
+{
+	battleSimulationPlanningAccepted.fetch_add(1, std::memory_order_relaxed);
+}
+
+void recordBattleSimulationPlanningRejected()
+{
+	battleSimulationPlanningRejected.fetch_add(1, std::memory_order_relaxed);
+}
+
+void recordBattleSimulationPlanningIncomplete()
+{
+	battleSimulationPlanningIncomplete.fetch_add(1, std::memory_order_relaxed);
+}
+
+BattleSimulationPlanningStats battleSimulationPlanningStatsSnapshot()
+{
+	return BattleSimulationPlanningStats{
+		battleSimulationPlanningAccepted.load(std::memory_order_relaxed),
+		battleSimulationPlanningRejected.load(std::memory_order_relaxed),
+		battleSimulationPlanningIncomplete.load(std::memory_order_relaxed)
+	};
 }
 
 namespace

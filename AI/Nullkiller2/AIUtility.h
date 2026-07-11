@@ -46,6 +46,7 @@
 #include "../../lib/callback/CCallback.h"
 
 #include <chrono>
+#include <cstdint>
 
 
 using dwellingContent = std::pair<ui32, std::vector<CreatureID>>;
@@ -55,6 +56,13 @@ namespace NK2AI
 struct creInfo;
 class AIGateway;
 class Nullkiller;
+
+struct BattleSimulationPlanningStats
+{
+	uint64_t accepted = 0;
+	uint64_t rejected = 0;
+	uint64_t incomplete = 0;
+};
 
 const int GOLD_MINE_PRODUCTION = 1000;
 const int WOOD_ORE_MINE_PRODUCTION = 2;
@@ -201,6 +209,10 @@ double getNormalizedHeroStrength(const CGHeroInstance * hero);
 bool isSafeToVisit(const CGHeroInstance * h, uint64_t dangerStrength, float safeAttackRatio);
 bool isSafeToVisit(const CGHeroInstance * h, const CCreatureSet *, uint64_t dangerStrength, float safeAttackRatio);
 bool isBattleSimulationSafeForVisit(const BattleOutcomeSimulationResult & simulation);
+void recordBattleSimulationPlanningAccepted();
+void recordBattleSimulationPlanningRejected();
+void recordBattleSimulationPlanningIncomplete();
+BattleSimulationPlanningStats battleSimulationPlanningStatsSnapshot();
 bool canBuildBattleSimulationRequestForObject(
 	const CCallback & callback,
 	const CGHeroInstance * attacker,

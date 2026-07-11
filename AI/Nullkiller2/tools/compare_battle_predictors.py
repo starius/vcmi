@@ -42,6 +42,7 @@ RUNTIME_SIMULATION_STATS_RE = re.compile(
 	r"requests (\d+), complete (\d+), incomplete (\d+), safe (\d+), rejected (\d+)"
 	r"(?:, invalid (\d+), not available (\d+))?"
 	r"(?:, skipped no target (\d+))?"
+	r"(?:, planning accepted (\d+), planning rejected (\d+), planning incomplete (\d+))?"
 )
 PLANNER_SIMULATION_RE = re.compile(
 	r"Planner battle simulation (accepted|rejected|incomplete)(?: .*?)? for player \d+ \(([^)]+)\):"
@@ -531,6 +532,9 @@ def parse_run_logs(task: GameTask) -> tuple[bool, str | None, str | None, bool, 
 						"invalid": int(stats_match.group(7) or 0),
 						"notAvailable": int(stats_match.group(8) or 0),
 						"skippedNoTarget": int(stats_match.group(9) or 0),
+						"planningAccepted": int(stats_match.group(10) or 0),
+						"planningRejected": int(stats_match.group(11) or 0),
+						"planningIncomplete": int(stats_match.group(12) or 0),
 					},
 				)
 
