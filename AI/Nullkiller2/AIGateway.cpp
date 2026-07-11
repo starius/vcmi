@@ -38,6 +38,7 @@
 #include "AIGateway.h"
 #include "Goals/Goals.h"
 
+#include <atomic>
 #include <mutex>
 
 namespace NK2AI
@@ -45,6 +46,21 @@ namespace NK2AI
 namespace
 {
 constexpr int64_t RUNTIME_SIMULATION_GAME_SEED = 0;
+
+struct RuntimeBattleSimulationStats
+{
+	uint64_t requests = 0;
+	uint64_t complete = 0;
+	uint64_t incomplete = 0;
+	uint64_t safe = 0;
+	uint64_t rejected = 0;
+};
+
+std::atomic<uint64_t> runtimeBattleSimulationRequests{0};
+std::atomic<uint64_t> runtimeBattleSimulationComplete{0};
+std::atomic<uint64_t> runtimeBattleSimulationIncomplete{0};
+std::atomic<uint64_t> runtimeBattleSimulationSafe{0};
+std::atomic<uint64_t> runtimeBattleSimulationRejected{0};
 
 const char * runtimeSimulationStatusName(BattleOutcomeSimulationStatus status)
 {
@@ -59,6 +75,46 @@ const char * runtimeSimulationStatusName(BattleOutcomeSimulationStatus status)
 	}
 
 	return "unknown";
+}
+
+RuntimeBattleSimulationStats runtimeBattleSimulationStatsSnapshot()
+{
+	return RuntimeBattleSimulationStats{
+		runtimeBattleSimulationRequests.load(std::memory_order_relaxed),
+		runtimeBattleSimulationComplete.load(std::memory_order_relaxed),
+		runtimeBattleSimulationIncomplete.load(std::memory_order_relaxed),
+		runtimeBattleSimulationSafe.load(std::memory_order_relaxed),
+		runtimeBattleSimulationRejected.load(std::memory_order_relaxed)
+	};
+}
+
+RuntimeBattleSimulationStats runtimeBattleSimulationStatsDelta(
+	const RuntimeBattleSimulationStats & after,
+	const RuntimeBattleSimulationStats & before)
+{
+	return RuntimeBattleSimulationStats{
+		after.requests - before.requests,
+		after.complete - before.complete,
+		after.incomplete - before.incomplete,
+		after.safe - before.safe,
+		after.rejected - before.rejected
+	};
+}
+
+void logRuntimeBattleSimulationStats(PlayerColor playerID, const RuntimeBattleSimulationStats & stats)
+{
+	if(!stats.requests)
+		return;
+
+	logAi->info(
+		"Runtime battle simulation stats for player %d (%s): requests %llu, complete %llu, incomplete %llu, safe %llu, rejected %llu",
+		playerID,
+		playerID.toString(),
+		static_cast<unsigned long long>(stats.requests),
+		static_cast<unsigned long long>(stats.complete),
+		static_cast<unsigned long long>(stats.incomplete),
+		static_cast<unsigned long long>(stats.safe),
+		static_cast<unsigned long long>(stats.rejected));
 }
 
 bool movementActionMayStartBattle(EPathNodeAction action)
@@ -138,6 +194,7 @@ bool runtimeBattleSimulationRejectsVisit(
 		return false;
 
 	BattleOutcomeSimulationThresholds thresholds;
+	runtimeBattleSimulationRequests.fetch_add(1, std::memory_order_relaxed);
 	const auto simulation = aiGw.cc->evaluateBattleSimulationForVisit(
 		hero,
 		target,
@@ -150,17 +207,24 @@ bool runtimeBattleSimulationRejectsVisit(
 		std::call_once(warningLogged, [&]()
 		{
 			logAi->warn(
-				"Runtime battle simulation is enabled but did not return enough samples: status %s, samples %lld/%d. Final battle-visit safety gate will use static danger only until a simulation provider is connected.",
+				"Runtime battle simulation is enabled but did not return enough samples: status %s, samples %lld/%d. Final battle-visit safety gate will use static danger for checks where simulation does not return a complete result.",
 				runtimeSimulationStatusName(simulation.status),
 				static_cast<long long>(simulation.sampleCount),
 				sampleCount);
 		});
+		runtimeBattleSimulationIncomplete.fetch_add(1, std::memory_order_relaxed);
 		return false;
 	}
 
+	runtimeBattleSimulationComplete.fetch_add(1, std::memory_order_relaxed);
 	const bool safe = simulation.attackerAllWinsSafe || (simulation.attackerProbabilitySafe && simulation.attackerWilsonSafe);
 	if(safe)
+	{
+		runtimeBattleSimulationSafe.fetch_add(1, std::memory_order_relaxed);
 		return false;
+	}
+
+	runtimeBattleSimulationRejected.fetch_add(1, std::memory_order_relaxed);
 
 	logAi->warn(
 		"Runtime battle simulation rejected %s visiting %s: samples %lld, attacker wins %lld, defender wins %lld, win rate %.3f",
@@ -911,6 +975,7 @@ void AIGateway::makeTurn()
 		memorizeVisitableObjs(nullkiller->memory, nullkiller->dangerHitMap, playerID, cc);
 		memorizeRevisitableObjs(nullkiller->memory, playerID, cc);
 
+		const auto simulationStatsBefore = runtimeBattleSimulationStatsSnapshot();
 		const auto start = std::chrono::high_resolution_clock::now();
 		nullkiller->makeTurn();
 		const auto timeElapsedMs = timeElapsed(start);
@@ -918,6 +983,9 @@ void AIGateway::makeTurn()
 			logAi->warn("PERFORMANCE: NK2 makeTurn took %ld ms", timeElapsedMs);
 		else
 			logAi->info("PERFORMANCE: NK2 makeTurn took %ld ms", timeElapsedMs);
+		logRuntimeBattleSimulationStats(
+			playerID,
+			runtimeBattleSimulationStatsDelta(runtimeBattleSimulationStatsSnapshot(), simulationStatsBefore));
 
 		for (const auto *h : cc->getHeroesInfo())
 		{
