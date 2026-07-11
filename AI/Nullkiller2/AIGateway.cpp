@@ -252,10 +252,14 @@ const CGObjectInstance * chooseBattleSimulationTarget(
 	if(visitableObject == hero)
 		visitableObject = nullptr;
 
+	const bool visitableObjectCanSimulate = canBuildBattleSimulationRequestForObject(
+		callback,
+		hero,
+		visitableObject);
 	if(action == EPathNodeAction::BATTLE || action == EPathNodeAction::TELEPORT_BATTLE)
-		return guard ? guard : visitableObject;
+		return guard ? guard : (visitableObjectCanSimulate ? visitableObject : nullptr);
 
-	if(visitableObject && canBuildBattleSimulationRequestForObject(callback, hero, visitableObject))
+	if(visitableObjectCanSimulate)
 		return visitableObject;
 
 	return guard;

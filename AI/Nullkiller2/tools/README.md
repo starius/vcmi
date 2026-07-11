@@ -143,6 +143,13 @@ The planning ratio replacement only affects offensive planning when V3 runtime
 simulation is enabled; it lets more candidate attacks reach the final simulator
 gate without changing defensive threat checks.
 
+Latest large run note: a 250-pair generated-map A/B with 15 runtime samples and
+planning ratio `1.0` finished neutral: candidate 251-249 by games, 38
+candidate sweeps vs 37 legacy sweeps, 175 splits, and two-sided sign-test p
+`1.0`. Runtime evidence was active, with 256/257 requests complete. This proves
+the harness and runtime gate are working at scale, but not that the current gate
+improves end-to-end Nullkiller strength.
+
 With `--adjudicate-testdays`, games that reach the completed-day limit without
 a standard winner are scored deterministically from the run-local
 `statistics.csv`. Full standard victories still take precedence when they occur.
