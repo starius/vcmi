@@ -140,6 +140,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-fallback-accuracy50", type=float, default=None)
     parser.add_argument("--min-fallback-safety-accuracy", type=float, default=None)
     parser.add_argument("--max-fallback-brier", type=float, default=None)
+    parser.add_argument("--min-fallback-groups", type=int, default=None)
     parser.add_argument("--max-fallback-false-safe-groups", type=int, default=None)
     parser.add_argument("--max-fallback-false-unsafe-groups", type=int, default=None)
     args = parser.parse_args()
@@ -150,6 +151,7 @@ def parse_args() -> argparse.Namespace:
             args.min_fallback_accuracy50,
             args.min_fallback_safety_accuracy,
             args.max_fallback_brier,
+            args.min_fallback_groups,
             args.max_fallback_false_safe_groups,
             args.max_fallback_false_unsafe_groups,
         )
@@ -169,6 +171,7 @@ def parse_args() -> argparse.Namespace:
         if value is not None and not 0.0 <= value <= 1.0:
             parser.error("--" + option_name.replace("_", "-") + " must be between 0 and 1")
     for option_name in (
+        "min_fallback_groups",
         "max_fallback_false_safe_groups",
         "max_fallback_false_unsafe_groups",
     ):
@@ -355,6 +358,7 @@ def evaluate_fallback_requirements(args: argparse.Namespace, summaries: list[dic
             args.min_fallback_accuracy50,
             args.min_fallback_safety_accuracy,
             args.max_fallback_brier,
+            args.min_fallback_groups,
             args.max_fallback_false_safe_groups,
             args.max_fallback_false_unsafe_groups,
         )
@@ -391,6 +395,12 @@ def evaluate_fallback_requirements(args: argparse.Namespace, summaries: list[dic
                 f"fallback Brier {selected['brier']:.6g} above allowed "
                 f"{args.max_fallback_brier:.6g}"
             )
+    if selected is not None and args.min_fallback_groups is not None:
+        if selected["groups"] < args.min_fallback_groups:
+            errors.append(
+                f"fallback groups {selected['groups']} below required "
+                f"{args.min_fallback_groups}"
+            )
     if selected is not None and args.max_fallback_false_safe_groups is not None:
         if selected["falseSafeGroups"] > args.max_fallback_false_safe_groups:
             errors.append(
@@ -411,6 +421,7 @@ def evaluate_fallback_requirements(args: argparse.Namespace, summaries: list[dic
         "minAccuracy50": args.min_fallback_accuracy50,
         "minSafetyAccuracy": args.min_fallback_safety_accuracy,
         "maxBrier": args.max_fallback_brier,
+        "minGroups": args.min_fallback_groups,
         "maxFalseSafeGroups": args.max_fallback_false_safe_groups,
         "maxFalseUnsafeGroups": args.max_fallback_false_unsafe_groups,
         "ok": not errors,
