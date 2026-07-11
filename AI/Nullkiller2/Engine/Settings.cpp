@@ -128,6 +128,16 @@ namespace NK2AI
 		useOneWayMonoliths = node["useOneWayMonoliths"].Bool();
 	}
 
+	void Settings::setBattlePredictionSimulationSamples(int value)
+	{
+		battlePredictionSimulationSamples = std::clamp(value, 0, 100);
+	}
+
+	void Settings::setBattlePredictionSimulationPlanningSafeAttackRatio(float value)
+	{
+		battlePredictionSimulationPlanningSafeAttackRatio = std::clamp(value, 0.0f, 10.0f);
+	}
+
 	float Settings::getSafeAttackRatio() const
 	{
 		if(battlePredictionModel == BattlePredictionModel::RATIO)

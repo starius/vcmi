@@ -37,11 +37,11 @@ using namespace Goals;
 // while we play vcmieagles graph can be shared
 std::unique_ptr<ObjectGraph> Nullkiller::baseGraph;
 
-Nullkiller::Nullkiller(std::optional<BattlePredictionModel> battlePredictionModelOverride)
+Nullkiller::Nullkiller(BattlePredictionSettingsOverride battlePredictionSettingsOverride)
 	: activeHero(nullptr)
 	, scanDepth(ScanDepth::MAIN_FULL)
 	, useHeroChain(true)
-	, battlePredictionModelOverride(battlePredictionModelOverride)
+	, battlePredictionSettingsOverride(std::move(battlePredictionSettingsOverride))
 	, memory(std::make_unique<AIMemory>())
 {
 
@@ -84,8 +84,12 @@ void Nullkiller::init(const std::shared_ptr<CCallback> & cbInput, AIGateway * ai
 	playerID = aiGwInput->playerID;
 
 	settings = std::make_unique<Settings>(cc->getStartInfo()->difficulty);
-	if(battlePredictionModelOverride)
-		settings->setBattlePredictionModel(*battlePredictionModelOverride);
+	if(battlePredictionSettingsOverride.model)
+		settings->setBattlePredictionModel(*battlePredictionSettingsOverride.model);
+	if(battlePredictionSettingsOverride.simulationSamples)
+		settings->setBattlePredictionSimulationSamples(*battlePredictionSettingsOverride.simulationSamples);
+	if(battlePredictionSettingsOverride.simulationPlanningSafeAttackRatio)
+		settings->setBattlePredictionSimulationPlanningSafeAttackRatio(*battlePredictionSettingsOverride.simulationPlanningSafeAttackRatio);
 
 	PathfinderOptions pathfinderOptions(*cc);
 	pathfinderOptions.useTeleportTwoWay = true;

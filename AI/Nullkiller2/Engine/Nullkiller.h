@@ -94,7 +94,7 @@ private:
 	bool openMap;
 	bool useObjectGraph;
 	bool pathfinderInvalidated;
-	std::optional<BattlePredictionModel> battlePredictionModelOverride;
+	BattlePredictionSettingsOverride battlePredictionSettingsOverride;
 
 public:
 	static std::unique_ptr<ObjectGraph> baseGraph;
@@ -121,7 +121,7 @@ public:
 	std::mutex aiStateMutex;
 	mutable ThreadInterruption makingTurnInterruption;
 
-	explicit Nullkiller(std::optional<BattlePredictionModel> battlePredictionModelOverride = std::nullopt);
+	explicit Nullkiller(BattlePredictionSettingsOverride battlePredictionSettingsOverride = {});
 	virtual ~Nullkiller();
 	void init(const std::shared_ptr<CCallback> & cbInput, AIGateway * aiGwInput);
 	virtual void makeTurn();

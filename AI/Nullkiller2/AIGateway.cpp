@@ -304,13 +304,13 @@ bool runtimeBattleSimulationRejectsVisit(
 }
 }
 
-AIGateway::AIGateway(std::optional<BattlePredictionModel> battlePredictionModelOverride)
+AIGateway::AIGateway(BattlePredictionSettingsOverride battlePredictionSettingsOverride)
 	:status(this)
 {
 	LOG_TRACE(logAi);
 	destinationTeleport = ObjectInstanceID();
 	destinationTeleportPos = int3(-1);
-	nullkiller.reset(new Nullkiller(battlePredictionModelOverride));
+	nullkiller.reset(new Nullkiller(std::move(battlePredictionSettingsOverride)));
 	asyncTasks = std::make_unique<AsyncRunner>();
 }
 

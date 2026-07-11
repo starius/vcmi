@@ -80,7 +80,8 @@ Additional checks:
 ## Battle Predictor A/B
 
 `compare_battle_predictors.py` compares `Nullkiller2` with a configured
-candidate such as `Nullkiller2Ratio`, `Nullkiller2V2`, or `Nullkiller2V3`.
+candidate such as `Nullkiller2Ratio`, `Nullkiller2V2`, `Nullkiller2V3`, or
+`Nullkiller2V3Simulation`.
 The default `--comparison-mode color-swap` is for true competitive maps: it
 runs each sample twice and swaps Red/Blue to control for color advantage.
 
@@ -109,8 +110,9 @@ python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
 ```
 
 To test V3 with runtime battle simulation enabled, keep `--legacy-ai
-Nullkiller2` and use `--candidate-ai Nullkiller2V3`, then temporarily replace
-the Nullkiller sample count in the build/run configuration:
+Nullkiller2` and use `--candidate-ai Nullkiller2V3Simulation`. This alias uses
+V3 with 15 runtime samples and planner ratio `1.0`, leaving the default
+`Nullkiller2` and `Nullkiller2V3` settings unchanged:
 
 ```sh
 python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
@@ -122,21 +124,14 @@ python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
   --randommap-players 2 \
   --samples 125 \
   --legacy-ai Nullkiller2 \
-  --candidate-ai Nullkiller2V3 \
+  --candidate-ai Nullkiller2V3Simulation \
   --testdays 28 \
   --adjudicate-testdays \
   --require-runtime-simulation candidate \
-  --min-runtime-simulation-planning-decisions 1 \
-  --config-replace config/ai/nk2ai/nk2ai-settings.json \
-    '"battlePredictionSimulationSamples" : 0' \
-    '"battlePredictionSimulationSamples" : 15' \
-  --config-replace config/ai/nk2ai/nk2ai-settings.json \
-    '"battlePredictionSimulationPlanningSafeAttackRatio" : 0' \
-    '"battlePredictionSimulationPlanningSafeAttackRatio" : 1.0'
+  --min-runtime-simulation-planning-decisions 1
 ```
 
-The replacement is restored before exit. Summary files include
-`runtimeBattleSimulation` totals by model. The
+Summary files include `runtimeBattleSimulation` totals by model. The
 `--require-runtime-simulation candidate` guard makes the run fail if valid
 candidate games do not have simulation requests or if fewer than 90% of those
 requests complete. Add `--min-runtime-simulation-planning-decisions` when the

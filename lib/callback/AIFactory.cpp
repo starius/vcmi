@@ -26,6 +26,23 @@
 #endif
 #include "../../AI/EmptyAI/CEmptyAI.h"
 
+#ifdef ENABLE_NULLKILLER2_AI
+namespace
+{
+constexpr int NULLKILLER2_V3_SIMULATION_SAMPLES = 15;
+constexpr float NULLKILLER2_V3_SIMULATION_PLANNING_SAFE_ATTACK_RATIO = 1.0f;
+
+std::shared_ptr<CGlobalAI> createNullkiller2Gateway(
+	const std::string & name,
+	NK2AI::BattlePredictionSettingsOverride settingsOverride = {})
+{
+	auto ret = std::make_shared<NK2AI::AIGateway>(std::move(settingsOverride));
+	ret->dllName = name;
+	return ret;
+}
+}
+#endif
+
 std::shared_ptr<CGlobalAI> AIFactory::createAdventureAI(const std::string & name)
 {
 	logGlobal->info("Creating adventure AI %s", name);
@@ -33,9 +50,7 @@ std::shared_ptr<CGlobalAI> AIFactory::createAdventureAI(const std::string & name
 	if(name == "Nullkiller2")
 	{
 #ifdef ENABLE_NULLKILLER2_AI
-		auto ret = std::make_shared<NK2AI::AIGateway>();
-		ret->dllName = name;
-		return ret;
+		return createNullkiller2Gateway(name);
 #else
 		throw std::runtime_error("Nullkiller2 is not available in this build!");
 #endif
@@ -44,9 +59,9 @@ std::shared_ptr<CGlobalAI> AIFactory::createAdventureAI(const std::string & name
 	if(name == "Nullkiller2Ratio")
 	{
 #ifdef ENABLE_NULLKILLER2_AI
-		auto ret = std::make_shared<NK2AI::AIGateway>(NK2AI::BattlePredictionModel::RATIO);
-		ret->dllName = name;
-		return ret;
+		NK2AI::BattlePredictionSettingsOverride settingsOverride;
+		settingsOverride.model = NK2AI::BattlePredictionModel::RATIO;
+		return createNullkiller2Gateway(name, settingsOverride);
 #else
 		throw std::runtime_error("Nullkiller2 is not available in this build!");
 #endif
@@ -55,9 +70,9 @@ std::shared_ptr<CGlobalAI> AIFactory::createAdventureAI(const std::string & name
 	if(name == "Nullkiller2V2")
 	{
 #ifdef ENABLE_NULLKILLER2_AI
-		auto ret = std::make_shared<NK2AI::AIGateway>(NK2AI::BattlePredictionModel::V2);
-		ret->dllName = name;
-		return ret;
+		NK2AI::BattlePredictionSettingsOverride settingsOverride;
+		settingsOverride.model = NK2AI::BattlePredictionModel::V2;
+		return createNullkiller2Gateway(name, settingsOverride);
 #else
 		throw std::runtime_error("Nullkiller2 is not available in this build!");
 #endif
@@ -66,9 +81,22 @@ std::shared_ptr<CGlobalAI> AIFactory::createAdventureAI(const std::string & name
 	if(name == "Nullkiller2V3")
 	{
 #ifdef ENABLE_NULLKILLER2_AI
-		auto ret = std::make_shared<NK2AI::AIGateway>(NK2AI::BattlePredictionModel::V3);
-		ret->dllName = name;
-		return ret;
+		NK2AI::BattlePredictionSettingsOverride settingsOverride;
+		settingsOverride.model = NK2AI::BattlePredictionModel::V3;
+		return createNullkiller2Gateway(name, settingsOverride);
+#else
+		throw std::runtime_error("Nullkiller2 is not available in this build!");
+#endif
+	}
+
+	if(name == "Nullkiller2V3Simulation")
+	{
+#ifdef ENABLE_NULLKILLER2_AI
+		NK2AI::BattlePredictionSettingsOverride settingsOverride;
+		settingsOverride.model = NK2AI::BattlePredictionModel::V3;
+		settingsOverride.simulationSamples = NULLKILLER2_V3_SIMULATION_SAMPLES;
+		settingsOverride.simulationPlanningSafeAttackRatio = NULLKILLER2_V3_SIMULATION_PLANNING_SAFE_ATTACK_RATIO;
+		return createNullkiller2Gateway(name, settingsOverride);
 #else
 		throw std::runtime_error("Nullkiller2 is not available in this build!");
 #endif
@@ -119,6 +147,8 @@ bool AIFactory::isAvailableAdventureAI(const std::string & name)
 	if(name == "Nullkiller2V2")
 		return true;
 	if(name == "Nullkiller2V3")
+		return true;
+	if(name == "Nullkiller2V3Simulation")
 		return true;
 #endif
 	return false;

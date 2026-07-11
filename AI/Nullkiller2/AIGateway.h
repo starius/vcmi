@@ -83,7 +83,7 @@ public:
 
 	std::unique_ptr<Nullkiller> nullkiller;
 
-	explicit AIGateway(std::optional<BattlePredictionModel> battlePredictionModelOverride = std::nullopt);
+	explicit AIGateway(BattlePredictionSettingsOverride battlePredictionSettingsOverride = {});
 	~AIGateway();
 
 	//TODO: extract to appropriate goals

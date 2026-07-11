@@ -9,6 +9,8 @@
 */
 #pragma once
 
+#include <optional>
+
 class JsonNode;
 class ResourcePath;
 
@@ -20,6 +22,13 @@ namespace NK2AI
 		RATIO,
 		V2,
 		V3
+	};
+
+	struct BattlePredictionSettingsOverride
+	{
+		std::optional<BattlePredictionModel> model;
+		std::optional<int> simulationSamples;
+		std::optional<float> simulationPlanningSafeAttackRatio;
 	};
 
 	class Settings
@@ -63,6 +72,8 @@ namespace NK2AI
 		float getMaxArmyLossTarget() const { return maxArmyLossTarget; }
 		BattlePredictionModel getBattlePredictionModel() const { return battlePredictionModel; }
 		void setBattlePredictionModel(BattlePredictionModel value) { battlePredictionModel = value; }
+		void setBattlePredictionSimulationSamples(int value);
+		void setBattlePredictionSimulationPlanningSafeAttackRatio(float value);
 		int getMaxRoamingHeroes() const { return maxRoamingHeroes; }
 		int getMaxRoamingHeroesPerTown() const { return maxRoamingHeroesPerTown; }
 		int getMainHeroTurnDistanceLimit() const { return mainHeroTurnDistanceLimit; }

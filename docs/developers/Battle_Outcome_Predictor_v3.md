@@ -201,7 +201,7 @@ End-to-end validation:
 - collect win rate, score, towns, heroes, army value, resources, turns survived, and crash/assertions
 - compare old predictor vs new predictor with confidence intervals
 - treat battle-level improvement and game-level improvement as separate evidence
-- use the existing `AI/Nullkiller2/tools/compare_battle_predictors.py` harness for large A/B runs. It already supports color-swapped paired samples, deterministic random-map seeds, parallel jobs, day-limit adjudication from `statistics.csv`, and candidate AI names such as `Nullkiller2Ratio`, `Nullkiller2V2`, and `Nullkiller2V3`.
+- use the existing `AI/Nullkiller2/tools/compare_battle_predictors.py` harness for large A/B runs. It already supports color-swapped paired samples, deterministic random-map seeds, parallel jobs, day-limit adjudication from `statistics.csv`, and candidate AI names such as `Nullkiller2Ratio`, `Nullkiller2V2`, `Nullkiller2V3`, and `Nullkiller2V3Simulation`.
 
 ## Current Empirical Findings
 
@@ -412,7 +412,7 @@ Current branch progress toward the service boundary:
 - Schema5 battle setup captures pre-merge town siege state before `CGTownInstance::mergeGarrisonOnSiege`: town army snapshot, defending hero army snapshot, and the IDs needed to match the next started battle. The isolated runtime runner can now support visiting-hero inside sieges by applying that merge only inside the cloned game state and recomputing layout before battle start.
 - `CClient::evaluateBattleSimulationForVisit` provides the current runtime Nullkiller evaluator by cloning the client's mirrored `CGameState`, remapping the battle setup into the clone, and running an isolated MMAI-backed simulation runner. This is linked through `vcmiclientcommon`'s existing dependency on `vcmiservercommon`, not through the Nullkiller2 AI object library.
 - Nullkiller's `battlePredictionSimulationSamples` final movement gate currently calls through `CCallback` to `IClient::evaluateBattleSimulationForVisit`. This setting defaults to 0, so normal games use static danger only. When samples are configured, the AI logs bounded incomplete-request diagnostics and aggregate status counters, so A/B runs do not silently look like they are using runtime simulation.
-- `AI/Nullkiller2/tools/compare_battle_predictors.py` can now temporarily enable `battlePredictionSimulationSamples` through `--config-replace` and records `runtimeBattleSimulation` totals by model in `summary.json`. Use `--require-runtime-simulation candidate` for V3 runtime A/B runs so the script fails if candidate games do not show simulation requests or if fewer than 90% of those requests complete.
+- `AI/Nullkiller2/tools/compare_battle_predictors.py` records `runtimeBattleSimulation` totals by model in `summary.json`. Use `--candidate-ai Nullkiller2V3Simulation` and `--require-runtime-simulation candidate` for V3 runtime A/B runs so the script fails if candidate games do not show simulation requests or if fewer than 90% of those requests complete. Add `--min-runtime-simulation-planning-decisions` when the run must prove that planner-side simulation produced completed accepted or rejected decisions.
 - Runtime target selection now mirrors server-side request eligibility more closely: final-gate simulation is only attempted for neutral/enemy armed objects with actual stacks, enemy defended towns, or valid guards. This avoids counting unguarded reward objects, friendly blocking visits, and battle-marked movement to non-simulatable visitable objects as failed runtime simulation requests.
 - Runtime stats also count `skippedNoTarget`: movement steps that may start a battle while runtime simulation is enabled but where target selection finds no enemy/neutral armed object, defended enemy town, or valid guard. This keeps real requests clean while still showing whether the planner is generating battle-like movement that cannot be simulated.
 
@@ -428,16 +428,11 @@ python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
   --randommap-players 2 \
   --samples 125 \
   --legacy-ai Nullkiller2 \
-  --candidate-ai Nullkiller2V3 \
+  --candidate-ai Nullkiller2V3Simulation \
   --testdays 28 \
   --adjudicate-testdays \
   --require-runtime-simulation candidate \
-  --config-replace config/ai/nk2ai/nk2ai-settings.json \
-    '"battlePredictionSimulationSamples" : 0' \
-    '"battlePredictionSimulationSamples" : 15' \
-  --config-replace config/ai/nk2ai/nk2ai-settings.json \
-    '"battlePredictionSimulationPlanningSafeAttackRatio" : 0' \
-    '"battlePredictionSimulationPlanningSafeAttackRatio" : 1.0'
+  --min-runtime-simulation-planning-decisions 1
 ```
 
 Batch collection caveat: when running `vcmibattlesim` with MMAI in parallel, each shard needs an isolated XDG config/cache profile. A shared profile can be rewritten by clients and silently disable the MMAI mod for later shards. Use `--xdg-config-template` and, if needed, `--xdg-profile-root` so each client starts from the same active-mod configuration.
@@ -506,6 +501,7 @@ Current live remote schema5 run:
 - refreshed fallback proxy at 181 complete shard groups / 9050 complete-shard rows remained strong. The held-out split kept 39 groups: static cxx-v3 was 41.03% accurate with Brier 0.4113, while fallback-only all-wins simulation reached 94.87% accuracy and 100% safety accuracy at 8/10 samples, and 97.44% accuracy at 15/20 samples. Fifteen samples had Brier 0.0061, 0 false-safe groups, and 1 conservative false-unsafe group; twenty samples had Brier 0.0019 with the same safety result.
 - refreshed static town miss diagnostics at 181 complete shard groups / 9050 filtered rows: cxx-v3 was 55.80% accurate overall, Brier 0.3309, with 68 false-safe and 13 false-unsafe groups. Deployed-danger factor 1.0 reached 75.14% accuracy but still had 19 false-safe groups; factor 1.5 still had 5 false-safe groups; factor 2.0 removed false-safe groups only by leaving 13 safe groups and 42 false-unsafe groups. The close-even misses and segment profile stayed bidirectional, so the next runtime candidate moves simulation earlier into planning rather than only vetoing the final movement step.
 - implementation update: runtime simulation target eligibility is now shared between the final movement gate and capture planning. For v3 with simulation samples enabled, capture planning can rescue same-turn, current-army paths that static danger marks unsafe if the route's non-target path danger is already statically safe and deterministic repeated simulation says the target battle is safe; future-turn and projected-army chain paths still use static planning because the current simulation API cannot represent their future army state. The A/B tool now parses `planningAccepted`, `planningRejected`, and `planningIncomplete` counters from logs, and can require a minimum number of completed planner-side simulation decisions with `--min-runtime-simulation-planning-decisions`.
+- implementation update: `Nullkiller2V3Simulation` is now a selectable adventure AI alias for A/B tests. It keeps the regular difficulty config intact, forces the V3 battle predictor, enables 15 runtime simulation samples, and uses planner ratio `1.0`; use this alias instead of broad `--config-replace` edits when comparing the simulation-backed candidate against `Nullkiller2`.
 - refreshed validation at 200 live shard groups / 9837 parsed rows stayed clean: all rows were schema5 `town-hero`, all 200 logs had MMAI initialized, and there were 0 fallback lines. Complete 50-row shard groups were 192 at the time of the fallback proxy and 193 by the subsequent static miss report.
 - refreshed fallback proxy at 192 complete shard groups: static cxx-v3 held-out accuracy was 40.48% with Brier 0.4098, while fallback-only all-wins simulation reached 95.24% accuracy at 8/10 samples and 97.62% at 15/20 samples. Fifteen samples had Brier 0.0056, 0 false-safe groups, and 1 conservative false-unsafe group; twenty samples had Brier 0.0018 with the same safety result.
 - refreshed runtime-policy check at 198 live shard groups / 10071 parsed rows: fallback-only all-wins with 20 samples reached 97.67% held-out accuracy, Brier 0.0017, 0 false-safe groups, and 1 conservative false-unsafe group. Fallback-only probability/Wilson with the same samples had the same accuracy and Brier but introduced 1 false-safe group from a 19/20 sample case whose empirical shard win rate was 93.33%. Nullkiller2 runtime and planner rescue now share an all-wins safety predicate so deployed decisions match the best observed safety policy.
