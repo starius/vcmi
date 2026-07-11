@@ -125,14 +125,17 @@ python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
   --candidate-ai Nullkiller2V3 \
   --testdays 28 \
   --adjudicate-testdays \
+  --require-runtime-simulation candidate \
   --config-replace config/ai/nk2ai/nk2ai-settings.json \
     '"battlePredictionSimulationSamples" : 0' \
     '"battlePredictionSimulationSamples" : 3'
 ```
 
 The replacement is restored before exit. Summary files include
-`runtimeBattleSimulation` totals by model; for a valid V3+simulation run, the
-candidate model should have nonzero `requests` and mostly `complete` samples.
+`runtimeBattleSimulation` totals by model. The
+`--require-runtime-simulation candidate` guard makes the run fail if valid
+candidate games do not have simulation requests or if fewer than 90% of those
+requests complete.
 
 With `--adjudicate-testdays`, games that reach the completed-day limit without
 a standard winner are scored deterministically from the run-local

@@ -167,6 +167,29 @@ def parse_args() -> argparse.Namespace:
 			"FILE is resolved relative to --workdir when not absolute. May be repeated."
 		),
 	)
+	parser.add_argument(
+		"--require-runtime-simulation",
+		action="append",
+		default=[],
+		choices=("legacy", "candidate", "opponent"),
+		metavar="MODEL",
+		help=(
+			"Require runtime battle simulation evidence for MODEL in valid games. "
+			"May be repeated; intended for V3 runtime-fallback A/B runs."
+		),
+	)
+	parser.add_argument(
+		"--min-runtime-simulation-requests",
+		type=int,
+		default=1,
+		help="Minimum runtime simulation requests required for each --require-runtime-simulation model.",
+	)
+	parser.add_argument(
+		"--min-runtime-simulation-complete-rate",
+		type=float,
+		default=0.9,
+		help="Minimum complete/request ratio required for each --require-runtime-simulation model.",
+	)
 	parser.add_argument("--keep-engine-logs", action="store_true", help="Keep VCMI log files in each run directory. Stdout and summaries are always kept.")
 	parser.add_argument("--require-clean-exit", action="store_true", help="Mark nonzero vcmiclient exits as failed games.")
 	args = parser.parse_args()
@@ -193,6 +216,10 @@ def parse_args() -> argparse.Namespace:
 		parser.error("--base-server-port must be a valid TCP port")
 	if args.base_server_port + args.samples * 2 > 65535:
 		parser.error("--base-server-port is too high for the requested number of samples")
+	if args.min_runtime_simulation_requests <= 0:
+		parser.error("--min-runtime-simulation-requests must be positive")
+	if not 0.0 <= args.min_runtime_simulation_complete_rate <= 1.0:
+		parser.error("--min-runtime-simulation-complete-rate must be between 0 and 1")
 
 	return args
 
@@ -820,6 +847,11 @@ def analyze_results(args: argparse.Namespace, results: list[GameResult]) -> dict
 			"seedStart": args.seed_start,
 			"seedStep": args.seed_step,
 			"jobs": args.jobs,
+			"runtimeSimulationRequirements": {
+				"models": args.require_runtime_simulation,
+				"minRequests": args.min_runtime_simulation_requests,
+				"minCompleteRate": args.min_runtime_simulation_complete_rate,
+			},
 			"configReplacements": [
 				{"file": str(replacement.file), "old": replacement.old, "new": replacement.new}
 				for replacement in resolve_config_replacements(args)
@@ -850,6 +882,50 @@ def analyze_results(args: argparse.Namespace, results: list[GameResult]) -> dict
 			"byModel": runtime_stats_by_model,
 		},
 		"sampleRows": sample_rows,
+	}
+
+
+def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis: dict) -> dict:
+	errors: list[str] = []
+	model_reports: list[dict] = []
+	stats_by_model = analysis["runtimeBattleSimulation"]["byModel"]
+
+	for model in args.require_runtime_simulation:
+		stats = stats_by_model.get(model, empty_runtime_simulation_stats())
+		requests = stats["requests"]
+		complete = stats["complete"]
+		complete_rate = complete / requests if requests else None
+		model_errors = []
+
+		if requests < args.min_runtime_simulation_requests:
+			model_errors.append(
+				f"{model}: runtime requests {requests} below required "
+				f"{args.min_runtime_simulation_requests}"
+			)
+		if complete_rate is not None and complete_rate < args.min_runtime_simulation_complete_rate:
+			model_errors.append(
+				f"{model}: runtime complete rate {complete_rate:.3f} below required "
+				f"{args.min_runtime_simulation_complete_rate:.3f}"
+			)
+
+		errors.extend(model_errors)
+		model_reports.append(
+			{
+				"model": model,
+				"stats": stats,
+				"completeRate": complete_rate,
+				"ok": not model_errors,
+				"errors": model_errors,
+			}
+		)
+
+	return {
+		"required": bool(args.require_runtime_simulation),
+		"models": model_reports,
+		"minRequests": args.min_runtime_simulation_requests,
+		"minCompleteRate": args.min_runtime_simulation_complete_rate,
+		"ok": not errors,
+		"errors": errors,
 	}
 
 
@@ -936,6 +1012,10 @@ def print_summary(analysis: dict, output_dir: Path) -> None:
 	print(f"runtime simulation total: {runtime_stats['total']}")
 	for model, stats in sorted(runtime_stats["byModel"].items()):
 		print(f"runtime simulation {model}: {stats}")
+	requirements = runtime_stats.get("requirements")
+	if requirements and requirements["required"]:
+		status = "ok" if requirements["ok"] else "failed"
+		print(f"runtime simulation requirements: {status}")
 	print(f"raw logs and summaries: {output_dir}")
 
 
@@ -945,6 +1025,8 @@ def main() -> int:
 	output_dir.mkdir(parents=True, exist_ok=True)
 	replacements = resolve_config_replacements(args)
 	originals: dict[Path, bytes] = {}
+	results: list[GameResult] = []
+	runtime_requirements: dict | None = None
 
 	try:
 		apply_config_replacements(replacements, originals)
@@ -954,7 +1036,6 @@ def main() -> int:
 			json.dumps([task.__dict__ | {"run_dir": str(task.run_dir)} for task in tasks], indent=2, default=str) + "\n"
 		)
 
-		results: list[GameResult] = []
 		with ThreadPoolExecutor(max_workers=args.jobs) as executor:
 			future_to_task = {executor.submit(run_game, args, task): task for task in tasks}
 			for future in as_completed(future_to_task):
@@ -981,8 +1062,12 @@ def main() -> int:
 		)
 		write_csv(output_dir, results)
 		analysis = analyze_results(args, results)
+		runtime_requirements = evaluate_runtime_simulation_requirements(args, analysis)
+		analysis["runtimeBattleSimulation"]["requirements"] = runtime_requirements
 		(output_dir / "summary.json").write_text(json.dumps(analysis, indent=2) + "\n")
 		print_summary(analysis, output_dir)
+		for error in runtime_requirements["errors"]:
+			print(f"runtime simulation requirement failed: {error}", file=sys.stderr)
 	finally:
 		restore_config_files(originals)
 
@@ -991,6 +1076,8 @@ def main() -> int:
 		return 2
 	if any(not is_valid_result(args, result) for result in results):
 		return 1
+	if runtime_requirements and not runtime_requirements["ok"]:
+		return 3
 	return 0
 
 
