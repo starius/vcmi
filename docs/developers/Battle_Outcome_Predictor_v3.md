@@ -440,6 +440,8 @@ python3 scripts/battle_prediction/validate_battle_dataset.py \
   --expected-schema 4 \
   --expected-shards 400 \
   --expected-shard-size 50 \
+  --group-key shard \
+  --expected-groups 400 \
   --require-complete-shards \
   --require-battle-types town-hero \
   --require-no-mmai-fallback \
@@ -449,6 +451,7 @@ python3 scripts/battle_prediction/validate_battle_dataset.py \
 python3 scripts/battle_prediction/evaluate_nullkiller_predictor.py \
   /root/vcmi-nk-ratio-results/schema4-mmai-town-hero-20k-20260711 \
   --scope town \
+  --group-key shard \
   --l2 0.03 \
   --print-near-even 40 \
   --print-worst 40 \
@@ -457,6 +460,16 @@ python3 scripts/battle_prediction/evaluate_nullkiller_predictor.py \
   --print-town-deployable-false-safe 40 \
   --print-town-deployable-false-unsafe 40 \
   --town-deployable-safe-probability 0.62
+
+python3 scripts/battle_prediction/analyze_v3_failure_segments.py \
+  /root/vcmi-nk-ratio-results/schema4-mmai-town-hero-20k-20260711 \
+  --scope town \
+  --group-key shard \
+  --predictor cxx-v3 \
+  --actual-min 0.25 \
+  --actual-max 0.75 \
+  --error-min 0.25 \
+  --print-groups 40
 ```
 
 Use the dataset validator before fitting or reporting numbers:
@@ -468,6 +481,8 @@ python3 scripts/battle_prediction/validate_battle_dataset.py \
   --expected-schema 3 \
   --expected-shards 100 \
   --expected-shard-size 20 \
+  --group-key shard \
+  --expected-groups 100 \
   --require-complete-shards \
   --require-battle-types hero-hero,hero-monster,town \
   --require-no-mmai-fallback \

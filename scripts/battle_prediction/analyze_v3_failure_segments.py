@@ -53,6 +53,12 @@ class SegmentStats:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("dataset", help="Dataset directory, .jsonl, .jsonl.gz, or .tar.gz archive")
+    parser.add_argument(
+        "--group-key",
+        choices=["setup", "shard"],
+        default="setup",
+        help="Group repeated rows by full setup features or by generated shard metadata. Use shard for generated repeated-simulation datasets.",
+    )
     parser.add_argument("--min-group-size", type=int, default=1)
     parser.add_argument("--min-segment-groups", type=int, default=3)
     parser.add_argument("--top", type=int, default=40)
@@ -116,6 +122,42 @@ def town_fortification(row: dict[str, Any], key: str, default: Any = None) -> An
     return fortifications.get(key, default)
 
 
+def wall_state(row: dict[str, Any], state_key: str, part: str) -> int:
+    wall = row.get(state_key) or {}
+    if not isinstance(wall, dict) or wall.get(part) is None:
+        if state_key != "initialWallState":
+            return -1
+
+        # Schema 3 did not persist the pre-battle wall state. Derive the same
+        # coarse setup-visible state from fortifications so old diagnostics
+        # remain comparable with schema4.
+        fortifications = (row.get("defendedTown") or {}).get("fortifications") or {}
+        walls_health = int(fortifications.get("wallsHealth") or 0)
+        if part == "gateState":
+            return 1 if walls_health else 0
+        if not walls_health:
+            return -1
+        if part == "gate":
+            return 2
+        if part in ("bottomWall", "belowGate", "overGate", "upperWall"):
+            return walls_health
+        if part == "keep":
+            value = int(fortifications.get("citadelHealth") or 0)
+            return value if value else -1
+        if part == "bottomTower":
+            value = int(fortifications.get("lowerTowerHealth") or 0)
+            return value if value else -1
+        if part == "upperTower":
+            value = int(fortifications.get("upperTowerHealth") or 0)
+            return value if value else -1
+        return -1
+    return int(wall[part])
+
+
+def wall_total(row: dict[str, Any], state_key: str, parts: list[str]) -> int:
+    return sum(max(wall_state(row, state_key, part), 0) for part in parts)
+
+
 def fort_level(row: dict[str, Any]) -> int:
     town = row.get("defendedTown") or {}
     if town.get("fortLevel") is not None:
@@ -174,6 +216,8 @@ def segments_for(row: dict[str, Any], actual: float, predicted: float) -> list[s
     ]
 
     if type_name.startswith("town"):
+        initial_wall_total = wall_total(row, "initialWallState", ["bottomWall", "belowGate", "overGate", "upperWall"])
+        initial_tower_total = wall_total(row, "initialWallState", ["bottomTower", "upperTower"])
         result.extend(
             [
                 f"town_faction={town_feature(row, 'faction')}",
@@ -182,6 +226,11 @@ def segments_for(row: dict[str, Any], actual: float, predicted: float) -> list[s
                 f"town_tavern={int(bool(town_feature(row, 'hasBuiltTavern', False)))}",
                 f"town_grail={int(bool(town_feature(row, 'hasBuiltGrail', False)))}",
                 f"town_moat={int(bool(town_fortification(row, 'hasMoat', False)))}",
+                f"town_initial_wall_total={bucket(initial_wall_total, [1, 4, 8, 12])}",
+                f"town_initial_tower_total={bucket(initial_tower_total, [1, 4])}",
+                f"town_initial_keep={wall_state(row, 'initialWallState', 'keep')}",
+                f"town_initial_gate={wall_state(row, 'initialWallState', 'gate')}",
+                f"town_initial_gate_state={wall_state(row, 'initialWallState', 'gateState')}",
             ]
         )
 
@@ -273,6 +322,8 @@ def town_summary(row: dict[str, Any]) -> str:
     if not isinstance(town, dict):
         return "none"
     fortifications = town.get("fortifications") or {}
+    initial_wall_total = wall_total(row, "initialWallState", ["bottomWall", "belowGate", "overGate", "upperWall"])
+    final_wall_total = wall_total(row, "finalWallState", ["bottomWall", "belowGate", "overGate", "upperWall"])
     return (
         f"faction={town.get('faction')} fort={town.get('fortLevel')} "
         f"mage={town.get('mageGuildLevel')} tavern={town.get('hasBuiltTavern')} "
@@ -280,7 +331,10 @@ def town_summary(row: dict[str, Any]) -> str:
         f"visiting={town.get('hasVisitingHero')} garrison={town.get('hasGarrisonHero')} "
         f"walls={fortifications.get('wallsHealth')} keep={fortifications.get('citadelHealth')} "
         f"towers={fortifications.get('upperTowerHealth')}/{fortifications.get('lowerTowerHealth')} "
-        f"moat={fortifications.get('hasMoat')}"
+        f"moat={fortifications.get('hasMoat')} "
+        f"initialWallTotal={initial_wall_total} finalWallTotal={final_wall_total} "
+        f"initialGate={wall_state(row, 'initialWallState', 'gate')} "
+        f"initialGateState={wall_state(row, 'initialWallState', 'gateState')}"
     )
 
 
@@ -336,7 +390,7 @@ def segment_sort_key(stats: SegmentStats, sort: str) -> tuple[float, int]:
 
 def main() -> int:
     args = parse_args()
-    groups, schema_counts, rows = load_groups(args.dataset)
+    groups, schema_counts, rows = load_groups(args.dataset, args.group_key)
     groups = [
         group
         for group in groups
@@ -374,7 +428,10 @@ def main() -> int:
     candidates.sort(key=lambda item: segment_sort_key(item[1], args.sort), reverse=True)
 
     scoped_rows = sum(group.count for group in groups)
-    print(f"rows={rows} scoped_rows={scoped_rows} schemas={dict(sorted(schema_counts.items()))} groups={len(groups)} scope={args.scope}")
+    print(
+        f"rows={rows} scoped_rows={scoped_rows} schemas={dict(sorted(schema_counts.items()))} "
+        f"group_key={args.group_key} groups={len(groups)} scope={args.scope}"
+    )
     print(
         f"predictor={args.predictor} safe_probability={args.safe_probability:.4f} "
         f"safe_ratio={args.safe_ratio:.4f} town_danger_factor={args.town_danger_factor:.4f}"

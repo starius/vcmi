@@ -12,7 +12,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
-from evaluate_nullkiller_predictor import battle_type, iter_json_lines, setup_key
+from evaluate_nullkiller_predictor import battle_type, iter_json_lines, setup_key, shard_setup_key
 
 
 MMAI_FALLBACK_PATTERNS = [
@@ -38,6 +38,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--expected-schema", type=int)
     parser.add_argument("--expected-shards", type=int)
     parser.add_argument("--expected-shard-size", type=int)
+    parser.add_argument("--expected-groups", type=int, help="Expected number of grouped battle setups for --group-key")
+    parser.add_argument(
+        "--group-key",
+        choices=["setup", "shard"],
+        default="setup",
+        help="Grouping key used for --expected-groups and --min-groups. Use shard for generated repeated-simulation datasets.",
+    )
+    parser.add_argument("--min-groups", type=int, help="Minimum number of grouped battle setups for --group-key")
     parser.add_argument("--min-setup-groups", type=int)
     parser.add_argument("--require-complete-shards", action="store_true")
     parser.add_argument("--require-battle-types", help="Comma-separated battle types that must be present")
@@ -317,11 +325,12 @@ def scan_logs(path: str) -> LogScan:
     return result
 
 
-def load_summary(path: str) -> dict[str, Any]:
+def load_summary(path: str, group_key: str) -> dict[str, Any]:
     schemas: Counter[int] = Counter()
     battle_types: Counter[str] = Counter()
     shard_rows: Counter[int] = Counter()
     setup_groups: Counter[str] = Counter()
+    shard_groups: Counter[str] = Counter()
     town_fort_levels: Counter[int] = Counter()
     town_hero_sources: Counter[str] = Counter()
     town_has_fortifications: Counter[str] = Counter()
@@ -335,6 +344,7 @@ def load_summary(path: str) -> dict[str, Any]:
         if row.get("shardIndex") is not None:
             shard_rows[int(row["shardIndex"])] += 1
         setup_groups[setup_key(row)] += 1
+        shard_groups[shard_setup_key(row)] += 1
         town = row.get("defendedTown") or {}
         if type_name.startswith("town") and isinstance(town, dict):
             if town.get("fortLevel") is not None:
@@ -342,7 +352,10 @@ def load_summary(path: str) -> dict[str, Any]:
             town_hero_sources[str(town.get("defendingHeroSource", "missing"))] += 1
             town_has_fortifications[str(bool(row.get("hasFortifications"))).lower()] += 1
 
+    active_groups = shard_groups if group_key == "shard" else setup_groups
+
     return {
+        "group_key": group_key,
         "rows": rows,
         "schemas": dict(sorted(schemas.items())),
         "battle_types": dict(sorted(battle_types.items())),
@@ -350,9 +363,15 @@ def load_summary(path: str) -> dict[str, Any]:
         "shard_rows_min": min(shard_rows.values()) if shard_rows else 0,
         "shard_rows_max": max(shard_rows.values()) if shard_rows else 0,
         "shard_rows": dict(sorted(shard_rows.items())),
+        "groups": len(active_groups),
+        "group_rows_min": min(active_groups.values()) if active_groups else 0,
+        "group_rows_max": max(active_groups.values()) if active_groups else 0,
         "setup_groups": len(setup_groups),
         "setup_group_rows_min": min(setup_groups.values()) if setup_groups else 0,
         "setup_group_rows_max": max(setup_groups.values()) if setup_groups else 0,
+        "shard_groups": len(shard_groups),
+        "shard_group_rows_min": min(shard_groups.values()) if shard_groups else 0,
+        "shard_group_rows_max": max(shard_groups.values()) if shard_groups else 0,
         "town_fort_levels": dict(sorted(town_fort_levels.items())),
         "town_hero_sources": dict(sorted(town_hero_sources.items())),
         "town_has_fortifications": dict(sorted(town_has_fortifications.items())),
@@ -377,6 +396,12 @@ def validate(args: argparse.Namespace, summary: dict[str, Any], logs: LogScan, r
             errors.append(
                 f"expected shard size {args.expected_shard_size}, got min={summary['shard_rows_min']} max={summary['shard_rows_max']}"
             )
+
+    if args.expected_groups is not None and summary["groups"] != args.expected_groups:
+        errors.append(f"expected {args.expected_groups} {summary['group_key']} groups, got {summary['groups']}")
+
+    if args.min_groups is not None and summary["groups"] < args.min_groups:
+        errors.append(f"expected at least {args.min_groups} {summary['group_key']} groups, got {summary['groups']}")
 
     if args.require_complete_shards and args.expected_shard_size is None:
         errors.append("--require-complete-shards needs --expected-shard-size")
@@ -405,7 +430,7 @@ def validate(args: argparse.Namespace, summary: dict[str, Any], logs: LogScan, r
 
 def main() -> int:
     args = parse_args()
-    summary = load_summary(args.dataset)
+    summary = load_summary(args.dataset, args.group_key)
     logs = scan_logs(args.dataset)
     rich_fields = validate_schema3_rich_fields(args.dataset) if args.require_schema3_rich_fields else None
     errors = validate(args, summary, logs, rich_fields)
@@ -427,7 +452,10 @@ def main() -> int:
             f"rows={summary['rows']} schemas={summary['schemas']} "
             f"battle_types={summary['battle_types']} shards={summary['shards']} "
             f"shard_rows={summary['shard_rows_min']}..{summary['shard_rows_max']} "
-            f"setup_groups={summary['setup_groups']} logs={logs.files} "
+            f"group_key={summary['group_key']} groups={summary['groups']} "
+            f"group_rows={summary['group_rows_min']}..{summary['group_rows_max']} "
+            f"setup_groups={summary['setup_groups']} shard_groups={summary['shard_groups']} "
+            f"logs={logs.files} "
             f"mmai_init_logs={logs.files_with_mmai_init} mmai_fallback_lines={len(logs.fallback_lines)}"
         )
         if summary["town_fort_levels"]:
