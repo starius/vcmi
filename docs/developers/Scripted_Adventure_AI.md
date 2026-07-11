@@ -2233,7 +2233,11 @@ Regression harness:
 - Done: `mineAdventureTraceMistakes.py --fixture-mode imperative` rewrites mined draft fixture expectations from
   plan-output action keys to imperative command keys (`actionsContain` -> `commandsContain`, etc.) and annotates
   drafts that may need `refreshInput` / `hostResponses` before being promoted into committed tests.
-- Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
+- Done: the small underground/no-water generated-map corpus is now explicit in
+  `scripts/ai/evaluationScenarios.json`. Seeds `53001`-`53010` with game seeds `63001`-`63010` are the fixed
+  training bucket for the 10/10 improvement target; seeds `53011`-`53016` with game seeds `63011`-`63016` are the
+  held-out promotion guard. All entries are disabled by default and selected intentionally with
+  `--include-disabled --stage outcome --kind generated-random` plus `--group training` or `--group heldout`.
 
 ## Open Design Questions
 

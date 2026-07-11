@@ -15,6 +15,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from runAdventureAIBatch import (
     annotate_infrastructure_failure,
     compact_result,
+    load_scenarios,
     run_one,
     run_one_with_infrastructure_retries,
     run_outcome,
@@ -23,6 +24,42 @@ from runAdventureAIBatch import (
 
 
 class RunAdventureAIBatchTest(unittest.TestCase):
+    def test_evaluation_file_contains_small_generated_training_and_heldout_corpus(self) -> None:
+        def args_for(group: str) -> argparse.Namespace:
+            return argparse.Namespace(
+                scenario_file=SCRIPT_DIR / "evaluationScenarios.json",
+                map=[],
+                runs=1,
+                testdays=0,
+                timeout=300,
+                idle_timeout=0.0,
+                infrastructure_retries=0,
+                extra_arg=[],
+                group=[group],
+                stage=["outcome"],
+                kind=["generated-random"],
+                include_disabled=True,
+            )
+
+        training = load_scenarios(args_for("training"))
+        heldout = load_scenarios(args_for("heldout"))
+
+        self.assertEqual([scenario["seed"] for scenario in training], list(range(53001, 53011)))
+        self.assertEqual([scenario["gameSeed"] for scenario in training], list(range(63001, 63011)))
+        self.assertEqual([scenario["seed"] for scenario in heldout], list(range(53011, 53017)))
+        self.assertEqual([scenario["gameSeed"] for scenario in heldout], list(range(63011, 63017)))
+
+        for scenario in training + heldout:
+            self.assertEqual(scenario["randomMap"]["size"], "S")
+            self.assertEqual(scenario["randomMap"]["levels"], 2)
+            self.assertEqual(scenario["randomMap"]["players"], 2)
+            self.assertEqual(scenario["randomMap"]["water"], "none")
+            self.assertEqual(scenario["randomMap"]["monsterStrength"], "normal")
+            self.assertEqual(scenario["testdays"], 0)
+            self.assertEqual(scenario["timeout"], 1800)
+            self.assertEqual(scenario["idle_timeout"], 240.0)
+            self.assertEqual(scenario["infrastructure_retries"], 1)
+
     def test_run_outcome_uses_last_started_day_for_terminal_result(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             stdout = Path(temp_dir) / "stdout.log"
