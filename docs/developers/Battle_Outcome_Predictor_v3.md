@@ -185,6 +185,7 @@ Offline validation:
 - use `--group-key shard` for generated repeated-simulation datasets; reserve full setup grouping for datasets where each distinct realized setup is the intended unit
 - use deterministic group cross-validation for small or still-growing generated datasets before interpreting fitted town/siege models, for example:
   `python3 scripts/battle_prediction/evaluate_nullkiller_predictor.py <dataset> --scope town --group-key shard --complete-shards-only --summary-only --cv-folds 5`
+- when testing a candidate town/siege model, add `--cv-print-failures N` to inspect the worst held-out false-safe and false-unsafe groups per cross-validated model before considering any C++ coefficient port
 - dataset integrity gate before analysis:
   - expected row count and schema
   - expected shard count and repeated rows per shard

@@ -79,6 +79,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--test-fraction", type=float, default=0.25)
     parser.add_argument("--cv-folds", type=int, default=0, help="Run deterministic group k-fold cross-validation when greater than 1")
+    parser.add_argument("--cv-print-failures", type=int, default=0, help="Print N worst held-out false-safe/false-unsafe groups per cross-validated model")
     parser.add_argument("--epochs", type=int, default=2500)
     parser.add_argument("--learning-rate", type=float, default=0.05)
     parser.add_argument("--l2", type=float, default=0.001)
@@ -1572,6 +1573,39 @@ def finalize_cv_summary(summary: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def trim_failure_groups(groups: list[dict[str, Any]], limit: int, descending: bool = True) -> list[dict[str, Any]]:
+    if limit <= 0:
+        return []
+    return sorted(
+        groups,
+        key=lambda group: (
+            float(group["model_error"] or 0.0),
+            int(group["count"]),
+        ),
+        reverse=descending,
+    )[:limit]
+
+
+def add_cv_failure(
+    failures: dict[str, dict[str, list[dict[str, Any]]]],
+    model_name: str,
+    kind: str,
+    group: Group,
+    model: LogisticModel,
+    safe_ratio: float,
+    probability: float,
+    error: float,
+    limit: int,
+) -> None:
+    if limit <= 0:
+        return
+    summary = compact_group_summary(group, model, safe_ratio)
+    summary["model_probability"] = probability
+    summary["model_error"] = error
+    failures[model_name][kind].append(summary)
+    failures[model_name][kind] = trim_failure_groups(failures[model_name][kind], limit)
+
+
 def cross_validate_models(
     groups: list[Group],
     folds: int,
@@ -1581,6 +1615,7 @@ def cross_validate_models(
     l2: float,
     model_safe_probability: float,
     fit_models: bool,
+    failure_limit: int = 0,
 ) -> dict[str, Any]:
     folds = max(2, folds)
     summaries = {
@@ -1599,6 +1634,10 @@ def cross_validate_models(
         ]
         for name, _ in model_features:
             summaries[name] = empty_cv_summary()
+    failures: dict[str, dict[str, list[dict[str, Any]]]] = {
+        name: {"false_safe": [], "false_unsafe": []}
+        for name, _ in model_features
+    }
 
     fold_outputs = []
     for fold in range(folds):
@@ -1667,6 +1706,33 @@ def cross_validate_models(
                     "false_safe_groups": model_summary["model_false_safe_groups"],
                     "false_unsafe_groups": model_summary["model_false_unsafe_groups"],
                 }
+                if failure_limit > 0:
+                    for group in test:
+                        probability = model.predict(group.row)
+                        if probability >= model_safe_probability and group.win_rate < 0.95:
+                            add_cv_failure(
+                                failures,
+                                name,
+                                "false_safe",
+                                group,
+                                model,
+                                safe_ratio,
+                                probability,
+                                probability - group.win_rate,
+                                failure_limit,
+                            )
+                        if probability < model_safe_probability and group.win_rate >= 0.95:
+                            add_cv_failure(
+                                failures,
+                                name,
+                                "false_unsafe",
+                                group,
+                                model,
+                                safe_ratio,
+                                probability,
+                                group.win_rate - probability,
+                                failure_limit,
+                            )
         fold_outputs.append(fold_result)
 
     return {
@@ -1674,6 +1740,7 @@ def cross_validate_models(
         "folds_evaluated": len(fold_outputs),
         "models": {name: finalize_cv_summary(summary) for name, summary in summaries.items()},
         "folds": fold_outputs,
+        "failures": failures,
     }
 
 
@@ -2029,6 +2096,7 @@ def main() -> int:
             args.l2,
             args.town_deployable_safe_probability,
             fit_models,
+            args.cv_print_failures,
         )
     if town_danger_factors:
         metrics["town_danger_factors"] = {
@@ -2284,6 +2352,18 @@ def main() -> int:
                     f"false_unsafe={summary['false_unsafe_groups']} "
                     f"safe_groups={summary['safe_groups']}"
                 )
+            if args.cv_print_failures > 0:
+                for model_name, failures in cv.get("failures", {}).items():
+                    if failures["false_safe"]:
+                        print_group_report(
+                            f"cross-validation {model_name} false-safe groups",
+                            failures["false_safe"],
+                        )
+                    if failures["false_unsafe"]:
+                        print_group_report(
+                            f"cross-validation {model_name} false-unsafe groups",
+                            failures["false_unsafe"],
+                        )
         if town_danger_factors:
             print("town danger factor diagnostics:")
             for name in ["train", "test"]:
