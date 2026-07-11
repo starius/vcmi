@@ -203,6 +203,22 @@ End-to-end validation:
 
 Recent MMAI-labeled datasets show that simple global ratio/logistic tuning is not enough for the 95% target.
 
+### Best Result So Far
+
+As of 2026-07-11, the best empirical result is fallback-only deterministic repeated simulation with MMAI labels and an all-wins safety rule. These are still offline proxy results, not a deployed Nullkiller2 runtime result.
+
+- corrected 5k mixed run, current deployed non-town scope (`schema3-richstats-mmai-real-mixed-5k-20260711`, `simulation-fallback-cxx-v3-deployed-static-allwins.txt`):
+  - 3 samples: 97.23% win/loss accuracy, 100.00% safety accuracy on 649 held-out rows
+  - 20 samples: 99.69% win/loss accuracy, 98.44% safety accuracy on 321 held-out rows
+- corrected 5k mixed run, town-without-hero scope (`simulation-fallback-cxx-v3-town-allwins.txt`):
+  - 1 and 3 samples: 100.00% win/loss and safety accuracy on 401 and 377 held-out rows
+  - 10 samples: 100.00% win/loss and safety accuracy on 293 held-out rows
+- corrected 2k town-hero run (`schema3-richstats-mmai-town-hero-2k-fix-20260711`, `simulation-fallback-cxx-v3-town-allwins.txt`):
+  - 3 samples: 100.00% win/loss accuracy, 95.37% safety accuracy on 367 held-out rows
+  - 5 samples: 98.39% win/loss accuracy, 95.18% safety accuracy on 311 held-out rows
+
+The best static models are not merge-ready: current cxx-v3 was about 69.39% / Brier 0.287 on corrected 5k non-town deployed-static holdout rows and about 58.76% / Brier 0.363 on corrected 2k town-hero holdout rows. Skill/spell static features are promising but overfit in the current small generated datasets. The practical direction is therefore a server-owned runtime simulation fallback, with static prediction kept as a cheap coarse estimate until a better validated model exists.
+
 Remote analysis outputs:
 
 - `/root/vcmi-battle-results/mmai-schema2-5k-evaluation-v3-compatible.txt`
