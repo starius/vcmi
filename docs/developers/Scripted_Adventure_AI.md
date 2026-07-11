@@ -2255,6 +2255,9 @@ Regression harness:
   dialog preferences using numeric ids, provide a resolver callback, delegate individual dialogs to
   `nullkiller_answer_query`, and refresh after each answer. This is an API-parity step for scriptable dialogs, not
   a strategy promotion.
+- Done: the bounded-control candidate scripts now use the shared query-policy helper for their existing
+  Nullkiller-per-query behavior. This keeps the current champion path on the same scriptable dialog surface that
+  future policies will tune, instead of maintaining separate hand-written pending-query loops.
 
 ## Open Design Questions
 

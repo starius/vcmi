@@ -93,25 +93,22 @@ local function answeredQueryIntent(count)
 end
 
 local function answerPendingQueries(ai, current, memory)
-    local answered = 0
+    local answered = ai:answerPendingQueriesByPolicy(function()
+        return { useNullkiller = true, default_answer = 0 }
+    end, { max_queries = MaxQueriesPerSlice })
 
-    while answered < MaxQueriesPerSlice and hasPendingQueries(current) do
-        local query = pendingQueries(current)[1]
-        ai:nullkillerAnswerQuery(query, 0)
-        answered = answered + 1
-        memory.totalQueriesAnswered = memory.totalQueriesAnswered + 1
-        current = ai:refresh()
-    end
+    memory.totalQueriesAnswered = memory.totalQueriesAnswered + answered.count
+    current = ai.input or current
 
-    if hasPendingQueries(current) then
+    if answered.truncated or hasPendingQueries(current) then
         error("bounded Nullkiller control could not clear pending queries within one slice")
     end
 
-    if answered > 0 then
-        memory.lastIntent = answeredQueryIntent(answered)
+    if answered.count > 0 then
+        memory.lastIntent = answeredQueryIntent(answered.count)
     end
 
-    return current, answered
+    return current, answered.count
 end
 
 local function sliceDidAdventureWork(result)

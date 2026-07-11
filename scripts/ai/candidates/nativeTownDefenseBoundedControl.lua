@@ -150,24 +150,21 @@ local function lacksMapTempo(input)
 end
 
 local function answerPendingQueries(ai, current, memory)
-    local answered = 0
+    local answered = ai:answerPendingQueriesByPolicy(function()
+        return { useNullkiller = true, default_answer = 0 }
+    end, { max_queries = MaxQueriesPerSlice })
 
-    while answered < MaxQueriesPerSlice and hasPendingQueries(current) do
-        local query = pendingQueries(current)[1]
-        ai:nullkillerAnswerQuery(query, 0)
-        answered = answered + 1
-        memory.totalQueriesAnswered = memory.totalQueriesAnswered + 1
-        current = ai:refresh()
-    end
+    memory.totalQueriesAnswered = memory.totalQueriesAnswered + answered.count
+    current = ai.input or current
 
-    if hasPendingQueries(current) then
+    if answered.truncated or hasPendingQueries(current) then
         error("defensive bounded control could not clear pending queries within one slice")
     end
 
-    if answered == 1 then
+    if answered.count == 1 then
         memory.lastIntent = "answered one pending query before bounded native planning"
-    elseif answered > 1 then
-        memory.lastIntent = "answered " .. tostring(answered) .. " pending queries before bounded native planning"
+    elseif answered.count > 1 then
+        memory.lastIntent = "answered " .. tostring(answered.count) .. " pending queries before bounded native planning"
     end
 
     return current
