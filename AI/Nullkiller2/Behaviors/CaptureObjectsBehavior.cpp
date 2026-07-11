@@ -58,6 +58,10 @@ bool plannerSimulationAcceptsUnsafeVisit(
 	if(path.turn() > 0)
 		return false;
 
+	const auto pathDanger = path.getPathDanger();
+	if(pathDanger > 0 && !isSafeToVisit(hero, path.heroArmy, pathDanger, nullkiller->settings->getBattlePlanningSafeAttackRatio()))
+		return false;
+
 	// Runtime simulation uses the current hero army. Avoid accepting paths whose
 	// projected army differs due to exchanges or upgrades that have not happened yet.
 	if(path.heroArmy != static_cast<const CCreatureSet *>(hero))
