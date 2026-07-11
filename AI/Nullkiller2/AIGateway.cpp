@@ -66,6 +66,8 @@ struct RuntimeBattleSimulationStats
 	uint64_t planningAcceptedStaticUnsafe = 0;
 	uint64_t planningRejectedStaticSafe = 0;
 	uint64_t planningRejectedStaticUnsafe = 0;
+	uint64_t townRequests = 0;
+	uint64_t planningTownTargets = 0;
 	uint64_t planningCacheHits = 0;
 	uint64_t planningSkippedFutureTurn = 0;
 	uint64_t planningSkippedUnsafePath = 0;
@@ -84,6 +86,7 @@ std::atomic<uint64_t> runtimeBattleSimulationNotAvailable{0};
 std::atomic<uint64_t> runtimeBattleSimulationSafe{0};
 std::atomic<uint64_t> runtimeBattleSimulationRejected{0};
 std::atomic<uint64_t> runtimeBattleSimulationSkippedNoTarget{0};
+std::atomic<uint64_t> runtimeBattleSimulationTownRequests{0};
 std::atomic<uint64_t> runtimeBattleSimulationCacheHits{0};
 
 const char * runtimeSimulationStatusName(BattleOutcomeSimulationStatus status)
@@ -150,6 +153,8 @@ RuntimeBattleSimulationStats runtimeBattleSimulationStatsSnapshot()
 		planningStats.acceptedStaticUnsafe,
 		planningStats.rejectedStaticSafe,
 		planningStats.rejectedStaticUnsafe,
+		runtimeBattleSimulationTownRequests.load(std::memory_order_relaxed),
+		planningStats.townTargets,
 		planningStats.cacheHits,
 		planningStats.skippedFutureTurn,
 		planningStats.skippedUnsafePath,
@@ -182,6 +187,8 @@ RuntimeBattleSimulationStats runtimeBattleSimulationStatsDelta(
 		after.planningAcceptedStaticUnsafe - before.planningAcceptedStaticUnsafe,
 		after.planningRejectedStaticSafe - before.planningRejectedStaticSafe,
 		after.planningRejectedStaticUnsafe - before.planningRejectedStaticUnsafe,
+		after.townRequests - before.townRequests,
+		after.planningTownTargets - before.planningTownTargets,
 		after.planningCacheHits - before.planningCacheHits,
 		after.planningSkippedFutureTurn - before.planningSkippedFutureTurn,
 		after.planningSkippedUnsafePath - before.planningSkippedUnsafePath,
@@ -205,6 +212,8 @@ void logRuntimeBattleSimulationStats(PlayerColor playerID, const RuntimeBattleSi
 		&& !stats.planningAcceptedStaticUnsafe
 		&& !stats.planningRejectedStaticSafe
 		&& !stats.planningRejectedStaticUnsafe
+		&& !stats.townRequests
+		&& !stats.planningTownTargets
 		&& !stats.planningCacheHits
 		&& !stats.planningSkippedFutureTurn
 		&& !stats.planningSkippedUnsafePath
@@ -216,7 +225,7 @@ void logRuntimeBattleSimulationStats(PlayerColor playerID, const RuntimeBattleSi
 		return;
 
 	logAi->info(
-		"Runtime battle simulation stats for player %d (%s): requests %llu, complete %llu, incomplete %llu, safe %llu, rejected %llu, invalid %llu, not available %llu, skipped no target %llu, cache hits %llu, planning accepted %llu, planning rejected %llu, planning incomplete %llu, planning accepted static safe %llu, planning accepted static unsafe %llu, planning rejected static safe %llu, planning rejected static unsafe %llu, planning cache hits %llu, planning skipped future turn %llu, planning skipped unsafe path %llu, planning skipped projected army %llu, planning skipped no target %llu, planning score adjusted %llu, planning score positive %llu, planning score zero %llu, configured samples %d",
+		"Runtime battle simulation stats for player %d (%s): requests %llu, complete %llu, incomplete %llu, safe %llu, rejected %llu, invalid %llu, not available %llu, skipped no target %llu, cache hits %llu, planning accepted %llu, planning rejected %llu, planning incomplete %llu, planning accepted static safe %llu, planning accepted static unsafe %llu, planning rejected static safe %llu, planning rejected static unsafe %llu, town requests %llu, planning town targets %llu, planning cache hits %llu, planning skipped future turn %llu, planning skipped unsafe path %llu, planning skipped projected army %llu, planning skipped no target %llu, planning score adjusted %llu, planning score positive %llu, planning score zero %llu, configured samples %d",
 		playerID,
 		playerID.toString(),
 		static_cast<unsigned long long>(stats.requests),
@@ -235,6 +244,8 @@ void logRuntimeBattleSimulationStats(PlayerColor playerID, const RuntimeBattleSi
 		static_cast<unsigned long long>(stats.planningAcceptedStaticUnsafe),
 		static_cast<unsigned long long>(stats.planningRejectedStaticSafe),
 		static_cast<unsigned long long>(stats.planningRejectedStaticUnsafe),
+		static_cast<unsigned long long>(stats.townRequests),
+		static_cast<unsigned long long>(stats.planningTownTargets),
 		static_cast<unsigned long long>(stats.planningCacheHits),
 		static_cast<unsigned long long>(stats.planningSkippedFutureTurn),
 		static_cast<unsigned long long>(stats.planningSkippedUnsafePath),
@@ -310,6 +321,8 @@ bool runtimeBattleSimulationRejectsVisit(
 
 	BattleOutcomeSimulationThresholds thresholds;
 	runtimeBattleSimulationRequests.fetch_add(1, std::memory_order_relaxed);
+	if(target->ID == Obj::TOWN)
+		runtimeBattleSimulationTownRequests.fetch_add(1, std::memory_order_relaxed);
 	const auto simulation = aiGw.cc->evaluateBattleSimulationForVisit(
 		hero,
 		target,

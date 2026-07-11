@@ -45,6 +45,7 @@ RUNTIME_SIMULATION_STATS_RE = re.compile(
 	r"(?:, cache hits (\d+))?"
 	r"(?:, planning accepted (\d+), planning rejected (\d+), planning incomplete (\d+))?"
 	r"(?:, planning accepted static safe (\d+), planning accepted static unsafe (\d+), planning rejected static safe (\d+), planning rejected static unsafe (\d+))?"
+	r"(?:, town requests (\d+), planning town targets (\d+))?"
 	r"(?:, planning cache hits (\d+))?"
 	r"(?:, planning skipped future turn (\d+), planning skipped unsafe path (\d+), planning skipped projected army (\d+), planning skipped no target (\d+))?"
 	r"(?:, planning score adjusted (\d+))?"
@@ -72,6 +73,8 @@ RUNTIME_SIMULATION_FIELDS = [
 	"planningAcceptedStaticUnsafe",
 	"planningRejectedStaticSafe",
 	"planningRejectedStaticUnsafe",
+	"townRequests",
+	"planningTownTargets",
 	"planningCacheHits",
 	"planningSkippedFutureTurn",
 	"planningSkippedUnsafePath",
@@ -223,6 +226,12 @@ def parse_args() -> argparse.Namespace:
 		help="Minimum runtime simulation requests required for each --require-runtime-simulation model.",
 	)
 	parser.add_argument(
+		"--min-runtime-simulation-town-requests",
+		type=int,
+		default=0,
+		help="Minimum final-gate runtime simulation requests against town targets for each --require-runtime-simulation model.",
+	)
+	parser.add_argument(
 		"--min-runtime-simulation-complete-rate",
 		type=float,
 		default=0.9,
@@ -272,6 +281,12 @@ def parse_args() -> argparse.Namespace:
 			"Minimum planner-side rescues required for each --require-runtime-simulation model. "
 			"Counts static-unsafe targets accepted by simulation."
 		),
+	)
+	parser.add_argument(
+		"--min-runtime-simulation-planning-town-targets",
+		type=int,
+		default=0,
+		help="Minimum planner-side simulation candidates whose selected battle target was a town.",
 	)
 	parser.add_argument(
 		"--max-runtime-simulation-planning-incomplete",
@@ -352,7 +367,7 @@ def parse_args() -> argparse.Namespace:
 		"--min-candidate-win-rate-wilson-lower",
 		type=float,
 		default=None,
-		help="Minimum Wilson 95% lower bound for the valid-game candidate win rate.",
+		help="Minimum Wilson 95%% lower bound for the valid-game candidate win rate.",
 	)
 	parser.add_argument(
 		"--min-valid-games",
@@ -738,23 +753,25 @@ def parse_run_logs(task: GameTask) -> tuple[bool, str | None, str | None, bool, 
 						"cacheHits": int(stats_match.group(10) or 0),
 						"planningAccepted": int(stats_match.group(11) or 0),
 						"planningRejected": int(stats_match.group(12) or 0),
-							"planningIncomplete": int(stats_match.group(13) or 0),
-							"planningAcceptedStaticSafe": int(stats_match.group(14) or 0),
-							"planningAcceptedStaticUnsafe": int(stats_match.group(15) or 0),
-							"planningRejectedStaticSafe": int(stats_match.group(16) or 0),
-							"planningRejectedStaticUnsafe": int(stats_match.group(17) or 0),
-							"planningCacheHits": int(stats_match.group(18) or 0),
-							"planningSkippedFutureTurn": int(stats_match.group(19) or 0),
-							"planningSkippedUnsafePath": int(stats_match.group(20) or 0),
-							"planningSkippedProjectedArmy": int(stats_match.group(21) or 0),
-							"planningSkippedNoTarget": int(stats_match.group(22) or 0),
-							"planningScoreAdjusted": int(stats_match.group(23) or 0),
-							"planningScorePositive": int(stats_match.group(24) or 0),
-							"planningScoreZero": int(stats_match.group(25) or 0),
-							"configuredSamplesMin": int(stats_match.group(26) or 0),
-							"configuredSamplesMax": int(stats_match.group(26) or 0),
-						},
-					)
+						"planningIncomplete": int(stats_match.group(13) or 0),
+						"planningAcceptedStaticSafe": int(stats_match.group(14) or 0),
+						"planningAcceptedStaticUnsafe": int(stats_match.group(15) or 0),
+						"planningRejectedStaticSafe": int(stats_match.group(16) or 0),
+						"planningRejectedStaticUnsafe": int(stats_match.group(17) or 0),
+						"townRequests": int(stats_match.group(18) or 0),
+						"planningTownTargets": int(stats_match.group(19) or 0),
+						"planningCacheHits": int(stats_match.group(20) or 0),
+						"planningSkippedFutureTurn": int(stats_match.group(21) or 0),
+						"planningSkippedUnsafePath": int(stats_match.group(22) or 0),
+						"planningSkippedProjectedArmy": int(stats_match.group(23) or 0),
+						"planningSkippedNoTarget": int(stats_match.group(24) or 0),
+						"planningScoreAdjusted": int(stats_match.group(25) or 0),
+						"planningScorePositive": int(stats_match.group(26) or 0),
+						"planningScoreZero": int(stats_match.group(27) or 0),
+						"configuredSamplesMin": int(stats_match.group(28) or 0),
+						"configuredSamplesMax": int(stats_match.group(28) or 0),
+					},
+				)
 
 		planner_match = PLANNER_SIMULATION_RE.search(line)
 		if planner_match:
@@ -1242,6 +1259,11 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 				f"{model}: runtime requests {requests} below required "
 				f"{args.min_runtime_simulation_requests}"
 			)
+		if stats["townRequests"] < args.min_runtime_simulation_town_requests:
+			model_errors.append(
+				f"{model}: runtime town requests {stats['townRequests']} below required "
+				f"{args.min_runtime_simulation_town_requests}"
+			)
 		if complete_rate is not None and complete_rate < args.min_runtime_simulation_complete_rate:
 			model_errors.append(
 				f"{model}: runtime complete rate {complete_rate:.3f} below required "
@@ -1276,6 +1298,11 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 			model_errors.append(
 				f"{model}: planner simulation rescues {planning_rescues} below required "
 				f"{args.min_runtime_simulation_planning_rescues}"
+			)
+		if stats["planningTownTargets"] < args.min_runtime_simulation_planning_town_targets:
+			model_errors.append(
+				f"{model}: planner town targets {stats['planningTownTargets']} below required "
+				f"{args.min_runtime_simulation_planning_town_targets}"
 			)
 		if args.max_runtime_simulation_planning_incomplete is not None and stats["planningIncomplete"] > args.max_runtime_simulation_planning_incomplete:
 			model_errors.append(
@@ -1358,6 +1385,8 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 					"planningDecisions": planning_decisions,
 					"planningVetoes": planning_vetoes,
 					"planningRescues": planning_rescues,
+					"townRequests": stats["townRequests"],
+					"planningTownTargets": stats["planningTownTargets"],
 					"planningSkips": planning_skips,
 					"planningCandidates": planning_candidates,
 					"planningDecisionRate": planning_decision_rate,
@@ -1375,6 +1404,7 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 		"required": bool(args.require_runtime_simulation),
 		"models": model_reports,
 		"minRequests": args.min_runtime_simulation_requests,
+		"minTownRequests": args.min_runtime_simulation_town_requests,
 		"minCompleteRate": args.min_runtime_simulation_complete_rate,
 		"maxIncomplete": args.max_runtime_simulation_incomplete,
 		"maxInvalid": args.max_runtime_simulation_invalid,
@@ -1382,6 +1412,7 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 		"minPlanningDecisions": args.min_runtime_simulation_planning_decisions,
 		"minPlanningVetoes": args.min_runtime_simulation_planning_vetoes,
 		"minPlanningRescues": args.min_runtime_simulation_planning_rescues,
+		"minPlanningTownTargets": args.min_runtime_simulation_planning_town_targets,
 		"maxPlanningIncomplete": args.max_runtime_simulation_planning_incomplete,
 		"minPlanningCandidates": args.min_runtime_simulation_planning_candidates,
 		"minPlanningDecisionRate": args.min_runtime_simulation_planning_decision_rate,
@@ -1507,6 +1538,7 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 		"runtimeIncomplete",
 		"runtimeSafe",
 		"runtimeRejected",
+		"runtimeTownRequests",
 		"runtimeCacheHits",
 		"planningAccepted",
 		"planningRejected",
@@ -1515,6 +1547,7 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 		"planningAcceptedStaticUnsafe",
 		"planningRejectedStaticSafe",
 		"planningRejectedStaticUnsafe",
+		"planningTownTargets",
 		"planningCacheHits",
 		"planningSkippedFutureTurn",
 		"planningSkippedUnsafePath",
@@ -1540,6 +1573,7 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 					"runtimeIncomplete": runtime_stats["incomplete"],
 					"runtimeSafe": runtime_stats["safe"],
 					"runtimeRejected": runtime_stats["rejected"],
+					"runtimeTownRequests": runtime_stats["townRequests"],
 					"runtimeCacheHits": runtime_stats["cacheHits"],
 					"planningAccepted": runtime_stats["planningAccepted"],
 					"planningRejected": runtime_stats["planningRejected"],
@@ -1548,6 +1582,7 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 					"planningAcceptedStaticUnsafe": runtime_stats["planningAcceptedStaticUnsafe"],
 					"planningRejectedStaticSafe": runtime_stats["planningRejectedStaticSafe"],
 					"planningRejectedStaticUnsafe": runtime_stats["planningRejectedStaticUnsafe"],
+					"planningTownTargets": runtime_stats["planningTownTargets"],
 					"planningCacheHits": runtime_stats["planningCacheHits"],
 					"planningSkippedFutureTurn": runtime_stats["planningSkippedFutureTurn"],
 					"planningSkippedUnsafePath": runtime_stats["planningSkippedUnsafePath"],

@@ -132,9 +132,11 @@ python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
   --max-runtime-simulation-incomplete 0 \
   --max-runtime-simulation-invalid 0 \
   --max-runtime-simulation-not-available 0 \
+  --min-runtime-simulation-town-requests 1 \
   --min-runtime-simulation-planning-decisions 2 \
   --min-runtime-simulation-planning-vetoes 1 \
   --min-runtime-simulation-planning-rescues 1 \
+  --min-runtime-simulation-planning-town-targets 1 \
   --max-runtime-simulation-planning-incomplete 0 \
   --min-runtime-simulation-planning-candidates 10 \
   --min-runtime-simulation-planning-decision-rate 0.05 \
@@ -179,6 +181,9 @@ verdict, and incomplete targets could not get a complete simulation verdict.
 The split fields `planningRejectedStaticSafe` and
 `planningAcceptedStaticUnsafe` are the key proof counters for static false-safe
 vetoes and static false-unsafe rescues.
+`townRequests` and `planningTownTargets` prove that the final movement gate and
+planner-side simulation selected town battle targets, which matters for
+town/siege predictor proof runs.
 `cacheHits` and `planningCacheHits` show how many final-gate and planner-side
 simulation responses reused deterministic cached samples instead of running a
 new isolated simulation.

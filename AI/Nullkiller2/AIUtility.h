@@ -66,6 +66,7 @@ struct BattleSimulationPlanningStats
 	uint64_t acceptedStaticUnsafe = 0;
 	uint64_t rejectedStaticSafe = 0;
 	uint64_t rejectedStaticUnsafe = 0;
+	uint64_t townTargets = 0;
 	uint64_t cacheHits = 0;
 	uint64_t skippedFutureTurn = 0;
 	uint64_t skippedUnsafePath = 0;
@@ -224,6 +225,7 @@ bool isBattleSimulationSafeForVisit(const BattleOutcomeSimulationResult & simula
 void recordBattleSimulationPlanningAccepted(bool staticSafe);
 void recordBattleSimulationPlanningRejected(bool staticSafe);
 void recordBattleSimulationPlanningIncomplete();
+void recordBattleSimulationPlanningTownTarget();
 void recordBattleSimulationPlanningCacheHit();
 void recordBattleSimulationPlanningSkippedFutureTurn();
 void recordBattleSimulationPlanningSkippedUnsafePath();

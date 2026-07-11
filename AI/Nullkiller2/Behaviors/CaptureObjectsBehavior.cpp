@@ -95,6 +95,8 @@ std::optional<PlannerSimulationVerdict> plannerSimulationEvaluatesVisit(
 		recordBattleSimulationPlanningSkippedNoTarget();
 		return std::nullopt;
 	}
+	if(target->ID == Obj::TOWN)
+		recordBattleSimulationPlanningTownTarget();
 
 	const std::string visitName = objToVisit ? objToVisit->getObjectName() : path.targetTile().toString();
 	const std::string targetName = target->getObjectName();
