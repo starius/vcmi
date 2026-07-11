@@ -169,6 +169,18 @@ enum class ScriptArmyTransferKind : int32_t
 	REINFORCE_TOWN = 2
 };
 
+enum class ScriptStackManagementKind : int32_t
+{
+	UNKNOWN = 0,
+	BULK_MOVE_ARMY = 1,
+	MERGE_STACKS = 2,
+	SWAP_CREATURES = 3,
+	SPLIT_STACK = 4,
+	BULK_SPLIT_STACK = 5,
+	BULK_MERGE_STACKS = 6,
+	BULK_SPLIT_REBALANCE_STACK = 7
+};
+
 enum class ScriptArtifactManagementKind : int32_t
 {
 	UNKNOWN = 0,
@@ -410,6 +422,29 @@ const char * scriptArmyTransferKindName(ScriptArmyTransferKind kind)
 		return "gather_to_hero";
 	case ScriptArmyTransferKind::REINFORCE_TOWN:
 		return "reinforce_town";
+	default:
+		return "unknown";
+	}
+}
+
+const char * scriptStackManagementKindName(ScriptStackManagementKind kind)
+{
+	switch(kind)
+	{
+	case ScriptStackManagementKind::BULK_MOVE_ARMY:
+		return "bulk_move_army";
+	case ScriptStackManagementKind::MERGE_STACKS:
+		return "merge_stacks";
+	case ScriptStackManagementKind::SWAP_CREATURES:
+		return "swap_creatures";
+	case ScriptStackManagementKind::SPLIT_STACK:
+		return "split_stack";
+	case ScriptStackManagementKind::BULK_SPLIT_STACK:
+		return "bulk_split_stack";
+	case ScriptStackManagementKind::BULK_MERGE_STACKS:
+		return "bulk_merge_stacks";
+	case ScriptStackManagementKind::BULK_SPLIT_REBALANCE_STACK:
+		return "bulk_split_rebalance_stack";
 	default:
 		return "unknown";
 	}
@@ -9995,6 +10030,8 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["dismissHeroOptions"].Vector();
 	actionSpace["prepareHeroOptions"].Vector();
 	actionSpace["armyTransferOptions"].Vector();
+	actionSpace["stackManagementOptions"].Vector();
+	actionSpace["stackManagementOptionsTruncated"] = JsonNode(false);
 	actionSpace["dismissCreatureOptions"].Vector();
 	actionSpace["upgradeCreatureOptions"].Vector();
 	actionSpace["formationOptions"].Vector();
@@ -10464,6 +10501,195 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 			actionSpace["recommendedActions"].Vector().push_back(option["planAction"]);
 	};
 
+	std::vector<const CArmedInstance *> ownedArmyHolders;
+	std::set<int32_t> seenOwnedArmyHolders;
+	auto appendOwnedArmyHolder = [&](const CArmedInstance * army)
+	{
+		if(!army || army->tempOwner != playerID || !cc->isVisibleFor(army, playerID))
+			return;
+		if(seenOwnedArmyHolders.insert(army->id.getNum()).second)
+			ownedArmyHolders.push_back(army);
+	};
+
+	std::set<std::tuple<int32_t, int32_t, int32_t, int32_t, int32_t>> seenStackManagementOptions;
+	constexpr size_t maxStackManagementOptions = 160;
+	auto appendStackManagementOption = [&](JsonNode option, ScriptStackManagementKind kind, int32_t sourceID, int32_t destinationID, int32_t sourceSlot, int32_t destinationSlot)
+	{
+		if(actionSpace["stackManagementOptions"].Vector().size() >= maxStackManagementOptions)
+		{
+			actionSpace["stackManagementOptionsTruncated"] = JsonNode(true);
+			return;
+		}
+		if(!seenStackManagementOptions.emplace(sourceID, destinationID, sourceSlot, destinationSlot, static_cast<int32_t>(kind)).second)
+			return;
+
+		option["stackManagementKindId"] = JsonNode(static_cast<int32_t>(kind));
+		option["stackManagementKind"] = JsonNode(scriptStackManagementKindName(kind));
+		option["bounded"] = JsonNode(true);
+		option["delegatesRestOfDay"] = JsonNode(false);
+		actionSpace["stackManagementOptions"].Vector().push_back(option);
+	};
+	auto appendBulkStackOption = [&](const CArmedInstance * army, SlotID sourceSlot, ScriptStackManagementKind kind)
+	{
+		JsonNode option;
+		option["army_id"] = JsonNode(army->id.getNum());
+		option["source_slot"] = JsonNode(sourceSlot.getNum());
+		option["army"] = jsonOwnedArmySnapshot(army);
+		if(const CStackInstance * stack = army->getStackPtr(sourceSlot))
+		{
+			option["stack"]["slot"] = JsonNode(sourceSlot.getNum());
+			option["stack"]["creatureId"] = JsonNode(stack->getCreatureID().getNum());
+			option["stack"]["creatureIdentifier"] = JsonNode(stableIdentifier(stack->getCreatureID()));
+			option["stack"]["count"] = JsonNode(stack->getCount());
+			option["stack"]["name"] = JsonNode(jsonText(stack->getName()));
+		}
+
+		const std::string actionType = scriptStackManagementKindName(kind);
+		setScriptActionType(option["planAction"], actionType);
+		option["planAction"]["army_id"] = option["army_id"];
+		option["planAction"]["source_slot"] = option["source_slot"];
+		if(kind == ScriptStackManagementKind::BULK_SPLIT_STACK)
+		{
+			option["amount"] = JsonNode(1);
+			option["planAction"]["amount"] = option["amount"];
+		}
+		appendStackManagementOption(option, kind, army->id.getNum(), army->id.getNum(), sourceSlot.getNum(), -1);
+	};
+	auto appendArrangeStackOption = [&](const CArmedInstance * source, const CArmedInstance * destination, SlotID sourceSlot, SlotID destinationSlot, ScriptStackManagementKind kind, int32_t amount = 0)
+	{
+		JsonNode option;
+		option["source_id"] = JsonNode(source->id.getNum());
+		option["destination_id"] = JsonNode(destination->id.getNum());
+		option["source_slot"] = JsonNode(sourceSlot.getNum());
+		option["destination_slot"] = JsonNode(destinationSlot.getNum());
+		option["sourceArmy"] = jsonOwnedArmySnapshot(source);
+		option["destinationArmy"] = jsonOwnedArmySnapshot(destination);
+		if(const CStackInstance * stack = source->getStackPtr(sourceSlot))
+		{
+			option["sourceStack"]["slot"] = JsonNode(sourceSlot.getNum());
+			option["sourceStack"]["creatureId"] = JsonNode(stack->getCreatureID().getNum());
+			option["sourceStack"]["creatureIdentifier"] = JsonNode(stableIdentifier(stack->getCreatureID()));
+			option["sourceStack"]["count"] = JsonNode(stack->getCount());
+			option["sourceStack"]["name"] = JsonNode(jsonText(stack->getName()));
+		}
+		if(const CStackInstance * stack = destination->getStackPtr(destinationSlot))
+		{
+			option["destinationStack"]["slot"] = JsonNode(destinationSlot.getNum());
+			option["destinationStack"]["creatureId"] = JsonNode(stack->getCreatureID().getNum());
+			option["destinationStack"]["creatureIdentifier"] = JsonNode(stableIdentifier(stack->getCreatureID()));
+			option["destinationStack"]["count"] = JsonNode(stack->getCount());
+			option["destinationStack"]["name"] = JsonNode(jsonText(stack->getName()));
+		}
+
+		const std::string actionType = scriptStackManagementKindName(kind);
+		setScriptActionType(option["planAction"], actionType);
+		option["planAction"]["source_id"] = option["source_id"];
+		option["planAction"]["destination_id"] = option["destination_id"];
+		option["planAction"]["source_slot"] = option["source_slot"];
+		option["planAction"]["destination_slot"] = option["destination_slot"];
+		if(kind == ScriptStackManagementKind::SPLIT_STACK)
+		{
+			option["amount"] = JsonNode(amount);
+			option["planAction"]["amount"] = option["amount"];
+		}
+		appendStackManagementOption(option, kind, source->id.getNum(), destination->id.getNum(), sourceSlot.getNum(), destinationSlot.getNum());
+	};
+	auto appendStackManagementOptions = [&]()
+	{
+		for(const CArmedInstance * army : ownedArmyHolders)
+		{
+			std::map<CreatureID, int32_t> creatureStackCounts;
+			for(const auto & [slot, stack] : army->Slots())
+			{
+				if(stack && stack->getCount() > 0)
+					++creatureStackCounts[stack->getCreatureID()];
+			}
+
+			for(const auto & [slot, stack] : army->Slots())
+			{
+				if(!stack || stack->getCount() <= 0)
+					continue;
+
+				if(stack->getCount() > 1)
+				{
+					appendBulkStackOption(army, slot, ScriptStackManagementKind::BULK_SPLIT_STACK);
+					appendBulkStackOption(army, slot, ScriptStackManagementKind::BULK_SPLIT_REBALANCE_STACK);
+				}
+				if(creatureStackCounts[stack->getCreatureID()] > 1)
+					appendBulkStackOption(army, slot, ScriptStackManagementKind::BULK_MERGE_STACKS);
+
+				for(int32_t destinationIndex = 0; destinationIndex < GameConstants::ARMY_SIZE; ++destinationIndex)
+				{
+					const SlotID destinationSlot(destinationIndex);
+					if(destinationSlot == slot)
+						continue;
+					if(army->hasStackAtSlot(destinationSlot))
+					{
+						if(army->getCreature(slot) == army->getCreature(destinationSlot))
+							appendArrangeStackOption(army, army, slot, destinationSlot, ScriptStackManagementKind::MERGE_STACKS);
+						else
+							appendArrangeStackOption(army, army, slot, destinationSlot, ScriptStackManagementKind::SWAP_CREATURES);
+					}
+					else
+					{
+						appendArrangeStackOption(army, army, slot, destinationSlot, ScriptStackManagementKind::SWAP_CREATURES);
+						if(stack->getCount() > 1)
+							appendArrangeStackOption(army, army, slot, destinationSlot, ScriptStackManagementKind::SPLIT_STACK, 1);
+					}
+				}
+			}
+		}
+
+		for(const CArmedInstance * source : ownedArmyHolders)
+		{
+			for(const CArmedInstance * destination : ownedArmyHolders)
+			{
+				if(source == destination || source->visitablePos() != destination->visitablePos())
+					continue;
+
+				if(const std::optional<SlotID> reserveSlot = weakestTransferReserveSlot(source))
+				{
+					if(bulkTransferWouldMoveAnything(source, destination, *reserveSlot))
+					{
+						JsonNode option;
+						option["source_id"] = JsonNode(source->id.getNum());
+						option["destination_id"] = JsonNode(destination->id.getNum());
+						option["source_slot"] = JsonNode(reserveSlot->getNum());
+						option["sourceArmy"] = jsonOwnedArmySnapshot(source);
+						option["destinationArmy"] = jsonOwnedArmySnapshot(destination);
+						setScriptActionType(option["planAction"], "bulk_move_army");
+						option["planAction"]["source_id"] = option["source_id"];
+						option["planAction"]["destination_id"] = option["destination_id"];
+						option["planAction"]["source_slot"] = option["source_slot"];
+						appendStackManagementOption(option, ScriptStackManagementKind::BULK_MOVE_ARMY, source->id.getNum(), destination->id.getNum(), reserveSlot->getNum(), -1);
+					}
+				}
+
+				for(const auto & [sourceSlot, sourceStack] : source->Slots())
+				{
+					if(!sourceStack || sourceStack->getCount() <= 0)
+						continue;
+
+					for(int32_t destinationIndex = 0; destinationIndex < GameConstants::ARMY_SIZE; ++destinationIndex)
+					{
+						const SlotID destinationSlot(destinationIndex);
+						if(destination->hasStackAtSlot(destinationSlot))
+						{
+							if(source->getCreature(sourceSlot) == destination->getCreature(destinationSlot))
+								appendArrangeStackOption(source, destination, sourceSlot, destinationSlot, ScriptStackManagementKind::MERGE_STACKS);
+							else
+								appendArrangeStackOption(source, destination, sourceSlot, destinationSlot, ScriptStackManagementKind::SWAP_CREATURES);
+						}
+						else if(sourceStack->getCount() > 1)
+						{
+							appendArrangeStackOption(source, destination, sourceSlot, destinationSlot, ScriptStackManagementKind::SPLIT_STACK, 1);
+						}
+					}
+				}
+			}
+		}
+	};
+
 	std::set<std::tuple<int32_t, int32_t, int32_t, int32_t, int32_t>> seenArtifactManagementOptions;
 	size_t singleArtifactTransferOptions = 0;
 	constexpr size_t maxSingleArtifactTransferOptions = 64;
@@ -10673,6 +10899,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		appendDismissCreatureOptions(town);
 		appendDefenseResponseOptions(town);
 		appendUpgradeOptions(town);
+		appendOwnedArmyHolder(town);
 		appendUpgradeOptions(town->getVisitingHero());
 		appendUpgradeOptions(town->getGarrisonHero());
 
@@ -10863,6 +11090,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		if(hero && hero->tempOwner == playerID)
 		{
 			ownedHeroes.push_back(hero);
+			appendOwnedArmyHolder(hero);
 			appendFormationOptions(hero);
 			appendDismissCreatureOptions(hero);
 			appendPrepareHeroOption(hero, nullptr, nullptr, 0, "self_artifacts", true, false);
@@ -11030,6 +11258,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 			appendArtifactTransferOptions(hero, otherHero);
 		}
 	}
+	appendStackManagementOptions();
 
 	std::set<int32_t> seenShipyards;
 	for(const int3 & position : visibleTiles)
@@ -11300,7 +11529,7 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 	analysis["scriptMemory"]["persistedInPlayerLocalSettings"] = JsonNode(true);
 	analysis["scriptMemory"]["localStateKey"] = JsonNode(SCRIPT_MEMORY_LOCAL_STATE_KEY);
 	analysis["candidateFields"].Vector();
-	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "typeId", "subtypeId", "kindId", "buildingKindId", "transferKindId", "preparationKindId", "managementKindId", "tradeKindId", "mode_id", "responseKindId", "pathActionId", "levelId", "statusId", "targetKindId", "spell_id", "task_id", "goalTypeId", "priorityTier", "heroRoleId", "nullkillerRoleId", "nullkillerArtifactScore", "nullkillerPotentialArtifactScore", "outcomeId", "failureActionId" })
+	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "typeId", "subtypeId", "kindId", "buildingKindId", "transferKindId", "stackManagementKindId", "preparationKindId", "managementKindId", "tradeKindId", "mode_id", "responseKindId", "pathActionId", "levelId", "statusId", "targetKindId", "spell_id", "task_id", "goalTypeId", "priorityTier", "heroRoleId", "nullkillerRoleId", "nullkillerArtifactScore", "nullkillerPotentialArtifactScore", "outcomeId", "failureActionId" })
 		analysis["candidateFields"].Vector().push_back(JsonNode(field));
 	analysis["danger"]["candidateDangerSource"] = JsonNode("Nullkiller direct object/guard danger evaluator");
 	analysis["danger"]["enemyReachSource"] = JsonNode("visible enemy distance and strength alerts");

@@ -759,7 +759,7 @@ Current bounded subroutine surface:
   waiting on any old query or movement blocker.
 - Lua exposes numeric constants for stable host ids used by the strategic contract:
   `ai.actionTypeIds`, `ai.buildingKinds`, `ai.objectKinds`, `ai.armyTransferKinds`, `ai.queryTypes`,
-  `ai.artifactManagementKinds`, `ai.backpackSortModes`, `ai.marketTradeKinds`, `ai.pathActions`,
+  `ai.stackManagementKinds`, `ai.artifactManagementKinds`, `ai.backpackSortModes`, `ai.marketTradeKinds`, `ai.pathActions`,
   `ai.threatLevels`, `ai.riskLevels`, `ai.specialActionKinds`, `ai.adventureSpellKinds`, `ai.nullkillerStepOutcomes`,
   `ai.nullkillerFailureActions`, `ai.nullkillerTaskModes`, `ai.nullkillerPriorityTiers`,
   `ai.nullkillerHeroLockReasons`, and `ai.nullkillerHeroRoles`. Scripts should
@@ -791,6 +791,10 @@ Current bounded subroutine surface:
 - `actionSpace.dismissHeroOptions` and `actionSpace.dismissCreatureOptions` list currently visible owned heroes and
   dismissable owned army stacks as checked, non-recommended destructive actions. Scripts can consider them
   explicitly without constructing ids from stale snapshots.
+- `actionSpace.stackManagementOptions` lists bounded army stack operations for visible owned army holders: bulk
+  army moves between co-located holders, stack merge/swap/split options, and bulk split/merge/rebalance operations.
+  The list is capped and reports `stackManagementOptionsTruncated` when a crowded position produces more
+  possibilities than the script snapshot should carry.
 - `actionSpace.artifactManagementOptions` lists currently legal bounded artifact-management operations for owned
   heroes: backpack sort/scroll, costume load/save, assemble/disassemble, transition-slot cleanup, and artifact
   transfer options between co-located heroes. The ready `planAction` payloads use stable ids where possible, e.g.
@@ -1712,6 +1716,9 @@ Regression harness:
 - Done: `actionSpace.dismissHeroOptions` and `actionSpace.dismissCreatureOptions` expose checked dismissal actions
   for visible owned heroes and legal owned army stacks. These actions are intentionally discoverable but not
   recommended, since they destroy assets and should require explicit Lua policy.
+- Done: `actionSpace.stackManagementOptions` exposes checked stack merge/swap/split and bulk split/merge/rebalance
+  actions for visible owned army holders. This gives Lua access to ordinary player stack micro-management without
+  hard-coding slot payloads.
 - Done: `actionSpace.artifactManagementOptions` exposes checked artifact-management actions that were previously
   callable but not discoverable as options. Scripts can now rank artifact sorting, assembly/disassembly,
   transition cleanup, and co-located hero artifact transfers without constructing low-level slot payloads by hand.

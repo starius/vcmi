@@ -483,6 +483,17 @@ ai.armyTransferKinds = {
 	reinforceTown = 2
 }
 
+ai.stackManagementKinds = {
+	unknown = 0,
+	bulkMoveArmy = 1,
+	mergeStacks = 2,
+	swapCreatures = 3,
+	splitStack = 4,
+	bulkSplitStack = 5,
+	bulkMergeStacks = 6,
+	bulkSplitRebalanceStack = 7
+}
+
 ai.queryTypes = {
 	unknown = 0,
 	heroLevelUp = 1,

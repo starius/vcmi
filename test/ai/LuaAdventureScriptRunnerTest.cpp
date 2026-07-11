@@ -601,6 +601,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 						mineKind = ai.objectKinds.mine,
 						dwellingBuildingKind = ai.buildingKinds.dwelling,
 						gatherTransferKind = ai.armyTransferKinds.gatherToHero,
+						splitStackKind = ai.stackManagementKinds.splitStack,
 						assembleManagementKind = ai.artifactManagementKinds.assemble,
 						backpackCostSortMode = ai.backpackSortModes.cost,
 						resourceSkillTradeKind = ai.marketTradeKinds.resourceSkill,
@@ -826,6 +827,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 	EXPECT_EQ(output.memory["mineKind"].Integer(), 3);
 	EXPECT_EQ(output.memory["dwellingBuildingKind"].Integer(), 11);
 	EXPECT_EQ(output.memory["gatherTransferKind"].Integer(), 1);
+	EXPECT_EQ(output.memory["splitStackKind"].Integer(), 4);
 	EXPECT_EQ(output.memory["assembleManagementKind"].Integer(), 5);
 	EXPECT_EQ(output.memory["backpackCostSortMode"].Integer(), 2);
 	EXPECT_EQ(output.memory["resourceSkillTradeKind"].Integer(), 2);
@@ -1629,6 +1631,121 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteDismissalActionSpaceOp
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	ASSERT_TRUE(output.intent);
 	EXPECT_EQ(*output.intent, "executed dismissal action-space options");
+}
+
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteStackManagementActionSpaceOptions)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				for _, option in ipairs(input.actionSpace.stackManagementOptions) do
+					ai:runOption(option)
+				end
+				return ai:output("end_turn", "executed stack-management action-space options")
+			end
+		}
+	)lua";
+
+	AI::AdventureScriptInput input = makeInput();
+	auto appendOption = [&](const JsonNode & planAction)
+	{
+		JsonNode option;
+		option["planAction"] = planAction;
+		input.actionSpace["stackManagementOptions"].Vector().push_back(option);
+	};
+
+	JsonNode bulkMove;
+	bulkMove["type"] = JsonNode("bulk_move_army");
+	bulkMove["type_id"] = JsonNode(44);
+	bulkMove["source_id"] = JsonNode(30);
+	bulkMove["destination_id"] = JsonNode(31);
+	bulkMove["source_slot"] = JsonNode(0);
+	appendOption(bulkMove);
+
+	JsonNode merge;
+	merge["type"] = JsonNode("merge_stacks");
+	merge["type_id"] = JsonNode(41);
+	merge["source_id"] = JsonNode(30);
+	merge["destination_id"] = JsonNode(31);
+	merge["source_slot"] = JsonNode(1);
+	merge["destination_slot"] = JsonNode(2);
+	appendOption(merge);
+
+	JsonNode swap;
+	swap["type"] = JsonNode("swap_creatures");
+	swap["type_id"] = JsonNode(40);
+	swap["source_id"] = JsonNode(30);
+	swap["destination_id"] = JsonNode(31);
+	swap["source_slot"] = JsonNode(3);
+	swap["destination_slot"] = JsonNode(4);
+	appendOption(swap);
+
+	JsonNode split;
+	split["type"] = JsonNode("split_stack");
+	split["type_id"] = JsonNode(43);
+	split["source_id"] = JsonNode(30);
+	split["destination_id"] = JsonNode(31);
+	split["source_slot"] = JsonNode(5);
+	split["destination_slot"] = JsonNode(6);
+	split["amount"] = JsonNode(1);
+	appendOption(split);
+
+	JsonNode bulkSplit;
+	bulkSplit["type"] = JsonNode("bulk_split_stack");
+	bulkSplit["type_id"] = JsonNode(45);
+	bulkSplit["army_id"] = JsonNode(30);
+	bulkSplit["source_slot"] = JsonNode(0);
+	bulkSplit["amount"] = JsonNode(1);
+	appendOption(bulkSplit);
+
+	JsonNode bulkMerge;
+	bulkMerge["type"] = JsonNode("bulk_merge_stacks");
+	bulkMerge["type_id"] = JsonNode(46);
+	bulkMerge["army_id"] = JsonNode(30);
+	bulkMerge["source_slot"] = JsonNode(1);
+	appendOption(bulkMerge);
+
+	JsonNode rebalance;
+	rebalance["type"] = JsonNode("bulk_split_rebalance_stack");
+	rebalance["type_id"] = JsonNode(47);
+	rebalance["army_id"] = JsonNode(30);
+	rebalance["source_slot"] = JsonNode(2);
+	appendOption(rebalance);
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-stack-management-action-space-options", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 7);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "bulk_move_army");
+	EXPECT_EQ(commands[0]["payload"]["type_id"].Integer(), 44);
+	EXPECT_EQ(commands[0]["payload"]["source_id"].Integer(), 30);
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "merge_stacks");
+	EXPECT_EQ(commands[1]["payload"]["type_id"].Integer(), 41);
+	EXPECT_EQ(commands[2]["payload"]["type"].String(), "swap_creatures");
+	EXPECT_EQ(commands[2]["payload"]["type_id"].Integer(), 40);
+	EXPECT_EQ(commands[3]["payload"]["type"].String(), "split_stack");
+	EXPECT_EQ(commands[3]["payload"]["type_id"].Integer(), 43);
+	EXPECT_EQ(commands[3]["payload"]["amount"].Integer(), 1);
+	EXPECT_EQ(commands[4]["payload"]["type"].String(), "bulk_split_stack");
+	EXPECT_EQ(commands[4]["payload"]["type_id"].Integer(), 45);
+	EXPECT_EQ(commands[5]["payload"]["type"].String(), "bulk_merge_stacks");
+	EXPECT_EQ(commands[5]["payload"]["type_id"].Integer(), 46);
+	EXPECT_EQ(commands[6]["payload"]["type"].String(), "bulk_split_rebalance_stack");
+	EXPECT_EQ(commands[6]["payload"]["type_id"].Integer(), 47);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "executed stack-management action-space options");
 }
 
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteArtifactManagementActionSpaceOptions)
