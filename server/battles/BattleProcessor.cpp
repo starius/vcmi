@@ -59,6 +59,20 @@ void BattleProcessor::engageIntoBattle(PlayerColor player)
 void BattleProcessor::restartBattle(const BattleID & battleID, const CArmedInstance *army1, const CArmedInstance *army2, int3 tile,
 								const CGHeroInstance *hero1, const CGHeroInstance *hero2, const BattleLayout & layout, const CGTownInstance *town)
 {
+	restartBattle(
+		battleID,
+		BattleStartInfo{
+			BattleSideArray<const CArmedInstance *>{army1, army2},
+			BattleSideArray<const CGHeroInstance *>{hero1, hero2},
+			tile,
+			layout,
+			town
+		}
+	);
+}
+
+void BattleProcessor::restartBattle(const BattleID & battleID, const BattleStartInfo & setup)
+{
 	auto battle = gameHandler->gameState().getBattle(battleID);
 
 	auto attackerQuery = gameHandler->queries->topQuery(battle->getSide(BattleSide::ATTACKER).color);
@@ -76,7 +90,6 @@ void BattleProcessor::restartBattle(const BattleID & battleID, const CArmedInsta
 	assert(lastBattleQuery);
 
 	//existing battle query for retying auto-combat
-	BattleSideArray<const CGHeroInstance*> heroes{hero1, hero2};
 	BattleSideArray<int32_t> manaToRestore{
 		battle->getSide(BattleSide::ATTACKER).initialMana,
 		battle->getSide(BattleSide::DEFENDER).initialMana
@@ -85,14 +98,14 @@ void BattleProcessor::restartBattle(const BattleID & battleID, const CArmedInsta
 	{
 		for(auto i : {BattleSide::ATTACKER, BattleSide::DEFENDER})
 		{
-			if(heroes[i])
-				manaToRestore[i] = BattleSimulationBatch::getReplayInitialMana(heroes[i], battle->getSide(i).initialMana);
+			if(setup.heroes[i])
+				manaToRestore[i] = BattleSimulationBatch::getReplayInitialMana(setup.heroes[i], battle->getSide(i).initialMana);
 		}
 
 		lastBattleQuery->result = std::nullopt;
 
-		assert(lastBattleQuery->belligerents[BattleSide::ATTACKER] == battle->getSideArmy(BattleSide::ATTACKER));
-		assert(lastBattleQuery->belligerents[BattleSide::DEFENDER] == battle->getSideArmy(BattleSide::DEFENDER));
+		assert(lastBattleQuery->belligerents[BattleSide::ATTACKER] == setup.armies[BattleSide::ATTACKER]);
+		assert(lastBattleQuery->belligerents[BattleSide::DEFENDER] == setup.armies[BattleSide::DEFENDER]);
 	}
 
 	BattleCancelled bc;
@@ -102,55 +115,56 @@ void BattleProcessor::restartBattle(const BattleID & battleID, const CArmedInsta
 
 	for(auto i : {BattleSide::ATTACKER, BattleSide::DEFENDER})
 	{
-		if(heroes[i])
+		if(setup.heroes[i])
 		{
 			SetMana restoreInitialMana;
 			restoreInitialMana.val = manaToRestore[i];
-			restoreInitialMana.hid = heroes[i]->id;
+			restoreInitialMana.hid = setup.heroes[i]->id;
 			restoreInitialMana.mode = ChangeValueMode::ABSOLUTE;
 			gameHandler->sendAndApply(restoreInitialMana);
 		}
 	}
 
-	startBattle(army1, army2, tile, hero1, hero2, layout, town);
+	startBattle(setup);
 }
 
 void BattleProcessor::restartBattle(const IBattleInfo & battle)
 {
-	restartBattle(
-		battle.getBattleID(),
-		battle.getSideArmy(BattleSide::ATTACKER),
-		battle.getSideArmy(BattleSide::DEFENDER),
-		battle.getLocation(),
-		battle.getSideHero(BattleSide::ATTACKER),
-		battle.getSideHero(BattleSide::DEFENDER),
-		battle.getLayout(),
-		battle.getDefendedTown()
-	);
+	restartBattle(battle.getBattleID(), BattleStartInfo::fromBattle(battle));
 }
 
 void BattleProcessor::startBattle(const CArmedInstance *army1, const CArmedInstance *army2, int3 tile,
 								const CGHeroInstance *hero1, const CGHeroInstance *hero2, const BattleLayout & layout, const CGTownInstance *town)
 {
-	assert(gameHandler->gameState().getBattle(army1->getOwner()) == nullptr);
-	assert(gameHandler->gameState().getBattle(army2->getOwner()) == nullptr);
+	startBattle(
+		BattleStartInfo{
+			BattleSideArray<const CArmedInstance *>{army1, army2},
+			BattleSideArray<const CGHeroInstance *>{hero1, hero2},
+			tile,
+			layout,
+			town
+		}
+	);
+}
 
-	BattleSideArray<const CArmedInstance *> armies{army1, army2};
-	BattleSideArray<const CGHeroInstance*>heroes{hero1, hero2};
+void BattleProcessor::startBattle(const BattleStartInfo & setup)
+{
+	assert(gameHandler->gameState().getBattle(setup.armies[BattleSide::ATTACKER]->getOwner()) == nullptr);
+	assert(gameHandler->gameState().getBattle(setup.armies[BattleSide::DEFENDER]->getOwner()) == nullptr);
 
-	auto battleID = setupBattle(tile, armies, heroes, layout, town); //initializes stacks, places creatures on battlefield, blocks and informs player interfaces
+	auto battleID = setupBattle(setup.tile, setup.armies, setup.heroes, setup.layout, setup.town); //initializes stacks, places creatures on battlefield, blocks and informs player interfaces
 
 	const auto * battle = gameHandler->gameState().getBattle(battleID);
 	assert(battle);
 
 	//add battle bonuses based from player state only when attacks neutral creatures
-	const auto * attackerInfo = gameHandler->gameInfo().getPlayerState(army1->getOwner(), false);
-	if(attackerInfo && !army2->getOwner().isValidPlayer())
+	const auto * attackerInfo = gameHandler->gameInfo().getPlayerState(setup.armies[BattleSide::ATTACKER]->getOwner(), false);
+	if(attackerInfo && !setup.armies[BattleSide::DEFENDER]->getOwner().isValidPlayer())
 	{
 		for(const auto & bonus : attackerInfo->battleBonuses)
 		{
 			GiveBonus giveBonus(GiveBonus::ETarget::OBJECT);
-			giveBonus.id = hero1->id;
+			giveBonus.id = setup.heroes[BattleSide::ATTACKER]->id;
 			giveBonus.bonus = bonus;
 			gameHandler->sendAndApply(giveBonus);
 		}
@@ -158,7 +172,7 @@ void BattleProcessor::startBattle(const CArmedInstance *army1, const CArmedInsta
 
 	auto attackerQuery = gameHandler->queries->topQuery(battle->getSide(BattleSide::ATTACKER).color);
 	auto * topBattleQuery = gameHandler->queries->queryAs<CBattleQuery>(attackerQuery);
-	if(!topBattleQuery && army2->getOwner().isValidPlayer())
+	if(!topBattleQuery && setup.armies[BattleSide::DEFENDER]->getOwner().isValidPlayer())
 	{
 		auto defenderQuery = gameHandler->queries->topQuery(battle->getSide(BattleSide::DEFENDER).color);
 		topBattleQuery = gameHandler->queries->queryAs<CBattleQuery>(defenderQuery);

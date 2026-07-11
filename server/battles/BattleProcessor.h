@@ -12,6 +12,7 @@
 #include "../../lib/constants/EntityIdentifiers.h"
 #include "../../lib/constants/Enumerations.h"
 #include "../../lib/battle/BattleSide.h"
+#include "BattleStartInfo.h"
 
 class CGHeroInstance;
 class CGTownInstance;
@@ -58,10 +59,14 @@ public:
 
 	/// Starts battle with specified parameters
 	void startBattle(const CArmedInstance *army1, const CArmedInstance *army2, int3 tile, const CGHeroInstance *hero1, const CGHeroInstance *hero2, const BattleLayout & layout, const CGTownInstance *town);
+	/// Starts battle with specified setup
+	void startBattle(const BattleStartInfo & setup);
 	/// Starts battle between two armies (which can also be heroes) at position of 2nd object
 	void startBattle(const CArmedInstance *army1, const CArmedInstance *army2);
 	/// Restart ongoing battle and end previous battle
 	void restartBattle(const BattleID & battleID, const CArmedInstance *army1, const CArmedInstance *army2, int3 tile, const CGHeroInstance *hero1, const CGHeroInstance *hero2, const BattleLayout & layout, const CGTownInstance *town);
+	/// Restart ongoing battle and end previous battle using specified setup
+	void restartBattle(const BattleID & battleID, const BattleStartInfo & setup);
 	/// Restart an ongoing battle using its current setup
 	void restartBattle(const IBattleInfo & battle);
 
