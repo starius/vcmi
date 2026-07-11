@@ -76,6 +76,7 @@ def make_side_args(args: argparse.Namespace, side_output: Path, script: str, sce
         runs=scenario["runs"],
         testdays=scenario["testdays"],
         timeout=scenario["timeout"],
+        idle_timeout=scenario["idle_timeout"],
         exit_grace_after_outcome=args.exit_grace_after_outcome,
         output=side_output,
         cwd=args.cwd,
@@ -149,6 +150,7 @@ def outcome_counts(results: list[dict[str, Any]]) -> Counter[str]:
 
 def run_metrics(results: list[dict[str, Any]], summary: dict[str, Any]) -> dict[str, Any]:
     timeouts = sum(1 for result in results if result["timedOut"])
+    idle_timeouts = sum(1 for result in results if result.get("idleTimedOut"))
     nonzero = sum(1 for result in results if not result["timedOut"] and result["returnCode"] != 0)
     completed = sum(1 for result in results if not result["timedOut"] and result["returnCode"] == 0)
     elapsed = sum(float(result["elapsedSeconds"]) for result in results)
@@ -170,6 +172,7 @@ def run_metrics(results: list[dict[str, Any]], summary: dict[str, Any]) -> dict[
     safety_score = (
         completed * 1000
         - timeouts * 1200
+        - idle_timeouts * 900
         - nonzero * 600
         - parse_errors * 100
         - fallback_outputs * 250
@@ -191,6 +194,7 @@ def run_metrics(results: list[dict[str, Any]], summary: dict[str, Any]) -> dict[
         "runs": len(results),
         "completed": completed,
         "timeouts": timeouts,
+        "idleTimeouts": idle_timeouts,
         "nonzeroExit": nonzero,
         "elapsedSeconds": round(elapsed, 3),
         "parseErrors": parse_errors,
@@ -296,6 +300,7 @@ def promotion_verdict(
         "heldoutImportantMistakeDelta": heldout_delta.get("importantMistakes") if heldout_delta else None,
         "candidateCompletedAllRuns": candidate["completed"] == candidate["runs"],
         "candidateHasNoTimeouts": candidate["timeouts"] == 0,
+        "candidateHasNoIdleTimeouts": candidate["idleTimeouts"] == 0,
         "candidateHasNoNonzeroExits": candidate["nonzeroExit"] == 0,
         "candidateHasNoParseErrors": candidate["parseErrors"] == 0,
         "candidateFallbacksNotWorse": candidate["fallbackOutputs"] <= baseline["fallbackOutputs"],
@@ -319,6 +324,7 @@ def promotion_verdict(
     hard_fail_keys = [
         "candidateCompletedAllRuns",
         "candidateHasNoTimeouts",
+        "candidateHasNoIdleTimeouts",
         "candidateHasNoNonzeroExits",
         "candidateHasNoParseErrors",
         "candidateFallbacksNotWorse",
@@ -356,7 +362,7 @@ def promotion_verdict(
 def print_metrics(label: str, metrics: dict[str, Any]) -> None:
     print(
         f"{label}: score={metrics['score']} completed={metrics['completed']}/{metrics['runs']} "
-        f"timeouts={metrics['timeouts']} failed_actions={metrics['failedActions']} "
+        f"timeouts={metrics['timeouts']} idle_timeouts={metrics['idleTimeouts']} failed_actions={metrics['failedActions']} "
         f"fallbacks={metrics['fallbackOutputs']} executed={metrics['executedActions']} "
         f"quality={metrics['qualityScore']} map={metrics['mapProgressScore']} "
         f"mistakes={metrics['mistakes']}/{metrics['importantMistakes']} "
@@ -379,6 +385,7 @@ def main() -> int:
     parser.add_argument("--runs", type=int, default=3, help="Runs per map and side.")
     parser.add_argument("--testdays", type=int, default=7, help="Completed adventure days before each client exits.")
     parser.add_argument("--timeout", type=int, default=300, help="Seconds before stopping one run.")
+    parser.add_argument("--idle-timeout", type=float, default=0.0, help="Seconds without stdout progress before stopping one run. Disabled at 0.")
     parser.add_argument("--exit-grace-after-outcome", type=float, default=10.0, help="Seconds to wait for clean client exit after a terminal game outcome appears in stdout.")
     parser.add_argument("--output", type=Path, default=Path("scripted-ai-evaluation"), help="Evaluation output directory.")
     parser.add_argument("--cwd", default=None, help="Working directory for vcmiclient.")
@@ -453,7 +460,14 @@ def main() -> int:
         print(f"promotion verdict: {promotion['verdict']} ({', '.join(promotion['reasons']) or 'all gates passed'})")
         print(f"evaluation: {args.output / 'evaluation.json'}")
 
-    has_failed_runs = baseline_metrics["timeouts"] or baseline_metrics["nonzeroExit"] or candidate_metrics["timeouts"] or candidate_metrics["nonzeroExit"]
+    has_failed_runs = (
+        baseline_metrics["timeouts"]
+        or baseline_metrics["idleTimeouts"]
+        or baseline_metrics["nonzeroExit"]
+        or candidate_metrics["timeouts"]
+        or candidate_metrics["idleTimeouts"]
+        or candidate_metrics["nonzeroExit"]
+    )
     has_parse_errors = baseline_metrics["parseErrors"] or candidate_metrics["parseErrors"]
     return 1 if has_failed_runs or has_parse_errors else 0
 

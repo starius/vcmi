@@ -1905,6 +1905,11 @@ Regression harness:
   because stdout had not advanced for more than 20 minutes, all threads were sleeping in futex/epoll waits, and the
   last logs were around battle creation; the runner recorded these as `nonzero_exit` rather than strategic wins or
   losses. The stalled seeds were `02`, `04`, `08`, `10`, and `12`.
+- Done: the batch/evaluation runner now has an opt-in `--idle-timeout` watchdog, also available per scenario as
+  `idleTimeout` / `idle_timeout`. It terminates runs whose `stdout.log` stops growing for the configured duration,
+  records `idleTimedOut = true`, classifies the outcome as `idle_timeout`, and reports `idleTimeouts` in aggregate
+  summaries and promotion gates. This makes battle/client stalls machine-readable instead of requiring manual
+  SIGTERM or waiting for the broad per-run timeout.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions

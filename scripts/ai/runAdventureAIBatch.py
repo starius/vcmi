@@ -166,6 +166,7 @@ def normalize_scenario(raw: dict[str, Any], index: int, args: argparse.Namespace
         "runs": int(raw.get("runs", args.runs)),
         "testdays": int(raw.get("testdays", args.testdays)),
         "timeout": int(raw.get("timeout", args.timeout)),
+        "idle_timeout": float(raw.get("idleTimeout", raw.get("idle_timeout", args.idle_timeout))),
         "extra_arg": list(args.extra_arg) + string_list(raw.get("extraArg")),
         "enabled": bool(raw.get("enabled", True)),
         "tags": string_list(raw.get("tags")),
@@ -229,6 +230,7 @@ def load_scenarios(args: argparse.Namespace) -> list[dict[str, Any]]:
             "runs": args.runs,
             "testdays": args.testdays,
             "timeout": args.timeout,
+            "idle_timeout": args.idle_timeout,
             "extra_arg": list(args.extra_arg),
             "enabled": True,
             "tags": [],
@@ -243,6 +245,7 @@ def load_scenarios(args: argparse.Namespace) -> list[dict[str, Any]]:
         scenario["runs"] = max(1, int(scenario["runs"]))
         scenario["testdays"] = max(0, int(scenario["testdays"]))
         scenario["timeout"] = max(1, int(scenario["timeout"]))
+        scenario["idle_timeout"] = max(0.0, float(scenario["idle_timeout"]))
     return scenarios
 
 
@@ -254,6 +257,7 @@ def args_for_scenario(args: argparse.Namespace, scenario: dict[str, Any]) -> arg
         runs=scenario["runs"],
         testdays=scenario["testdays"],
         timeout=scenario["timeout"],
+        idle_timeout=scenario["idle_timeout"],
         exit_grace_after_outcome=args.exit_grace_after_outcome,
         output=args.output / safe_name(str(scenario["name"])),
         cwd=args.cwd,
@@ -265,7 +269,7 @@ def args_for_scenario(args: argparse.Namespace, scenario: dict[str, Any]) -> arg
     )
 
 
-def run_outcome(stdout_path: Path, timed_out: bool, return_code: int | None) -> dict[str, Any]:
+def run_outcome(stdout_path: Path, timed_out: bool, idle_timed_out: bool, return_code: int | None) -> dict[str, Any]:
     text = stdout_path.read_text(encoding="utf-8", errors="replace") if stdout_path.exists() else ""
     outcome = {
         "result": "unknown",
@@ -273,6 +277,8 @@ def run_outcome(stdout_path: Path, timed_out: bool, return_code: int | None) -> 
     }
     if timed_out:
         outcome["result"] = "timeout"
+    elif idle_timed_out:
+        outcome["result"] = "idle_timeout"
     elif return_code not in (0, None):
         outcome["result"] = "nonzero_exit"
     if "Red player won. Ending game." in text:
@@ -300,6 +306,7 @@ def run_one(args: argparse.Namespace, scenario_or_map: dict[str, Any] | str, run
             "runs": args.runs,
             "testdays": args.testdays,
             "timeout": args.timeout,
+            "idle_timeout": args.idle_timeout,
             "extra_arg": list(args.extra_arg),
             "enabled": True,
             "tags": [],
@@ -320,6 +327,7 @@ def run_one(args: argparse.Namespace, scenario_or_map: dict[str, Any] | str, run
         env["VCMI_SCRIPTED_ADVENTURE_TRACE"] = "1"
     started = time.monotonic()
     timed_out = False
+    idle_timed_out = False
     terminated_after_outcome = False
     return_code: int | None
     stdout_path = run_dir / "stdout.log"
@@ -329,16 +337,31 @@ def run_one(args: argparse.Namespace, scenario_or_map: dict[str, Any] | str, run
         stdout.flush()
         process = subprocess.Popen(command, cwd=args.cwd, env=env, stdout=stdout, stderr=subprocess.STDOUT)
         outcome_seen_at: float | None = None
+        last_output_at = started
+        last_stdout_size = stdout_path.stat().st_size
         while True:
             return_code = process.poll()
             if return_code is not None:
                 break
 
             now = time.monotonic()
+            current_stdout_size = stdout_path.stat().st_size
+            if current_stdout_size != last_stdout_size:
+                last_stdout_size = current_stdout_size
+                last_output_at = now
             if outcome_seen_at is None and stdout_has_terminal_outcome(stdout_path):
                 outcome_seen_at = now
             if outcome_seen_at is not None and now - outcome_seen_at >= args.exit_grace_after_outcome:
                 terminated_after_outcome = True
+                process.terminate()
+                try:
+                    return_code = process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    return_code = process.wait()
+                break
+            if args.idle_timeout and now - last_output_at >= args.idle_timeout:
+                idle_timed_out = True
                 process.terminate()
                 try:
                     return_code = process.wait(timeout=5)
@@ -356,7 +379,7 @@ def run_one(args: argparse.Namespace, scenario_or_map: dict[str, Any] | str, run
 
     trace_dir = trace_dir_for_run(run_dir)
     trace_summary = summarize(iter_trace_files([str(trace_dir)])) if trace_dir.exists() else summarize([])
-    outcome = run_outcome(stdout_path, timed_out, return_code)
+    outcome = run_outcome(stdout_path, timed_out, idle_timed_out, return_code)
     max_day = int(trace_summary.get("quality", {}).get("maxDay") or 0)
     if outcome["completedDays"] is None and max_day > 0:
         outcome["completedDays"] = max_day
@@ -378,7 +401,9 @@ def run_one(args: argparse.Namespace, scenario_or_map: dict[str, Any] | str, run
         "runDir": str(run_dir),
         "command": command,
         "timeoutSeconds": args.timeout,
+        "idleTimeoutSeconds": args.idle_timeout,
         "timedOut": timed_out,
+        "idleTimedOut": idle_timed_out,
         "terminatedAfterOutcome": terminated_after_outcome,
         "returnCode": return_code,
         "elapsedSeconds": round(time.monotonic() - started, 3),
@@ -414,6 +439,7 @@ def compact_result(result: dict[str, Any]) -> dict[str, Any]:
         "outcome": outcome.get("result"),
         "completedDays": outcome.get("completedDays"),
         "timedOut": result.get("timedOut"),
+        "idleTimedOut": result.get("idleTimedOut"),
         "terminatedAfterOutcome": result.get("terminatedAfterOutcome"),
         "returnCode": result.get("returnCode"),
         "elapsedSeconds": result.get("elapsedSeconds"),
@@ -451,6 +477,7 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         "winners": winners,
         "outcomes": outcomes,
         "timeouts": sum(1 for result in results if result.get("timedOut")),
+        "idleTimeouts": sum(1 for result in results if result.get("idleTimedOut")),
         "terminatedAfterOutcome": sum(1 for result in results if result.get("terminatedAfterOutcome")),
         "nonzeroExit": sum(1 for result in results if not result.get("timedOut") and result.get("returnCode") != 0),
         "completedDayMin": min(completed_days) if completed_days else None,
@@ -461,7 +488,7 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def print_run_status(scenario: dict[str, Any], result: dict[str, Any]) -> None:
-    status = "timeout" if result["timedOut"] else f"exit {result['returnCode']}"
+    status = "timeout" if result["timedOut"] else "idle-timeout" if result.get("idleTimedOut") else f"exit {result['returnCode']}"
     parsed = result["traceSummary"]["parsed"]
     winner = result_winner(result) or "<none>"
     days = as_dict(result.get("outcome")).get("completedDays")
@@ -485,6 +512,7 @@ def main() -> int:
     parser.add_argument("--runs", type=int, default=1, help="Runs per map.")
     parser.add_argument("--testdays", type=int, default=0, help="Completed adventure days before the client exits.")
     parser.add_argument("--timeout", type=int, default=300, help="Seconds before stopping one run.")
+    parser.add_argument("--idle-timeout", type=float, default=0.0, help="Seconds without stdout progress before stopping one run. Disabled at 0.")
     parser.add_argument("--exit-grace-after-outcome", type=float, default=10.0, help="Seconds to wait for clean client exit after a terminal game outcome appears in stdout.")
     parser.add_argument("--output", type=Path, default=Path("scripted-ai-runs"), help="Directory for run outputs.")
     parser.add_argument("--cwd", default=None, help="Working directory for vcmiclient.")
