@@ -1502,9 +1502,12 @@ def town_pre_merge_summary(row: dict[str, Any]) -> str:
     town_army = town_pre_merge_army_strength(row, "townArmy")
     hero_army = town_pre_merge_army_strength(row, "defendingHeroArmy")
     defender_army = max(float(row.get("defenderArmyStrength") or 0.0), 1.0)
+    pre_merge_total = town_army + hero_army
     return (
         f"town_army={town_army:.0f} "
         f"hero_army={hero_army:.0f} "
+        f"battle_defender_army={defender_army:.0f} "
+        f"not_in_battle={max(0.0, pre_merge_total - defender_army):.0f} "
         f"town_share={town_army / defender_army:.3f} "
         f"hero_share={hero_army / defender_army:.3f} "
         f"town_stacks={town_pre_merge_stack_count(row, 'townArmy'):.0f} "
