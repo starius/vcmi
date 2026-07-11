@@ -425,21 +425,23 @@ vcmibattlesim \
   --skip-complete-shards
 ```
 
-Current live remote schema4 run:
+Paused remote schema4 run:
 
 - output: `/root/vcmi-nk-ratio-results/schema4-mmai-town-hero-20k-20260711`
-- PID: `248953`
 - started after a 4-row schema4 smoke passed strict validation with 4/4 MMAI-initialized shard logs and 0 fallback lines
 - early live shards `00000` through `00007` parsed `mmai` and initialized both MMAI side models
 - this run predates schema5 and does not contain `townPreMergeState`
+- paused on 2026-07-11 at 2944 rows / 55 complete shards to free CPU for the schema5 collector; complete shards remain usable and resumable with `--skip-complete-shards`
 
 Current live remote schema5 run:
 
 - source/build: `/root/vcmi-schema5-src` and `/root/vcmi-schema5-build`, source revision marker `7303cd79d`
 - output: `/root/vcmi-nk-ratio-results/schema5-mmai-town-hero-20k-20260711`
-- PID: `256258`
+- PID: `256999`
+- command wrapper: `/root/vcmi-nk-ratio-results/schema5-mmai-town-hero-20k-20260711/run-jobs8.sh`
 - started after a 4-row schema5 smoke passed strict validation with 4/4 MMAI-initialized shard logs, 0 fallback lines, and `townPreMergeState` present in every row
-- initial partial validation on the live run passed with 8/8 schema5 town-hero rows, 8/8 pre-merge snapshots, rich fields present, and 0 MMAI fallback lines
+- initial partial validation on the live run passed with 173/173 schema5 town-hero rows, 173/173 pre-merge snapshots, rich fields present, and 0 MMAI fallback lines
+- restarted on 2026-07-11 from jobs=2 to jobs=8 after confirming completed shards are skipped exactly and incomplete shards are deterministically rerun from clean profiles with output truncation
 - shard clients currently exit 139 after writing their complete rows and cleanly logging `Client stopped`; `vcmibattlesim` accepts the shard when the row count is complete. Treat this as a shutdown issue to investigate separately, not as invalid MMAI label evidence by itself.
 
 Then validate and inspect the schema5 model failures:
