@@ -26,6 +26,7 @@ import shlex
 import signal
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -76,6 +77,9 @@ COLOR_ALIASES = {
 	"teal": "Teal",
 	"pink": "Pink",
 }
+
+ACTIVE_PROCESSES: set[subprocess.Popen[bytes]] = set()
+ACTIVE_PROCESSES_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -278,10 +282,28 @@ def restore_config_files(originals: dict[Path, bytes]) -> None:
 		file.write_bytes(content)
 
 
+def register_active_process(proc: subprocess.Popen[bytes]) -> None:
+	with ACTIVE_PROCESSES_LOCK:
+		ACTIVE_PROCESSES.add(proc)
+
+
+def unregister_active_process(proc: subprocess.Popen[bytes]) -> None:
+	with ACTIVE_PROCESSES_LOCK:
+		ACTIVE_PROCESSES.discard(proc)
+
+
+def active_processes_snapshot() -> list[subprocess.Popen[bytes]]:
+	with ACTIVE_PROCESSES_LOCK:
+		return list(ACTIVE_PROCESSES)
+
+
 def install_config_restore_signal_handlers(originals: dict[Path, bytes]) -> dict[int, object]:
 	previous_handlers = {}
 
 	def restore_and_exit(signum, _frame) -> None:
+		for proc in active_processes_snapshot():
+			if proc.poll() is None:
+				terminate_process(proc)
 		restore_config_files(originals)
 		signal_name = signal.Signals(signum).name
 		print(f"Restored config replacements after {signal_name}.", file=sys.stderr, flush=True)
@@ -596,14 +618,18 @@ def run_game(args: argparse.Namespace, task: GameTask) -> GameResult:
 			stderr=subprocess.STDOUT,
 			start_new_session=(os.name != "nt"),
 		)
+		register_active_process(proc)
 
 		try:
-			exit_code = proc.wait(timeout=args.timeout)
-		except subprocess.TimeoutExpired:
-			timed_out = True
-			terminate_process(proc)
-			exit_code = proc.returncode
-			stdout.write(f"\nTimed out after {args.timeout} seconds.\n".encode())
+			try:
+				exit_code = proc.wait(timeout=args.timeout)
+			except subprocess.TimeoutExpired:
+				timed_out = True
+				terminate_process(proc)
+				exit_code = proc.returncode
+				stdout.write(f"\nTimed out after {args.timeout} seconds.\n".encode())
+		finally:
+			unregister_active_process(proc)
 
 	duration = time.monotonic() - start
 	map_loaded, winner_color, loser_color, test_day_limited, runtime_simulation_stats_by_color, diagnostics = parse_run_logs(task)
