@@ -1927,7 +1927,8 @@ TEST(LuaAdventureScriptRunnerTest, BoundedNullkillerControlEndsTurnWhenNativeSli
 
 	ASSERT_EQ(commands.size(), 2);
 	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_turn_slice");
-	EXPECT_EQ(commands[0]["payload"]["max_passes"].Integer(), 16);
+	EXPECT_EQ(commands[0]["payload"]["max_passes"].Integer(), 1);
+	EXPECT_EQ(commands[0]["payload"]["first_pass_index"].Integer(), 1);
 	EXPECT_EQ(commands[0]["payload"]["max_candidates"].Integer(), 64);
 	EXPECT_EQ(commands[0]["payload"]["max_attempts"].Integer(), 64);
 	EXPECT_EQ(commands[1]["payload"]["type"].String(), "end_turn");
@@ -1978,8 +1979,12 @@ TEST(LuaAdventureScriptRunnerTest, BoundedNullkillerControlContinuesAfterProduct
 	ASSERT_EQ(slices, 2);
 	ASSERT_EQ(commands.size(), 4);
 	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[0]["payload"]["max_passes"].Integer(), 1);
+	EXPECT_EQ(commands[0]["payload"]["first_pass_index"].Integer(), 1);
 	EXPECT_EQ(commands[1]["kind"].String(), "refresh");
 	EXPECT_EQ(commands[2]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[2]["payload"]["max_passes"].Integer(), 1);
+	EXPECT_EQ(commands[2]["payload"]["first_pass_index"].Integer(), 2);
 	EXPECT_EQ(commands[3]["payload"]["type"].String(), "end_turn");
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	EXPECT_EQ(output.memory["totalSlices"].Integer(), 2);
@@ -2083,10 +2088,13 @@ TEST(LuaAdventureScriptRunnerTest, BoundedNullkillerControlUsesImperativeActionB
 	for(size_t index = 0; index < 10; index += 2)
 	{
 		EXPECT_EQ(commands[index]["payload"]["type"].String(), "nullkiller_turn_slice");
-		EXPECT_EQ(commands[index]["payload"]["max_passes"].Integer(), 10);
+		EXPECT_EQ(commands[index]["payload"]["max_passes"].Integer(), 1);
+		EXPECT_EQ(commands[index]["payload"]["first_pass_index"].Integer(), static_cast<si64>(index / 2 + 1));
 		EXPECT_EQ(commands[index + 1]["kind"].String(), "refresh");
 	}
 	EXPECT_EQ(commands[10]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[10]["payload"]["max_passes"].Integer(), 1);
+	EXPECT_EQ(commands[10]["payload"]["first_pass_index"].Integer(), 6);
 	EXPECT_EQ(commands[11]["payload"]["type"].String(), "end_turn");
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	EXPECT_EQ(output.memory["totalSlices"].Integer(), 6);

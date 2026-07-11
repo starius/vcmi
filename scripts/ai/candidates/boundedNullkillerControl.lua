@@ -6,14 +6,14 @@ Bounded Nullkiller control
 
 This script is an API parity probe, not an attempt to outsmart Nullkiller.
 It drives Nullkiller's normal day phases through bounded host calls and keeps
-control in Lua after every native slice:
+control in Lua after every native pass:
 
 1. Answer any pending server dialog through the bounded Nullkiller query helper.
-2. Run a capped native turn slice: priority tasks, adventure task, trade, and
-   artifact cleanup.
+2. Run a capped native day helper that composes one-pass native turn slices:
+   priority tasks, adventure task, trade, and artifact cleanup.
 3. Refresh visible state after side effects, then decide whether to ask for
-   another slice.
-4. End the turn when the bounded native slice reports no more work or an
+   another native pass.
+4. End the turn when the bounded native helper reports no more work or an
    explicit stop-turn condition.
 
 The important contract is what this script does not do in normal play: it does
@@ -132,10 +132,11 @@ local function sliceDidWork(result)
 end
 
 local function sliceShouldEndTurn(result)
-    -- A bounded slice can exhaust one generated candidate set after doing useful
+    -- A bounded pass can exhaust one generated candidate set after doing useful
     -- priority/adventure/trade work. Native Nullkiller keeps planning in that
     -- case; only a no-work exhaustion means the day is actually idle.
-    return result.shouldStopTurn == true
+    return result.shouldEndTurn == true
+        or result.shouldStopTurn == true
         or (tonumber(result.adventureStopTurnSteps or 0) or 0) > 0
         or (result.exhaustedCandidates == true and not sliceDidWork(result))
 end
@@ -144,10 +145,12 @@ local function runNativeSlice(ai, current)
     local settings = nullkillerSettings(current)
     local maxPasses = tonumber(settings.maxPass) or DefaultMaxPassesPerSlice
 
-    return ai:nullkillerTurnSlice({
+    return ai:nullkillerBoundedDay({
         max_passes = math.max(1, math.min(SafetyMaxPassesPerSlice, maxPasses)),
         max_candidates = DefaultMaxCandidates,
-        max_attempts = DefaultMaxAttempts
+        max_attempts = DefaultMaxAttempts,
+        max_queries_per_pass = MaxQueriesPerSlice,
+        default_answer = 0
     })
 end
 
@@ -168,13 +171,18 @@ function Script.runDay(ai, input)
         end
 
         local result = runNativeSlice(ai, current)
-        memory.slicesToday = memory.slicesToday + 1
-        memory.totalSlices = memory.totalSlices + 1
+        local passCount = tonumber(result.passCount or 1) or 1
+        memory.slicesToday = memory.slicesToday + passCount
+        memory.totalSlices = memory.totalSlices + passCount
         ai:setMemory(memory)
 
         if sliceShouldEndTurn(result) then
             ai:endTurn()
-            return ai:output("end_turn", "bounded Nullkiller control accepted native stop-turn signal", 0.5)
+            local intent = "bounded Nullkiller control accepted native stop-turn signal"
+            if result.status == "idle" then
+                intent = "bounded Nullkiller control found no remaining native work"
+            end
+            return ai:output("end_turn", intent, 0.5)
         end
 
         if sliceDidWork(result) then

@@ -1811,6 +1811,9 @@ Regression harness:
   native day loop as one-pass checked `nullkiller_turn_slice` calls, answers pending queries between passes, refreshes
   after side effects, and returns a structured summary to Lua. This gives scripts a common bounded replacement for
   ordinary full-day `ai:nullkiller()` delegation.
+- Done: `scripts/ai/candidates/boundedNullkillerControl.lua` now uses `ai:nullkillerBoundedDay`, so the parity probe
+  also exercises the shared one-native-pass-at-a-time API instead of hiding multiple native passes inside one host
+  command.
 - Done: `scripts/ai/candidates/boundedNullkillerAdventure.lua` now stays on the bounded-helper contract too. Native
   no-task and stop-turn signals become Lua-controlled end-turn outputs, while unexpected helper failures or exhausted
   bounded budgets raise script errors for the host safety path instead of explicitly delegating the rest of the day to
