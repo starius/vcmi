@@ -1899,6 +1899,12 @@ Regression harness:
   answers, zero failed checked actions, zero parse errors, and zero mined mistakes. Raw command traces confirmed all
   turn slices used `max_candidates = 0` and `max_attempts = 0`; host native result traces reported
   `candidateLimit = 0` with serialized details capped at 64.
+- Done: a patched-client 16-map no-trace full-outcome probe of `boundedNullkillerControl.lua` produced valid compact
+  result JSON for every scenario without corrupt artifacts. Red/ScriptedAdventureAI had 6 terminal wins and 5
+  terminal losses against blue/Nullkiller2. The remaining 5 games were manually terminated after about 24 minutes
+  because stdout had not advanced for more than 20 minutes, all threads were sleeping in futex/epoll waits, and the
+  last logs were around battle creation; the runner recorded these as `nonzero_exit` rather than strategic wins or
+  losses. The stalled seeds were `02`, `04`, `08`, `10`, and `12`.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions
