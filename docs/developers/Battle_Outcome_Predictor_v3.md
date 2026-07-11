@@ -334,7 +334,8 @@ Observed pattern:
 - corrected schema3 worst cxx-v3 errors include confident sign mistakes: e.g. predicted probabilities below 1% for setups that MMAI won 100% of the time, and a 98.5% predicted win for a setup lost 100% of the time. This points to root-cause modeling gaps, not a threshold-only problem.
 - close/even diagnostics on the corrected 5k slice show the same confident-static-error shape: one non-town 47.6% empirical hero-vs-hero setup was predicted at 0.94%, and town close/even errors include high-fort/mage/moat sieges predicted above 88-96% despite empirical win rates around 38-47%.
 - close/even diagnostics on the corrected town-hero 2k run show 9 close/even groups with cxx-v3 absolute error above 0.25. Examples include a 30% attacker win rate predicted at 99.9% against a visiting defender with several combat spells, and a 72.7% attacker win rate predicted at 6.7% into a fort-3/mage-4/grail town. The failures are bidirectional and siege-specific, not a threshold-only issue.
-- close/even diagnostics on the live schema5 town-hero run at 51 complete shards / 2550 complete-shard rows found only 2 groups in the 25-75% empirical win-rate band with cxx-v3 error at least 0.25, both false-safe. The worst current group had actual attacker win rate 30.00% and cxx-v3 prediction 99.51% against a fort-3/castle/moat town with a visiting defender, large defender mana advantage, and town pre-merge participation loss. This remains small-sample evidence until the run completes.
+- close/even diagnostics on the live schema5 town-hero run at 51 complete shards / 2550 complete-shard rows found only 2 groups in the 25-75% empirical win-rate band with cxx-v3 error at least 0.25, both false-safe. The worst current group had actual attacker win rate 30.00% and cxx-v3 prediction 99.51% against a fort-3/castle/moat town with a visiting defender, large defender mana advantage, and town pre-merge participation loss.
+- a later no-fit diagnostic snapshot on the live schema5 town-hero run at 67 complete shards / 3350 complete-shard rows kept 67 town groups. Current cxx-v3 was 55.22% accurate with Brier 0.3248, 24 false-safe groups, and 4 false-unsafe groups. Corrected deployed-danger was better but still insufficient: factor 1.0 reached 74.63% accuracy / Brier 0.2111 with 6 false-safe and 5 false-unsafe groups; factor 1.5 reduced false-safe groups to 2 but left 7 false-unsafe groups; factor 2 removed false-safe groups only by marking nearly everything unsafe and dropping accuracy to 65.67%. The same snapshot found 4 close-even cxx-v3 misses in the 25-75% empirical win-rate band with error at least 0.25. False-safe segments were dominated by visiting-hero sieges with defender spellbooks and defender combat-spell advantage: 18 false-safe groups / 900 rows with defender combat-spell advantage of at least 4 averaged only 2.44% attacker win rate while cxx-v3 averaged 94.66%. This remains incomplete-run evidence, but it strongly confirms that town/siege needs separate modeling or runtime simulation.
 - on the same corrected schema3 data, fallback-only repeated simulation with an all-wins safety rule reached 97.6% win/loss accuracy and 100% safety accuracy with 3 samples, 98.5% / 100% with 5 samples, and 100% / 100% with 10 samples on eligible held-out rows. The dataset is still small, but it matches the broader 100k proxy direction.
 - using current deployed cxx-v3 coefficients as the static/hybrid baseline on the corrected 5k run, fallback-only repeated simulation still clears the target: on non-town deployed-static holdout rows, all-wins fallback reached about 97.2% win/loss accuracy and 100% safety accuracy with 3 samples, 97.8% / 97.3% with 10 samples, and 99.7% / 98.4% with 20 samples. On town rows it reached 100% / 100% with 1-3 samples, 95.2% / 100% with 5 samples, and 100% / 100% with 10 samples. These are still proxy numbers, but they show the fix must be runtime simulation, not another cxx-v3 coefficient patch.
 - on the corrected town-hero 2k run, current cxx-v3 alone reached only about 58.8% held-out win/loss accuracy, 56.5% safety accuracy, and Brier score 0.363. Fallback-only repeated simulation with all-wins safety reached 100% win/loss accuracy and 95.4% safety accuracy with 3 samples, and 98.4% / 95.2% with 5 samples. Ten-sample results had fewer eligible holdout groups and stayed 100% win/loss but only 88.3% safety because of one false-safe and one false-unsafe group.
@@ -487,6 +488,15 @@ python3 scripts/battle_prediction/evaluate_nullkiller_predictor.py \
   --print-town-deployable-false-safe 40 \
   --print-town-deployable-false-unsafe 40 \
   --town-deployable-safe-probability 0.62
+
+python3 scripts/battle_prediction/report_v3_static_misses.py \
+  /root/vcmi-nk-ratio-results/schema5-mmai-town-hero-20k-20260711 \
+  --scope town \
+  --group-key shard \
+  --complete-shards-only \
+  --limit 40 \
+  --segments 40 \
+  --town-danger-factors 1.0,1.25,1.5,2.0
 
 python3 scripts/battle_prediction/analyze_v3_failure_segments.py \
   /root/vcmi-nk-ratio-results/schema5-mmai-town-hero-20k-20260711 \
