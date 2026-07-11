@@ -375,6 +375,11 @@ ai.marketModes = {
 	resourceSkill = 8
 }
 
+ai.marketTradeKinds = {
+	resourceResource = 1,
+	resourceSkill = 2
+}
+
 ai.artifactSlots = {
 	transition = -3,
 	firstAvailable = -2,

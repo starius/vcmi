@@ -99,6 +99,8 @@ DISCOVERABLE_ACTION_OPTIONS: dict[str, str] = {
     "manage_hero_costume": "artifactManagementOptions",
     "assemble_artifacts": "artifactManagementOptions",
     "erase_transition_artifact": "artifactManagementOptions",
+    "trade_resources": "marketTradeOptions",
+    "market_trade": "marketTradeOptions",
     "spell_research": "spellResearchOptions",
     "visit_town_building": "visitTownBuildingOptions",
     "nullkiller_object_interaction": "objectInteractionOptions",

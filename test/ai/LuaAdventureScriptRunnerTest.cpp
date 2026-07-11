@@ -603,6 +603,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 						gatherTransferKind = ai.armyTransferKinds.gatherToHero,
 						assembleManagementKind = ai.artifactManagementKinds.assemble,
 						backpackCostSortMode = ai.backpackSortModes.cost,
+						resourceSkillTradeKind = ai.marketTradeKinds.resourceSkill,
 						blockingQueryType = ai.queryTypes.blockingDialog,
 						teleportBattlePathAction = ai.pathActions.teleportBattle,
 						criticalThreat = ai.threatLevels.critical,
@@ -827,6 +828,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanCallBoundedNullkillerSubrouti
 	EXPECT_EQ(output.memory["gatherTransferKind"].Integer(), 1);
 	EXPECT_EQ(output.memory["assembleManagementKind"].Integer(), 5);
 	EXPECT_EQ(output.memory["backpackCostSortMode"].Integer(), 2);
+	EXPECT_EQ(output.memory["resourceSkillTradeKind"].Integer(), 2);
 	EXPECT_EQ(output.memory["blockingQueryType"].Integer(), 3);
 	EXPECT_EQ(output.memory["teleportBattlePathAction"].Integer(), 9);
 	EXPECT_EQ(output.memory["criticalThreat"].Integer(), 3);
@@ -1742,6 +1744,72 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteArtifactManagementActi
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	ASSERT_TRUE(output.intent);
 	EXPECT_EQ(*output.intent, "executed artifact-management action-space options");
+}
+
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteMarketTradeActionSpaceOptions)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				ai:runOption(input.actionSpace.marketTradeOptions[1])
+				ai:runOption(input.actionSpace.marketTradeOptions[2])
+				return ai:output("end_turn", "executed market-trade action-space options")
+			end
+		}
+	)lua";
+
+	AI::AdventureScriptInput input = makeInput();
+	JsonNode resourceTrade;
+	resourceTrade["tradeKindId"] = JsonNode(1);
+	resourceTrade["market_id"] = JsonNode(16);
+	resourceTrade["planAction"]["type"] = JsonNode("trade_resources");
+	resourceTrade["planAction"]["type_id"] = JsonNode(60);
+	resourceTrade["planAction"]["market_id"] = JsonNode(16);
+	resourceTrade["planAction"]["sell_resource_id"] = JsonNode(0);
+	resourceTrade["planAction"]["buy_resource_id"] = JsonNode(6);
+	resourceTrade["planAction"]["amount"] = JsonNode(10);
+	input.actionSpace["marketTradeOptions"].Vector().push_back(resourceTrade);
+
+	JsonNode skillTrade;
+	skillTrade["tradeKindId"] = JsonNode(2);
+	skillTrade["market_id"] = JsonNode(16);
+	skillTrade["hero_id"] = JsonNode(17);
+	skillTrade["planAction"]["type"] = JsonNode("market_trade");
+	skillTrade["planAction"]["type_id"] = JsonNode(61);
+	skillTrade["planAction"]["market_id"] = JsonNode(16);
+	skillTrade["planAction"]["hero_id"] = JsonNode(17);
+	skillTrade["planAction"]["mode_id"] = JsonNode(8);
+	skillTrade["planAction"]["skill_id"] = JsonNode(2);
+	input.actionSpace["marketTradeOptions"].Vector().push_back(skillTrade);
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-market-trade-action-space-options", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 2);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "trade_resources");
+	EXPECT_EQ(commands[0]["payload"]["type_id"].Integer(), 60);
+	EXPECT_EQ(commands[0]["payload"]["market_id"].Integer(), 16);
+	EXPECT_EQ(commands[0]["payload"]["sell_resource_id"].Integer(), 0);
+	EXPECT_EQ(commands[0]["payload"]["buy_resource_id"].Integer(), 6);
+	EXPECT_EQ(commands[0]["payload"]["amount"].Integer(), 10);
+	EXPECT_EQ(commands[1]["payload"]["type"].String(), "market_trade");
+	EXPECT_EQ(commands[1]["payload"]["type_id"].Integer(), 61);
+	EXPECT_EQ(commands[1]["payload"]["mode_id"].Integer(), 8);
+	EXPECT_EQ(commands[1]["payload"]["skill_id"].Integer(), 2);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "executed market-trade action-space options");
 }
 
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteDefenseResponseActionSpaceOptions)

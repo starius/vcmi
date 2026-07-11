@@ -8216,6 +8216,8 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		const IMarket * market = dynamic_cast<const IMarket *>(object);
 		if(!object || !market)
 			throw std::invalid_argument("Unknown visible market object");
+		if(!cc->isVisibleFor(object, playerID))
+			throw std::invalid_argument("Market object is not visible to scripted AI");
 		if(!market->allowsTrade(EMarketMode::RESOURCE_RESOURCE))
 			throw std::invalid_argument("Market does not allow resource-resource trading");
 
@@ -8238,6 +8240,8 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 			if(!hero || hero->tempOwner != playerID)
 				throw std::invalid_argument("Unknown trade hero or hero is not owned by scripted AI");
 		}
+		if(object->tempOwner != playerID && !heroCanUseMarketAltar(hero, object))
+			throw std::invalid_argument("Trade market is not owned and no owned hero can use it");
 
 		const RequestWaitResult request = submitAndWaitForRequest(typeid(TradeOnMarketplace), CTypeList::getInstance().getTypeID<TradeOnMarketplace>(nullptr), [&]
 		{
@@ -8264,6 +8268,8 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		const IMarket * market = dynamic_cast<const IMarket *>(object);
 		if(!object || !market)
 			throw std::invalid_argument("Unknown visible market object");
+		if(!cc->isVisibleFor(object, playerID))
+			throw std::invalid_argument("Market object is not visible to scripted AI");
 
 		const int32_t modeID = readInteger(action, "mode_id");
 		if(modeID < 0 || modeID >= static_cast<int32_t>(EMarketMode::MARKET_AFTER_LAST_PLACEHOLDER))
@@ -8279,6 +8285,8 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 			if(!hero || hero->tempOwner != playerID)
 				throw std::invalid_argument("Unknown market trade hero or hero is not owned by scripted AI");
 		}
+		if(object->tempOwner != playerID && !heroCanUseMarketAltar(hero, object))
+			throw std::invalid_argument("Trade market is not owned and no owned hero can use it");
 
 		auto readResourceID = [&](const std::string & field) -> GameResID
 		{
@@ -9979,6 +9987,8 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["adventureSpellOptions"].Vector();
 	actionSpace["buyArtifactOptions"].Vector();
 	actionSpace["artifactManagementOptions"].Vector();
+	actionSpace["marketTradeOptions"].Vector();
+	actionSpace["marketTradeOptionsTruncated"] = JsonNode(false);
 	actionSpace["spellResearchOptions"].Vector();
 	actionSpace["visitTownBuildingOptions"].Vector();
 	actionSpace["questObjectOptions"].Vector();
@@ -10849,6 +10859,104 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		}
 	}
 
+	std::set<int32_t> seenMarketTradeObjects;
+	constexpr size_t maxMarketTradeOptions = 96;
+	auto appendMarketTradeOption = [&](JsonNode option)
+	{
+		if(actionSpace["marketTradeOptions"].Vector().size() >= maxMarketTradeOptions)
+		{
+			actionSpace["marketTradeOptionsTruncated"] = JsonNode(true);
+			return;
+		}
+		option["bounded"] = JsonNode(true);
+		option["delegatesRestOfDay"] = JsonNode(false);
+		actionSpace["marketTradeOptions"].Vector().push_back(option);
+	};
+	auto findMarketVisitor = [&](const CGObjectInstance * object) -> const CGHeroInstance *
+	{
+		for(const CGHeroInstance * hero : ownedHeroes)
+		{
+			if(hero && heroCanUseMarketAltar(hero, object))
+				return hero;
+		}
+		return nullptr;
+	};
+	auto appendMarketTradeOptions = [&](const CGObjectInstance * object)
+	{
+		const IMarket * market = dynamic_cast<const IMarket *>(object);
+		if(!object || !market || !cc->isVisibleFor(object, playerID))
+			return;
+
+		const CGHeroInstance * visitor = findMarketVisitor(object);
+		const bool ownedMarket = object->tempOwner == playerID;
+		if(!ownedMarket && !visitor)
+			return;
+		if(!seenMarketTradeObjects.insert(object->id.getNum()).second)
+			return;
+
+		if(market->allowsTrade(EMarketMode::RESOURCE_RESOURCE))
+		{
+			for(size_t sell = 0; sell < GameConstants::RESOURCE_QUANTITY; ++sell)
+			{
+				for(size_t buy = 0; buy < GameConstants::RESOURCE_QUANTITY; ++buy)
+				{
+					if(sell == buy)
+						continue;
+
+					int give = 0;
+					int receive = 0;
+					if(!market->getOffer(static_cast<int>(sell), static_cast<int>(buy), give, receive, EMarketMode::RESOURCE_RESOURCE))
+						continue;
+					if(give <= 0 || receive <= 0 || resources[static_cast<EGameResID>(sell)] < give)
+						continue;
+
+					JsonNode option;
+					option["tradeKindId"] = JsonNode(1);
+					option["tradeKind"] = JsonNode("resource_resource");
+					option["market_id"] = JsonNode(object->id.getNum());
+					option["market"] = jsonMapObject(object, playerID, visitor);
+					if(visitor)
+					{
+						option["hero_id"] = JsonNode(visitor->id.getNum());
+						option["hero"] = jsonHero(visitor);
+					}
+					option["mode_id"] = JsonNode(static_cast<int32_t>(EMarketMode::RESOURCE_RESOURCE));
+					option["mode"] = JsonNode(marketModeName(EMarketMode::RESOURCE_RESOURCE));
+					option["sell_resource_id"] = JsonNode(static_cast<int32_t>(sell));
+					option["buy_resource_id"] = JsonNode(static_cast<int32_t>(buy));
+					option["amount"] = JsonNode(give);
+					option["receive"] = JsonNode(receive);
+					option["sellAvailable"] = JsonNode(resources[static_cast<EGameResID>(sell)]);
+					setScriptActionType(option["planAction"], "trade_resources");
+					option["planAction"]["market_id"] = option["market_id"];
+					if(visitor)
+						option["planAction"]["hero_id"] = option["hero_id"];
+					option["planAction"]["sell_resource_id"] = option["sell_resource_id"];
+					option["planAction"]["buy_resource_id"] = option["buy_resource_id"];
+					option["planAction"]["amount"] = option["amount"];
+					appendMarketTradeOption(option);
+				}
+			}
+		}
+
+		if(visitor && market->allowsTrade(EMarketMode::RESOURCE_SKILL))
+		{
+			const JsonNode skillOptions = nullkiller && nullkiller->heroManager
+				? jsonMarketSkillOptions(market, visitor, resources, cc->getSettings(), nullkiller->heroManager.get())
+				: jsonMarketSkillOptions(market, visitor, resources, cc->getSettings());
+			for(const JsonNode & skillOption : skillOptions.Vector())
+			{
+				JsonNode option = skillOption;
+				option["tradeKindId"] = JsonNode(2);
+				option["tradeKind"] = JsonNode("resource_skill");
+				appendMarketTradeOption(option);
+			}
+		}
+	};
+
+	for(const CGTownInstance * town : cc->getTownsInfo(true))
+		appendMarketTradeOptions(town);
+
 	std::set<int32_t> seenQuestObjects;
 	constexpr size_t maxQuestObjectOptions = 64;
 	auto appendQuestObjectOption = [&](const CGObjectInstance * object)
@@ -10926,6 +11034,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		{
 			const CGObjectInstance * object = cc->getObj(objectID, false);
 			appendShipyardOption(objectID);
+			appendMarketTradeOptions(object);
 			appendQuestObjectOption(object);
 			if(const auto * town = dynamic_cast<const CGTownInstance *>(object))
 			{
@@ -10939,6 +11048,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		{
 			const CGObjectInstance * object = cc->getObj(objectID, false);
 			appendShipyardOption(objectID);
+			appendMarketTradeOptions(object);
 			appendQuestObjectOption(object);
 			if(const auto * town = dynamic_cast<const CGTownInstance *>(object))
 			{
@@ -11167,7 +11277,7 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 	analysis["scriptMemory"]["persistedInPlayerLocalSettings"] = JsonNode(true);
 	analysis["scriptMemory"]["localStateKey"] = JsonNode(SCRIPT_MEMORY_LOCAL_STATE_KEY);
 	analysis["candidateFields"].Vector();
-	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "typeId", "subtypeId", "kindId", "buildingKindId", "transferKindId", "preparationKindId", "managementKindId", "mode_id", "responseKindId", "pathActionId", "levelId", "statusId", "targetKindId", "spell_id", "task_id", "goalTypeId", "priorityTier", "heroRoleId", "nullkillerRoleId", "nullkillerArtifactScore", "nullkillerPotentialArtifactScore", "outcomeId", "failureActionId" })
+	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "typeId", "subtypeId", "kindId", "buildingKindId", "transferKindId", "preparationKindId", "managementKindId", "tradeKindId", "mode_id", "responseKindId", "pathActionId", "levelId", "statusId", "targetKindId", "spell_id", "task_id", "goalTypeId", "priorityTier", "heroRoleId", "nullkillerRoleId", "nullkillerArtifactScore", "nullkillerPotentialArtifactScore", "outcomeId", "failureActionId" })
 		analysis["candidateFields"].Vector().push_back(JsonNode(field));
 	analysis["danger"]["candidateDangerSource"] = JsonNode("Nullkiller direct object/guard danger evaluator");
 	analysis["danger"]["enemyReachSource"] = JsonNode("visible enemy distance and strength alerts");

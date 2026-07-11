@@ -759,8 +759,8 @@ Current bounded subroutine surface:
   waiting on any old query or movement blocker.
 - Lua exposes numeric constants for stable host ids used by the strategic contract:
   `ai.actionTypeIds`, `ai.buildingKinds`, `ai.objectKinds`, `ai.armyTransferKinds`, `ai.queryTypes`,
-  `ai.artifactManagementKinds`, `ai.backpackSortModes`, `ai.pathActions`, `ai.threatLevels`, `ai.riskLevels`,
-  `ai.specialActionKinds`, `ai.adventureSpellKinds`, `ai.nullkillerStepOutcomes`,
+  `ai.artifactManagementKinds`, `ai.backpackSortModes`, `ai.marketTradeKinds`, `ai.pathActions`,
+  `ai.threatLevels`, `ai.riskLevels`, `ai.specialActionKinds`, `ai.adventureSpellKinds`, `ai.nullkillerStepOutcomes`,
   `ai.nullkillerFailureActions`, `ai.nullkillerTaskModes`, `ai.nullkillerPriorityTiers`,
   `ai.nullkillerHeroLockReasons`, and `ai.nullkillerHeroRoles`. Scripts should
   branch on these constants rather than trace strings or raw magic numbers.
@@ -795,6 +795,10 @@ Current bounded subroutine surface:
   heroes: backpack sort/scroll, costume load/save, assemble/disassemble, transition-slot cleanup, and artifact
   transfer options between co-located heroes. The ready `planAction` payloads use stable ids where possible, e.g.
   numeric `mode_id` for backpack sorting.
+- `actionSpace.marketTradeOptions` advertises bounded market trades for markets the script can actually use:
+  resource/resource batches from owned markets or markets an owned hero is visiting, plus resource/skill purchases
+  when a visiting hero can buy them. Richer artifact/creature sacrifice flows remain exposed through market-window
+  updates and artifact-management helpers.
 
 ## Current API Coverage Stance
 
@@ -1711,6 +1715,9 @@ Regression harness:
 - Done: `actionSpace.artifactManagementOptions` exposes checked artifact-management actions that were previously
   callable but not discoverable as options. Scripts can now rank artifact sorting, assembly/disassembly,
   transition cleanup, and co-located hero artifact transfers without constructing low-level slot payloads by hand.
+- Done: `actionSpace.marketTradeOptions` exposes checked resource/resource and resource/skill market actions, and
+  raw trade execution now rejects visible-but-inaccessible markets unless the market is owned or an owned hero is
+  actually able to use it.
 - Done: Lua can call Nullkiller's bounded creature-preparation helper through `ai:pickBestCreatures`, matching
   the existing artifact-preparation helper and avoiding Lua-side reimplementation of stack logistics.
 - Done: Lua can call Nullkiller's bounded town-army helper through `ai:nullkillerBuildArmy(townId)`, reusing the
