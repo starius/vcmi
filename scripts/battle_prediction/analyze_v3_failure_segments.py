@@ -13,12 +13,15 @@ from typing import Any
 from evaluate_nullkiller_predictor import (
     SAFE_ATTACK_RATIO,
     V3_SAFE_PROBABILITY,
+    army_power_by_creature,
     army_rich_stats,
     battle_type,
     cxx_v3_probability,
     cxx_v3_static_calibration_applies,
     deployed_safe_prediction,
     filter_complete_shard_groups,
+    hero_combat_spells,
+    hero_secondary_levels,
     hero_strength,
     load_shard_manifest,
     load_groups,
@@ -201,6 +204,59 @@ def rich_log_ratio(row: dict[str, Any], key: str) -> float:
     return math.log((float(attacker.get(key, 0.0)) + 1.0) / (float(defender.get(key, 0.0)) + 1.0))
 
 
+def hero_spell_segments(row: dict[str, Any]) -> list[str]:
+    attacker = hero_combat_spells(row.get("attackerHero"))
+    defender = hero_combat_spells(row.get("defenderHero"))
+    result = []
+    for spell_id in sorted(attacker | defender):
+        if spell_id in attacker:
+            result.append(f"attacker_spell={spell_id}")
+        if spell_id in defender:
+            result.append(f"defender_spell={spell_id}")
+        if (spell_id in attacker) != (spell_id in defender):
+            holder = "attacker" if spell_id in attacker else "defender"
+            result.append(f"spell_advantage={holder}:{spell_id}")
+    return result
+
+
+def hero_skill_segments(row: dict[str, Any]) -> list[str]:
+    attacker = hero_secondary_levels(row.get("attackerHero"))
+    defender = hero_secondary_levels(row.get("defenderHero"))
+    result = []
+    for skill_id in sorted(set(attacker) | set(defender)):
+        attacker_level = attacker.get(skill_id, 0.0)
+        defender_level = defender.get(skill_id, 0.0)
+        if attacker_level:
+            result.append(f"attacker_skill={skill_id}:{int(attacker_level)}")
+        if defender_level:
+            result.append(f"defender_skill={skill_id}:{int(defender_level)}")
+        diff = attacker_level - defender_level
+        if diff:
+            result.append(f"skill_level_diff={skill_id}:{bucket(diff, [-2, -1, 0, 1, 2])}")
+    return result
+
+
+def creature_share_segments(row: dict[str, Any], min_share: float = 0.15) -> list[str]:
+    result = []
+    shares_by_side = {}
+    for side in ("attacker", "defender"):
+        total = max(float(row.get(f"{side}ArmyStrength") or 0.0), 1.0)
+        shares = {
+            creature_id: power / total
+            for creature_id, power in army_power_by_creature(row, side).items()
+            if power / total >= min_share
+        }
+        shares_by_side[side] = shares
+        for creature_id, share in sorted(shares.items()):
+            result.append(f"{side}_creature={creature_id}:{bucket(share, [0.25, 0.5, 0.75])}")
+
+    for creature_id in sorted(set(shares_by_side["attacker"]) | set(shares_by_side["defender"])):
+        diff = shares_by_side["attacker"].get(creature_id, 0.0) - shares_by_side["defender"].get(creature_id, 0.0)
+        if abs(diff) >= min_share:
+            result.append(f"creature_share_diff={creature_id}:{bucket(diff, [-0.75, -0.5, -0.25, 0.25, 0.5, 0.75])}")
+    return result
+
+
 def segments_for(row: dict[str, Any], actual: float, predicted: float) -> list[str]:
     attacker_strength = army_strength(row, "attacker")
     defender_strength = army_strength(row, "defender")
@@ -228,6 +284,9 @@ def segments_for(row: dict[str, Any], actual: float, predicted: float) -> list[s
         f"hp_log_ratio={bucket(rich_log_ratio(row, 'hp'), [-2, -1, 0, 1, 2])}",
         f"damage_log_ratio={bucket(rich_log_ratio(row, 'damage'), [-2, -1, 0, 1, 2])}",
     ]
+    result.extend(hero_spell_segments(row))
+    result.extend(hero_skill_segments(row))
+    result.extend(creature_share_segments(row))
 
     if type_name.startswith("town"):
         initial_wall_total = wall_total(row, "initialWallState", ["bottomWall", "belowGate", "overGate", "upperWall"])
