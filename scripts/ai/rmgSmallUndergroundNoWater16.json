@@ -17,7 +17,9 @@
 				"seed": 53001
 			},
 			"gameSeed": 63001,
-			"timeout": 1800
+			"timeout": 1800,
+			"idleTimeout": 240,
+			"infrastructureRetries": 1
 		},
 		{
 			"name": "rmg_small_u_nowater_normal_02",
@@ -36,7 +38,9 @@
 				"seed": 53002
 			},
 			"gameSeed": 63002,
-			"timeout": 1800
+			"timeout": 1800,
+			"idleTimeout": 240,
+			"infrastructureRetries": 1
 		},
 		{
 			"name": "rmg_small_u_nowater_normal_03",
@@ -55,7 +59,9 @@
 				"seed": 53003
 			},
 			"gameSeed": 63003,
-			"timeout": 1800
+			"timeout": 1800,
+			"idleTimeout": 240,
+			"infrastructureRetries": 1
 		},
 		{
 			"name": "rmg_small_u_nowater_normal_04",
@@ -74,7 +80,9 @@
 				"seed": 53004
 			},
 			"gameSeed": 63004,
-			"timeout": 1800
+			"timeout": 1800,
+			"idleTimeout": 240,
+			"infrastructureRetries": 1
 		},
 		{
 			"name": "rmg_small_u_nowater_normal_05",
@@ -93,7 +101,9 @@
 				"seed": 53005
 			},
 			"gameSeed": 63005,
-			"timeout": 1800
+			"timeout": 1800,
+			"idleTimeout": 240,
+			"infrastructureRetries": 1
 		},
 		{
 			"name": "rmg_small_u_nowater_normal_06",
@@ -112,7 +122,9 @@
 				"seed": 53006
 			},
 			"gameSeed": 63006,
-			"timeout": 1800
+			"timeout": 1800,
+			"idleTimeout": 240,
+			"infrastructureRetries": 1
 		},
 		{
 			"name": "rmg_small_u_nowater_normal_07",
@@ -131,7 +143,9 @@
 				"seed": 53007
 			},
 			"gameSeed": 63007,
-			"timeout": 1800
+			"timeout": 1800,
+			"idleTimeout": 240,
+			"infrastructureRetries": 1
 		},
 		{
 			"name": "rmg_small_u_nowater_normal_08",
@@ -150,7 +164,9 @@
 				"seed": 53008
 			},
 			"gameSeed": 63008,
-			"timeout": 1800
+			"timeout": 1800,
+			"idleTimeout": 240,
+			"infrastructureRetries": 1
 		},
 		{
 			"name": "rmg_small_u_nowater_normal_09",
@@ -169,7 +185,9 @@
 				"seed": 53009
 			},
 			"gameSeed": 63009,
-			"timeout": 1800
+			"timeout": 1800,
+			"idleTimeout": 240,
+			"infrastructureRetries": 1
 		},
 		{
 			"name": "rmg_small_u_nowater_normal_10",
@@ -188,7 +206,9 @@
 				"seed": 53010
 			},
 			"gameSeed": 63010,
-			"timeout": 1800
+			"timeout": 1800,
+			"idleTimeout": 240,
+			"infrastructureRetries": 1
 		},
 		{
 			"name": "rmg_small_u_nowater_normal_11",
@@ -207,7 +227,9 @@
 				"seed": 53011
 			},
 			"gameSeed": 63011,
-			"timeout": 1800
+			"timeout": 1800,
+			"idleTimeout": 240,
+			"infrastructureRetries": 1
 		},
 		{
 			"name": "rmg_small_u_nowater_normal_12",
@@ -226,7 +248,9 @@
 				"seed": 53012
 			},
 			"gameSeed": 63012,
-			"timeout": 1800
+			"timeout": 1800,
+			"idleTimeout": 240,
+			"infrastructureRetries": 1
 		},
 		{
 			"name": "rmg_small_u_nowater_normal_13",
@@ -245,7 +269,9 @@
 				"seed": 53013
 			},
 			"gameSeed": 63013,
-			"timeout": 1800
+			"timeout": 1800,
+			"idleTimeout": 240,
+			"infrastructureRetries": 1
 		},
 		{
 			"name": "rmg_small_u_nowater_normal_14",
@@ -264,7 +290,9 @@
 				"seed": 53014
 			},
 			"gameSeed": 63014,
-			"timeout": 1800
+			"timeout": 1800,
+			"idleTimeout": 240,
+			"infrastructureRetries": 1
 		},
 		{
 			"name": "rmg_small_u_nowater_normal_15",
@@ -283,7 +311,9 @@
 				"seed": 53015
 			},
 			"gameSeed": 63015,
-			"timeout": 1800
+			"timeout": 1800,
+			"idleTimeout": 240,
+			"infrastructureRetries": 1
 		},
 		{
 			"name": "rmg_small_u_nowater_normal_16",
@@ -302,7 +332,9 @@
 				"seed": 53016
 			},
 			"gameSeed": 63016,
-			"timeout": 1800
+			"timeout": 1800,
+			"idleTimeout": 240,
+			"infrastructureRetries": 1
 		}
 	]
 }

@@ -1472,7 +1472,9 @@ Regression harness:
   The result improves the previous default-script average, but still trails the all-fallback control; the next
   behavioral target is reducing oversteering rather than more identifier cleanup.
 - The live small random-map promotion corpus is now `scripts/ai/rmgSmallUndergroundNoWater16.json`, expanded to
-  16 fixed generated maps. The promotion target for this corpus is 16/16 victories, not 10/10.
+  16 fixed generated maps. The promotion target for this corpus is 16/16 victories, not 10/10. The corpus carries
+  per-scenario `idleTimeout = 240` and `infrastructureRetries = 1` settings so battle-AI infrastructure stalls are
+  classified and retried consistently without requiring ad hoc command-line flags.
 - On the 16-map corpus, the imperative all-fallback control is the current champion at 11/16 wins. The first
   converted `defaultAdventure.lua` compatibility wrapper lost 16/16 because it oversteered map movement and object
   routing; traced runs showed 3050 `visit_object` commands, 927 `move_hero` commands, and 397 replan-limit
