@@ -11,11 +11,38 @@
 #include "ObjectClusterizer.h"
 #include "../Goals/ExecuteHeroChain.h"
 #include "../AIGateway.h"
+#include "../AIUtility.h"
 #include "../Engine/Nullkiller.h"
 #include "../Helpers/DimensionDoorUtils.h"
 
 namespace NK2AI
 {
+namespace
+{
+constexpr float RUNTIME_SIMULATION_CLUSTER_KEEP_PRIORITY = 1.0f;
+
+bool shouldKeepTownForRuntimeSimulationPlanning(const Nullkiller * aiNk, const AIPath & path, const CGObjectInstance * obj)
+{
+	if(!aiNk || !aiNk->cc || !aiNk->settings || !path.targetHero || !obj)
+		return false;
+	if(obj->ID != Obj::TOWN)
+		return false;
+	if(aiNk->settings->getBattlePredictionModel() != BattlePredictionModel::V3)
+		return false;
+	if(aiNk->settings->getBattlePredictionSimulationSamples() <= 0)
+		return false;
+	if(path.turn() > 0)
+		return false;
+	if(path.heroArmy != static_cast<const CCreatureSet *>(path.targetHero))
+		return false;
+
+	const auto pathDanger = path.getPathDanger();
+	if(pathDanger > 0 && !isSafeToVisit(path.targetHero, path.heroArmy, pathDanger, aiNk->settings->getBattlePlanningSafeAttackRatio()))
+		return false;
+
+	return chooseBattleSimulationTargetForVisit(*aiNk->cc, path.targetHero, path.targetTile(), obj) != nullptr;
+}
+}
 
 static std::vector<DimensionDoorExpansionReach> getDimensionDoorExpansionReach(
 	const std::vector<const CGHeroInstance *> & heroes,
@@ -562,8 +589,13 @@ void ObjectClusterizer::clusterizeObject(
 			priority = std::max(priority, priorityEvaluator->evaluate(Goals::sptr(Goals::ExecuteHeroChain(path, obj)), prio));
 		}
 
-		if (priority <= 0)
-			continue;
+		if(priority <= 0)
+		{
+			if(!shouldKeepTownForRuntimeSimulationPlanning(aiNk, path, obj))
+				continue;
+
+			priority = RUNTIME_SIMULATION_CLUSTER_KEEP_PRIORITY;
+		}
 
 		// TODO: Mircea: Move to constant
 		bool interestingObject = path.turn() <= 2 || priority > 0;
