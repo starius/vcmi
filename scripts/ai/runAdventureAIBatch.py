@@ -31,6 +31,7 @@ TERMINAL_OUTCOME_MARKERS = (
 TURN_START_DAY_RE = re.compile(r"Player \d+ \([^)]*\) starting turn, day (\d+)")
 INFRASTRUCTURE_FAILURE_OUTCOMES = {"idle_timeout", "timeout", "nonzero_exit"}
 INFRASTRUCTURE_FAILURE_TAIL_SIGNATURES = {"battle_ai_creation", "battle_ai_creation_invalid_stack"}
+INFRASTRUCTURE_FAILURE_MISTAKES = {"inflight_imperative_command"}
 TERMINAL_OUTCOMES = {"red_win", "red_loss"}
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 AI_NAME_ALIASES = {
@@ -399,6 +400,16 @@ def infrastructure_failure_reason(result: dict[str, Any]) -> str | None:
     tail_signature = str(as_dict(result.get("stdoutSummary")).get("tailSignature", "unknown"))
     if tail_signature in INFRASTRUCTURE_FAILURE_TAIL_SIGNATURES:
         return tail_signature
+
+    mistakes = as_dict(as_dict(result.get("traceSummary")).get("mistakes"))
+    for item in as_list(mistakes.get("items")):
+        item_data = as_dict(item)
+        mistake_type = str(item_data.get("type", ""))
+        if mistake_type in INFRASTRUCTURE_FAILURE_MISTAKES:
+            details = as_dict(item_data.get("details"))
+            action_type = str(details.get("actionType") or "unknown")
+            return f"{mistake_type}:{action_type}"
+
     return None
 
 

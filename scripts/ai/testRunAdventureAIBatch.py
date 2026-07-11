@@ -12,7 +12,14 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from runAdventureAIBatch import compact_result, run_one, run_one_with_infrastructure_retries, run_outcome, summarize_results
+from runAdventureAIBatch import (
+    annotate_infrastructure_failure,
+    compact_result,
+    run_one,
+    run_one_with_infrastructure_retries,
+    run_outcome,
+    summarize_results,
+)
 
 
 class RunAdventureAIBatchTest(unittest.TestCase):
@@ -313,6 +320,120 @@ class RunAdventureAIBatchTest(unittest.TestCase):
             self.assertEqual(result["previousAttempts"][0]["infrastructureFailureReason"], "battle_ai_creation")
             self.assertEqual(compact["outcome"], "red_win")
             self.assertEqual(compact["infrastructureRetriesUsed"], 1)
+
+    def test_inflight_imperative_command_is_infrastructure_failure(self) -> None:
+        result = {
+            "outcome": {"result": "idle_timeout"},
+            "stdoutSummary": {"tailSignature": "turn_start"},
+            "traceSummary": {
+                "mistakes": {
+                    "items": [
+                        {
+                            "type": "inflight_imperative_command",
+                            "details": {"actionType": "nullkiller_turn_slice"},
+                        }
+                    ]
+                }
+            },
+        }
+
+        annotate_infrastructure_failure(result)
+
+        self.assertTrue(result["infrastructureFailure"])
+        self.assertEqual(
+            result["infrastructureFailureReason"],
+            "inflight_imperative_command:nullkiller_turn_slice",
+        )
+
+    def test_inflight_imperative_trace_can_retry_to_terminal_result(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            client = root / "fake-client.py"
+            client.write_text(
+                textwrap.dedent(
+                    """\
+                    #!/usr/bin/env python3
+                    import json
+                    import os
+                    import pathlib
+                    import time
+
+                    state = pathlib.Path(__file__).with_name("attempt.txt")
+                    attempt = int(state.read_text()) + 1 if state.exists() else 1
+                    state.write_text(str(attempt))
+
+                    if attempt == 1:
+                        print("turn started", flush=True)
+                        trace_dir = pathlib.Path(os.environ["XDG_CACHE_HOME"]) / "vcmi" / "scriptedAdventureAI"
+                        trace_dir.mkdir(parents=True, exist_ok=True)
+                        (trace_dir / "player-red-day-1-event-0-imperative-command-start.json").write_text(json.dumps({
+                            "label": "imperative-command-start",
+                            "player": "red",
+                            "script": "ai/candidates/boundedNullkillerControl.lua",
+                            "payload": {
+                                "commandIndex": 0,
+                                "command": {
+                                    "kind": "execute",
+                                    "payload": {"type": "nullkiller_turn_slice", "type_id": 106}
+                                }
+                            }
+                        }))
+                        time.sleep(10)
+                    else:
+                        print("Red player won. Ending game.", flush=True)
+                    """
+                ),
+                encoding="utf-8",
+            )
+            client.chmod(0o755)
+
+            args = argparse.Namespace(
+                client=str(client),
+                ai=["ScriptedAdventureAI", "Nullkiller2"],
+                runs=1,
+                testdays=0,
+                timeout=10,
+                idle_timeout=0.2,
+                infrastructure_retries=1,
+                exit_grace_after_outcome=0.0,
+                output=root / "runs",
+                cwd=None,
+                clean=True,
+                extra_arg=[],
+                script=None,
+                player_script=[],
+                red_script=None,
+                blue_script=None,
+                trace=True,
+                json=False,
+            )
+            scenario = {
+                "name": "retry-inflight-infra",
+                "group": "training",
+                "stage": "outcome",
+                "kind": "unit",
+                "map": "unit-test-map",
+                "runs": 1,
+                "testdays": 0,
+                "timeout": 10,
+                "idle_timeout": 0.2,
+                "infrastructure_retries": 1,
+                "extra_arg": [],
+                "enabled": True,
+                "tags": [],
+            }
+
+            result = run_one_with_infrastructure_retries(args, scenario, 1)
+
+        self.assertEqual(result["outcome"]["result"], "red_win")
+        self.assertEqual(result["attempt"], 2)
+        self.assertEqual(result["infrastructureRetriesUsed"], 1)
+        self.assertEqual(len(result["previousAttempts"]), 1)
+        self.assertTrue(result["previousAttempts"][0]["infrastructureFailure"])
+        self.assertEqual(
+            result["previousAttempts"][0]["infrastructureFailureReason"],
+            "inflight_imperative_command:nullkiller_turn_slice",
+        )
 
 
 if __name__ == "__main__":

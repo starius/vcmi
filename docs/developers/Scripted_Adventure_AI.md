@@ -2134,6 +2134,10 @@ Regression harness:
   `battle_ai_creation` infrastructure timeout. The trace summarizer now reports these as
   `inflight_imperative_command` mistakes so future runs can distinguish a script-level idle from an in-flight host
   helper/battle setup stall.
+- Done: batch evaluation treats `inflight_imperative_command` trace mistakes on timeout/idle/nonzero runs as
+  infrastructure failures, with reasons such as `inflight_imperative_command:nullkiller_turn_slice`. This lets the
+  retry loop handle in-flight bounded-helper stalls even when the stdout tail is not specific enough to classify
+  them as battle-AI setup noise.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions
