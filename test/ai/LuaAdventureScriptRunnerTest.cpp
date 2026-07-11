@@ -1844,6 +1844,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectVisibleState)
 				})
 				local tileDanger = ai:getTileDanger(7, 3, 4, 0)
 				local objectDanger = ai:getObjectDanger(7, 42, { checkGuards = false })
+				local positionalDanger = ai:getDanger(7, 5, 6, 0, { check_guards = true })
 				local state = ai:getState()
 				local actionSpace = ai:getActionSpace()
 				local analysis = ai:getAnalysis()
@@ -1868,6 +1869,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectVisibleState)
 						reachableMoves = #reachable.movementOptions,
 						tileRiskId = tileDanger.riskId,
 						objectTargetKindId = objectDanger.targetKindId,
+						positionalDangerX = positionalDanger.position.x,
 						day = state.day,
 						hasEndTurn = actionSpace.endTurnAction ~= nil,
 						hasExecution = analysis.execution ~= nil,
@@ -1993,7 +1995,7 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectVisibleState)
 		return response;
 	});
 
-	ASSERT_EQ(commands.size(), 18);
+	ASSERT_EQ(commands.size(), 19);
 	for(const JsonNode & command : commands)
 		EXPECT_EQ(command["kind"].String(), "inspect");
 	EXPECT_EQ(commands[0]["payload"]["what"].String(), "object");
@@ -2022,7 +2024,13 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanInspectVisibleState)
 	EXPECT_EQ(commands[10]["payload"]["what"].String(), "danger");
 	EXPECT_EQ(commands[10]["payload"]["object_id"].Integer(), 42);
 	EXPECT_FALSE(commands[10]["payload"]["check_guards"].Bool());
-	EXPECT_EQ(commands[17]["payload"]["what"].String(), "grail");
+	EXPECT_EQ(commands[11]["payload"]["what"].String(), "danger");
+	EXPECT_EQ(commands[11]["payload"]["hero_id"].Integer(), 7);
+	EXPECT_EQ(commands[11]["payload"]["x"].Integer(), 5);
+	EXPECT_EQ(commands[11]["payload"]["y"].Integer(), 6);
+	EXPECT_EQ(commands[11]["payload"]["z"].Integer(), 0);
+	EXPECT_TRUE(commands[11]["payload"]["check_guards"].Bool());
+	EXPECT_EQ(commands[18]["payload"]["what"].String(), "grail");
 	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
 	EXPECT_EQ(output.memory["objectId"].Integer(), 42);
 	EXPECT_EQ(output.memory["heroId"].Integer(), 7);
