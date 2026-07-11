@@ -15,7 +15,11 @@
 #include "../lib/CThreadHelper.h"
 #include "../lib/network/NetworkInterface.h"
 #include "../lib/CConfigHandler.h"
+#include "../lib/callback/AIFactory.h"
+#include "../server/CGameHandler.h"
 #include "../server/CVCMIServer.h"
+#include "../server/battles/BattleSimulationGameInterfaceAdapter.h"
+#include "../server/battles/BattleSimulationRunner.h"
 
 #ifdef ENABLE_SERVER_PROCESS
 
@@ -32,6 +36,34 @@
 
 #include <future>
 
+static const std::string BATTLE_SIMULATION_AI = "MMAI";
+
+static std::shared_ptr<CBattleGameInterface> createBattleSimulationAI(PlayerColor)
+{
+	try
+	{
+		return AIFactory::createBattleAI(BATTLE_SIMULATION_AI);
+	}
+	catch(const std::exception & e)
+	{
+		logAi->warn("Failed to create %s for runtime battle simulation: %s. Falling back to BattleAI.", BATTLE_SIMULATION_AI.c_str(), e.what());
+		return AIFactory::createBattleAI("BattleAI");
+	}
+}
+
+static void installBattleSimulationRunner(CVCMIServer & server)
+{
+	server.setGameHandlerConfigurationHook([](CGameHandler & gameHandler)
+	{
+		auto actionProviderFactory = std::make_shared<BattleSimulation::BattleSimulationGameInterfaceActionProviderFactory>(
+			&createBattleSimulationAI);
+		auto runner = std::make_shared<BattleSimulation::IsolatedBattleSimulationRunner>(
+			gameHandler.gameState(),
+			actionProviderFactory);
+		gameHandler.setBattleSimulationRunner(std::move(runner));
+	});
+}
+
 ServerThreadRunner::ServerThreadRunner() = default;
 ServerThreadRunner::~ServerThreadRunner() = default;
 
@@ -40,6 +72,7 @@ void ServerThreadRunner::start(bool listenForConnections, bool connectToLobby, s
 	// cfgport may be 0 -- the real port is returned after calling prepare()
 	uint16_t port = settings["server"]["localPort"].Integer();
 	server = std::make_unique<CVCMIServer>(port, true);
+	installBattleSimulationRunner(*server);
 	lobbyMode = connectToLobby;
 
 	if (startingInfo)
