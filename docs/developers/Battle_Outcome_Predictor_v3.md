@@ -382,28 +382,45 @@ Current branch progress toward the service boundary:
 
 Batch collection caveat: when running `vcmibattlesim` with MMAI in parallel, each shard needs an isolated XDG config/cache profile. A shared profile can be rewritten by clients and silently disable the MMAI mod for later shards. Use `--xdg-config-template` and, if needed, `--xdg-profile-root` so each client starts from the same active-mod configuration.
 
+The MMAI model payload must also be visible to the current checkout. A profile that names `MMAI` as the combat AI is not sufficient: logs must show `Parsing mod: OK (mmai)`, `Loading mod: OK (mmai)`, and `MMAI version 13 initialized` without fallback/config-error lines. On the 2026-07-11 remote runner, `/root/vcmi-nk-ratio-src/Mods` did not contain `mmai`, while the model payload was present in `/root/vcmi-predict-battle-outcome-src/Mods/mmai`. The working one-time setup was:
+
+```bash
+ln -s /root/vcmi-predict-battle-outcome-src/Mods/mmai /root/vcmi-nk-ratio-src/Mods/mmai
+```
+
 Example schema4 town-hero collection command:
 
 ```bash
+mkdir -p /root/vcmi-nk-ratio-results/schema4-mmai-town-hero-20k-20260711
+
+cd /root/vcmi-nk-ratio-build/bin
+
 vcmibattlesim \
   --client ./vcmiclient \
   --generate-map \
   --generated-mode town-hero \
-  --output-dir schema4-mmai-town-hero-20k \
+  --output-dir /root/vcmi-nk-ratio-results/schema4-mmai-town-hero-20k-20260711 \
   --battles 20000 \
   --shards 400 \
   --jobs 8 \
   --seed 20260711 \
   --combat-ai MMAI \
-  --xdg-config-template /root/vcmi-nk-ratio-results/mmai-schema3-config-template \
+  --xdg-config-template /root/vcmi-nk-ratio-results/schema3-richstats-mmai-town-hero-5k-20260711/profiles/shard-00000/config \
   --skip-complete-shards
 ```
+
+Current live remote run:
+
+- output: `/root/vcmi-nk-ratio-results/schema4-mmai-town-hero-20k-20260711`
+- PID: `248953`
+- started after a 4-row schema4 smoke passed strict validation with 4/4 MMAI-initialized shard logs and 0 fallback lines
+- early live shards `00000` through `00007` parsed `mmai` and initialized both MMAI side models
 
 Then validate and inspect the model failures:
 
 ```bash
 python3 scripts/battle_prediction/validate_battle_dataset.py \
-  schema4-mmai-town-hero-20k \
+  /root/vcmi-nk-ratio-results/schema4-mmai-town-hero-20k-20260711 \
   --expected-rows 20000 \
   --expected-schema 4 \
   --expected-shards 400 \
@@ -415,7 +432,7 @@ python3 scripts/battle_prediction/validate_battle_dataset.py \
   --require-schema3-rich-fields
 
 python3 scripts/battle_prediction/evaluate_nullkiller_predictor.py \
-  schema4-mmai-town-hero-20k \
+  /root/vcmi-nk-ratio-results/schema4-mmai-town-hero-20k-20260711 \
   --scope town \
   --l2 0.03 \
   --print-near-even 40 \
