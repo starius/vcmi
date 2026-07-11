@@ -1917,6 +1917,10 @@ Regression harness:
   time since last output, and a coarse `tailSignature` such as `battle_ai_creation` or
   `battle_ai_creation_invalid_stack`; compact batch results include that signature. This makes battle/client stalls
   machine-readable instead of requiring manual SIGTERM or waiting for the broad per-run timeout.
+- Done: rerunning the five previously stalled seeds (`02`, `04`, `08`, `10`, `12`) with a 90-second idle timeout
+  completed all five without an idle timeout. The rerun outcomes were two red losses (`02`, `04`) and three red wins
+  (`08`, `10`, `12`), finishing in roughly 43-107 seconds. Treat the earlier battle-creation stalls as
+  nondeterministic/timing-sensitive until a future diagnostic batch captures a fresh `stdoutTailSignature`.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions
