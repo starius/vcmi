@@ -8,18 +8,20 @@ This is an experimental candidate derived from boundedNullkillerControl.lua.
 It keeps the same main contract: Lua does not delegate the whole day to
 Nullkiller, and normal map play still runs through bounded native day slices.
 
-The only added policy is a narrow emergency-town-defense opening. When the
-host reports a critical defense alert and the scripted player has no practical
-map tempo left, the script executes exactly one checked option before the next
-native slice: recruit available creatures, preferring the threatened town, or
-build in the threatened town if recruitment is unavailable.
+The only added policy is a narrow emergency-town-defense opening. Critical
+matching recruitment may preempt movement because queued creatures defend this
+turn and trace losses repeatedly show zero-strength towns while scouts still
+have ordinary movement options. Construction is more expensive and slower, so
+building remains gated on the scripted player having no practical map tempo
+left.
 
 This is deliberately conservative:
 
 * It uses numeric threat levels and town/source ids, not localized labels.
 * It executes host-provided planAction payloads through ai:runOption.
 * It does not fire merely because a defense alert exists; ordinary turns stay
-  under bounded Nullkiller control.
+  under bounded Nullkiller control unless a critical threatened town can recruit
+  immediately.
 * It prefers recruitment over construction because creatures can defend now.
 * It does not invent prices, availability, paths, or game mechanics in Lua.
 * After the emergency action it refreshes and returns to bounded Nullkiller.
@@ -66,6 +68,9 @@ local DefenseScore = {
 local DefenseTrigger = {
     -- Broad pressure responses regressed winning seeds. Only intervene when
     -- native planning has little map tempo left and the town threat is severe.
+    -- Recruitment is the exception: it is cheap, immediate, and trace-mined
+    -- losses repeatedly show critical zero-garrison towns while scouts still
+    -- have ordinary movement options.
     maxMovementOptionsWithTempo = 0
 }
 
@@ -190,9 +195,6 @@ end
 
 local function emergencyDefenseAlerts(input)
     local result = {}
-    if not lacksMapTempo(input) then
-        return result
-    end
 
     for _, alert in ipairs(asArray(input.analysis and input.analysis.defenseAlerts)) do
         local townId = tonumber(alert.town_id or alert.townId or nil)
@@ -309,13 +311,14 @@ end
 
 local function runEmergencyDefense(ai, current, memory)
     local alerts = emergencyDefenseAlerts(current)
-    if #alerts == 0 or not lacksMapTempo(current) then
+    if #alerts == 0 then
         return current, false
     end
 
+    local lowTempo = lacksMapTempo(current)
     local option = chooseEmergencyRecruit(current, alerts)
     local intent = "emergency town defense recruitment"
-    if not option then
+    if not option and lowTempo then
         option = chooseEmergencyBuild(current, alerts)
         intent = "emergency town defense construction"
     end

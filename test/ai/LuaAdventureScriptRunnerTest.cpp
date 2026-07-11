@@ -2678,7 +2678,7 @@ TEST(LuaAdventureScriptRunnerTest, DefensiveBoundedControlBuildsOnlyWhenRecruitm
 	EXPECT_EQ(output.memory["totalEmergencyDefenseActions"].Integer(), 1);
 }
 
-TEST(LuaAdventureScriptRunnerTest, DefensiveBoundedControlDoesNotSpendWhenMapTempoExists)
+TEST(LuaAdventureScriptRunnerTest, DefensiveBoundedControlDoesNotBuildWhenMapTempoExists)
 {
 	const std::string source = readAdventureScript("scripts/ai/candidates/defensiveBoundedNullkillerControl.lua");
 	scripting::LuaAdventureScriptRunner runner("test:defensive-bounded-control-map-tempo", source);
@@ -2706,15 +2706,13 @@ TEST(LuaAdventureScriptRunnerTest, DefensiveBoundedControlDoesNotSpendWhenMapTem
 	alert["levelId"] = JsonNode(3);
 	input.analysis["defenseAlerts"].Vector().push_back(alert);
 
-	JsonNode recruitOption;
-	recruitOption["source_id"] = JsonNode(42);
-	recruitOption["amount"] = JsonNode(12);
-	recruitOption["level"] = JsonNode(3);
-	recruitOption["planAction"]["type"] = JsonNode("recruit");
-	recruitOption["planAction"]["source_id"] = JsonNode(42);
-	recruitOption["planAction"]["creature_id"] = JsonNode(1);
-	recruitOption["planAction"]["amount"] = JsonNode(12);
-	input.actionSpace["recruitOptions"].Vector().push_back(recruitOption);
+	JsonNode buildOption;
+	buildOption["town_id"] = JsonNode(42);
+	buildOption["buildingKindId"] = JsonNode(4);
+	buildOption["planAction"]["type"] = JsonNode("build");
+	buildOption["planAction"]["town_id"] = JsonNode(42);
+	buildOption["planAction"]["building_id"] = JsonNode(7);
+	input.actionSpace["buildOptions"].Vector().push_back(buildOption);
 
 	std::vector<JsonNode> commands;
 	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)

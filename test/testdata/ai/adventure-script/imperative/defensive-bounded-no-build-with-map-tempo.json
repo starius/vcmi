@@ -1,0 +1,75 @@
+{
+	"name": "defensive-bounded-no-build-with-map-tempo",
+	"mode": "imperative",
+	"script": "scripts/ai/candidates/defensiveBoundedNullkillerControl.lua",
+	"input": {
+		"state": {
+			"turn": {
+				"active": true,
+				"queries": []
+			},
+			"heroes": [
+				{
+					"id": 5
+				}
+			]
+		},
+		"memory": {
+			"version": 1
+		},
+		"limits": {
+			"maxActions": 16
+		},
+		"analysis": {
+			"defenseAlerts": [
+				{
+					"levelId": 3,
+					"level": "critical",
+					"town_id": 42
+				}
+			]
+		},
+		"actionSpace": {
+			"movementOptions": [
+				{
+					"hero_id": 5,
+					"planAction": {
+						"type": "move_hero",
+						"hero_id": 5,
+						"x": 10,
+						"y": 10,
+						"z": 0
+					}
+				}
+			],
+			"buildOptions": [
+				{
+					"town_id": 42,
+					"buildingKindId": 4,
+					"cost": {
+						"gold": 1000
+					},
+					"planAction": {
+						"type": "build",
+						"town_id": 42,
+						"building_id": 7
+					}
+				}
+			]
+		}
+	},
+	"expect": {
+		"status": "end_turn",
+		"commandsExact": [
+			{
+				"type": "nullkiller_turn_slice"
+			},
+			{
+				"type": "end_turn"
+			}
+		],
+		"memoryContains": {
+			"totalEmergencyDefenseActions": 0
+		}
+	}
+}
