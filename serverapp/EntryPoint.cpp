@@ -12,12 +12,16 @@
 #include <vstd/DateUtils.h>
 
 #include "../server/CVCMIServer.h"
+#include "../server/CGameHandler.h"
+#include "../server/battles/BattleSimulationGameInterfaceAdapter.h"
+#include "../server/battles/BattleSimulationRunner.h"
 
 #include "../lib/CConsoleHandler.h"
 #include "../lib/logging/CBasicLogConfigurator.h"
 #include "../lib/VCMIDirs.h"
 #include "../lib/GameLibrary.h"
 #include "../lib/CConfigHandler.h"
+#include "../lib/callback/AIFactory.h"
 #include "../lib/filesystem/Filesystem.h"
 #include "../lib/modding/CModHandler.h"
 #include "../lib/modding/ModManager.h"
@@ -35,6 +39,33 @@
 
 static const std::string SERVER_NAME_AFFIX = "server";
 static const std::string SERVER_NAME = std::string(GameConstants::VCMI_PROJECT_NAME_VERSIONED) + " (" + SERVER_NAME_AFFIX + ')';
+static const std::string BATTLE_SIMULATION_AI = "MMAI";
+
+static std::shared_ptr<CBattleGameInterface> createBattleSimulationAI(PlayerColor)
+{
+	try
+	{
+		return AIFactory::createBattleAI(BATTLE_SIMULATION_AI);
+	}
+	catch(const std::exception & e)
+	{
+		logAi->warn("Failed to create %s for runtime battle simulation: %s. Falling back to BattleAI.", BATTLE_SIMULATION_AI.c_str(), e.what());
+		return AIFactory::createBattleAI("BattleAI");
+	}
+}
+
+static void installBattleSimulationRunner(CVCMIServer & server)
+{
+	server.setGameHandlerConfigurationHook([](CGameHandler & gameHandler)
+	{
+		auto actionProviderFactory = std::make_shared<BattleSimulation::BattleSimulationGameInterfaceActionProviderFactory>(
+			&createBattleSimulationAI);
+		auto runner = std::make_shared<BattleSimulation::IsolatedBattleSimulationRunner>(
+			gameHandler.gameState(),
+			actionProviderFactory);
+		gameHandler.setBattleSimulationRunner(std::move(runner));
+	});
+}
 
 static void exportLuaApiDocs(const boost::filesystem::path & outPath)
 {
@@ -313,6 +344,7 @@ int main(int argc, const char * argv[])
 			port = opts["port"].as<uint16_t>();
 
 		CVCMIServer server(port, runByClient);
+		installBattleSimulationRunner(server);
 		server.prepare(connectToLobby, true);
 		server.run();
 
