@@ -34,6 +34,7 @@ class BattleResultProcessor;
 namespace BattleSimulation
 {
 	class BattleSimulationEvaluator;
+	class IBattleSimulationRunner;
 }
 
 /// Main class for battle handling. Contains all public interface for battles that is accessible from outside, e.g. for CGameHandler
@@ -77,6 +78,8 @@ public:
 	void restartBattle(const IBattleInfo & battle);
 	/// Evaluate a battle setup through the runtime simulation service boundary
 	BattleSimulation::BattleSimulationResponse evaluateBattleSimulation(const BattleSimulation::BattleSimulationRequest & request) const;
+	/// Install a runtime simulation runner used when cache-only evaluation can not answer
+	void setBattleSimulationRunner(std::shared_ptr<BattleSimulation::IBattleSimulationRunner> runner);
 	/// Store a runtime simulation summary for later cached evaluation
 	void storeBattleSimulationSummary(const BattleSimulation::BattleSimulationRequest & request, const BattleSimulation::BattleSimulationSummary & summary);
 

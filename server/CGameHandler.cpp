@@ -4530,6 +4530,11 @@ BattleSimulation::BattleSimulationResponse CGameHandler::evaluateBattleSimulatio
 	return battles->evaluateBattleSimulation(*request);
 }
 
+void CGameHandler::setBattleSimulationRunner(std::shared_ptr<BattleSimulation::IBattleSimulationRunner> runner)
+{
+	battles->setBattleSimulationRunner(std::move(runner));
+}
+
 void CGameHandler::useChargeBasedSpell(const ObjectInstanceID & heroObjectID, const SpellID & spellID)
 {
 	const auto * hero = gameInfo().getHero(heroObjectID);

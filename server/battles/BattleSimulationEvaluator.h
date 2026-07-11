@@ -13,19 +13,24 @@
 #include "BattleSimulationRequest.h"
 
 #include <cstddef>
+#include <memory>
 
 namespace BattleSimulation
 {
+class IBattleSimulationRunner;
+
 class BattleSimulationEvaluator
 {
 public:
 	BattleSimulationResponse evaluate(const BattleSimulationRequest & request) const;
 
+	void setRunner(std::shared_ptr<IBattleSimulationRunner> runner);
 	void storeCachedSummary(const BattleSimulationRequest & request, const BattleSimulationSummary & summary);
 	void clearCache();
 	size_t cacheSize() const;
 
 private:
 	mutable BattleSimulationCache cache;
+	std::shared_ptr<IBattleSimulationRunner> runner;
 };
 }

@@ -53,6 +53,7 @@ namespace BattleSimulation
 {
 	struct BattleSimulationDecisionThresholds;
 	struct BattleSimulationResponse;
+	class IBattleSimulationRunner;
 }
 
 class CGameHandler : public Environment, public IGameEventCallback
@@ -171,6 +172,7 @@ public:
 		int64_t gameSeed,
 		int32_t sampleCount,
 		const BattleSimulation::BattleSimulationDecisionThresholds & thresholds);
+	void setBattleSimulationRunner(std::shared_ptr<BattleSimulation::IBattleSimulationRunner> runner);
 	bool moveHero(ObjectInstanceID hid, int3 dst, EMovementMode movementMode, bool transit = false, PlayerColor asker = PlayerColor::NEUTRAL, const EPathfindingLayer & layer = EPathfindingLayer::AUTO) override;
 	void giveHeroBonus(GiveBonus * bonus) override;
 	void setMovePoints(SetMovePoints * smp) override;

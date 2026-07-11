@@ -55,6 +55,7 @@ set(vcmiservercommon_HEADERS
 		battles/BattleSimulationRequest.h
 		battles/BattleSimulationResult.h
 		battles/BattleSimulationReplay.h
+		battles/BattleSimulationRunner.h
 		battles/BattleSimulationSeed.h
 		battles/BattleSimulationSetup.h
 		battles/BattleStartInfo.h

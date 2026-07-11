@@ -140,6 +140,11 @@ BattleSimulation::BattleSimulationResponse BattleProcessor::evaluateBattleSimula
 	return simulationEvaluator->evaluate(request);
 }
 
+void BattleProcessor::setBattleSimulationRunner(std::shared_ptr<BattleSimulation::IBattleSimulationRunner> runner)
+{
+	simulationEvaluator->setRunner(std::move(runner));
+}
+
 void BattleProcessor::storeBattleSimulationSummary(const BattleSimulation::BattleSimulationRequest & request, const BattleSimulation::BattleSimulationSummary & summary)
 {
 	simulationEvaluator->storeCachedSummary(request, summary);

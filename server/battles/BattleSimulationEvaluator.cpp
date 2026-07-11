@@ -10,6 +10,8 @@
 #include "StdInc.h"
 #include "BattleSimulationEvaluator.h"
 
+#include "BattleSimulationRunner.h"
+
 namespace BattleSimulation
 {
 namespace
@@ -38,22 +40,44 @@ BattleSimulationResponse BattleSimulationEvaluator::evaluate(const BattleSimulat
 		BattleSimulationSummary summary;
 		auto sampleRequest = request;
 		sampleRequest.sampleCount = 1;
+		bool allSamplesCached = true;
 
 		for(int32_t index = 0; index < request.sampleCount; ++index)
 		{
 			sampleRequest.seed = sampleSeedContext(request.seed, request.seed.sampleIndex + index);
 			const auto sample = cache.find(makeCacheKey(sampleRequest));
 			if(!sample || !sample->hasSamples())
-				return makeResponse({}, request.thresholds, BattleSimulationResponseStatus::NOT_AVAILABLE);
+			{
+				allSamplesCached = false;
+				break;
+			}
 
 			addSummary(summary, *sample);
 		}
 
-		cache.store(makeCacheKey(request), summary);
-		return makeResponse(summary, request.thresholds, BattleSimulationResponseStatus::COMPLETE);
+		if(allSamplesCached)
+		{
+			cache.store(makeCacheKey(request), summary);
+			return makeResponse(summary, request.thresholds, BattleSimulationResponseStatus::COMPLETE);
+		}
+	}
+
+	if(runner)
+	{
+		const auto summary = runner->run(request);
+		if(summary && summary->rows >= request.sampleCount)
+		{
+			cache.store(makeCacheKey(request), *summary);
+			return makeResponse(*summary, request.thresholds, BattleSimulationResponseStatus::COMPLETE);
+		}
 	}
 
 	return makeResponse({}, request.thresholds, BattleSimulationResponseStatus::NOT_AVAILABLE);
+}
+
+void BattleSimulationEvaluator::setRunner(std::shared_ptr<IBattleSimulationRunner> newRunner)
+{
+	runner = std::move(newRunner);
 }
 
 void BattleSimulationEvaluator::storeCachedSummary(const BattleSimulationRequest & request, const BattleSimulationSummary & summary)
