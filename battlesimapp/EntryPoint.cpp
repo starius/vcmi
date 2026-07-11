@@ -47,6 +47,7 @@ struct Options
 	int64_t globalSeed = 1;
 	bool generateMap = false;
 	bool dryRun = false;
+	bool skipCompleteShards = false;
 };
 
 struct Shard
@@ -81,6 +82,7 @@ void printHelp()
 		<< "  --extra-client-arg ARG     extra argument passed to every client, can be repeated\n"
 		<< "  --xdg-config-template DIR  copy XDG config template to an isolated per-shard profile\n"
 		<< "  --xdg-profile-root DIR     per-shard XDG profile root, default: output-dir/profiles\n"
+		<< "  --skip-complete-shards     skip shard output files that already have the expected row count\n"
 		<< "  --dry-run                  print commands without running them\n"
 		<< "  --help                     display this help and exit\n";
 }
@@ -185,6 +187,8 @@ Options parseOptions(int argc, char ** argv)
 			options.xdgConfigTemplate = requireValue(argc, argv, i, arg);
 		else if(arg == "--xdg-profile-root")
 			options.xdgProfileRoot = requireValue(argc, argv, i, arg);
+		else if(arg == "--skip-complete-shards")
+			options.skipCompleteShards = true;
 		else if(arg == "--dry-run")
 			options.dryRun = true;
 		else
@@ -434,6 +438,17 @@ bool runShard(const Options & options, const Shard & shard, uint64_t shardCount)
 
 	if(options.dryRun)
 		return true;
+
+	if(options.skipCompleteShards)
+	{
+		const auto rows = countRows(shard.outputPath);
+		if(rows == shard.battles)
+		{
+			std::lock_guard<std::mutex> lock(outputMutex);
+			std::cout << "shard " << shard.index << " skipped: " << rows << " existing rows\n";
+			return true;
+		}
+	}
 
 	prepareShardProfile(options, shard);
 
