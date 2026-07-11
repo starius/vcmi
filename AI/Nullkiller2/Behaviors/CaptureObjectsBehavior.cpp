@@ -93,6 +93,8 @@ std::optional<bool> plannerSimulationEvaluatesVisit(
 			sampleCount,
 			thresholds);
 	}
+	if(simulation.servedFromCache)
+		recordBattleSimulationPlanningCacheHit();
 
 	if(simulation.status != BattleOutcomeSimulationStatus::COMPLETE || simulation.sampleCount < sampleCount)
 	{

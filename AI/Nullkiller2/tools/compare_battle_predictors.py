@@ -42,8 +42,10 @@ RUNTIME_SIMULATION_STATS_RE = re.compile(
 	r"requests (\d+), complete (\d+), incomplete (\d+), safe (\d+), rejected (\d+)"
 	r"(?:, invalid (\d+), not available (\d+))?"
 	r"(?:, skipped no target (\d+))?"
+	r"(?:, cache hits (\d+))?"
 	r"(?:, planning accepted (\d+), planning rejected (\d+), planning incomplete (\d+))?"
 	r"(?:, planning accepted static safe (\d+), planning accepted static unsafe (\d+), planning rejected static safe (\d+), planning rejected static unsafe (\d+))?"
+	r"(?:, planning cache hits (\d+))?"
 )
 PLANNER_SIMULATION_RE = re.compile(
 	r"Planner battle simulation (accepted|rejected|incomplete)(?: .*?)? for player \d+ \(([^)]+)\):"
@@ -58,6 +60,7 @@ RUNTIME_SIMULATION_FIELDS = [
 	"invalid",
 	"notAvailable",
 	"skippedNoTarget",
+	"cacheHits",
 	"planningAccepted",
 	"planningRejected",
 	"planningIncomplete",
@@ -65,6 +68,7 @@ RUNTIME_SIMULATION_FIELDS = [
 	"planningAcceptedStaticUnsafe",
 	"planningRejectedStaticSafe",
 	"planningRejectedStaticUnsafe",
+	"planningCacheHits",
 ]
 
 ADJUDICATION_FIELDS = [
@@ -555,13 +559,15 @@ def parse_run_logs(task: GameTask) -> tuple[bool, str | None, str | None, bool, 
 						"invalid": int(stats_match.group(7) or 0),
 						"notAvailable": int(stats_match.group(8) or 0),
 						"skippedNoTarget": int(stats_match.group(9) or 0),
-						"planningAccepted": int(stats_match.group(10) or 0),
-						"planningRejected": int(stats_match.group(11) or 0),
-						"planningIncomplete": int(stats_match.group(12) or 0),
-						"planningAcceptedStaticSafe": int(stats_match.group(13) or 0),
-						"planningAcceptedStaticUnsafe": int(stats_match.group(14) or 0),
-						"planningRejectedStaticSafe": int(stats_match.group(15) or 0),
-						"planningRejectedStaticUnsafe": int(stats_match.group(16) or 0),
+						"cacheHits": int(stats_match.group(10) or 0),
+						"planningAccepted": int(stats_match.group(11) or 0),
+						"planningRejected": int(stats_match.group(12) or 0),
+						"planningIncomplete": int(stats_match.group(13) or 0),
+						"planningAcceptedStaticSafe": int(stats_match.group(14) or 0),
+						"planningAcceptedStaticUnsafe": int(stats_match.group(15) or 0),
+						"planningRejectedStaticSafe": int(stats_match.group(16) or 0),
+						"planningRejectedStaticUnsafe": int(stats_match.group(17) or 0),
+						"planningCacheHits": int(stats_match.group(18) or 0),
 					},
 				)
 
@@ -1094,6 +1100,7 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 		"runtimeIncomplete",
 		"runtimeSafe",
 		"runtimeRejected",
+		"runtimeCacheHits",
 		"planningAccepted",
 		"planningRejected",
 		"planningIncomplete",
@@ -1101,6 +1108,7 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 		"planningAcceptedStaticUnsafe",
 		"planningRejectedStaticSafe",
 		"planningRejectedStaticUnsafe",
+		"planningCacheHits",
 		"runDir",
 	]
 	with (output_dir / "games.csv").open("w", newline="") as handle:
@@ -1116,6 +1124,7 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 					"runtimeIncomplete": runtime_stats["incomplete"],
 					"runtimeSafe": runtime_stats["safe"],
 					"runtimeRejected": runtime_stats["rejected"],
+					"runtimeCacheHits": runtime_stats["cacheHits"],
 					"planningAccepted": runtime_stats["planningAccepted"],
 					"planningRejected": runtime_stats["planningRejected"],
 					"planningIncomplete": runtime_stats["planningIncomplete"],
@@ -1123,6 +1132,7 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 					"planningAcceptedStaticUnsafe": runtime_stats["planningAcceptedStaticUnsafe"],
 					"planningRejectedStaticSafe": runtime_stats["planningRejectedStaticSafe"],
 					"planningRejectedStaticUnsafe": runtime_stats["planningRejectedStaticUnsafe"],
+					"planningCacheHits": runtime_stats["planningCacheHits"],
 				}
 			)
 			writer.writerow({key: row[key] for key in fieldnames})

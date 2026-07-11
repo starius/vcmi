@@ -66,6 +66,7 @@ struct BattleSimulationPlanningStats
 	uint64_t acceptedStaticUnsafe = 0;
 	uint64_t rejectedStaticSafe = 0;
 	uint64_t rejectedStaticUnsafe = 0;
+	uint64_t cacheHits = 0;
 };
 
 const int GOLD_MINE_PRODUCTION = 1000;
@@ -216,6 +217,7 @@ bool isBattleSimulationSafeForVisit(const BattleOutcomeSimulationResult & simula
 void recordBattleSimulationPlanningAccepted(bool staticSafe);
 void recordBattleSimulationPlanningRejected(bool staticSafe);
 void recordBattleSimulationPlanningIncomplete();
+void recordBattleSimulationPlanningCacheHit();
 BattleSimulationPlanningStats battleSimulationPlanningStatsSnapshot();
 bool canBuildBattleSimulationRequestForObject(
 	const CCallback & callback,

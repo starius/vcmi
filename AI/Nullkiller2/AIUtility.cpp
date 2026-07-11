@@ -40,6 +40,7 @@ std::atomic<uint64_t> battleSimulationPlanningAcceptedStaticSafe{0};
 std::atomic<uint64_t> battleSimulationPlanningAcceptedStaticUnsafe{0};
 std::atomic<uint64_t> battleSimulationPlanningRejectedStaticSafe{0};
 std::atomic<uint64_t> battleSimulationPlanningRejectedStaticUnsafe{0};
+std::atomic<uint64_t> battleSimulationPlanningCacheHits{0};
 }
 
 const CGObjectInstance * ObjectIdRef::operator->() const
@@ -189,6 +190,11 @@ void recordBattleSimulationPlanningIncomplete()
 	battleSimulationPlanningIncomplete.fetch_add(1, std::memory_order_relaxed);
 }
 
+void recordBattleSimulationPlanningCacheHit()
+{
+	battleSimulationPlanningCacheHits.fetch_add(1, std::memory_order_relaxed);
+}
+
 BattleSimulationPlanningStats battleSimulationPlanningStatsSnapshot()
 {
 	return BattleSimulationPlanningStats{
@@ -198,7 +204,8 @@ BattleSimulationPlanningStats battleSimulationPlanningStatsSnapshot()
 		battleSimulationPlanningAcceptedStaticSafe.load(std::memory_order_relaxed),
 		battleSimulationPlanningAcceptedStaticUnsafe.load(std::memory_order_relaxed),
 		battleSimulationPlanningRejectedStaticSafe.load(std::memory_order_relaxed),
-		battleSimulationPlanningRejectedStaticUnsafe.load(std::memory_order_relaxed)
+		battleSimulationPlanningRejectedStaticUnsafe.load(std::memory_order_relaxed),
+		battleSimulationPlanningCacheHits.load(std::memory_order_relaxed)
 	};
 }
 

@@ -41,4 +41,5 @@ struct DLL_LINKAGE BattleOutcomeSimulationResult
 	bool attackerAllWinsSafe = false;
 	bool attackerWilsonSafe = false;
 	bool defenderWonAllSamples = false;
+	bool servedFromCache = false;
 };

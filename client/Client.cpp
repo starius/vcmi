@@ -501,7 +501,11 @@ BattleOutcomeSimulationResult CClient::evaluateBattleSimulationForVisit(
 
 		const auto cachedResponse = battleSimulationEvaluator->evaluate(*request);
 		if(cachedResponse.status == BattleSimulation::BattleSimulationResponseStatus::COMPLETE)
-			return convertBattleOutcomeSimulationResponse(cachedResponse);
+		{
+			auto result = convertBattleOutcomeSimulationResponse(cachedResponse);
+			result.servedFromCache = true;
+			return result;
+		}
 	}
 
 	std::shared_ptr<CGameState> snapshot;

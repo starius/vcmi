@@ -58,6 +58,7 @@ struct RuntimeBattleSimulationStats
 	uint64_t safe = 0;
 	uint64_t rejected = 0;
 	uint64_t skippedNoTarget = 0;
+	uint64_t cacheHits = 0;
 	uint64_t planningAccepted = 0;
 	uint64_t planningRejected = 0;
 	uint64_t planningIncomplete = 0;
@@ -65,6 +66,7 @@ struct RuntimeBattleSimulationStats
 	uint64_t planningAcceptedStaticUnsafe = 0;
 	uint64_t planningRejectedStaticSafe = 0;
 	uint64_t planningRejectedStaticUnsafe = 0;
+	uint64_t planningCacheHits = 0;
 };
 
 std::atomic<uint64_t> runtimeBattleSimulationRequests{0};
@@ -75,6 +77,7 @@ std::atomic<uint64_t> runtimeBattleSimulationNotAvailable{0};
 std::atomic<uint64_t> runtimeBattleSimulationSafe{0};
 std::atomic<uint64_t> runtimeBattleSimulationRejected{0};
 std::atomic<uint64_t> runtimeBattleSimulationSkippedNoTarget{0};
+std::atomic<uint64_t> runtimeBattleSimulationCacheHits{0};
 
 const char * runtimeSimulationStatusName(BattleOutcomeSimulationStatus status)
 {
@@ -132,13 +135,15 @@ RuntimeBattleSimulationStats runtimeBattleSimulationStatsSnapshot()
 		runtimeBattleSimulationSafe.load(std::memory_order_relaxed),
 		runtimeBattleSimulationRejected.load(std::memory_order_relaxed),
 		runtimeBattleSimulationSkippedNoTarget.load(std::memory_order_relaxed),
+		runtimeBattleSimulationCacheHits.load(std::memory_order_relaxed),
 		planningStats.accepted,
 		planningStats.rejected,
 		planningStats.incomplete,
 		planningStats.acceptedStaticSafe,
 		planningStats.acceptedStaticUnsafe,
 		planningStats.rejectedStaticSafe,
-		planningStats.rejectedStaticUnsafe
+		planningStats.rejectedStaticUnsafe,
+		planningStats.cacheHits
 	};
 }
 
@@ -155,13 +160,15 @@ RuntimeBattleSimulationStats runtimeBattleSimulationStatsDelta(
 		after.safe - before.safe,
 		after.rejected - before.rejected,
 		after.skippedNoTarget - before.skippedNoTarget,
+		after.cacheHits - before.cacheHits,
 		after.planningAccepted - before.planningAccepted,
 		after.planningRejected - before.planningRejected,
 		after.planningIncomplete - before.planningIncomplete,
 		after.planningAcceptedStaticSafe - before.planningAcceptedStaticSafe,
 		after.planningAcceptedStaticUnsafe - before.planningAcceptedStaticUnsafe,
 		after.planningRejectedStaticSafe - before.planningRejectedStaticSafe,
-		after.planningRejectedStaticUnsafe - before.planningRejectedStaticUnsafe
+		after.planningRejectedStaticUnsafe - before.planningRejectedStaticUnsafe,
+		after.planningCacheHits - before.planningCacheHits
 	};
 }
 
@@ -169,17 +176,19 @@ void logRuntimeBattleSimulationStats(PlayerColor playerID, const RuntimeBattleSi
 {
 	if(!stats.requests
 		&& !stats.skippedNoTarget
+		&& !stats.cacheHits
 		&& !stats.planningAccepted
 		&& !stats.planningRejected
 		&& !stats.planningIncomplete
 		&& !stats.planningAcceptedStaticSafe
 		&& !stats.planningAcceptedStaticUnsafe
 		&& !stats.planningRejectedStaticSafe
-		&& !stats.planningRejectedStaticUnsafe)
+		&& !stats.planningRejectedStaticUnsafe
+		&& !stats.planningCacheHits)
 		return;
 
 	logAi->info(
-		"Runtime battle simulation stats for player %d (%s): requests %llu, complete %llu, incomplete %llu, safe %llu, rejected %llu, invalid %llu, not available %llu, skipped no target %llu, planning accepted %llu, planning rejected %llu, planning incomplete %llu, planning accepted static safe %llu, planning accepted static unsafe %llu, planning rejected static safe %llu, planning rejected static unsafe %llu",
+		"Runtime battle simulation stats for player %d (%s): requests %llu, complete %llu, incomplete %llu, safe %llu, rejected %llu, invalid %llu, not available %llu, skipped no target %llu, cache hits %llu, planning accepted %llu, planning rejected %llu, planning incomplete %llu, planning accepted static safe %llu, planning accepted static unsafe %llu, planning rejected static safe %llu, planning rejected static unsafe %llu, planning cache hits %llu",
 		playerID,
 		playerID.toString(),
 		static_cast<unsigned long long>(stats.requests),
@@ -190,13 +199,15 @@ void logRuntimeBattleSimulationStats(PlayerColor playerID, const RuntimeBattleSi
 		static_cast<unsigned long long>(stats.invalidRequest),
 		static_cast<unsigned long long>(stats.notAvailable),
 		static_cast<unsigned long long>(stats.skippedNoTarget),
+		static_cast<unsigned long long>(stats.cacheHits),
 		static_cast<unsigned long long>(stats.planningAccepted),
 		static_cast<unsigned long long>(stats.planningRejected),
 		static_cast<unsigned long long>(stats.planningIncomplete),
 		static_cast<unsigned long long>(stats.planningAcceptedStaticSafe),
 		static_cast<unsigned long long>(stats.planningAcceptedStaticUnsafe),
 		static_cast<unsigned long long>(stats.planningRejectedStaticSafe),
-		static_cast<unsigned long long>(stats.planningRejectedStaticUnsafe));
+		static_cast<unsigned long long>(stats.planningRejectedStaticUnsafe),
+		static_cast<unsigned long long>(stats.planningCacheHits));
 }
 
 bool movementActionMayStartBattle(EPathNodeAction action)
@@ -269,6 +280,8 @@ bool runtimeBattleSimulationRejectsVisit(
 		RUNTIME_SIMULATION_GAME_SEED,
 		sampleCount,
 		thresholds);
+	if(simulation.servedFromCache)
+		runtimeBattleSimulationCacheHits.fetch_add(1, std::memory_order_relaxed);
 	if(simulation.status != BattleOutcomeSimulationStatus::COMPLETE || simulation.sampleCount < sampleCount)
 	{
 		const auto incompleteCount = runtimeBattleSimulationIncomplete.fetch_add(1, std::memory_order_relaxed) + 1;

@@ -152,6 +152,9 @@ verdict, and incomplete targets could not get a complete simulation verdict.
 The split fields `planningRejectedStaticSafe` and
 `planningAcceptedStaticUnsafe` are the key proof counters for static false-safe
 vetoes and static false-unsafe rescues.
+`cacheHits` and `planningCacheHits` show how many final-gate and planner-side
+simulation responses reused deterministic cached samples instead of running a
+new isolated simulation.
 Runtime and planner simulation currently treat a battle as safe only if the
 attacker wins every requested sample. This matches the best observed town/siege
 offline safety policy and avoids accepting 19/20-style near misses as safe.
