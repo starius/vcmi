@@ -216,6 +216,24 @@ def parse_args() -> argparse.Namespace:
 		help="Minimum complete/request ratio required for each --require-runtime-simulation model.",
 	)
 	parser.add_argument(
+		"--max-runtime-simulation-incomplete",
+		type=int,
+		default=None,
+		help="Maximum incomplete runtime simulation responses allowed for each --require-runtime-simulation model.",
+	)
+	parser.add_argument(
+		"--max-runtime-simulation-invalid",
+		type=int,
+		default=None,
+		help="Maximum invalid runtime simulation requests allowed for each --require-runtime-simulation model.",
+	)
+	parser.add_argument(
+		"--max-runtime-simulation-not-available",
+		type=int,
+		default=None,
+		help="Maximum not-available runtime simulation responses allowed for each --require-runtime-simulation model.",
+	)
+	parser.add_argument(
 		"--min-runtime-simulation-planning-decisions",
 		type=int,
 		default=0,
@@ -241,6 +259,12 @@ def parse_args() -> argparse.Namespace:
 			"Minimum planner-side rescues required for each --require-runtime-simulation model. "
 			"Counts static-unsafe targets accepted by simulation."
 		),
+	)
+	parser.add_argument(
+		"--max-runtime-simulation-planning-incomplete",
+		type=int,
+		default=None,
+		help="Maximum incomplete planner-side simulation responses allowed for each --require-runtime-simulation model.",
 	)
 	parser.add_argument("--keep-engine-logs", action="store_true", help="Keep VCMI log files in each run directory. Stdout and summaries are always kept.")
 	parser.add_argument("--require-clean-exit", action="store_true", help="Mark nonzero vcmiclient exits as failed games.")
@@ -272,6 +296,14 @@ def parse_args() -> argparse.Namespace:
 		parser.error("--min-runtime-simulation-requests must be positive")
 	if not 0.0 <= args.min_runtime_simulation_complete_rate <= 1.0:
 		parser.error("--min-runtime-simulation-complete-rate must be between 0 and 1")
+	for option_name in (
+		"max_runtime_simulation_incomplete",
+		"max_runtime_simulation_invalid",
+		"max_runtime_simulation_not_available",
+		"max_runtime_simulation_planning_incomplete",
+	):
+		if getattr(args, option_name) is not None and getattr(args, option_name) < 0:
+			parser.error("--" + option_name.replace("_", "-") + " must be non-negative")
 
 	return args
 
@@ -1030,6 +1062,21 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 				f"{model}: runtime complete rate {complete_rate:.3f} below required "
 				f"{args.min_runtime_simulation_complete_rate:.3f}"
 			)
+		if args.max_runtime_simulation_incomplete is not None and stats["incomplete"] > args.max_runtime_simulation_incomplete:
+			model_errors.append(
+				f"{model}: runtime incomplete responses {stats['incomplete']} above allowed "
+				f"{args.max_runtime_simulation_incomplete}"
+			)
+		if args.max_runtime_simulation_invalid is not None and stats["invalid"] > args.max_runtime_simulation_invalid:
+			model_errors.append(
+				f"{model}: runtime invalid requests {stats['invalid']} above allowed "
+				f"{args.max_runtime_simulation_invalid}"
+			)
+		if args.max_runtime_simulation_not_available is not None and stats["notAvailable"] > args.max_runtime_simulation_not_available:
+			model_errors.append(
+				f"{model}: runtime not-available responses {stats['notAvailable']} above allowed "
+				f"{args.max_runtime_simulation_not_available}"
+			)
 		if planning_decisions < args.min_runtime_simulation_planning_decisions:
 			model_errors.append(
 				f"{model}: planner simulation decisions {planning_decisions} below required "
@@ -1044,6 +1091,11 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 			model_errors.append(
 				f"{model}: planner simulation rescues {planning_rescues} below required "
 				f"{args.min_runtime_simulation_planning_rescues}"
+			)
+		if args.max_runtime_simulation_planning_incomplete is not None and stats["planningIncomplete"] > args.max_runtime_simulation_planning_incomplete:
+			model_errors.append(
+				f"{model}: planner simulation incomplete responses {stats['planningIncomplete']} above allowed "
+				f"{args.max_runtime_simulation_planning_incomplete}"
 			)
 
 		errors.extend(model_errors)
@@ -1065,9 +1117,13 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 		"models": model_reports,
 		"minRequests": args.min_runtime_simulation_requests,
 		"minCompleteRate": args.min_runtime_simulation_complete_rate,
+		"maxIncomplete": args.max_runtime_simulation_incomplete,
+		"maxInvalid": args.max_runtime_simulation_invalid,
+		"maxNotAvailable": args.max_runtime_simulation_not_available,
 		"minPlanningDecisions": args.min_runtime_simulation_planning_decisions,
 		"minPlanningVetoes": args.min_runtime_simulation_planning_vetoes,
 		"minPlanningRescues": args.min_runtime_simulation_planning_rescues,
+		"maxPlanningIncomplete": args.max_runtime_simulation_planning_incomplete,
 		"ok": not errors,
 		"errors": errors,
 	}
