@@ -9871,6 +9871,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["tacticsOptions"].Vector();
 	actionSpace["garrisonSwapOptions"].Vector();
 	actionSpace["defenseResponseOptions"].Vector();
+	actionSpace["objectInteractionOptions"].Vector();
 	actionSpace["reachableObjects"].Vector();
 	actionSpace["movementOptions"].Vector();
 	actionSpace["shipyardOptions"].Vector();
@@ -9924,6 +9925,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	std::set<int32_t> seenNullkillerUpgradeArmies;
 	std::set<int32_t> seenNullkillerRecruitSources;
 	std::set<std::tuple<int32_t, int32_t, int32_t>> seenNullkillerFormationHelpers;
+	std::set<std::tuple<int32_t, int32_t>> seenObjectInteractionOptions;
 	auto appendNullkillerBuildArmyHelperOption = [&](const CGTownInstance * town)
 	{
 		if(!town || town->tempOwner != playerID || !cc->isVisibleFor(town, playerID))
@@ -10076,6 +10078,39 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		if(town)
 			option["planAction"]["town_id"] = option["town_id"];
 		actionSpace["nullkillerHelperOptions"].Vector().push_back(option);
+	};
+	auto appendObjectInteractionOption = [&](
+		const CGHeroInstance * hero,
+		const CGObjectInstance * object,
+		int32_t interactionKindID,
+		const std::string & interactionKind)
+	{
+		if(!hero || hero->tempOwner != playerID || !cc->isVisibleFor(hero, playerID))
+			return;
+		if(!object || object == hero || !cc->isVisibleFor(object, playerID))
+			return;
+
+		const auto * town = dynamic_cast<const CGTownInstance *>(object);
+		const bool heroVisitsTown = town && hero->getVisitedTown() == town;
+		const bool heroAtObject = object->visitablePos().isValid() && hero->visitablePos() == object->visitablePos();
+		if(!heroVisitsTown && !heroAtObject)
+			return;
+		if(!seenObjectInteractionOptions.emplace(hero->id.getNum(), object->id.getNum()).second)
+			return;
+
+		JsonNode option;
+		option["interactionKindId"] = JsonNode(interactionKindID);
+		option["interactionKind"] = JsonNode(interactionKind);
+		option["bounded"] = JsonNode(true);
+		option["delegatesRestOfDay"] = JsonNode(false);
+		option["hero_id"] = JsonNode(hero->id.getNum());
+		option["object_id"] = JsonNode(object->id.getNum());
+		option["hero"] = jsonHero(hero);
+		option["object"] = jsonMapObject(object, playerID, hero);
+		setScriptActionType(option["planAction"], "nullkiller_object_interaction");
+		option["planAction"]["hero_id"] = option["hero_id"];
+		option["planAction"]["object_id"] = option["object_id"];
+		actionSpace["objectInteractionOptions"].Vector().push_back(option);
 	};
 	auto appendFormationOptions = [&](const CGHeroInstance * hero)
 	{
@@ -10470,6 +10505,9 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 			ownedHeroes.push_back(hero);
 			appendFormationOptions(hero);
 			appendPrepareHeroOption(hero, nullptr, nullptr, 0, "self_artifacts", true, false);
+			appendObjectInteractionOption(hero, hero->getVisitedTown(), 1, "visited_town");
+			const CGObjectInstance * currentObject = cc->getTopObj(hero->visitablePos());
+			appendObjectInteractionOption(hero, currentObject, 2, "current_object");
 			appendNullkillerFormationHelperOption(hero, nullptr, 6, "single_creature_stacks", "nullkiller_add_single_creature_stacks");
 			appendNullkillerFormationHelperOption(hero, nullptr, 7, "whirlpool_formation", "nullkiller_rearrange_for_whirlpool");
 		}

@@ -1621,6 +1621,53 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteDefenseResponseActionS
 	EXPECT_EQ(*output.intent, "executed defense-response action-space option");
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteObjectInteractionActionSpaceOptions)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				ai:runOption(input.actionSpace.objectInteractionOptions[1])
+				return ai:output("end_turn", "executed object-interaction action-space option")
+			end
+		}
+	)lua";
+
+	AI::AdventureScriptInput input = makeInput();
+	JsonNode option;
+	option["interactionKindId"] = JsonNode(1);
+	option["interactionKind"] = JsonNode("visited_town");
+	option["hero_id"] = JsonNode(20);
+	option["object_id"] = JsonNode(16);
+	option["planAction"]["type"] = JsonNode("nullkiller_object_interaction");
+	option["planAction"]["type_id"] = JsonNode(121);
+	option["planAction"]["hero_id"] = JsonNode(20);
+	option["planAction"]["object_id"] = JsonNode(16);
+	input.actionSpace["objectInteractionOptions"].Vector().push_back(option);
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-object-interaction-action-space-options", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 1);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_object_interaction");
+	EXPECT_EQ(commands[0]["payload"]["type_id"].Integer(), 121);
+	EXPECT_EQ(commands[0]["payload"]["hero_id"].Integer(), 20);
+	EXPECT_EQ(commands[0]["payload"]["object_id"].Integer(), 16);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "executed object-interaction action-space option");
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanSelectAndRunOneNullkillerCandidate)
 {
 	const std::string source = R"lua(

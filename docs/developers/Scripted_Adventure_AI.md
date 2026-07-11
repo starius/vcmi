@@ -785,6 +785,9 @@ Current bounded subroutine surface:
   preparation candidates. `actionSpace.nullkillerHelperOptions` similarly advertises bounded native helper calls
   such as the priority pass, resource trader, town-army preparation, army upgrades, and owned-dwelling
   recruitment. These options are not automatically added to `recommendedActions`.
+- `actionSpace.objectInteractionOptions` advertises checked `nullkiller_object_interaction` continuations for owned
+  heroes currently visiting a town or standing on a visible object. This lets Lua ask Nullkiller to resolve
+  object-specific follow-up behavior without delegating the rest of the day.
 
 ## Current API Coverage Stance
 
@@ -1692,6 +1695,9 @@ Regression harness:
   `nullkiller_defend_town` actions with stable town/enemy hero ids, numeric threat levels, and bounded
   all-candidate native search. This keeps defense-response experiments data-driven instead of requiring scripts to
   hand-scan alert tables and construct helper calls manually.
+- Done: `actionSpace.objectInteractionOptions` exposes currently legal bounded Nullkiller object-interaction
+  continuations for owned heroes visiting a town or standing on a visible object. Each option carries stable
+  `hero_id` / `object_id` fields and a checked `nullkiller_object_interaction` payload.
 - Done: Lua can call Nullkiller's bounded creature-preparation helper through `ai:pickBestCreatures`, matching
   the existing artifact-preparation helper and avoiding Lua-side reimplementation of stack logistics.
 - Done: Lua can call Nullkiller's bounded town-army helper through `ai:nullkillerBuildArmy(townId)`, reusing the
