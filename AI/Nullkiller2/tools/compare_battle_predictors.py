@@ -278,6 +278,27 @@ def restore_config_files(originals: dict[Path, bytes]) -> None:
 		file.write_bytes(content)
 
 
+def install_config_restore_signal_handlers(originals: dict[Path, bytes]) -> dict[int, object]:
+	previous_handlers = {}
+
+	def restore_and_exit(signum, _frame) -> None:
+		restore_config_files(originals)
+		signal_name = signal.Signals(signum).name
+		print(f"Restored config replacements after {signal_name}.", file=sys.stderr, flush=True)
+		os._exit(128 + signum)
+
+	for signum in (signal.SIGINT, signal.SIGTERM):
+		previous_handlers[signum] = signal.getsignal(signum)
+		signal.signal(signum, restore_and_exit)
+
+	return previous_handlers
+
+
+def restore_signal_handlers(previous_handlers: dict[int, object]) -> None:
+	for signum, handler in previous_handlers.items():
+		signal.signal(signum, handler)
+
+
 def opposite_two_player_color(color: str | None) -> str | None:
 	if color == "Red":
 		return "Blue"
@@ -1027,6 +1048,7 @@ def main() -> int:
 	originals: dict[Path, bytes] = {}
 	results: list[GameResult] = []
 	runtime_requirements: dict | None = None
+	previous_signal_handlers = install_config_restore_signal_handlers(originals) if replacements else {}
 
 	try:
 		apply_config_replacements(replacements, originals)
@@ -1070,6 +1092,7 @@ def main() -> int:
 			print(f"runtime simulation requirement failed: {error}", file=sys.stderr)
 	finally:
 		restore_config_files(originals)
+		restore_signal_handlers(previous_signal_handlers)
 
 	expected_games = args.samples * 2
 	if len(results) != expected_games:
