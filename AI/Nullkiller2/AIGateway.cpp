@@ -193,7 +193,7 @@ RuntimeBattleSimulationStats runtimeBattleSimulationStatsDelta(
 	};
 }
 
-void logRuntimeBattleSimulationStats(PlayerColor playerID, const RuntimeBattleSimulationStats & stats)
+void logRuntimeBattleSimulationStats(PlayerColor playerID, const RuntimeBattleSimulationStats & stats, int configuredSamples)
 {
 	if(!stats.requests
 		&& !stats.skippedNoTarget
@@ -216,7 +216,7 @@ void logRuntimeBattleSimulationStats(PlayerColor playerID, const RuntimeBattleSi
 		return;
 
 	logAi->info(
-		"Runtime battle simulation stats for player %d (%s): requests %llu, complete %llu, incomplete %llu, safe %llu, rejected %llu, invalid %llu, not available %llu, skipped no target %llu, cache hits %llu, planning accepted %llu, planning rejected %llu, planning incomplete %llu, planning accepted static safe %llu, planning accepted static unsafe %llu, planning rejected static safe %llu, planning rejected static unsafe %llu, planning cache hits %llu, planning skipped future turn %llu, planning skipped unsafe path %llu, planning skipped projected army %llu, planning skipped no target %llu, planning score adjusted %llu, planning score positive %llu, planning score zero %llu",
+		"Runtime battle simulation stats for player %d (%s): requests %llu, complete %llu, incomplete %llu, safe %llu, rejected %llu, invalid %llu, not available %llu, skipped no target %llu, cache hits %llu, planning accepted %llu, planning rejected %llu, planning incomplete %llu, planning accepted static safe %llu, planning accepted static unsafe %llu, planning rejected static safe %llu, planning rejected static unsafe %llu, planning cache hits %llu, planning skipped future turn %llu, planning skipped unsafe path %llu, planning skipped projected army %llu, planning skipped no target %llu, planning score adjusted %llu, planning score positive %llu, planning score zero %llu, configured samples %d",
 		playerID,
 		playerID.toString(),
 		static_cast<unsigned long long>(stats.requests),
@@ -242,7 +242,8 @@ void logRuntimeBattleSimulationStats(PlayerColor playerID, const RuntimeBattleSi
 		static_cast<unsigned long long>(stats.planningSkippedNoTarget),
 		static_cast<unsigned long long>(stats.planningScoreAdjusted),
 		static_cast<unsigned long long>(stats.planningScorePositive),
-		static_cast<unsigned long long>(stats.planningScoreZero));
+		static_cast<unsigned long long>(stats.planningScoreZero),
+		configuredSamples);
 }
 
 bool movementActionMayStartBattle(EPathNodeAction action)
@@ -1118,7 +1119,8 @@ void AIGateway::makeTurn()
 			logAi->info("PERFORMANCE: NK2 makeTurn took %ld ms", timeElapsedMs);
 		logRuntimeBattleSimulationStats(
 			playerID,
-			runtimeBattleSimulationStatsDelta(runtimeBattleSimulationStatsSnapshot(), simulationStatsBefore));
+			runtimeBattleSimulationStatsDelta(runtimeBattleSimulationStatsSnapshot(), simulationStatsBefore),
+			nullkiller->settings->getBattlePredictionSimulationSamples());
 
 		for (const auto *h : cc->getHeroesInfo())
 		{

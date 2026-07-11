@@ -49,6 +49,7 @@ RUNTIME_SIMULATION_STATS_RE = re.compile(
 	r"(?:, planning skipped future turn (\d+), planning skipped unsafe path (\d+), planning skipped projected army (\d+), planning skipped no target (\d+))?"
 	r"(?:, planning score adjusted (\d+))?"
 	r"(?:, planning score positive (\d+), planning score zero (\d+))?"
+	r"(?:, configured samples (\d+))?"
 )
 PLANNER_SIMULATION_RE = re.compile(
 	r"Planner battle simulation (accepted|rejected|incomplete)(?: .*?)? for player \d+ \(([^)]+)\):"
@@ -79,6 +80,8 @@ RUNTIME_SIMULATION_FIELDS = [
 	"planningScoreAdjusted",
 	"planningScorePositive",
 	"planningScoreZero",
+	"configuredSamplesMin",
+	"configuredSamplesMax",
 ]
 
 ADJUDICATION_FIELDS = [
@@ -328,6 +331,12 @@ def parse_args() -> argparse.Namespace:
 		help="Minimum simulation-backed priority evaluations that returned a positive score.",
 	)
 	parser.add_argument(
+		"--require-runtime-simulation-configured-samples",
+		type=int,
+		default=None,
+		help="Require every parsed runtime simulation stats line for each required model to use exactly this configured sample count.",
+	)
+	parser.add_argument(
 		"--max-candidate-better-p",
 		type=float,
 		default=None,
@@ -416,6 +425,11 @@ def parse_args() -> argparse.Namespace:
 		and not 0.0 <= args.min_runtime_simulation_planning_decision_rate <= 1.0
 	):
 		parser.error("--min-runtime-simulation-planning-decision-rate must be between 0 and 1")
+	if (
+		args.require_runtime_simulation_configured_samples is not None
+		and args.require_runtime_simulation_configured_samples <= 0
+	):
+		parser.error("--require-runtime-simulation-configured-samples must be positive")
 	for option_name in (
 		"max_candidate_better_p",
 		"min_candidate_win_rate",
@@ -445,7 +459,17 @@ def empty_runtime_simulation_stats() -> dict[str, int]:
 
 def add_runtime_simulation_stats(target: dict[str, int], source: dict[str, int]) -> None:
 	for key in RUNTIME_SIMULATION_FIELDS:
-		target[key] = target.get(key, 0) + source.get(key, 0)
+		if key == "configuredSamplesMin":
+			source_value = source.get(key, 0)
+			target_value = target.get(key, 0)
+			if source_value > 0:
+				target[key] = source_value if target_value <= 0 else min(target_value, source_value)
+			else:
+				target[key] = target_value
+		elif key == "configuredSamplesMax":
+			target[key] = max(target.get(key, 0), source.get(key, 0))
+		else:
+			target[key] = target.get(key, 0) + source.get(key, 0)
 
 
 def resolve_config_replacements(args: argparse.Namespace) -> list[ConfigReplacement]:
@@ -727,6 +751,8 @@ def parse_run_logs(task: GameTask) -> tuple[bool, str | None, str | None, bool, 
 							"planningScoreAdjusted": int(stats_match.group(23) or 0),
 							"planningScorePositive": int(stats_match.group(24) or 0),
 							"planningScoreZero": int(stats_match.group(25) or 0),
+							"configuredSamplesMin": int(stats_match.group(26) or 0),
+							"configuredSamplesMax": int(stats_match.group(26) or 0),
 						},
 					)
 
@@ -1145,6 +1171,7 @@ def analyze_results(args: argparse.Namespace, results: list[GameResult]) -> dict
 				"maxPlanningSkippedNoTarget": args.max_runtime_simulation_planning_skipped_no_target,
 				"minPlanningScoreAdjusted": args.min_runtime_simulation_planning_score_adjusted,
 				"minPlanningScorePositive": args.min_runtime_simulation_planning_score_positive,
+				"requiredConfiguredSamples": args.require_runtime_simulation_configured_samples,
 			},
 			"outcomeRequirements": {
 				"maxCandidateBetterP": args.max_candidate_better_p,
@@ -1310,6 +1337,17 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 				f"{model}: planner positive score evaluations {stats['planningScorePositive']} below required "
 				f"{args.min_runtime_simulation_planning_score_positive}"
 			)
+		if args.require_runtime_simulation_configured_samples is not None:
+			required_samples = args.require_runtime_simulation_configured_samples
+			observed_min = stats["configuredSamplesMin"]
+			observed_max = stats["configuredSamplesMax"]
+			if observed_min <= 0 or observed_max <= 0:
+				model_errors.append(f"{model}: runtime configured sample count was not reported")
+			elif observed_min != required_samples or observed_max != required_samples:
+				model_errors.append(
+					f"{model}: runtime configured sample range {observed_min}-{observed_max} "
+					f"does not match required {required_samples}"
+				)
 
 		errors.extend(model_errors)
 		model_reports.append(
@@ -1326,6 +1364,8 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 					"planningScoreAdjusted": stats["planningScoreAdjusted"],
 					"planningScorePositive": stats["planningScorePositive"],
 					"planningScoreZero": stats["planningScoreZero"],
+					"configuredSamplesMin": stats["configuredSamplesMin"],
+					"configuredSamplesMax": stats["configuredSamplesMax"],
 					"ok": not model_errors,
 					"errors": model_errors,
 				}
@@ -1351,6 +1391,7 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 		"maxPlanningSkippedNoTarget": args.max_runtime_simulation_planning_skipped_no_target,
 		"minPlanningScoreAdjusted": args.min_runtime_simulation_planning_score_adjusted,
 		"minPlanningScorePositive": args.min_runtime_simulation_planning_score_positive,
+		"requiredConfiguredSamples": args.require_runtime_simulation_configured_samples,
 		"ok": not errors,
 		"errors": errors,
 	}
@@ -1482,6 +1523,8 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 		"planningScoreAdjusted",
 		"planningScorePositive",
 		"planningScoreZero",
+		"configuredSamplesMin",
+		"configuredSamplesMax",
 		"runDir",
 	]
 	with (output_dir / "games.csv").open("w", newline="") as handle:
@@ -1513,6 +1556,8 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 					"planningScoreAdjusted": runtime_stats["planningScoreAdjusted"],
 					"planningScorePositive": runtime_stats["planningScorePositive"],
 					"planningScoreZero": runtime_stats["planningScoreZero"],
+					"configuredSamplesMin": runtime_stats["configuredSamplesMin"],
+					"configuredSamplesMax": runtime_stats["configuredSamplesMax"],
 				}
 			)
 			writer.writerow({key: row[key] for key in fieldnames})

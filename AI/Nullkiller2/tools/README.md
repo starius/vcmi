@@ -128,6 +128,7 @@ python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
   --testdays 28 \
   --adjudicate-testdays \
   --require-runtime-simulation candidate \
+  --require-runtime-simulation-configured-samples 20 \
   --max-runtime-simulation-incomplete 0 \
   --max-runtime-simulation-invalid 0 \
   --max-runtime-simulation-not-available 0 \
@@ -149,7 +150,9 @@ python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
 Summary files include `runtimeBattleSimulation` totals by model. The
 `--require-runtime-simulation candidate` guard makes the run fail if valid
 candidate games do not have simulation requests or if fewer than 90% of those
-requests complete. Add `--min-runtime-simulation-planning-decisions` when the
+requests complete. Add `--require-runtime-simulation-configured-samples` when
+the run must prove the runtime candidate used the intended sample count. Add
+`--min-runtime-simulation-planning-decisions` when the
 run should also prove that planner-side simulation produced completed accepted
 or rejected decisions. Add `--min-runtime-simulation-planning-vetoes` or
 `--min-runtime-simulation-planning-rescues` when the run should prove that
