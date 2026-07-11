@@ -245,6 +245,7 @@ Remote analysis outputs:
 - `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-real-mixed-5k-20260711`
 - `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-town-hero-2k-fix-20260711`
 - `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-town-hero-5k-partial-complete-20260711T065855Z`
+- `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-town-hero-5k-partial-complete-20260711T065855Z/evaluation-town-deployed-danger.txt`
 
 Observed pattern:
 
@@ -269,6 +270,7 @@ Observed pattern:
 - close-even diagnostics on the 64-shard town-hero snapshot found 9 groups / 215 rows with actual win rate 20-80% and cxx-v3 error at least 0.25. The worst false-safe cluster was `predicted >= 0.95`: 3 groups / 100 rows, actual average 38.00%, predicted average 99.79%.
 - town cxx-v3 false-safe segments are dominated by siege mechanics absent from the open-field model: moat/castle/tower/mage-guild/grail effects and defender spell access. The false-unsafe side is different: attacker combat spell advantage, flyers, shooters, high-speed stacks, and special abilities can overcome town defenses, while cxx-v3 still assigns very low probabilities.
 - cxx-v3 has no deployed static scope for town-hero rows. Town/siege prediction should remain on legacy danger plus targeted safety fixes until the runtime simulation service is available or a separately validated town model clears the same holdout and A/B gates.
+- deployed legacy town danger is conservative on the 3900-row town-hero snapshot: 66.44% held-out win/loss accuracy, Brier 0.304, 0 false-safe groups, 6 false-unsafe groups. Raising town danger by a simple multiplier does not help the held-out split; it preserves 0 false-safe groups but increases false-unsafe groups and lowers accuracy. This points to missed winning siege opportunities as the deployed-town problem, not insufficient raw town danger.
 - on that corrected schema3 MMAI data, static prediction is not good enough: held-out cxx-v3 accuracy was about 69%, v3-compatible fitted accuracy about 85%, and full fitted model accuracy about 73%. The high training accuracy did not generalize.
 - after separating the current deployed static scope from town/siege rows, cxx-v3 is still not good enough: on corrected 5k non-town rows, held-out cxx-v3 accuracy was about 69.4% with Brier score 0.287, versus about 85.9% / 0.150 for the baseline and 85.9% / 0.120 for the ratio-only fitted model. A v3-compatible refit reached about 92.4% on training rows but only about 82.5% on held-out rows, so another C++ coefficient update is not supported.
 - adding secondary-skill identities and combat-spell identities to the corrected 5k non-town analysis improved held-out accuracy to about 93.0% and Brier score to about 0.049, but training accuracy was about 99.3%, so this is promising feature evidence rather than a mergeable static model yet.

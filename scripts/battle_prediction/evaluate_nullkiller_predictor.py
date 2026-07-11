@@ -72,7 +72,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--l2", type=float, default=0.001)
     parser.add_argument("--composition-min-weight", type=int, default=1, help="Minimum weighted rows for a creature to enter the composition model")
     parser.add_argument("--skill-spell-min-weight", type=int, default=1, help="Minimum weighted rows for a skill or spell to enter the skill/spell model")
-    parser.add_argument("--print-near-even", type=int, default=0, help="Print N grouped setups with empirical win rate closest to 50%")
+    parser.add_argument("--print-near-even", type=int, default=0, help="Print N grouped setups with empirical win rate closest to 50%%")
     parser.add_argument("--print-worst", type=int, default=0, help="Print N grouped setups with largest fitted-model probability error")
     parser.add_argument(
         "--scope",
@@ -80,11 +80,26 @@ def parse_args() -> argparse.Namespace:
         default="all",
         help="Battle scope to evaluate. deployed-static matches current Nullkiller2 static v3 usage.",
     )
-    parser.add_argument("--print-v3-false-safe", type=int, default=0, help="Print N cxx-v3 groups predicted safe with empirical win rate below 95%")
-    parser.add_argument("--print-v3-false-unsafe", type=int, default=0, help="Print N cxx-v3 groups predicted unsafe with empirical win rate at least 95%")
+    parser.add_argument("--print-v3-false-safe", type=int, default=0, help="Print N cxx-v3 groups predicted safe with empirical win rate below 95%%")
+    parser.add_argument("--print-v3-false-unsafe", type=int, default=0, help="Print N cxx-v3 groups predicted unsafe with empirical win rate at least 95%%")
     parser.add_argument("--summary-only", action="store_true", help="Skip fitted coefficient, threshold, and group detail output")
+    parser.add_argument(
+        "--town-danger-factors",
+        default="",
+        help="Comma-separated extra multipliers for deployed town danger safety diagnostics",
+    )
+    parser.add_argument("--deployed-danger-only", action="store_true", help="Skip fitted models and print only baseline/deployed danger summaries")
     parser.add_argument("--json", action="store_true", help="Print machine-readable metrics")
     return parser.parse_args()
+
+
+def parse_float_list(value: str) -> list[float]:
+    result = []
+    for part in value.split(","):
+        if not part.strip():
+            continue
+        result.append(float(part))
+    return result
 
 
 def iter_json_lines(path: str) -> Iterable[dict[str, Any]]:
@@ -827,10 +842,90 @@ def current_safe_prediction(row: dict[str, Any], safe_ratio: float) -> bool:
     return attacker > defender * safe_ratio
 
 
+def town_fort_danger_bonus(row: dict[str, Any]) -> float:
+    town = row.get("defendedTown") or {}
+    fort_level = int(town.get("fortLevel") or 0)
+    if fort_level >= 3:
+        return 10000.0
+    if fort_level == 2:
+        return 4000.0
+    return 0.0
+
+
+def deployed_danger(row: dict[str, Any], town_danger_factor: float = 1.0) -> float:
+    defender_army = max(float(row.get("defenderArmyStrength") or 0.0), 0.0)
+    defender_hero = row.get("defenderHero")
+    type_name = battle_type(row)
+
+    if not type_name.startswith("town"):
+        return side_strength(row, "defender")
+
+    town = row.get("defendedTown") or {}
+    danger = defender_army
+
+    if danger > 0.0 or town.get("hasVisitingHero"):
+        danger += town_fort_danger_bonus(row)
+
+    if town.get("hasVisitingHero"):
+        if town.get("hasGarrisonHero"):
+            danger = defender_army
+        else:
+            danger += defender_army
+
+    if defender_hero:
+        danger *= hero_strength(defender_hero)
+
+    return danger * town_danger_factor
+
+
+def deployed_safe_prediction(row: dict[str, Any], safe_ratio: float, town_danger_factor: float = 1.0) -> bool:
+    attacker = side_strength(row, "attacker")
+    defender = deployed_danger(row, town_danger_factor)
+    if defender <= 0:
+        return True
+    return attacker > defender * safe_ratio
+
+
 def current_loss_prediction(row: dict[str, Any]) -> float:
     attacker = max(side_strength(row, "attacker"), EPSILON)
     defender = max(side_strength(row, "defender"), EPSILON)
     return max(0.0, min(1.0, (defender / attacker) ** 2))
+
+
+def summarize_deployed_danger(groups: list[Group], safe_ratio: float, town_danger_factor: float = 1.0) -> dict[str, Any]:
+    rows = sum(group.count for group in groups)
+    correct = 0.0
+    brier = 0.0
+    false_safe = 0
+    false_unsafe = 0
+    safe_groups = 0
+    by_type: Counter = Counter()
+
+    for group in groups:
+        row = group.row
+        expected_win = group.win_rate
+        actual_class = expected_win >= 0.5
+        safe = deployed_safe_prediction(row, safe_ratio, town_danger_factor)
+        probability = 1.0 if safe else 0.0
+
+        correct += group.count * (safe == actual_class)
+        brier += group.count * (probability - expected_win) ** 2
+        false_safe += safe and expected_win < 0.95
+        false_unsafe += (not safe) and expected_win >= 0.95
+        safe_groups += safe
+        by_type[f"{battle_type(row)}:{'safe' if safe else 'unsafe'}"] += group.count
+
+    return {
+        "factor": town_danger_factor,
+        "rows": rows,
+        "groups": len(groups),
+        "accuracy": correct / rows if rows else 0.0,
+        "brier": brier / rows if rows else 0.0,
+        "false_safe_groups": false_safe,
+        "false_unsafe_groups": false_unsafe,
+        "safe_groups": safe_groups,
+        "by_type": dict(sorted(by_type.items())),
+    }
 
 
 def summarize_predictions(groups: list[Group], safe_ratio: float, model: LogisticModel | None = None) -> dict[str, Any]:
@@ -918,6 +1013,7 @@ def summarize_predictions(groups: list[Group], safe_ratio: float, model: Logisti
         "baseline_loss_mae": statistics.fmean(loss_abs) if loss_abs else 0.0,
         "baseline_loss_rmse": math.sqrt(statistics.fmean(loss_squared)) if loss_squared else 0.0,
         "baseline_by_type": {f"{key[0]}:{key[1]}": value for key, value in sorted(by_type.items())},
+        "deployed_danger": summarize_deployed_danger(groups, safe_ratio),
     }
     if model:
         result["model_accuracy"] = model_correct / rows if rows else 0.0
@@ -1160,6 +1256,7 @@ def top_model_features(model: LogisticModel, names: list[str], limit: int) -> li
 
 def main() -> int:
     args = parse_args()
+    town_danger_factors = parse_float_list(args.town_danger_factors)
     groups, schema_counts, row_count = load_groups(args.dataset)
     groups = [
         group
@@ -1167,16 +1264,17 @@ def main() -> int:
         if group.count >= args.min_group_size and matches_scope(group.row, args.scope)
     ]
     train, test = split_groups(groups, args.test_fraction)
-    full_model = fit_logistic(train, args.epochs, args.learning_rate, args.l2, feature_vector) if train else None
-    ratio_model = fit_logistic(train, args.epochs, args.learning_rate, args.l2, ratio_feature_vector) if train else None
-    v3_compatible_model = fit_logistic(train, args.epochs, args.learning_rate, args.l2, v3_compatible_feature_vector) if train else None
+    fit_models = not args.deployed_danger_only
+    full_model = fit_logistic(train, args.epochs, args.learning_rate, args.l2, feature_vector) if train and fit_models else None
+    ratio_model = fit_logistic(train, args.epochs, args.learning_rate, args.l2, ratio_feature_vector) if train and fit_models else None
+    v3_compatible_model = fit_logistic(train, args.epochs, args.learning_rate, args.l2, v3_compatible_feature_vector) if train and fit_models else None
     composition_features: FeatureFunction | None = None
     composition_names: list[str] = []
     composition_model: LogisticModel | None = None
     skill_spell_features: FeatureFunction | None = None
     skill_spell_names: list[str] = []
     skill_spell_model: LogisticModel | None = None
-    if train:
+    if train and fit_models:
         skill_spell_features, skill_spell_names = make_skill_spell_feature_function(train, args.skill_spell_min_weight)
         skill_spell_model = fit_logistic(train, args.epochs, args.learning_rate, args.l2, skill_spell_features)
         composition_features, composition_names = make_composition_feature_function(train, args.composition_min_weight)
@@ -1192,6 +1290,11 @@ def main() -> int:
         "train": summarize_predictions(train, args.safe_ratio, full_model),
         "test": summarize_predictions(test, args.safe_ratio, full_model),
     }
+    if town_danger_factors:
+        metrics["town_danger_factors"] = {
+            "train": [summarize_deployed_danger(train, args.safe_ratio, factor) for factor in town_danger_factors],
+            "test": [summarize_deployed_danger(test, args.safe_ratio, factor) for factor in town_danger_factors],
+        }
 
     def serialize_model(model: LogisticModel, names: list[str]) -> dict[str, Any]:
         return {
@@ -1305,6 +1408,15 @@ def main() -> int:
                 f"loss_mae={summary['baseline_loss_mae']:.4f} "
                 f"loss_rmse={summary['baseline_loss_rmse']:.4f}"
             )
+            deployed_summary = summary["deployed_danger"]
+            print(
+                "  deployed-danger "
+                f"accuracy={deployed_summary['accuracy']:.4f} "
+                f"brier={deployed_summary['brier']:.4f} "
+                f"false_safe={deployed_summary['false_safe_groups']} "
+                f"false_unsafe={deployed_summary['false_unsafe_groups']} "
+                f"safe_groups={deployed_summary['safe_groups']}"
+            )
             if full_model:
                 print(
                     "  fitted "
@@ -1358,6 +1470,19 @@ def main() -> int:
                 "false_unsafe_groups="
                 f"{summary['baseline_false_unsafe_groups']}"
             )
+        if town_danger_factors:
+            print("town danger factor diagnostics:")
+            for name in ["train", "test"]:
+                print(f"  {name}:")
+                for item in metrics["town_danger_factors"][name]:
+                    print(
+                        f"    factor={item['factor']:.4f} "
+                        f"accuracy={item['accuracy']:.4f} "
+                        f"brier={item['brier']:.4f} "
+                        f"false_safe={item['false_safe_groups']} "
+                        f"false_unsafe={item['false_unsafe_groups']} "
+                        f"safe_groups={item['safe_groups']}"
+                    )
         if full_model and not args.summary_only:
             print("logistic model:")
             print(f"  intercept={full_model.intercept:.12g}")
