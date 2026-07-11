@@ -44,6 +44,29 @@ namespace NK2AI
 
 constexpr float MAX_CRITICAL_VALUE = 2.0f;
 
+class SimulationBackedScoreRecorder
+{
+	bool active;
+	const double & score;
+
+public:
+	SimulationBackedScoreRecorder(bool active, const double & score)
+		: active(active), score(score)
+	{
+	}
+
+	~SimulationBackedScoreRecorder()
+	{
+		if(!active)
+			return;
+
+		if(!std::isnan(score) && score > 0)
+			recordBattleSimulationPlanningScorePositive();
+		else
+			recordBattleSimulationPlanningScoreZero();
+	}
+};
+
 EvaluationContext::EvaluationContext(const Nullkiller* aiNk)
 	: movementCost(0.0),
 	manaCost(0),
@@ -1411,6 +1434,7 @@ float PriorityEvaluator::evaluate(Goals::TSubgoal task, int priorityTier)
 
 	const bool amIWithoutCastle = aiNk->cc->getPlayerState(aiNk->playerID)->daysWithoutCastle.has_value();
 	double result = 0;
+	SimulationBackedScoreRecorder simulationScoreRecorder(evaluationContext.targetBattleSimulationAccepted, result);
 
 	{
 		float score = 0;

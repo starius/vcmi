@@ -48,6 +48,7 @@ RUNTIME_SIMULATION_STATS_RE = re.compile(
 	r"(?:, planning cache hits (\d+))?"
 	r"(?:, planning skipped future turn (\d+), planning skipped unsafe path (\d+), planning skipped projected army (\d+), planning skipped no target (\d+))?"
 	r"(?:, planning score adjusted (\d+))?"
+	r"(?:, planning score positive (\d+), planning score zero (\d+))?"
 )
 PLANNER_SIMULATION_RE = re.compile(
 	r"Planner battle simulation (accepted|rejected|incomplete)(?: .*?)? for player \d+ \(([^)]+)\):"
@@ -76,6 +77,8 @@ RUNTIME_SIMULATION_FIELDS = [
 	"planningSkippedProjectedArmy",
 	"planningSkippedNoTarget",
 	"planningScoreAdjusted",
+	"planningScorePositive",
+	"planningScoreZero",
 ]
 
 ADJUDICATION_FIELDS = [
@@ -319,6 +322,12 @@ def parse_args() -> argparse.Namespace:
 		help="Minimum priority evaluations whose static target danger/loss was adjusted by an accepted planner simulation.",
 	)
 	parser.add_argument(
+		"--min-runtime-simulation-planning-score-positive",
+		type=int,
+		default=0,
+		help="Minimum simulation-backed priority evaluations that returned a positive score.",
+	)
+	parser.add_argument(
 		"--max-candidate-better-p",
 		type=float,
 		default=None,
@@ -395,6 +404,7 @@ def parse_args() -> argparse.Namespace:
 		"max_runtime_simulation_planning_skipped_projected_army",
 		"max_runtime_simulation_planning_skipped_no_target",
 		"min_runtime_simulation_planning_score_adjusted",
+		"min_runtime_simulation_planning_score_positive",
 		"min_valid_games",
 		"max_invalid_paired_samples",
 		"min_paired_decisive_samples",
@@ -715,6 +725,8 @@ def parse_run_logs(task: GameTask) -> tuple[bool, str | None, str | None, bool, 
 							"planningSkippedProjectedArmy": int(stats_match.group(21) or 0),
 							"planningSkippedNoTarget": int(stats_match.group(22) or 0),
 							"planningScoreAdjusted": int(stats_match.group(23) or 0),
+							"planningScorePositive": int(stats_match.group(24) or 0),
+							"planningScoreZero": int(stats_match.group(25) or 0),
 						},
 					)
 
@@ -1132,6 +1144,7 @@ def analyze_results(args: argparse.Namespace, results: list[GameResult]) -> dict
 				"maxPlanningSkippedProjectedArmy": args.max_runtime_simulation_planning_skipped_projected_army,
 				"maxPlanningSkippedNoTarget": args.max_runtime_simulation_planning_skipped_no_target,
 				"minPlanningScoreAdjusted": args.min_runtime_simulation_planning_score_adjusted,
+				"minPlanningScorePositive": args.min_runtime_simulation_planning_score_positive,
 			},
 			"outcomeRequirements": {
 				"maxCandidateBetterP": args.max_candidate_better_p,
@@ -1292,6 +1305,11 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 				f"{model}: planner score adjustments {stats['planningScoreAdjusted']} below required "
 				f"{args.min_runtime_simulation_planning_score_adjusted}"
 			)
+		if stats["planningScorePositive"] < args.min_runtime_simulation_planning_score_positive:
+			model_errors.append(
+				f"{model}: planner positive score evaluations {stats['planningScorePositive']} below required "
+				f"{args.min_runtime_simulation_planning_score_positive}"
+			)
 
 		errors.extend(model_errors)
 		model_reports.append(
@@ -1306,6 +1324,8 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 					"planningCandidates": planning_candidates,
 					"planningDecisionRate": planning_decision_rate,
 					"planningScoreAdjusted": stats["planningScoreAdjusted"],
+					"planningScorePositive": stats["planningScorePositive"],
+					"planningScoreZero": stats["planningScoreZero"],
 					"ok": not model_errors,
 					"errors": model_errors,
 				}
@@ -1330,6 +1350,7 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 		"maxPlanningSkippedProjectedArmy": args.max_runtime_simulation_planning_skipped_projected_army,
 		"maxPlanningSkippedNoTarget": args.max_runtime_simulation_planning_skipped_no_target,
 		"minPlanningScoreAdjusted": args.min_runtime_simulation_planning_score_adjusted,
+		"minPlanningScorePositive": args.min_runtime_simulation_planning_score_positive,
 		"ok": not errors,
 		"errors": errors,
 	}
@@ -1459,6 +1480,8 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 		"planningSkippedProjectedArmy",
 		"planningSkippedNoTarget",
 		"planningScoreAdjusted",
+		"planningScorePositive",
+		"planningScoreZero",
 		"runDir",
 	]
 	with (output_dir / "games.csv").open("w", newline="") as handle:
@@ -1488,6 +1511,8 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 					"planningSkippedProjectedArmy": runtime_stats["planningSkippedProjectedArmy"],
 					"planningSkippedNoTarget": runtime_stats["planningSkippedNoTarget"],
 					"planningScoreAdjusted": runtime_stats["planningScoreAdjusted"],
+					"planningScorePositive": runtime_stats["planningScorePositive"],
+					"planningScoreZero": runtime_stats["planningScoreZero"],
 				}
 			)
 			writer.writerow({key: row[key] for key in fieldnames})

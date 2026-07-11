@@ -72,6 +72,8 @@ struct RuntimeBattleSimulationStats
 	uint64_t planningSkippedProjectedArmy = 0;
 	uint64_t planningSkippedNoTarget = 0;
 	uint64_t planningScoreAdjusted = 0;
+	uint64_t planningScorePositive = 0;
+	uint64_t planningScoreZero = 0;
 };
 
 std::atomic<uint64_t> runtimeBattleSimulationRequests{0};
@@ -153,7 +155,9 @@ RuntimeBattleSimulationStats runtimeBattleSimulationStatsSnapshot()
 		planningStats.skippedUnsafePath,
 		planningStats.skippedProjectedArmy,
 		planningStats.skippedNoTarget,
-		planningStats.scoreAdjusted
+		planningStats.scoreAdjusted,
+		planningStats.scorePositive,
+		planningStats.scoreZero
 	};
 }
 
@@ -183,7 +187,9 @@ RuntimeBattleSimulationStats runtimeBattleSimulationStatsDelta(
 		after.planningSkippedUnsafePath - before.planningSkippedUnsafePath,
 		after.planningSkippedProjectedArmy - before.planningSkippedProjectedArmy,
 		after.planningSkippedNoTarget - before.planningSkippedNoTarget,
-		after.planningScoreAdjusted - before.planningScoreAdjusted
+		after.planningScoreAdjusted - before.planningScoreAdjusted,
+		after.planningScorePositive - before.planningScorePositive,
+		after.planningScoreZero - before.planningScoreZero
 	};
 }
 
@@ -204,11 +210,13 @@ void logRuntimeBattleSimulationStats(PlayerColor playerID, const RuntimeBattleSi
 		&& !stats.planningSkippedUnsafePath
 		&& !stats.planningSkippedProjectedArmy
 		&& !stats.planningSkippedNoTarget
-		&& !stats.planningScoreAdjusted)
+		&& !stats.planningScoreAdjusted
+		&& !stats.planningScorePositive
+		&& !stats.planningScoreZero)
 		return;
 
 	logAi->info(
-		"Runtime battle simulation stats for player %d (%s): requests %llu, complete %llu, incomplete %llu, safe %llu, rejected %llu, invalid %llu, not available %llu, skipped no target %llu, cache hits %llu, planning accepted %llu, planning rejected %llu, planning incomplete %llu, planning accepted static safe %llu, planning accepted static unsafe %llu, planning rejected static safe %llu, planning rejected static unsafe %llu, planning cache hits %llu, planning skipped future turn %llu, planning skipped unsafe path %llu, planning skipped projected army %llu, planning skipped no target %llu, planning score adjusted %llu",
+		"Runtime battle simulation stats for player %d (%s): requests %llu, complete %llu, incomplete %llu, safe %llu, rejected %llu, invalid %llu, not available %llu, skipped no target %llu, cache hits %llu, planning accepted %llu, planning rejected %llu, planning incomplete %llu, planning accepted static safe %llu, planning accepted static unsafe %llu, planning rejected static safe %llu, planning rejected static unsafe %llu, planning cache hits %llu, planning skipped future turn %llu, planning skipped unsafe path %llu, planning skipped projected army %llu, planning skipped no target %llu, planning score adjusted %llu, planning score positive %llu, planning score zero %llu",
 		playerID,
 		playerID.toString(),
 		static_cast<unsigned long long>(stats.requests),
@@ -232,7 +240,9 @@ void logRuntimeBattleSimulationStats(PlayerColor playerID, const RuntimeBattleSi
 		static_cast<unsigned long long>(stats.planningSkippedUnsafePath),
 		static_cast<unsigned long long>(stats.planningSkippedProjectedArmy),
 		static_cast<unsigned long long>(stats.planningSkippedNoTarget),
-		static_cast<unsigned long long>(stats.planningScoreAdjusted));
+		static_cast<unsigned long long>(stats.planningScoreAdjusted),
+		static_cast<unsigned long long>(stats.planningScorePositive),
+		static_cast<unsigned long long>(stats.planningScoreZero));
 }
 
 bool movementActionMayStartBattle(EPathNodeAction action)
