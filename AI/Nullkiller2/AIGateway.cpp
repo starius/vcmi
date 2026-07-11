@@ -1396,7 +1396,12 @@ bool AIGateway::moveHeroToTile(const int3 dst, const HeroPtr & heroPtr)
 			if(movementActionMayStartBattle(nextAction))
 			{
 				const auto * battleTarget = chooseBattleSimulationTarget(*cc, heroPtr.get(), endpos, nextAction);
-				if(runtimeBattleSimulationRejectsVisit(*this, heroPtr.get(), battleTarget))
+				bool rejectedByRuntimeSimulation = false;
+				{
+					auto unlock = vstd::makeUnlockSharedGuard(CGameState::mutex);
+					rejectedByRuntimeSimulation = runtimeBattleSimulationRejectsVisit(*this, heroPtr.get(), battleTarget);
+				}
+				if(rejectedByRuntimeSimulation)
 					throw cannotFulfillGoalException("Runtime battle simulation rejected battle visit.");
 			}
 
