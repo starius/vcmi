@@ -82,6 +82,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--print-v3-false-safe", type=int, default=0, help="Print N cxx-v3 groups predicted safe with empirical win rate below 95%%")
     parser.add_argument("--print-v3-false-unsafe", type=int, default=0, help="Print N cxx-v3 groups predicted unsafe with empirical win rate at least 95%%")
+    parser.add_argument("--print-town-deployable-false-safe", type=int, default=0, help="Print N town-deployable groups predicted safe with empirical win rate below 95%%")
+    parser.add_argument("--print-town-deployable-false-unsafe", type=int, default=0, help="Print N town-deployable groups predicted unsafe with empirical win rate at least 95%%")
+    parser.add_argument("--town-deployable-safe-probability", type=float, default=V3_SAFE_PROBABILITY, help="Safety probability threshold for town-deployable false-safe diagnostics")
     parser.add_argument("--summary-only", action="store_true", help="Skip fitted coefficient, threshold, and group detail output")
     parser.add_argument(
         "--town-danger-factors",
@@ -479,6 +482,69 @@ def v3_compatible_feature_vector(row: dict[str, Any]) -> list[float]:
     return [log_ratio] + values
 
 
+TOWN_FACTION_BUCKETS = 9
+TOWN_TERRAIN_BUCKETS = 10
+TOWN_BATTLEFIELD_BUCKETS = 24
+
+
+def town_deployable_feature_vector(row: dict[str, Any]) -> list[float]:
+    attacker_strength = max(side_strength(row, "attacker"), EPSILON)
+    defender_strength = max(side_strength(row, "defender"), EPSILON)
+    deployed_strength = max(deployed_danger(row), EPSILON)
+    attacker_army = max(float(row.get("attackerArmyStrength") or 0), 1.0)
+    defender_army = max(float(row.get("defenderArmyStrength") or 0), 1.0)
+    attacker_stats = army_stats(row, "attacker")
+    defender_stats = army_stats(row, "defender")
+    attacker_hero = row.get("attackerHero")
+    defender_hero = row.get("defenderHero")
+    town = row.get("defendedTown") or {}
+    source = str(town.get("defendingHeroSource") or "")
+    faction = int(town.get("faction") if town.get("faction") is not None else -1)
+    terrain = int(row.get("terrain") if row.get("terrain") is not None else -1)
+    battlefield = int(row.get("battlefield") if row.get("battlefield") is not None else -1)
+
+    values = [
+        math.log(attacker_strength / deployed_strength),
+        math.log(attacker_strength / defender_strength),
+        1.0 if defender_hero else 0.0,
+        1.0 if source == "visiting" else 0.0,
+        1.0 if source == "garrison" else 0.0,
+        math.log(attacker_army),
+        math.log(defender_army),
+        math.log(max(town_feature(row, "armyStrength"), 0.0) + 1.0),
+        math.log((attacker_stats["stacks"] + 1.0) / (defender_stats["stacks"] + 1.0)),
+        attacker_stats["max_share"] - defender_stats["max_share"],
+        primary(attacker_hero, 0) - primary(defender_hero, 0),
+        primary(attacker_hero, 1) - primary(defender_hero, 1),
+        primary(attacker_hero, 2) - primary(defender_hero, 2),
+        primary(attacker_hero, 3) - primary(defender_hero, 3),
+        hero_level(attacker_hero) - hero_level(defender_hero),
+        mana_ratio(attacker_hero) - mana_ratio(defender_hero),
+        raw_mana(attacker_hero) - raw_mana(defender_hero),
+        raw_mana_limit(attacker_hero) - raw_mana_limit(defender_hero),
+        1.0 if attacker_hero and attacker_hero.get("hasSpellbook") else 0.0,
+        1.0 if defender_hero and defender_hero.get("hasSpellbook") else 0.0,
+        combat_spell_count(attacker_hero) - combat_spell_count(defender_hero),
+        secondary_skill_count(attacker_hero) - secondary_skill_count(defender_hero),
+        math.log(max(hero_strength(attacker_hero), EPSILON) / max(hero_strength(defender_hero), EPSILON)),
+        town_feature(row, "fortLevel"),
+        town_feature(row, "mageGuildLevel"),
+        town_bool(row, "hasBuiltTavern"),
+        town_bool(row, "hasBuiltGrail"),
+        float(len(town.get("buildings") or [])),
+        town_fortification(row, "wallsHealth"),
+        town_fortification(row, "citadelHealth"),
+        town_fortification(row, "upperTowerHealth") + town_fortification(row, "lowerTowerHealth"),
+        town_fortification(row, "hasMoat"),
+        math.log1p(town_damage_midpoint(row, "keepDamage")),
+        math.log1p(town_damage_midpoint(row, "towerDamage")),
+    ]
+    values.extend(1.0 if faction == index else 0.0 for index in range(TOWN_FACTION_BUCKETS))
+    values.extend(1.0 if terrain == index else 0.0 for index in range(TOWN_TERRAIN_BUCKETS))
+    values.extend(1.0 if battlefield == index else 0.0 for index in range(TOWN_BATTLEFIELD_BUCKETS))
+    return values
+
+
 FEATURE_NAMES = [
     "log_strength_ratio",
     "hero_vs_hero",
@@ -555,6 +621,45 @@ V3_COMPATIBLE_FEATURE_NAMES = [
     "combat_spell_count_diff",
     "log_hero_strength_ratio",
 ]
+
+TOWN_DEPLOYABLE_FEATURE_NAMES = [
+    "log_attacker_to_deployed_town_danger",
+    "log_strength_ratio",
+    "hero_vs_hero",
+    "defending_hero_visiting",
+    "defending_hero_garrison",
+    "log_attacker_army",
+    "log_defender_army",
+    "log_town_army",
+    "log_stack_count_ratio",
+    "max_stack_share_diff",
+    "attack_diff",
+    "defense_diff",
+    "spell_power_diff",
+    "knowledge_diff",
+    "level_diff",
+    "mana_ratio_diff",
+    "current_mana_diff",
+    "mana_limit_diff",
+    "attacker_spellbook",
+    "defender_spellbook",
+    "combat_spell_count_diff",
+    "secondary_skill_count_diff",
+    "log_hero_strength_ratio",
+    "town_fort_level",
+    "town_mage_guild_level",
+    "town_has_tavern",
+    "town_has_grail",
+    "town_building_count",
+    "town_walls_health",
+    "town_keep_health",
+    "town_tower_health",
+    "town_has_moat",
+    "town_keep_damage_log",
+    "town_tower_damage_log",
+] + [f"town_faction_{index}" for index in range(TOWN_FACTION_BUCKETS)]
+TOWN_DEPLOYABLE_FEATURE_NAMES += [f"terrain_{index}" for index in range(TOWN_TERRAIN_BUCKETS)]
+TOWN_DEPLOYABLE_FEATURE_NAMES += [f"battlefield_{index}" for index in range(TOWN_BATTLEFIELD_BUCKETS)]
 
 
 def army_power_by_creature(row: dict[str, Any], side: str) -> dict[int, float]:
@@ -1226,6 +1331,38 @@ def v3_false_unsafe_groups(groups: list[Group], limit: int, safe_ratio: float) -
     return result
 
 
+def model_false_safe_groups(groups: list[Group], limit: int, model: LogisticModel, threshold: float, safe_ratio: float) -> list[dict[str, Any]]:
+    candidates = []
+    for group in groups:
+        probability = model.predict(group.row)
+        if probability >= threshold and group.win_rate < 0.95:
+            candidates.append((group, probability))
+    candidates.sort(key=lambda item: (item[1] - item[0].win_rate, item[0].count), reverse=True)
+    result = []
+    for group, probability in candidates[:limit]:
+        summary = compact_group_summary(group, model, safe_ratio)
+        summary["model_probability"] = probability
+        summary["model_error"] = probability - group.win_rate
+        result.append(summary)
+    return result
+
+
+def model_false_unsafe_groups(groups: list[Group], limit: int, model: LogisticModel, threshold: float, safe_ratio: float) -> list[dict[str, Any]]:
+    candidates = []
+    for group in groups:
+        probability = model.predict(group.row)
+        if probability < threshold and group.win_rate >= 0.95:
+            candidates.append((group, probability))
+    candidates.sort(key=lambda item: (item[0].win_rate - item[1], item[0].count), reverse=True)
+    result = []
+    for group, probability in candidates[:limit]:
+        summary = compact_group_summary(group, model, safe_ratio)
+        summary["model_probability"] = probability
+        summary["model_error"] = group.win_rate - probability
+        result.append(summary)
+    return result
+
+
 def print_group_report(title: str, groups: list[dict[str, Any]]) -> None:
     print(title + ":")
     for index, group in enumerate(groups, start=1):
@@ -1279,6 +1416,7 @@ def main() -> int:
     full_model = fit_logistic(train, args.epochs, args.learning_rate, args.l2, feature_vector) if train and fit_models else None
     ratio_model = fit_logistic(train, args.epochs, args.learning_rate, args.l2, ratio_feature_vector) if train and fit_models else None
     v3_compatible_model = fit_logistic(train, args.epochs, args.learning_rate, args.l2, v3_compatible_feature_vector) if train and fit_models else None
+    town_deployable_model = fit_logistic(train, args.epochs, args.learning_rate, args.l2, town_deployable_feature_vector) if train and fit_models else None
     composition_features: FeatureFunction | None = None
     composition_names: list[str] = []
     composition_model: LogisticModel | None = None
@@ -1326,11 +1464,13 @@ def main() -> int:
             ],
         }
 
-    if full_model and ratio_model and v3_compatible_model:
+    if full_model and ratio_model and v3_compatible_model and town_deployable_model:
         ratio_train = summarize_predictions(train, args.safe_ratio, ratio_model)
         ratio_test = summarize_predictions(test, args.safe_ratio, ratio_model)
         v3_compatible_train = summarize_predictions(train, args.safe_ratio, v3_compatible_model)
         v3_compatible_test = summarize_predictions(test, args.safe_ratio, v3_compatible_model)
+        town_deployable_train = summarize_predictions(train, args.safe_ratio, town_deployable_model)
+        town_deployable_test = summarize_predictions(test, args.safe_ratio, town_deployable_model)
         skill_spell_train = summarize_predictions(train, args.safe_ratio, skill_spell_model) if skill_spell_model else None
         skill_spell_test = summarize_predictions(test, args.safe_ratio, skill_spell_model) if skill_spell_model else None
         composition_train = summarize_predictions(train, args.safe_ratio, composition_model) if composition_model else None
@@ -1350,6 +1490,14 @@ def main() -> int:
         metrics["v3_compatible_test"] = {
             "model_accuracy": v3_compatible_test["model_accuracy"],
             "model_brier": v3_compatible_test["model_brier"],
+        }
+        metrics["town_deployable_train"] = {
+            "model_accuracy": town_deployable_train["model_accuracy"],
+            "model_brier": town_deployable_train["model_brier"],
+        }
+        metrics["town_deployable_test"] = {
+            "model_accuracy": town_deployable_test["model_accuracy"],
+            "model_brier": town_deployable_test["model_brier"],
         }
         if skill_spell_train and skill_spell_test and skill_spell_model:
             metrics["skill_spell_train"] = {
@@ -1376,6 +1524,7 @@ def main() -> int:
         metrics["logistic_model"] = serialize_model(full_model, FEATURE_NAMES)
         metrics["ratio_logistic_model"] = serialize_model(ratio_model, RATIO_FEATURE_NAMES)
         metrics["v3_compatible_model"] = serialize_model(v3_compatible_model, V3_COMPATIBLE_FEATURE_NAMES)
+        metrics["town_deployable_model"] = serialize_model(town_deployable_model, TOWN_DEPLOYABLE_FEATURE_NAMES)
         if skill_spell_model:
             metrics["skill_spell_model"] = serialize_model(skill_spell_model, skill_spell_names)
         metrics["thresholds"] = {
@@ -1383,6 +1532,8 @@ def main() -> int:
             "full_test": threshold_summary(test, full_model),
             "ratio_train": threshold_summary(train, ratio_model),
             "ratio_test": threshold_summary(test, ratio_model),
+            "town_deployable_train": threshold_summary(train, town_deployable_model),
+            "town_deployable_test": threshold_summary(test, town_deployable_model),
         }
         if skill_spell_model:
             metrics["thresholds"]["skill_spell_train"] = threshold_summary(train, skill_spell_model)
@@ -1395,11 +1546,28 @@ def main() -> int:
             metrics["near_even"] = near_even_groups(groups, args.print_near_even, full_model, args.safe_ratio)
         if args.print_worst > 0:
             metrics["worst_model_errors"] = worst_model_groups(groups, args.print_worst, full_model, args.safe_ratio)
+            metrics["worst_town_deployable_errors"] = worst_model_groups(groups, args.print_worst, town_deployable_model, args.safe_ratio)
             metrics["worst_v3_errors"] = worst_v3_groups(groups, args.print_worst, args.safe_ratio)
         if args.print_v3_false_safe > 0:
             metrics["v3_false_safe_groups"] = v3_false_safe_groups(groups, args.print_v3_false_safe, args.safe_ratio)
         if args.print_v3_false_unsafe > 0:
             metrics["v3_false_unsafe_groups"] = v3_false_unsafe_groups(groups, args.print_v3_false_unsafe, args.safe_ratio)
+        if args.print_town_deployable_false_safe > 0:
+            metrics["town_deployable_false_safe_groups"] = model_false_safe_groups(
+                groups,
+                args.print_town_deployable_false_safe,
+                town_deployable_model,
+                args.town_deployable_safe_probability,
+                args.safe_ratio,
+            )
+        if args.print_town_deployable_false_unsafe > 0:
+            metrics["town_deployable_false_unsafe_groups"] = model_false_unsafe_groups(
+                groups,
+                args.print_town_deployable_false_unsafe,
+                town_deployable_model,
+                args.town_deployable_safe_probability,
+                args.safe_ratio,
+            )
 
     if args.json:
         print(json.dumps(metrics, indent=2, sort_keys=True))
@@ -1445,6 +1613,12 @@ def main() -> int:
                     "  v3-compatible-fitted "
                     f"accuracy={compatible_summary['model_accuracy']:.4f} "
                     f"brier={compatible_summary['model_brier']:.4f}"
+                )
+                town_deployable_summary = metrics[f"town_deployable_{name}"]
+                print(
+                    "  town-deployable-fitted "
+                    f"accuracy={town_deployable_summary['model_accuracy']:.4f} "
+                    f"brier={town_deployable_summary['model_brier']:.4f}"
                 )
                 if "skill_spell_train" in metrics:
                     skill_spell_summary = metrics[f"skill_spell_{name}"]
@@ -1519,6 +1693,14 @@ def main() -> int:
                     f"{item['name']}: coefficient={item['coefficient']:.12g} "
                     f"mean={item['mean']:.12g} scale={item['scale']:.12g}"
                 )
+            print("town-deployable model:")
+            print(f"  intercept={town_deployable_model.intercept:.12g}")
+            for item in metrics["town_deployable_model"]["features"]:
+                print(
+                    "  "
+                    f"{item['name']}: coefficient={item['coefficient']:.12g} "
+                    f"mean={item['mean']:.12g} scale={item['scale']:.12g}"
+                )
             if "skill_spell_feature_count" in metrics:
                 print(f"skill/spell model: features={metrics['skill_spell_feature_count']}")
                 print("skill/spell top features:")
@@ -1563,11 +1745,22 @@ def main() -> int:
                 print_group_report("near-even groups", metrics["near_even"])
             if args.print_worst > 0:
                 print_group_report("worst fitted-model errors", metrics["worst_model_errors"])
+                print_group_report("worst town-deployable-model errors", metrics["worst_town_deployable_errors"])
                 print_group_report("worst cxx-v3 errors", metrics["worst_v3_errors"])
             if args.print_v3_false_safe > 0:
                 print_group_report("cxx-v3 false-safe groups", metrics["v3_false_safe_groups"])
             if args.print_v3_false_unsafe > 0:
                 print_group_report("cxx-v3 false-unsafe groups", metrics["v3_false_unsafe_groups"])
+            if args.print_town_deployable_false_safe > 0:
+                print_group_report(
+                    f"town-deployable false-safe groups threshold={args.town_deployable_safe_probability:.2f}",
+                    metrics["town_deployable_false_safe_groups"],
+                )
+            if args.print_town_deployable_false_unsafe > 0:
+                print_group_report(
+                    f"town-deployable false-unsafe groups threshold={args.town_deployable_safe_probability:.2f}",
+                    metrics["town_deployable_false_unsafe_groups"],
+                )
     return 0
 
 

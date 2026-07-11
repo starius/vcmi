@@ -222,7 +222,24 @@ As of 2026-07-11, the best empirical result is fallback-only deterministic repea
   - 20 samples: 97.94% win/loss accuracy, 100.00% safety accuracy on 583 held-out rows
   - 30 samples: 100.00% win/loss accuracy, 93.33% safety accuracy on 300 held-out rows; this bucket had one false-unsafe case and no false-safe cases
 
-The best static models are not merge-ready: current cxx-v3 was about 69.39% / Brier 0.287 on corrected 5k non-town deployed-static holdout rows, about 58.76% / Brier 0.363 on corrected 2k town-hero holdout rows, and 54.48% / Brier 0.392 on the completed corrected 5k town-hero holdout. On the completed 5k town-hero split, skill/spell static features reached 84.92% / Brier 0.117 on holdout after about 99.43% training accuracy, so this is still overfit offline evidence and not enough to merge as Nullkiller2 logic. The practical direction is therefore a server-owned runtime simulation fallback, with static prediction kept as a cheap coarse estimate until a better validated model exists.
+The best static models are not merge-ready: current cxx-v3 was about 69.39% / Brier 0.287 on corrected 5k non-town deployed-static holdout rows, about 58.76% / Brier 0.363 on corrected 2k town-hero holdout rows, and 54.48% / Brier 0.392 on the completed corrected 5k town-hero holdout. On the completed 5k town-hero split, skill/spell static features reached 84.92% / Brier 0.117 on holdout after about 99.43% training accuracy, so this is still overfit offline evidence and not enough to merge as Nullkiller2 logic. Runtime simulation infrastructure exists but timed out when enabled in live Nullkiller turns, so the practical direction is offline MMAI simulation for labels plus a better validated static predictor.
+
+### Static Town Prototype
+
+A compact `town-deployable` evaluator prototype was added to `scripts/battle_prediction/evaluate_nullkiller_predictor.py`. It uses features that are plausible to port into Nullkiller2 danger evaluation: deployed town danger ratio, raw army strengths, hero primary/mana/spell counts, stack shape, fortification state, town faction, terrain, and battlefield buckets.
+
+On the completed corrected 5k town-hero run:
+
+- deployed town danger baseline: 68.15% held-out win/loss accuracy, Brier 0.2916
+- current cxx-v3 probability applied to towns for diagnostics only: 54.48% held-out win/loss accuracy, Brier 0.3918
+- compact `town-deployable` model with regularization: about 81-83% held-out win/loss accuracy, Brier about 0.105-0.114 depending on threshold and L2
+- richer fitted static models with non-deployable or harder-to-port features: about 84-85% held-out win/loss accuracy
+
+Conservative thresholds can eliminate false-safe groups on this small town holdout, but they do not approach 95% win/loss accuracy and introduce false-unsafe groups. This is not merge-ready as a production town predictor by itself.
+
+The main observed static-model failure mode is interaction-heavy siege behavior: creature composition, battlefield layout, and terrain can change outcomes substantially for otherwise similar army/town setups. Repeated MMAI simulation remains the only result above the 95% target.
+
+The evaluator can now emit reproducible town-deployable diagnostics with `--print-worst`, `--print-town-deployable-false-safe`, `--print-town-deployable-false-unsafe`, and `--town-deployable-safe-probability`. Use these reports on the next large run to inspect close/even and safety-threshold failures without relying on ad hoc one-off scripts.
 
 Remote analysis outputs:
 
@@ -364,6 +381,51 @@ Current branch progress toward the service boundary:
 - This is still not a runtime Nullkiller evaluator. The remaining hard part is isolating repeated simulations from live adventure-map state and exposing them through a controlled server-owned API/cache.
 
 Batch collection caveat: when running `vcmibattlesim` with MMAI in parallel, each shard needs an isolated XDG config/cache profile. A shared profile can be rewritten by clients and silently disable the MMAI mod for later shards. Use `--xdg-config-template` and, if needed, `--xdg-profile-root` so each client starts from the same active-mod configuration.
+
+Example schema4 town-hero collection command:
+
+```bash
+vcmibattlesim \
+  --client ./vcmiclient \
+  --generate-map \
+  --generated-mode town-hero \
+  --output-dir schema4-mmai-town-hero-20k \
+  --battles 20000 \
+  --shards 400 \
+  --jobs 8 \
+  --seed 20260711 \
+  --combat-ai MMAI \
+  --xdg-config-template /root/vcmi-nk-ratio-results/mmai-schema3-config-template \
+  --skip-complete-shards
+```
+
+Then validate and inspect the model failures:
+
+```bash
+python3 scripts/battle_prediction/validate_battle_dataset.py \
+  schema4-mmai-town-hero-20k \
+  --expected-rows 20000 \
+  --expected-schema 4 \
+  --expected-shards 400 \
+  --expected-shard-size 50 \
+  --require-complete-shards \
+  --require-battle-types town-hero \
+  --require-no-mmai-fallback \
+  --require-mmai-initialized \
+  --require-schema3-rich-fields
+
+python3 scripts/battle_prediction/evaluate_nullkiller_predictor.py \
+  schema4-mmai-town-hero-20k \
+  --scope town \
+  --l2 0.03 \
+  --print-near-even 40 \
+  --print-worst 40 \
+  --print-v3-false-safe 40 \
+  --print-v3-false-unsafe 40 \
+  --print-town-deployable-false-safe 40 \
+  --print-town-deployable-false-unsafe 40 \
+  --town-deployable-safe-probability 0.62
+```
 
 Use the dataset validator before fitting or reporting numbers:
 
