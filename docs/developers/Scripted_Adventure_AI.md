@@ -2143,6 +2143,17 @@ Regression harness:
   remains visible and must not exceed the baseline unless explicitly allowed. This prevents battle/client
   infrastructure stalls from looking like Lua policy idles while still blocking noisy candidates that introduce more
   infrastructure failures than the control.
+- Done: a fresh traced 16-map full-outcome run with one infrastructure retry per scenario produced 14 terminal
+  winner results, 8 `ScriptedAdventureAI` wins, 6 `Nullkiller2` wins, and 2 final infrastructure idles
+  (`/root/script-ai-runs/full16-trace-retry-ebca357-20260711`). Five first attempts retried after known
+  battle-AI setup signatures; three retries recovered to terminal outcomes and two still ended in
+  `battle_ai_creation` / `battle_ai_creation_invalid_stack` while an in-flight `nullkiller_turn_slice` was active.
+  The traced corpus is intentionally machine-readable for later analysis, but it is large: about 24 GB.
+- Done: mined the fresh losing/infrastructure run summaries. Seeds `03` and `04` are infrastructure, not script
+  losses: both ended with a single `inflight_imperative_command` on `nullkiller_turn_slice`. Among the six
+  terminal losses, seeds `05` and `14` show actionable `defense_pressure_without_response` findings; seeds `02`,
+  `07`, `10`, and `15` have no mined important script mistake yet, so the next policy work needs either a targeted
+  defense response or stronger loss-specific trace heuristics before changing broader strategy.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions
