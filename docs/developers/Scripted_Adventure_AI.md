@@ -2068,6 +2068,20 @@ Regression harness:
   The focused Lua runner suite passed, and a three-seed validation over the current idle bucket produced one
   Lua/red win (`15`) plus two battle/client idle timeouts (`04`, `14`). Treat those idles as infrastructure
   blockers for the evaluation loop, not as script policy losses.
+- Done: fixed trace mining for full batch output directories. The miner previously scanned only top-level
+  `*.json`, so a batch root summarized `manifest.json` / `results.json` and missed nested
+  `cache/vcmi/scriptedAdventureAI/player-...-event-...json` traces. Directory inputs now recurse and include
+  only event trace files.
+- Done: with recursive trace discovery, the seven-seed loss/idle trace batch parsed 13,809 event files and mined
+  five important candidates: three `defense_pressure_without_response` cases and two `idle_with_candidates` cases.
+  These are useful fixtures for hypothesis generation, but they are not sufficient proof that direct Lua
+  recruitment/building or pass-limit overrides improve game outcomes.
+- Rejected: a broad Lua-only patch that directly recruited/built for threatened towns and continued past native
+  `maxPass` whenever visible action-space candidates remained. Unit tests passed, but focused game validation on
+  the problematic seeds regressed: seed `03` was a Lua win, while seeds `02`, `07`, `14`, `16`, and retry seed
+  `11` were Lua losses; seed `09` was stopped after the regression was already clear. Do not reintroduce this as
+  a combined policy. Future fixes should isolate one hypothesis at a time and prefer exposing/using native
+  Nullkiller defense candidates over ad hoc Lua spending rules.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions

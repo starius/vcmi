@@ -12,7 +12,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from summarizeAdventureTrace import analyze_mistakes, summarize
+from summarizeAdventureTrace import analyze_mistakes, iter_trace_files, summarize
 
 
 def input_record(script_input: dict) -> dict:
@@ -395,6 +395,20 @@ class HeroThreatMistakeTest(unittest.TestCase):
 
 
 class ImperativeTraceSummaryTest(unittest.TestCase):
+    def test_trace_file_discovery_recurses_batch_run_layout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run = root / "scenario" / "scenario-run-001"
+            trace_dir = run / "cache" / "vcmi" / "scriptedAdventureAI"
+            trace_dir.mkdir(parents=True)
+
+            (root / "results.json").write_text("{}", encoding="utf-8")
+            (run / "run.json").write_text("{}", encoding="utf-8")
+            event_path = trace_dir / "player-red-day-1-event-0-imperative-input.json"
+            event_path.write_text("{}", encoding="utf-8")
+
+            self.assertEqual(iter_trace_files([str(root)]), [event_path])
+
     def test_imperative_trace_labels_are_counted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

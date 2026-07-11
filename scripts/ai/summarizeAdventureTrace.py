@@ -87,7 +87,7 @@ def iter_trace_files(paths: list[str]) -> list[Path]:
     for raw_path in paths:
         path = Path(raw_path).expanduser()
         if path.is_dir():
-            files.extend(sorted(path.glob("*.json")))
+            files.extend(sorted(candidate for candidate in path.rglob("*.json") if EVENT_PATTERN.search(candidate.name)))
         elif path.is_file():
             files.append(path)
         else:
