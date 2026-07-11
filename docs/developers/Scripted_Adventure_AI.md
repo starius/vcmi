@@ -349,6 +349,11 @@ The `ai` facade:
   `nullkiller_turn_slice` for the common parity shape "run one native pass" or "run N bounded native passes",
   without delegating the rest of the day. They keep the same checked C++ implementation, default to all native
   phases enabled, and return the same structured slice result.
+- `ai:nullkillerBoundedDay(options?)`, also available as `ai:nullkillerRunDay` and `ai:nullkillerNativeDay`: a
+  Lua-side control helper that composes native passes one at a time with `max_passes = 1`, optionally answers
+  pending queries before each pass, refreshes between successful passes, and returns a summary instead of calling
+  full-day fallback. Scripts use this when they want Nullkiller parity while preserving a Lua decision boundary
+  between native passes.
 - Named wrappers are available for every bounded Nullkiller task mode:
   `ai:nullkillerAllTasks/Step/Pass`, `ai:nullkillerPriorityTasks/Step/Pass`,
   `ai:nullkillerAdventureTasks/Step/Pass`, `ai:nullkillerRecruitHeroTasks/Step/Pass`,
@@ -1802,6 +1807,10 @@ Regression harness:
   useful priority, adventure, replan, trade, or pause work. If a bounded helper exhausts one generated candidate set
   after doing useful work, Lua refreshes and asks for another bounded slice, matching native Nullkiller's day-loop
   semantics more closely than immediate full-day fallback or immediate end-turn.
+- Done: the Lua facade now includes `ai:nullkillerBoundedDay`, a reusable API-parity helper that runs Nullkiller's
+  native day loop as one-pass checked `nullkiller_turn_slice` calls, answers pending queries between passes, refreshes
+  after side effects, and returns a structured summary to Lua. This gives scripts a common bounded replacement for
+  ordinary full-day `ai:nullkiller()` delegation.
 - Done: `scripts/ai/candidates/boundedNullkillerAdventure.lua` now stays on the bounded-helper contract too. Native
   no-task and stop-turn signals become Lua-controlled end-turn outputs, while unexpected helper failures or exhausted
   bounded budgets raise script errors for the host safety path instead of explicitly delegating the rest of the day to

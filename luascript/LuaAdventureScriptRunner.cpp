@@ -817,6 +817,154 @@ function ai:nullkillerNativePasses(maxPasses, maxCandidates, maxAttempts)
 	return self:nullkillerNativePass(action)
 end
 
+local function numberOr(value, fallback)
+	local result = tonumber(value)
+	if result == nil then
+		return fallback
+	end
+	return result
+end
+
+local function boolOption(config, snakeName, camelName, default)
+	if config[snakeName] ~= nil then
+		return config[snakeName] == true
+	end
+	if config[camelName] ~= nil then
+		return config[camelName] == true
+	end
+	return default
+end
+
+local function addCounter(target, field, amount)
+	target[field] = (tonumber(target[field] or 0) or 0) + (tonumber(amount or 0) or 0)
+end
+
+local function nullkillerSliceDidPriorityWork(result)
+	return (tonumber(result.priorityTasksExecuted or 0) or 0) > 0
+end
+
+local function nullkillerSliceDidAdventureWork(result)
+	return (tonumber(result.adventureStepsExecuted or 0) or 0) > 0
+		or (tonumber(result.adventureReplanSteps or 0) or 0) > 0
+end
+
+local function nullkillerSliceDidTrade(result)
+	return (tonumber(result.tradePasses or 0) or 0) > 0
+end
+
+local function nullkillerSliceDidWork(result)
+	return result.didWork == true
+		or nullkillerSliceDidPriorityWork(result)
+		or nullkillerSliceDidAdventureWork(result)
+		or nullkillerSliceDidTrade(result)
+		or result.paused == true
+end
+
+local function nullkillerSliceShouldEndTurn(result)
+	return result.shouldStopTurn == true
+		or (tonumber(result.adventureStopTurnSteps or 0) or 0) > 0
+		or (result.exhaustedCandidates == true and not nullkillerSliceDidWork(result))
+end
+
+function ai:nullkillerBoundedDay(options)
+	local config = copyFields(options)
+	local settings = self:nullkillerSettings()
+	local maxPasses = math.max(1, math.floor(numberOr(config.max_passes or config.maxPasses, numberOr(settings.maxPass, 1))))
+	local firstPassIndex = math.max(1, math.floor(numberOr(config.first_pass_index or config.firstPassIndex, 1)))
+	local maxQueriesPerPass = math.max(0, math.floor(numberOr(config.max_queries_per_pass or config.maxQueriesPerPass, 16)))
+	local answerQueries = boolOption(config, "answer_queries", "answerQueries", true)
+	local refreshBetweenPasses = boolOption(config, "refresh_between_passes", "refreshBetweenPasses", true)
+
+	local summary = {
+		ok = true,
+		status = "budget_exhausted",
+		shouldEndTurn = false,
+		exhaustedBudget = true,
+		passCount = 0,
+		passes = {},
+		answeredQueries = 0,
+		refreshes = 0,
+		didWork = false,
+		priorityTasksExecuted = 0,
+		adventureStepsExecuted = 0,
+		adventureReplanSteps = 0,
+		adventureStopTurnSteps = 0,
+		adventureExhaustedSteps = 0,
+		tradePasses = 0,
+		artifactCleanupPasses = 0
+	}
+
+	for passOffset = 0, maxPasses - 1 do
+		if answerQueries and maxQueriesPerPass > 0 then
+			local answered = self:nullkillerAnswerPendingQueries(config.default_answer or config.defaultAnswer, maxQueriesPerPass)
+			addCounter(summary, "answeredQueries", answered.count)
+			if answered.truncated == true then
+				summary.status = "queries_remaining"
+				summary.queryLimitReached = true
+				summary.exhaustedBudget = false
+				return summary
+			end
+		end
+
+		local passAction = copyFields(config)
+		passAction.first_pass_index = firstPassIndex + passOffset
+		passAction.max_passes = 1
+		passAction.max_candidates = passAction.max_candidates or passAction.maxCandidates
+		passAction.max_attempts = passAction.max_attempts or passAction.maxAttempts
+		passAction.answer_queries = nil
+		passAction.answerQueries = nil
+		passAction.default_answer = nil
+		passAction.defaultAnswer = nil
+		passAction.max_queries_per_pass = nil
+		passAction.maxQueriesPerPass = nil
+		passAction.refresh_between_passes = nil
+		passAction.refreshBetweenPasses = nil
+
+		local pass = self:nullkillerNativePass(passAction)
+		summary.passes[#summary.passes + 1] = pass
+		summary.passCount = #summary.passes
+		addCounter(summary, "priorityTasksExecuted", pass.priorityTasksExecuted)
+		addCounter(summary, "adventureStepsExecuted", pass.adventureStepsExecuted)
+		addCounter(summary, "adventureReplanSteps", pass.adventureReplanSteps)
+		addCounter(summary, "adventureStopTurnSteps", pass.adventureStopTurnSteps)
+		addCounter(summary, "adventureExhaustedSteps", pass.adventureExhaustedSteps)
+		addCounter(summary, "tradePasses", pass.tradePasses)
+		addCounter(summary, "artifactCleanupPasses", pass.artifactCleanupPasses)
+
+		if nullkillerSliceDidWork(pass) then
+			summary.didWork = true
+		end
+		if pass.paused == true then
+			summary.status = "paused"
+			summary.paused = true
+			summary.exhaustedBudget = false
+			return summary
+		end
+		if nullkillerSliceShouldEndTurn(pass) then
+			summary.status = "stop_turn"
+			summary.shouldEndTurn = true
+			summary.exhaustedBudget = false
+			return summary
+		end
+		if not nullkillerSliceDidWork(pass) then
+			summary.status = "idle"
+			summary.shouldEndTurn = true
+			summary.exhaustedBudget = false
+			return summary
+		end
+
+		if refreshBetweenPasses then
+			self:refresh()
+			addCounter(summary, "refreshes", 1)
+		end
+	end
+
+	return summary
+end
+
+ai.nullkillerRunDay = ai.nullkillerBoundedDay
+ai.nullkillerNativeDay = ai.nullkillerBoundedDay
+
 local function defineNullkillerModeHelpers(name, mode)
 	ai["nullkiller" .. name .. "Tasks"] = function(self, maxCandidates)
 		return self:nullkillerTasks({

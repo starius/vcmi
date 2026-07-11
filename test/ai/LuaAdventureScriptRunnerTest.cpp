@@ -1295,6 +1295,106 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanSelectAndRunOneNullkillerCand
 	EXPECT_EQ(output.memory["skippedCandidateCount"].Integer(), 1);
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanRunBoundedNullkillerDayOnePassAtATime)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				local result = ai:nullkillerBoundedDay({
+					max_passes = 3,
+					max_candidates = 9,
+					max_attempts = 8,
+					max_queries_per_pass = 1,
+					default_answer = 2
+				})
+				ai:setMemory({
+					version = 1,
+					status = result.status,
+					shouldEndTurn = result.shouldEndTurn,
+					passCount = result.passCount,
+					answeredQueries = result.answeredQueries,
+					refreshes = result.refreshes,
+					priorityTasksExecuted = result.priorityTasksExecuted
+				})
+				return ai:output(result.shouldEndTurn and "end_turn" or "continue", result.status)
+			end
+		}
+	)lua";
+
+	AI::AdventureScriptInput input = makeInput();
+	input.state["turn"]["active"] = JsonNode(true);
+	input.state["turn"]["queries"].Vector();
+	JsonNode query;
+	query["query_id"] = JsonNode(77);
+	query["typeId"] = JsonNode(3);
+	query["type"] = JsonNode("blocking_dialog");
+	input.state["turn"]["queries"].Vector().push_back(query);
+
+	AI::AdventureScriptInput refreshed = input;
+	refreshed.state["turn"]["queries"].Vector().clear();
+
+	scripting::LuaAdventureScriptRunner runner("test:bounded-nullkiller-day-helper", source);
+	std::vector<JsonNode> commands;
+	int slices = 0;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		if(command["kind"].String() == "refresh")
+		{
+			response["input"] = refreshed.toJson();
+			return response;
+		}
+
+		const std::string type = command["payload"]["type"].String();
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		if(type == "nullkiller_turn_slice")
+		{
+			++slices;
+			response["result"]["didWork"] = JsonNode(slices == 1);
+			response["result"]["priorityTasksExecuted"] = JsonNode(slices == 1 ? 1 : 0);
+			response["result"]["adventureStepsExecuted"] = JsonNode(0);
+			response["result"]["adventureReplanSteps"] = JsonNode(0);
+			response["result"]["adventureStopTurnSteps"] = JsonNode(0);
+			response["result"]["adventureExhaustedSteps"] = JsonNode(0);
+			response["result"]["tradePasses"] = JsonNode(0);
+			response["result"]["artifactCleanupPasses"] = JsonNode(0);
+			response["result"]["shouldStopTurn"] = JsonNode(slices == 2);
+			response["result"]["exhaustedCandidates"] = JsonNode(false);
+			response["result"]["paused"] = JsonNode(false);
+		}
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 5);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_answer_query");
+	EXPECT_EQ(commands[0]["payload"]["query_id"].Integer(), 77);
+	EXPECT_EQ(commands[0]["payload"]["default_answer"].Integer(), 2);
+	EXPECT_EQ(commands[1]["kind"].String(), "refresh");
+	EXPECT_EQ(commands[2]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[2]["payload"]["max_passes"].Integer(), 1);
+	EXPECT_EQ(commands[2]["payload"]["first_pass_index"].Integer(), 1);
+	EXPECT_EQ(commands[2]["payload"]["max_candidates"].Integer(), 9);
+	EXPECT_EQ(commands[2]["payload"]["max_attempts"].Integer(), 8);
+	EXPECT_EQ(commands[3]["kind"].String(), "refresh");
+	EXPECT_EQ(commands[4]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[4]["payload"]["max_passes"].Integer(), 1);
+	EXPECT_EQ(commands[4]["payload"]["first_pass_index"].Integer(), 2);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "stop_turn");
+	EXPECT_EQ(output.memory["status"].String(), "stop_turn");
+	EXPECT_TRUE(output.memory["shouldEndTurn"].Bool());
+	EXPECT_EQ(output.memory["passCount"].Integer(), 2);
+	EXPECT_EQ(output.memory["answeredQueries"].Integer(), 1);
+	EXPECT_EQ(output.memory["refreshes"].Integer(), 1);
+	EXPECT_EQ(output.memory["priorityTasksExecuted"].Integer(), 1);
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanPrepareHero)
 {
 	const std::string source = R"lua(
