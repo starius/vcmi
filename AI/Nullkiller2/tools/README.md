@@ -136,7 +136,10 @@ Summary files include `runtimeBattleSimulation` totals by model. The
 candidate games do not have simulation requests or if fewer than 90% of those
 requests complete. Add `--min-runtime-simulation-planning-decisions` when the
 run should also prove that planner-side simulation produced completed accepted
-or rejected decisions.
+or rejected decisions. Add `--min-runtime-simulation-planning-vetoes` or
+`--min-runtime-simulation-planning-rescues` when the run should prove that
+planner-side simulation specifically rejected static-safe targets or accepted
+static-unsafe targets.
 The planning ratio replacement only affects offensive planning when V3 runtime
 simulation is enabled; it lets more candidate attacks reach the final simulator
 gate without changing defensive threat checks.
@@ -146,6 +149,9 @@ When planner-side simulation is active, summaries also include
 that were rechecked before movement planning: accepted targets got a complete
 safe simulation verdict, rejected targets got a complete unsafe simulation
 verdict, and incomplete targets could not get a complete simulation verdict.
+The split fields `planningRejectedStaticSafe` and
+`planningAcceptedStaticUnsafe` are the key proof counters for static false-safe
+vetoes and static false-unsafe rescues.
 Runtime and planner simulation currently treat a battle as safe only if the
 attacker wins every requested sample. This matches the best observed town/siege
 offline safety policy and avoids accepting 19/20-style near misses as safe.

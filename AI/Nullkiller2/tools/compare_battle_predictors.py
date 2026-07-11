@@ -43,6 +43,7 @@ RUNTIME_SIMULATION_STATS_RE = re.compile(
 	r"(?:, invalid (\d+), not available (\d+))?"
 	r"(?:, skipped no target (\d+))?"
 	r"(?:, planning accepted (\d+), planning rejected (\d+), planning incomplete (\d+))?"
+	r"(?:, planning accepted static safe (\d+), planning accepted static unsafe (\d+), planning rejected static safe (\d+), planning rejected static unsafe (\d+))?"
 )
 PLANNER_SIMULATION_RE = re.compile(
 	r"Planner battle simulation (accepted|rejected|incomplete)(?: .*?)? for player \d+ \(([^)]+)\):"
@@ -60,6 +61,10 @@ RUNTIME_SIMULATION_FIELDS = [
 	"planningAccepted",
 	"planningRejected",
 	"planningIncomplete",
+	"planningAcceptedStaticSafe",
+	"planningAcceptedStaticUnsafe",
+	"planningRejectedStaticSafe",
+	"planningRejectedStaticUnsafe",
 ]
 
 ADJUDICATION_FIELDS = [
@@ -213,6 +218,24 @@ def parse_args() -> argparse.Namespace:
 		help=(
 			"Minimum completed planner-side simulation decisions required for each "
 			"--require-runtime-simulation model. Counts planningAccepted + planningRejected."
+		),
+	)
+	parser.add_argument(
+		"--min-runtime-simulation-planning-vetoes",
+		type=int,
+		default=0,
+		help=(
+			"Minimum planner-side vetoes required for each --require-runtime-simulation model. "
+			"Counts static-safe targets rejected by simulation."
+		),
+	)
+	parser.add_argument(
+		"--min-runtime-simulation-planning-rescues",
+		type=int,
+		default=0,
+		help=(
+			"Minimum planner-side rescues required for each --require-runtime-simulation model. "
+			"Counts static-unsafe targets accepted by simulation."
 		),
 	)
 	parser.add_argument("--keep-engine-logs", action="store_true", help="Keep VCMI log files in each run directory. Stdout and summaries are always kept.")
@@ -535,6 +558,10 @@ def parse_run_logs(task: GameTask) -> tuple[bool, str | None, str | None, bool, 
 						"planningAccepted": int(stats_match.group(10) or 0),
 						"planningRejected": int(stats_match.group(11) or 0),
 						"planningIncomplete": int(stats_match.group(12) or 0),
+						"planningAcceptedStaticSafe": int(stats_match.group(13) or 0),
+						"planningAcceptedStaticUnsafe": int(stats_match.group(14) or 0),
+						"planningRejectedStaticSafe": int(stats_match.group(15) or 0),
+						"planningRejectedStaticUnsafe": int(stats_match.group(16) or 0),
 					},
 				)
 
@@ -983,6 +1010,8 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 		complete = stats["complete"]
 		complete_rate = complete / requests if requests else None
 		planning_decisions = stats["planningAccepted"] + stats["planningRejected"]
+		planning_vetoes = stats["planningRejectedStaticSafe"]
+		planning_rescues = stats["planningAcceptedStaticUnsafe"]
 		model_errors = []
 
 		if requests < args.min_runtime_simulation_requests:
@@ -1000,6 +1029,16 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 				f"{model}: planner simulation decisions {planning_decisions} below required "
 				f"{args.min_runtime_simulation_planning_decisions}"
 			)
+		if planning_vetoes < args.min_runtime_simulation_planning_vetoes:
+			model_errors.append(
+				f"{model}: planner simulation vetoes {planning_vetoes} below required "
+				f"{args.min_runtime_simulation_planning_vetoes}"
+			)
+		if planning_rescues < args.min_runtime_simulation_planning_rescues:
+			model_errors.append(
+				f"{model}: planner simulation rescues {planning_rescues} below required "
+				f"{args.min_runtime_simulation_planning_rescues}"
+			)
 
 		errors.extend(model_errors)
 		model_reports.append(
@@ -1008,6 +1047,8 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 				"stats": stats,
 				"completeRate": complete_rate,
 				"planningDecisions": planning_decisions,
+				"planningVetoes": planning_vetoes,
+				"planningRescues": planning_rescues,
 				"ok": not model_errors,
 				"errors": model_errors,
 			}
@@ -1019,6 +1060,8 @@ def evaluate_runtime_simulation_requirements(args: argparse.Namespace, analysis:
 		"minRequests": args.min_runtime_simulation_requests,
 		"minCompleteRate": args.min_runtime_simulation_complete_rate,
 		"minPlanningDecisions": args.min_runtime_simulation_planning_decisions,
+		"minPlanningVetoes": args.min_runtime_simulation_planning_vetoes,
+		"minPlanningRescues": args.min_runtime_simulation_planning_rescues,
 		"ok": not errors,
 		"errors": errors,
 	}
@@ -1054,6 +1097,10 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 		"planningAccepted",
 		"planningRejected",
 		"planningIncomplete",
+		"planningAcceptedStaticSafe",
+		"planningAcceptedStaticUnsafe",
+		"planningRejectedStaticSafe",
+		"planningRejectedStaticUnsafe",
 		"runDir",
 	]
 	with (output_dir / "games.csv").open("w", newline="") as handle:
@@ -1072,6 +1119,10 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 					"planningAccepted": runtime_stats["planningAccepted"],
 					"planningRejected": runtime_stats["planningRejected"],
 					"planningIncomplete": runtime_stats["planningIncomplete"],
+					"planningAcceptedStaticSafe": runtime_stats["planningAcceptedStaticSafe"],
+					"planningAcceptedStaticUnsafe": runtime_stats["planningAcceptedStaticUnsafe"],
+					"planningRejectedStaticSafe": runtime_stats["planningRejectedStaticSafe"],
+					"planningRejectedStaticUnsafe": runtime_stats["planningRejectedStaticUnsafe"],
 				}
 			)
 			writer.writerow({key: row[key] for key in fieldnames})

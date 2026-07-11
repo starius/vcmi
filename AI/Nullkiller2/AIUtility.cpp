@@ -36,6 +36,10 @@ namespace
 std::atomic<uint64_t> battleSimulationPlanningAccepted{0};
 std::atomic<uint64_t> battleSimulationPlanningRejected{0};
 std::atomic<uint64_t> battleSimulationPlanningIncomplete{0};
+std::atomic<uint64_t> battleSimulationPlanningAcceptedStaticSafe{0};
+std::atomic<uint64_t> battleSimulationPlanningAcceptedStaticUnsafe{0};
+std::atomic<uint64_t> battleSimulationPlanningRejectedStaticSafe{0};
+std::atomic<uint64_t> battleSimulationPlanningRejectedStaticUnsafe{0};
 }
 
 const CGObjectInstance * ObjectIdRef::operator->() const
@@ -162,14 +166,22 @@ bool isBattleSimulationSafeForVisit(const BattleOutcomeSimulationResult & simula
 	return simulation.attackerAllWinsSafe;
 }
 
-void recordBattleSimulationPlanningAccepted()
+void recordBattleSimulationPlanningAccepted(bool staticSafe)
 {
 	battleSimulationPlanningAccepted.fetch_add(1, std::memory_order_relaxed);
+	if(staticSafe)
+		battleSimulationPlanningAcceptedStaticSafe.fetch_add(1, std::memory_order_relaxed);
+	else
+		battleSimulationPlanningAcceptedStaticUnsafe.fetch_add(1, std::memory_order_relaxed);
 }
 
-void recordBattleSimulationPlanningRejected()
+void recordBattleSimulationPlanningRejected(bool staticSafe)
 {
 	battleSimulationPlanningRejected.fetch_add(1, std::memory_order_relaxed);
+	if(staticSafe)
+		battleSimulationPlanningRejectedStaticSafe.fetch_add(1, std::memory_order_relaxed);
+	else
+		battleSimulationPlanningRejectedStaticUnsafe.fetch_add(1, std::memory_order_relaxed);
 }
 
 void recordBattleSimulationPlanningIncomplete()
@@ -182,7 +194,11 @@ BattleSimulationPlanningStats battleSimulationPlanningStatsSnapshot()
 	return BattleSimulationPlanningStats{
 		battleSimulationPlanningAccepted.load(std::memory_order_relaxed),
 		battleSimulationPlanningRejected.load(std::memory_order_relaxed),
-		battleSimulationPlanningIncomplete.load(std::memory_order_relaxed)
+		battleSimulationPlanningIncomplete.load(std::memory_order_relaxed),
+		battleSimulationPlanningAcceptedStaticSafe.load(std::memory_order_relaxed),
+		battleSimulationPlanningAcceptedStaticUnsafe.load(std::memory_order_relaxed),
+		battleSimulationPlanningRejectedStaticSafe.load(std::memory_order_relaxed),
+		battleSimulationPlanningRejectedStaticUnsafe.load(std::memory_order_relaxed)
 	};
 }
 

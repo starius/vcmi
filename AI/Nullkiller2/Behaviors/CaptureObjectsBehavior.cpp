@@ -113,7 +113,7 @@ std::optional<bool> plannerSimulationEvaluatesVisit(
 	const bool safe = isBattleSimulationSafeForVisit(simulation);
 	if(!safe)
 	{
-		recordBattleSimulationPlanningRejected();
+		recordBattleSimulationPlanningRejected(staticSafe);
 		logAi->debug(
 			"Planner battle simulation detail rejected path for player %d (%s): %s visiting %s, target %s, static safe %s, samples %lld, attacker wins %lld, defender wins %lld, win rate %.3f",
 			nullkiller->playerID,
@@ -129,7 +129,7 @@ std::optional<bool> plannerSimulationEvaluatesVisit(
 		return false;
 	}
 
-	recordBattleSimulationPlanningAccepted();
+	recordBattleSimulationPlanningAccepted(staticSafe);
 	logAi->debug(
 		"Planner battle simulation detail accepted path for player %d (%s): %s visiting %s, target %s, static safe %s, samples %lld, attacker wins %lld, defender wins %lld, win rate %.3f",
 		nullkiller->playerID,
