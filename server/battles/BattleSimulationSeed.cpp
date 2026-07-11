@@ -28,6 +28,13 @@ void combine(uint64_t & seed, uint64_t value)
 }
 }
 
+BattleSimulationSeedContext sampleSeedContext(const BattleSimulationSeedContext & context, int32_t sampleIndex)
+{
+	auto result = context;
+	result.sampleIndex = sampleIndex;
+	return result;
+}
+
 uint64_t deriveSampleSeed(const BattleSimulationSeedContext & context)
 {
 	uint64_t seed = 0xcbf29ce484222325ULL;
@@ -40,5 +47,18 @@ uint64_t deriveSampleSeed(const BattleSimulationSeedContext & context)
 	combine(seed, static_cast<uint64_t>(context.sampleIndex));
 	combine(seed, static_cast<uint64_t>(context.evaluatorVersion));
 	return seed;
+}
+
+std::vector<uint64_t> deriveSampleSeeds(const BattleSimulationSeedContext & context, int32_t sampleCount)
+{
+	std::vector<uint64_t> result;
+	if(sampleCount <= 0)
+		return result;
+
+	result.reserve(static_cast<size_t>(sampleCount));
+	for(int32_t index = 0; index < sampleCount; ++index)
+		result.push_back(deriveSampleSeed(sampleSeedContext(context, context.sampleIndex + index)));
+
+	return result;
 }
 }

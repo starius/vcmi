@@ -12,6 +12,7 @@
 #include "../../lib/constants/EntityIdentifiers.h"
 
 #include <cstdint>
+#include <vector>
 
 namespace BattleSimulation
 {
@@ -27,5 +28,7 @@ struct BattleSimulationSeedContext
 	int32_t evaluatorVersion = 1;
 };
 
+BattleSimulationSeedContext sampleSeedContext(const BattleSimulationSeedContext & context, int32_t sampleIndex);
 uint64_t deriveSampleSeed(const BattleSimulationSeedContext & context);
+std::vector<uint64_t> deriveSampleSeeds(const BattleSimulationSeedContext & context, int32_t sampleCount);
 }
