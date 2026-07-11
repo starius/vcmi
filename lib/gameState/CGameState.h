@@ -190,6 +190,7 @@ public:
 
 	void saveGame(CSaveFile & file) const;
 	void loadGame(CLoadFile & file);
+	std::shared_ptr<CGameState> cloneForSimulation() const;
 
 	template <typename Handler> void serialize(Handler &h)
 	{

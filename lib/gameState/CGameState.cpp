@@ -1776,6 +1776,24 @@ void CGameState::loadGame(CLoadFile & file)
 	}
 }
 
+std::shared_ptr<CGameState> CGameState::cloneForSimulation() const
+{
+	CMemorySerializer serializer;
+	serializer.oser & *this;
+	serializer.iser.loadingGamestate = true;
+
+	auto result = std::make_shared<CGameState>();
+	serializer.iser & *result;
+
+	const auto * startInfo = getStartInfo();
+	if(!startInfo)
+		throw std::runtime_error("Can not clone game state for battle simulation without start info");
+
+	result->preInit(LIBRARY);
+	result->updateOnLoad(*startInfo);
+	return result;
+}
+
 const scripting::Pool & CGameState::getScriptContextPool() const
 {
 	return *scriptingPool;
