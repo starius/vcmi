@@ -2089,6 +2089,77 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeInspectHostErrorsAreCatchable)
 	EXPECT_NE(output.memory["error"].String().find("hidden object"), std::string::npos);
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeTryHelpersReturnStructuredHostErrors)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				local inspect = ai:tryInspect({ what = "object", object_id = 999 })
+				local execute = ai:tryExecute({ type = "build", town_id = 7, building_id = 12 })
+				local refresh = ai:tryRefresh()
+				local option = ai:tryRunOption({})
+				return {
+					status = "end_turn",
+					memory = {
+						version = 1,
+						inspectOk = inspect.ok,
+						inspectError = inspect.error,
+						executeOk = execute.ok,
+						executeError = execute.error,
+						refreshOk = refresh.ok,
+						refreshDay = refresh.input.state.day,
+						optionOk = option.ok,
+						optionError = option.error
+					},
+					actions = {}
+				}
+			end
+		}
+	)lua";
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-try-helpers", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(makeInput(), [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		if(command["kind"].String() == "inspect")
+		{
+			response["ok"] = JsonNode(false);
+			response["error"] = JsonNode("hidden object");
+		}
+		else if(command["kind"].String() == "execute")
+		{
+			response["ok"] = JsonNode(false);
+			response["error"] = JsonNode("invalid build");
+		}
+		else if(command["kind"].String() == "refresh")
+		{
+			AI::AdventureScriptInput refreshed = makeInput();
+			refreshed.state["day"] = JsonNode(5);
+			response["ok"] = JsonNode(true);
+			response["input"] = refreshed.toJson();
+		}
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 3);
+	EXPECT_EQ(commands[0]["kind"].String(), "inspect");
+	EXPECT_EQ(commands[1]["kind"].String(), "execute");
+	EXPECT_EQ(commands[2]["kind"].String(), "refresh");
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_FALSE(output.memory["inspectOk"].Bool());
+	EXPECT_NE(output.memory["inspectError"].String().find("hidden object"), std::string::npos);
+	EXPECT_FALSE(output.memory["executeOk"].Bool());
+	EXPECT_NE(output.memory["executeError"].String().find("invalid build"), std::string::npos);
+	EXPECT_TRUE(output.memory["refreshOk"].Bool());
+	EXPECT_EQ(output.memory["refreshDay"].Integer(), 5);
+	EXPECT_FALSE(output.memory["optionOk"].Bool());
+	EXPECT_NE(output.memory["optionError"].String().find("missing action field"), std::string::npos);
+}
+
 TEST(LuaAdventureScriptRunnerTest, BoundedNullkillerControlEndsTurnWhenNativeSliceIsIdle)
 {
 	const std::string source = readAdventureScript("scripts/ai/candidates/boundedNullkillerControl.lua");

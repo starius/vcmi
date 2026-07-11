@@ -132,11 +132,31 @@ function ai:execute(action)
 	return response.result or response
 end
 
+local function protectedHostCall(fn)
+	local ok, result = pcall(fn)
+	if ok then
+		return { ok = true, result = result }
+	end
+	return { ok = false, error = tostring(result) }
+end
+
+function ai:tryExecute(action)
+	return protectedHostCall(function()
+		return self:execute(action)
+	end)
+end
+
 function ai:runAction(action)
 	if type(action) ~= "table" then
 		error("ai:runAction expects an action table", 2)
 	end
 	return self:execute(action)
+end
+
+function ai:tryRunAction(action)
+	return protectedHostCall(function()
+		return self:runAction(action)
+	end)
 end
 
 function ai:runOption(option, actionField)
@@ -151,6 +171,12 @@ function ai:runOption(option, actionField)
 	return self:execute(action)
 end
 
+function ai:tryRunOption(option, actionField)
+	return protectedHostCall(function()
+		return self:runOption(option, actionField)
+	end)
+end
+
 function ai:refresh()
 	local response = coroutine.yield({ kind = "refresh" })
 	if type(response) ~= "table" or not response.ok then
@@ -163,6 +189,16 @@ function ai:refresh()
 	return self.input
 end
 
+function ai:tryRefresh()
+	local attempt = protectedHostCall(function()
+		return self:refresh()
+	end)
+	if attempt.ok then
+		attempt.input = attempt.result
+	end
+	return attempt
+end
+
 function ai:inspect(request)
 	if type(request) ~= "table" then
 		error("ai:inspect expects a request table", 2)
@@ -172,6 +208,12 @@ function ai:inspect(request)
 		error(hostError(response), 2)
 	end
 	return response.result or response
+end
+
+function ai:tryInspect(request)
+	return protectedHostCall(function()
+		return self:inspect(request)
+	end)
 end
 
 function ai:getState()
