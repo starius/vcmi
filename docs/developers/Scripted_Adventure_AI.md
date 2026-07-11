@@ -2268,6 +2268,9 @@ Regression harness:
 - Done: `defaultAdventure.lua` now uses the shared query-policy helper for pending dialogs instead of carrying its
   own partial answer selector. This keeps the readable policy aligned with the same rich dialog API used by tests
   and future candidate scripts.
+- Done: the bundled aggressive, economy, and explorer profile scripts also use the shared query-policy helper for
+  pending dialogs. Their personality scoring remains local, but dialog/window handling now stays on the common
+  checked API path.
 
 ## Open Design Questions
 

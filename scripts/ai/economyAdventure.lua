@@ -369,6 +369,13 @@ local function commandLimit(input)
     return math.max(1, tonumber(limits.maxScriptCallsPerTurn or limits.maxActions or 8) or 8)
 end
 
+local function answerPendingQuery(ai, query)
+    ai:answerQueryByPolicy(query, {
+        use_plan_actions = true,
+        default_answer = 0
+    })
+end
+
 local NativeNullkiller = {
     maxTurnSlicePasses = 4,
     maxCandidates = 16,
@@ -424,7 +431,7 @@ function Script.runDay(ai, input)
     while commands < limit do
         local query = firstPendingQuery(current)
         if query then
-            ai:nullkillerAnswerQuery(query, 0)
+            answerPendingQuery(ai, query)
             commands = commands + 1
             current = ai:refresh()
             current.memory = ai:memory()
