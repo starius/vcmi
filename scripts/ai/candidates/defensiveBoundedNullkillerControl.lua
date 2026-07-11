@@ -9,14 +9,17 @@ It keeps the same main contract: Lua does not delegate the whole day to
 Nullkiller, and normal map play still runs through bounded native day slices.
 
 The only added policy is a narrow emergency-town-defense opening. When the
-host reports a high/critical defense alert for a visible owned town, and the
-same input already contains a legal recruit/build option for that town, the
-script executes exactly one such checked option before the next native slice.
+host reports a critical defense alert and the scripted player has no practical
+map tempo left, the script executes exactly one checked option before the next
+native slice: recruit available creatures, preferring the threatened town, or
+build in the threatened town if recruitment is unavailable.
 
 This is deliberately conservative:
 
 * It uses numeric threat levels and town/source ids, not localized labels.
 * It executes host-provided planAction payloads through ai:runOption.
+* It does not fire merely because a defense alert exists; ordinary turns stay
+  under bounded Nullkiller control.
 * It prefers recruitment over construction because creatures can defend now.
 * It does not invent prices, availability, paths, or game mechanics in Lua.
 * After the emergency action it refreshes and returns to bounded Nullkiller.
@@ -58,6 +61,12 @@ local DefenseScore = {
     nonDefenseBuild = 300,
     hallPenalty = 1500,
     goldCost = 0.02
+}
+
+local DefenseTrigger = {
+    -- Broad pressure responses regressed winning seeds. Only intervene when
+    -- native planning has little map tempo left and the town threat is severe.
+    maxMovementOptionsWithTempo = 0
 }
 
 local function adoptHostConstants(ai)
@@ -124,6 +133,19 @@ local function hasPendingQueries(input)
     return #pendingQueries(input) > 0
 end
 
+local function heroCount(input)
+    return #asArray(input.state and input.state.heroes)
+end
+
+local function movementOptionCount(input)
+    return #asArray(input.actionSpace and input.actionSpace.movementOptions)
+end
+
+local function lacksMapTempo(input)
+    return heroCount(input) == 0
+        or movementOptionCount(input) <= DefenseTrigger.maxMovementOptionsWithTempo
+end
+
 local function answerPendingQueries(ai, current, memory)
     local answered = 0
 
@@ -171,10 +193,14 @@ end
 
 local function emergencyDefenseAlerts(input)
     local result = {}
+    if not lacksMapTempo(input) then
+        return result
+    end
+
     for _, alert in ipairs(asArray(input.analysis and input.analysis.defenseAlerts)) do
         local townId = tonumber(alert.town_id or alert.townId or nil)
         local level = threatLevel(alert)
-        if townId and level >= ThreatLevel.high then
+        if townId and level >= ThreatLevel.critical then
             result[#result + 1] = {
                 townId = townId,
                 level = level
@@ -197,6 +223,15 @@ end
 
 local function matchesAlert(option, alert)
     return optionTownId(option) == alert.townId
+end
+
+local function hasMatchingAlert(option, alerts)
+    for _, alert in ipairs(alerts) do
+        if matchesAlert(option, alert) then
+            return true
+        end
+    end
+    return false
 end
 
 local function recruitScore(option, alert)
@@ -228,19 +263,28 @@ local function buildingScore(option, alert)
     return score
 end
 
+local function bestAlertForOption(option, alerts)
+    for _, alert in ipairs(alerts) do
+        if matchesAlert(option, alert) then
+            return alert
+        end
+    end
+    return alerts[1]
+end
+
 local function chooseEmergencyRecruit(input, alerts)
     local best
     local bestScore = -math.huge
     for _, option in ipairs(asArray(input.actionSpace and input.actionSpace.recruitOptions)) do
         if option.planAction and (tonumber(option.amount or 0) or 0) > 0 then
-            for _, alert in ipairs(alerts) do
-                if matchesAlert(option, alert) then
-                    local score = recruitScore(option, alert)
-                    if score > bestScore then
-                        best = option
-                        bestScore = score
-                    end
-                end
+            local alert = bestAlertForOption(option, alerts)
+            local score = recruitScore(option, alert)
+            if hasMatchingAlert(option, alerts) then
+                score = score + DefenseScore.criticalBonus
+            end
+            if score > bestScore then
+                best = option
+                bestScore = score
             end
         end
     end

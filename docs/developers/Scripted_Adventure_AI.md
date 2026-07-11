@@ -2168,6 +2168,13 @@ Regression harness:
   14 terminal results, 5 `ScriptedAdventureAI` wins, 9 `Nullkiller2` wins, and 2 infrastructure idles
   (`/root/script-ai-runs/defensive-bounded-full16-notrace-20260711`). It did flip seed `14` from a baseline loss
   to a Lua win, but lost too much elsewhere, so it remains an experiment rather than a champion.
+- Screened / not yet champion: the same defensive experiment was narrowed to critical alerts only when the script
+  has no practical map tempo left, and the policy now has unit coverage proving it does not spend defensive
+  resources while heroes still have movement options. A 16-map no-trace run finished all games after retries with
+  10 `ScriptedAdventureAI` wins, 6 `Nullkiller2` wins, 0 timeouts, 0 idle failures, and 7 infrastructure retries
+  (`/root/script-ai-runs/defensive-bounded-desperation-full16-notrace-20260711`). This is better than the broad
+  defense experiment and slightly above the earlier 9-win bounded-control screen, but it is still below the
+  intended promotion bar because six seeds remain clear losses and retry noise is high.
 - Done: tightened trace mining for town-defense misses. Earlier same-day progress touching a threatened town no
   longer suppresses `defense_pressure_without_response` when the current input still exposes a matching recruit,
   build, or reinforce-town candidate. Re-summarizing the fresh traced baseline now surfaces repeated defense misses
