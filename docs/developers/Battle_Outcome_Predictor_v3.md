@@ -197,6 +197,7 @@ End-to-end validation:
 - collect win rate, score, towns, heroes, army value, resources, turns survived, and crash/assertions
 - compare old predictor vs new predictor with confidence intervals
 - treat battle-level improvement and game-level improvement as separate evidence
+- use the existing `AI/Nullkiller2/tools/compare_battle_predictors.py` harness for large A/B runs. It already supports color-swapped paired samples, deterministic random-map seeds, parallel jobs, day-limit adjudication from `statistics.csv`, and candidate AI names such as `Nullkiller2Ratio`, `Nullkiller2V2`, and `Nullkiller2V3`.
 
 ## Current Empirical Findings
 
@@ -220,6 +221,7 @@ Remote analysis outputs:
 - `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-real-parallel-smoke`
 - `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-real-mixed-2k-combined-20260711/evaluation.txt`
 - `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-real-mixed-2k-combined-20260711/simulation-fallback-allwins.txt`
+- `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-real-mixed-5k-20260711`
 
 Observed pattern:
 
@@ -236,10 +238,17 @@ Observed pattern:
 - the schema3 mixed dataset with town battles is still too small, but all-wins safety had 100% win/loss and safety accuracy on its eligible held-out rows at 5 and 10 samples, including town rows
 - the initial schema3 mixed/town run that was named `mmai` was not valid MMAI training evidence: shard logs showed missing MMAI config and fallback to BattleAI. Correct MMAI collection requires the MMAI mod to be active and isolated per parallel client.
 - the corrected schema3 MMAI mixed run from 2026-07-11 has 2000 rows, 100 generated setup shards, 20 repeats per shard, 760 town rows, and 0 MMAI fallback lines. It used per-shard XDG config/cache profiles to avoid profile races between parallel clients.
+- the corrected schema3 MMAI mixed run also passes the schema3 rich-field gate: attacker/defender raw mana, secondary skills, full spell lists, combat spell lists, primary skills, rich creature stack stats, town faction/buildings, fortifications, moat/tower shooters, tower/keep damage ranges, and final wall state are present for every applicable row.
+- the corrected 5k schema3 MMAI mixed run from 2026-07-11 has 5000 rows, 100 generated setup shards, 50 repeats per shard, 1050 hero-vs-hero rows, 2200 hero-vs-monster rows, 1750 town rows, and 0 MMAI fallback lines. It also passes the schema3 rich-field gate.
+- generated battle mode now supports explicit `town-hero` battles, and `mixed` mode includes them for future datasets. Existing corrected 2k/5k schema3 runs created before this change cover `town` sieges without defender heroes. A `town-hero` smoke produced valid schema3 rows with visiting defending heroes, and a larger follow-up dataset is still needed before validating defended towns with visiting heroes.
 - on that corrected schema3 MMAI data, static prediction is not good enough: held-out cxx-v3 accuracy was about 69%, v3-compatible fitted accuracy about 85%, and full fitted model accuracy about 73%. The high training accuracy did not generalize.
+- after separating the current deployed static scope from town/siege rows, cxx-v3 is still not good enough: on corrected 5k non-town rows, held-out cxx-v3 accuracy was about 69.4% with Brier score 0.287, versus about 85.9% / 0.150 for the baseline and 85.9% / 0.120 for the ratio-only fitted model. A v3-compatible refit reached about 92.4% on training rows but only about 82.5% on held-out rows, so another C++ coefficient update is not supported.
+- adding secondary-skill identities and combat-spell identities to the corrected 5k non-town analysis improved held-out accuracy to about 93.0% and Brier score to about 0.049, but training accuracy was about 99.3%, so this is promising feature evidence rather than a mergeable static model yet.
 - corrected schema3 worst cxx-v3 errors include confident sign mistakes: e.g. predicted probabilities below 1% for setups that MMAI won 100% of the time, and a 98.5% predicted win for a setup lost 100% of the time. This points to root-cause modeling gaps, not a threshold-only problem.
+- close/even diagnostics on the corrected 5k slice show the same confident-static-error shape: one non-town 47.6% empirical hero-vs-hero setup was predicted at 0.94%, and town close/even errors include high-fort/mage/moat sieges predicted above 88-96% despite empirical win rates around 38-47%.
 - on the same corrected schema3 data, fallback-only repeated simulation with an all-wins safety rule reached 97.6% win/loss accuracy and 100% safety accuracy with 3 samples, 98.5% / 100% with 5 samples, and 100% / 100% with 10 samples on eligible held-out rows. The dataset is still small, but it matches the broader 100k proxy direction.
 - a hybrid static-probability band such as `[0.20, 0.95]` is not enough yet: one corrected schema3 holdout setup had static probability below 1% while actual holdout win rate was 100%, so static confidence cannot currently decide when simulation may be skipped.
+- static v3 town/siege calibration is not currently deployed in Nullkiller2. Corrected schema3 data shows static town prediction is not reliable enough, so towns continue to use legacy danger until runtime simulation or a separately validated town model is available.
 - worst errors are repeated matchup/special-case failures, not just calibration threshold mistakes
 
 The next likely useful model needs either a stronger non-linear model with better generalization evidence or a deterministic simulation fallback for high-impact uncertain battles. Another global ratio-only coefficient update is unlikely to reach the target by itself.

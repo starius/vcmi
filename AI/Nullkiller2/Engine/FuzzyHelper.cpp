@@ -193,11 +193,6 @@ uint64_t calibrateDangerForVisitor(
 
 	const double attackerArmyStrength = std::max<double>(visitor->getArmyStrength(), 1.0);
 	double defenderArmyStrength = std::max<double>(defender->getArmyStrength(), 1.0);
-	if(dynamic_cast<const CGTownInstance *>(defender))
-	{
-		const double fallbackArmyStrength = static_cast<double>(fallbackDanger) / heroStrengthOrOne(defenderHero);
-		vstd::amax(defenderArmyStrength, fallbackArmyStrength);
-	}
 	const double defenderStrength = defenderArmyStrength * heroStrengthOrOne(defenderHero);
 
 	if(!std::isfinite(defenderStrength) || defenderStrength <= 0)
@@ -266,16 +261,10 @@ uint64_t calibrateDangerForVisitor(
 	if(!defender)
 		return fallbackDanger;
 
-	if(!objWithID<Obj::HERO>(object) && !objWithID<Obj::MONSTER>(object) && !objWithID<Obj::TOWN>(object))
+	if(!objWithID<Obj::HERO>(object) && !objWithID<Obj::MONSTER>(object))
 		return fallbackDanger;
 
 	const auto * defenderHero = dynamic_cast<const CGHeroInstance *>(object);
-	if(const auto * town = dynamic_cast<const CGTownInstance *>(object))
-	{
-		defenderHero = town->getVisitingHero() ? town->getVisitingHero() : town->getGarrisonHero();
-		if(defenderHero)
-			return fallbackDanger;
-	}
 	return calibrateDangerForVisitor(visitor, defender, defenderHero, fallbackDanger, battlePredictionModel, safeAttackRatio);
 }
 }

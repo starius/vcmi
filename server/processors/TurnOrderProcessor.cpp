@@ -26,6 +26,8 @@
 #include "../../lib/pathfinder/CPathfinder.h"
 #include "../../lib/pathfinder/PathfinderOptions.h"
 
+#include <algorithm>
+
 TurnOrderProcessor::TurnOrderProcessor(CGameHandler * owner):
 	gameHandler(owner)
 {
@@ -382,8 +384,15 @@ void TurnOrderProcessor::onGameStarted()
 			gameHandler->startBattle(heroes.at(0), heroes.at(1));
 		else if(!towns.size() && heroes.size() == 1 && creatures.size() == 1)
 			gameHandler->startBattle(heroes.at(0), creatures.at(0));
-		else
-			towns.at(0)->onHeroVisit(*gameHandler, heroes.at(0));
+		else if(!towns.empty() && !heroes.empty())
+		{
+			auto town = towns.at(0);
+			auto attacker = std::find_if(heroes.begin(), heroes.end(), [&](const CGHeroInstance * hero)
+			{
+				return gameHandler->gameInfo().getPlayerRelations(town->getOwner(), hero->getOwner()) == PlayerRelations::ENEMIES;
+			});
+			town->onHeroVisit(*gameHandler, attacker != heroes.end() ? *attacker : heroes.at(0));
+		}
 
 		return;
 	}

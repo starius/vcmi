@@ -610,6 +610,12 @@ bool isEnabled()
 	return state.config.enabled;
 }
 
+bool hasRecordedRows()
+{
+	initialize();
+	return state.rowsWritten > 0;
+}
+
 int32_t getReplayInitialMana(const CGHeroInstance * hero, int32_t fallback)
 {
 	initialize();

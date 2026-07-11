@@ -71,7 +71,7 @@ void printHelp()
 		<< "  --testmap PATH             battle-only map to run, can be repeated\n"
 		<< "  --maps-file PATH           newline-separated list of maps\n"
 		<< "  --generate-map             generate deterministic battle-only maps per shard\n"
-		<< "  --generated-mode MODE      generated map mode: mixed, hero, monster, or town\n"
+		<< "  --generated-mode MODE      generated map mode: mixed, hero, monster, town, or town-hero\n"
 		<< "  --output-dir DIR           directory for shard JSONL and logs\n"
 		<< "  --battles N                total battle result rows to collect\n"
 		<< "  --jobs N                   concurrent client processes\n"
@@ -229,8 +229,12 @@ void validateOptions(Options & options, const std::vector<std::string> & maps)
 		throw std::runtime_error("--battles is required");
 	if(options.jobs == 0)
 		throw std::runtime_error("--jobs must be positive");
-	if(options.generatedMode != "mixed" && options.generatedMode != "hero" && options.generatedMode != "monster" && options.generatedMode != "town")
-		throw std::runtime_error("--generated-mode must be mixed, hero, monster, or town");
+	if(options.generatedMode != "mixed"
+		&& options.generatedMode != "hero"
+		&& options.generatedMode != "monster"
+		&& options.generatedMode != "town"
+		&& options.generatedMode != "town-hero")
+		throw std::runtime_error("--generated-mode must be mixed, hero, monster, town, or town-hero");
 	if(!options.xdgConfigTemplate.empty() && !std::filesystem::is_directory(options.xdgConfigTemplate))
 		throw std::runtime_error("--xdg-config-template must be a directory: " + options.xdgConfigTemplate.string());
 	if(options.xdgConfigTemplate.empty() && !options.xdgProfileRoot.empty())

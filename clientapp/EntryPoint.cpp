@@ -285,7 +285,11 @@ static std::shared_ptr<CGTownInstance> createBattleSimulationTown(
 
 static std::string createBattleSimulationMap(int64_t seed, const std::string & mode)
 {
-	if(mode != "mixed" && mode != "hero" && mode != "monster" && mode != "town")
+	if(mode != "mixed"
+		&& mode != "hero"
+		&& mode != "monster"
+		&& mode != "town"
+		&& mode != "town-hero")
 		throw std::runtime_error("Unknown battle simulation generated mode: " + mode);
 
 	std::mt19937_64 rng(static_cast<uint64_t>(seed));
@@ -315,8 +319,9 @@ static std::string createBattleSimulationMap(int64_t seed, const std::string & m
 	if(heroes.empty() || creatures.empty() || factions.empty())
 		throw std::runtime_error("Unable to create battle simulation map without allowed heroes, creatures, and factions");
 
-	const int battleKind = static_cast<int>(randomInt(rng, 0, 2));
-	const bool townBattle = mode == "town" || (mode == "mixed" && battleKind == 2);
+	const int battleKind = static_cast<int>(randomInt(rng, 0, 3));
+	const bool townHeroBattle = mode == "town-hero" || (mode == "mixed" && battleKind == 3);
+	const bool townBattle = townHeroBattle || mode == "town" || (mode == "mixed" && battleKind == 2);
 	const bool monsterBattle = !townBattle && (mode == "monster" || (mode == "mixed" && battleKind == 1));
 	map->players[0].canComputerPlay = true;
 	map->players[0].canHumanPlay = true;
@@ -327,9 +332,41 @@ static std::string createBattleSimulationMap(int64_t seed, const std::string & m
 	const int64_t attackerBudget = baseBudget * randomInt(rng, 70, 140) / 100;
 	const int64_t defenderBudget = baseBudget * randomInt(rng, 70, 140) / 100;
 
-	createBattleSimulationHero(callback, *map, rng, heroes, creatures, PlayerColor(0), int3(5, 6, 0), attackerBudget);
+	createBattleSimulationHero(
+		callback,
+		*map,
+		rng,
+		heroes,
+		creatures,
+		PlayerColor(0),
+		townBattle ? int3(5, 7, 0) : int3(5, 6, 0),
+		attackerBudget);
 	if(townBattle)
-		createBattleSimulationTown(callback, *map, rng, factions, creatures, PlayerColor(1), int3(5, 5, 0), defenderBudget);
+	{
+		const int64_t townBudget = townHeroBattle ? defenderBudget * randomInt(rng, 30, 80) / 100 : defenderBudget;
+		const auto town = createBattleSimulationTown(
+			callback,
+			*map,
+			rng,
+			factions,
+			creatures,
+			PlayerColor(1),
+			int3(5, 5, 0),
+			townBudget);
+		if(townHeroBattle)
+		{
+			const auto townCreatures = getFactionCreatures(town->getFactionID(), creatures);
+			createBattleSimulationHero(
+				callback,
+				*map,
+				rng,
+				heroes,
+				townCreatures,
+				PlayerColor(1),
+				town->visitablePos(),
+				std::max<int64_t>(100, defenderBudget - townBudget));
+		}
+	}
 	else if(monsterBattle)
 		createBattleSimulationMonster(callback, *map, rng, creatures, int3(5, 5, 0), defenderBudget);
 	else
@@ -614,7 +651,7 @@ int main(int argc, char * argv[])
 		("battle-sim-global-seed", po::value<si64>(), "battle simulation global seed for output metadata")
 		("battle-sim-combat-ai", po::value<std::string>(), "battle AI used by simulated AI players")
 		("battle-sim-generate-map", "generate a deterministic battle-only map for battle simulation")
-		("battle-sim-generated-mode", po::value<std::string>(), "generated battle mode: mixed, hero, monster, or town")
+		("battle-sim-generated-mode", po::value<std::string>(), "generated battle mode: mixed, hero, monster, town, or town-hero")
 		("autoSkip", "automatically skip turns in GUI")
 		("disable-video", "disable video player")
 		("nointro,i", "skips intro movies")

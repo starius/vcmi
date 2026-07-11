@@ -71,8 +71,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--learning-rate", type=float, default=0.05)
     parser.add_argument("--l2", type=float, default=0.001)
     parser.add_argument("--composition-min-weight", type=int, default=1, help="Minimum weighted rows for a creature to enter the composition model")
+    parser.add_argument("--skill-spell-min-weight", type=int, default=1, help="Minimum weighted rows for a skill or spell to enter the skill/spell model")
     parser.add_argument("--print-near-even", type=int, default=0, help="Print N grouped setups with empirical win rate closest to 50%")
     parser.add_argument("--print-worst", type=int, default=0, help="Print N grouped setups with largest fitted-model probability error")
+    parser.add_argument(
+        "--scope",
+        choices=["all", "deployed-static", "town"],
+        default="all",
+        help="Battle scope to evaluate. deployed-static matches current Nullkiller2 static v3 usage.",
+    )
+    parser.add_argument("--print-v3-false-safe", type=int, default=0, help="Print N cxx-v3 groups predicted safe with empirical win rate below 95%")
+    parser.add_argument("--print-v3-false-unsafe", type=int, default=0, help="Print N cxx-v3 groups predicted unsafe with empirical win rate at least 95%")
+    parser.add_argument("--summary-only", action="store_true", help="Skip fitted coefficient, threshold, and group detail output")
     parser.add_argument("--json", action="store_true", help="Print machine-readable metrics")
     return parser.parse_args()
 
@@ -435,6 +445,20 @@ def cxx_v3_probability(row: dict[str, Any]) -> float:
     return sigmoid(score)
 
 
+def cxx_v3_static_calibration_applies(row: dict[str, Any]) -> bool:
+    return battle_type(row) in ("hero-hero", "hero-monster")
+
+
+def matches_scope(row: dict[str, Any], scope: str) -> bool:
+    if scope == "all":
+        return True
+    if scope == "deployed-static":
+        return cxx_v3_static_calibration_applies(row)
+    if scope == "town":
+        return battle_type(row).startswith("town")
+    raise ValueError(f"Unknown scope: {scope}")
+
+
 def v3_compatible_feature_vector(row: dict[str, Any]) -> list[float]:
     log_ratio, values = cxx_v3_feature_values(row)
     return [log_ratio] + values
@@ -523,6 +547,66 @@ def army_power_by_creature(row: dict[str, Any], side: str) -> dict[int, float]:
     for stack in row.get(f"{side}Army") or []:
         result[int(stack["creature"])] += float(stack.get("power") or 0.0)
     return result
+
+
+def hero_secondary_levels(hero: dict[str, Any] | None) -> dict[int, float]:
+    result: dict[int, float] = defaultdict(float)
+    if not hero:
+        return result
+
+    for entry in hero.get("secondary") or []:
+        if isinstance(entry, dict) and entry.get("skill") is not None:
+            result[int(entry["skill"])] = float(entry.get("level") or 0.0)
+    return result
+
+
+def hero_combat_spells(hero: dict[str, Any] | None) -> set[int]:
+    if not hero:
+        return set()
+    return {int(spell_id) for spell_id in hero.get("combatSpells") or []}
+
+
+def make_skill_spell_feature_function(groups: list[Group], min_weight: int = 1) -> tuple[FeatureFunction, list[str]]:
+    skill_weights: Counter = Counter()
+    spell_weights: Counter = Counter()
+    for group in groups:
+        skill_ids = {
+            int(entry["skill"])
+            for side in ("attacker", "defender")
+            for entry in (group.row.get(f"{side}Hero") or {}).get("secondary") or []
+            if isinstance(entry, dict) and entry.get("skill") is not None
+        }
+        spell_ids = {
+            int(spell_id)
+            for side in ("attacker", "defender")
+            for spell_id in (group.row.get(f"{side}Hero") or {}).get("combatSpells") or []
+        }
+        for skill_id in skill_ids:
+            skill_weights[skill_id] += group.count
+        for spell_id in spell_ids:
+            spell_weights[spell_id] += group.count
+
+    skill_ids = sorted(skill_id for skill_id, weight in skill_weights.items() if weight >= min_weight)
+    spell_ids = sorted(spell_id for spell_id, weight in spell_weights.items() if weight >= min_weight)
+    names = (
+        FEATURE_NAMES
+        + [f"secondary_{skill_id}_level_diff" for skill_id in skill_ids]
+        + [f"combat_spell_{spell_id}_presence_diff" for spell_id in spell_ids]
+    )
+
+    def features(row: dict[str, Any]) -> list[float]:
+        attacker_skills = hero_secondary_levels(row.get("attackerHero"))
+        defender_skills = hero_secondary_levels(row.get("defenderHero"))
+        attacker_spells = hero_combat_spells(row.get("attackerHero"))
+        defender_spells = hero_combat_spells(row.get("defenderHero"))
+        skill_diffs = [attacker_skills.get(skill_id, 0.0) - defender_skills.get(skill_id, 0.0) for skill_id in skill_ids]
+        spell_diffs = [
+            float(spell_id in attacker_spells) - float(spell_id in defender_spells)
+            for spell_id in spell_ids
+        ]
+        return feature_vector(row) + skill_diffs + spell_diffs
+
+    return features, names
 
 
 def make_composition_feature_function(groups: list[Group], min_weight: int = 1) -> tuple[FeatureFunction, list[str]]:
@@ -757,6 +841,12 @@ def summarize_predictions(groups: list[Group], safe_ratio: float, model: Logisti
     model_brier = 0.0
     v3_correct = 0.0
     v3_brier = 0.0
+    v3_deployed_rows = 0
+    v3_deployed_groups = 0
+    v3_deployed_correct = 0.0
+    v3_deployed_brier = 0.0
+    v3_deployed_false_safe = 0
+    v3_deployed_false_unsafe = 0
     loss_abs = []
     loss_squared = []
     false_safe = 0
@@ -793,6 +883,15 @@ def summarize_predictions(groups: list[Group], safe_ratio: float, model: Logisti
             v3_false_safe += 1
         if not v3_safe and expected_win >= 0.95:
             v3_false_unsafe += 1
+        if cxx_v3_static_calibration_applies(row):
+            v3_deployed_rows += weight
+            v3_deployed_groups += 1
+            v3_deployed_correct += weight * (v3_safe == actual_class)
+            v3_deployed_brier += weight * (v3_probability - expected_win) ** 2
+            if v3_safe and expected_win < 0.95:
+                v3_deployed_false_safe += 1
+            if not v3_safe and expected_win >= 0.95:
+                v3_deployed_false_unsafe += 1
 
         loss_prediction = current_loss_prediction(row)
         loss_abs.append(abs(loss_prediction - group.attacker_loss_ratio))
@@ -810,6 +909,12 @@ def summarize_predictions(groups: list[Group], safe_ratio: float, model: Logisti
         "v3_brier": v3_brier / rows if rows else 0.0,
         "v3_false_safe_groups": v3_false_safe,
         "v3_false_unsafe_groups": v3_false_unsafe,
+        "v3_deployed_rows": v3_deployed_rows,
+        "v3_deployed_groups": v3_deployed_groups,
+        "v3_deployed_accuracy": v3_deployed_correct / v3_deployed_rows if v3_deployed_rows else 0.0,
+        "v3_deployed_brier": v3_deployed_brier / v3_deployed_rows if v3_deployed_rows else 0.0,
+        "v3_deployed_false_safe_groups": v3_deployed_false_safe,
+        "v3_deployed_false_unsafe_groups": v3_deployed_false_unsafe,
         "baseline_loss_mae": statistics.fmean(loss_abs) if loss_abs else 0.0,
         "baseline_loss_rmse": math.sqrt(statistics.fmean(loss_squared)) if loss_squared else 0.0,
         "baseline_by_type": {f"{key[0]}:{key[1]}": value for key, value in sorted(by_type.items())},
@@ -937,11 +1042,14 @@ def compact_group_summary(group: Group, model: LogisticModel | None, safe_ratio:
     attacker = max(side_strength(row, "attacker"), EPSILON)
     defender = max(side_strength(row, "defender"), EPSILON)
     probability = model.predict(row) if model else None
+    v3_probability = cxx_v3_probability(row)
     return {
         "count": group.count,
         "win_rate": group.win_rate,
         "model_probability": probability,
         "model_error": abs(probability - group.win_rate) if probability is not None else None,
+        "cxx_v3_probability": v3_probability,
+        "cxx_v3_error": abs(v3_probability - group.win_rate),
         "safe_baseline": current_safe_prediction(row, safe_ratio),
         "strength_ratio": attacker / defender,
         "battle_type": battle_type(row),
@@ -977,6 +1085,40 @@ def worst_v3_groups(groups: list[Group], limit: int, safe_ratio: float) -> list[
     return result
 
 
+def v3_false_safe_groups(groups: list[Group], limit: int, safe_ratio: float) -> list[dict[str, Any]]:
+    candidates = [
+        group
+        for group in groups
+        if cxx_v3_probability(group.row) >= V3_SAFE_PROBABILITY and group.win_rate < 0.95
+    ]
+    candidates.sort(key=lambda group: (cxx_v3_probability(group.row) - group.win_rate, group.count), reverse=True)
+    result = []
+    for group in candidates[:limit]:
+        summary = compact_group_summary(group, None, safe_ratio)
+        probability = cxx_v3_probability(group.row)
+        summary["model_probability"] = probability
+        summary["model_error"] = probability - group.win_rate
+        result.append(summary)
+    return result
+
+
+def v3_false_unsafe_groups(groups: list[Group], limit: int, safe_ratio: float) -> list[dict[str, Any]]:
+    candidates = [
+        group
+        for group in groups
+        if cxx_v3_probability(group.row) < V3_SAFE_PROBABILITY and group.win_rate >= 0.95
+    ]
+    candidates.sort(key=lambda group: (group.win_rate - cxx_v3_probability(group.row), group.count), reverse=True)
+    result = []
+    for group in candidates[:limit]:
+        summary = compact_group_summary(group, None, safe_ratio)
+        probability = cxx_v3_probability(group.row)
+        summary["model_probability"] = probability
+        summary["model_error"] = group.win_rate - probability
+        result.append(summary)
+    return result
+
+
 def print_group_report(title: str, groups: list[dict[str, Any]]) -> None:
     print(title + ":")
     for index, group in enumerate(groups, start=1):
@@ -987,7 +1129,9 @@ def print_group_report(title: str, groups: list[dict[str, Any]]) -> None:
         print(
             f"  {index}. type={group['battle_type']} count={group['count']} "
             f"win_rate={group['win_rate']:.4f} model={probability_text} "
-            f"error={error_text} safe={group['safe_baseline']} "
+            f"error={error_text} cxx_v3={group['cxx_v3_probability']:.4f} "
+            f"cxx_v3_error={group['cxx_v3_error']:.4f} "
+            f"baseline_safe={group['safe_baseline']} "
             f"strength_ratio={group['strength_ratio']:.4f} "
             f"terrain={group['terrain']} battlefield={group['battlefield']}"
         )
@@ -1017,7 +1161,11 @@ def top_model_features(model: LogisticModel, names: list[str], limit: int) -> li
 def main() -> int:
     args = parse_args()
     groups, schema_counts, row_count = load_groups(args.dataset)
-    groups = [group for group in groups if group.count >= args.min_group_size]
+    groups = [
+        group
+        for group in groups
+        if group.count >= args.min_group_size and matches_scope(group.row, args.scope)
+    ]
     train, test = split_groups(groups, args.test_fraction)
     full_model = fit_logistic(train, args.epochs, args.learning_rate, args.l2, feature_vector) if train else None
     ratio_model = fit_logistic(train, args.epochs, args.learning_rate, args.l2, ratio_feature_vector) if train else None
@@ -1025,13 +1173,20 @@ def main() -> int:
     composition_features: FeatureFunction | None = None
     composition_names: list[str] = []
     composition_model: LogisticModel | None = None
+    skill_spell_features: FeatureFunction | None = None
+    skill_spell_names: list[str] = []
+    skill_spell_model: LogisticModel | None = None
     if train:
+        skill_spell_features, skill_spell_names = make_skill_spell_feature_function(train, args.skill_spell_min_weight)
+        skill_spell_model = fit_logistic(train, args.epochs, args.learning_rate, args.l2, skill_spell_features)
         composition_features, composition_names = make_composition_feature_function(train, args.composition_min_weight)
         composition_model = fit_logistic(train, args.epochs, args.learning_rate, args.l2, composition_features)
 
     metrics: dict[str, Any] = {
         "dataset": args.dataset,
+        "scope": args.scope,
         "input_rows": row_count,
+        "rows_after_filter": sum(group.count for group in groups),
         "schema_counts": dict(schema_counts),
         "groups_after_filter": len(groups),
         "train": summarize_predictions(train, args.safe_ratio, full_model),
@@ -1062,6 +1217,8 @@ def main() -> int:
         ratio_test = summarize_predictions(test, args.safe_ratio, ratio_model)
         v3_compatible_train = summarize_predictions(train, args.safe_ratio, v3_compatible_model)
         v3_compatible_test = summarize_predictions(test, args.safe_ratio, v3_compatible_model)
+        skill_spell_train = summarize_predictions(train, args.safe_ratio, skill_spell_model) if skill_spell_model else None
+        skill_spell_test = summarize_predictions(test, args.safe_ratio, skill_spell_model) if skill_spell_model else None
         composition_train = summarize_predictions(train, args.safe_ratio, composition_model) if composition_model else None
         composition_test = summarize_predictions(test, args.safe_ratio, composition_model) if composition_model else None
         metrics["ratio_train"] = {
@@ -1080,6 +1237,17 @@ def main() -> int:
             "model_accuracy": v3_compatible_test["model_accuracy"],
             "model_brier": v3_compatible_test["model_brier"],
         }
+        if skill_spell_train and skill_spell_test and skill_spell_model:
+            metrics["skill_spell_train"] = {
+                "model_accuracy": skill_spell_train["model_accuracy"],
+                "model_brier": skill_spell_train["model_brier"],
+            }
+            metrics["skill_spell_test"] = {
+                "model_accuracy": skill_spell_test["model_accuracy"],
+                "model_brier": skill_spell_test["model_brier"],
+            }
+            metrics["skill_spell_feature_count"] = len(skill_spell_names)
+            metrics["skill_spell_top_features"] = top_model_features(skill_spell_model, skill_spell_names, 25)
         if composition_train and composition_test and composition_model:
             metrics["composition_train"] = {
                 "model_accuracy": composition_train["model_accuracy"],
@@ -1094,12 +1262,17 @@ def main() -> int:
         metrics["logistic_model"] = serialize_model(full_model, FEATURE_NAMES)
         metrics["ratio_logistic_model"] = serialize_model(ratio_model, RATIO_FEATURE_NAMES)
         metrics["v3_compatible_model"] = serialize_model(v3_compatible_model, V3_COMPATIBLE_FEATURE_NAMES)
+        if skill_spell_model:
+            metrics["skill_spell_model"] = serialize_model(skill_spell_model, skill_spell_names)
         metrics["thresholds"] = {
             "full_train": threshold_summary(train, full_model),
             "full_test": threshold_summary(test, full_model),
             "ratio_train": threshold_summary(train, ratio_model),
             "ratio_test": threshold_summary(test, ratio_model),
         }
+        if skill_spell_model:
+            metrics["thresholds"]["skill_spell_train"] = threshold_summary(train, skill_spell_model)
+            metrics["thresholds"]["skill_spell_test"] = threshold_summary(test, skill_spell_model)
         if composition_model:
             metrics["thresholds"]["composition_train"] = threshold_summary(train, composition_model)
             metrics["thresholds"]["composition_test"] = threshold_summary(test, composition_model)
@@ -1109,11 +1282,17 @@ def main() -> int:
         if args.print_worst > 0:
             metrics["worst_model_errors"] = worst_model_groups(groups, args.print_worst, full_model, args.safe_ratio)
             metrics["worst_v3_errors"] = worst_v3_groups(groups, args.print_worst, args.safe_ratio)
+        if args.print_v3_false_safe > 0:
+            metrics["v3_false_safe_groups"] = v3_false_safe_groups(groups, args.print_v3_false_safe, args.safe_ratio)
+        if args.print_v3_false_unsafe > 0:
+            metrics["v3_false_unsafe_groups"] = v3_false_unsafe_groups(groups, args.print_v3_false_unsafe, args.safe_ratio)
 
     if args.json:
         print(json.dumps(metrics, indent=2, sort_keys=True))
     else:
         print(f"rows: {row_count}")
+        print(f"scope: {args.scope}")
+        print(f"rows after filter: {metrics['rows_after_filter']}")
         print(f"schemas: {dict(schema_counts)}")
         print(f"groups after filter: {len(groups)}")
         for name in ["train", "test"]:
@@ -1144,6 +1323,13 @@ def main() -> int:
                     f"accuracy={compatible_summary['model_accuracy']:.4f} "
                     f"brier={compatible_summary['model_brier']:.4f}"
                 )
+                if "skill_spell_train" in metrics:
+                    skill_spell_summary = metrics[f"skill_spell_{name}"]
+                    print(
+                        "  skill-spell-fitted "
+                        f"accuracy={skill_spell_summary['model_accuracy']:.4f} "
+                        f"brier={skill_spell_summary['model_brier']:.4f}"
+                    )
                 if "composition_train" in metrics:
                     composition_summary = metrics[f"composition_{name}"]
                     print(
@@ -1159,12 +1345,20 @@ def main() -> int:
                 f"false_unsafe={summary['v3_false_unsafe_groups']}"
             )
             print(
+                "  cxx-v3 deployed-scope "
+                f"rows={summary['v3_deployed_rows']} groups={summary['v3_deployed_groups']} "
+                f"accuracy={summary['v3_deployed_accuracy']:.4f} "
+                f"brier={summary['v3_deployed_brier']:.4f} "
+                f"false_safe={summary['v3_deployed_false_safe_groups']} "
+                f"false_unsafe={summary['v3_deployed_false_unsafe_groups']}"
+            )
+            print(
                 "  false_safe_groups="
                 f"{summary['baseline_false_safe_groups']} "
                 "false_unsafe_groups="
                 f"{summary['baseline_false_unsafe_groups']}"
             )
-        if full_model:
+        if full_model and not args.summary_only:
             print("logistic model:")
             print(f"  intercept={full_model.intercept:.12g}")
             for item in metrics["logistic_model"]["features"]:
@@ -1189,6 +1383,15 @@ def main() -> int:
                     f"{item['name']}: coefficient={item['coefficient']:.12g} "
                     f"mean={item['mean']:.12g} scale={item['scale']:.12g}"
                 )
+            if "skill_spell_feature_count" in metrics:
+                print(f"skill/spell model: features={metrics['skill_spell_feature_count']}")
+                print("skill/spell top features:")
+                for item in metrics["skill_spell_top_features"]:
+                    print(
+                        "  "
+                        f"{item['name']}: coefficient={item['coefficient']:.12g} "
+                        f"mean={item['mean']:.12g} scale={item['scale']:.12g}"
+                    )
             if "composition_feature_count" in metrics:
                 print(f"composition model: features={metrics['composition_feature_count']}")
                 print("composition top features:")
@@ -1225,6 +1428,10 @@ def main() -> int:
             if args.print_worst > 0:
                 print_group_report("worst fitted-model errors", metrics["worst_model_errors"])
                 print_group_report("worst cxx-v3 errors", metrics["worst_v3_errors"])
+            if args.print_v3_false_safe > 0:
+                print_group_report("cxx-v3 false-safe groups", metrics["v3_false_safe_groups"])
+            if args.print_v3_false_unsafe > 0:
+                print_group_report("cxx-v3 false-unsafe groups", metrics["v3_false_unsafe_groups"])
     return 0
 
 

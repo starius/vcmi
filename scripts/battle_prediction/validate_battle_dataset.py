@@ -41,6 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-setup-groups", type=int)
     parser.add_argument("--require-complete-shards", action="store_true")
     parser.add_argument("--require-battle-types", help="Comma-separated battle types that must be present")
+    parser.add_argument("--require-schema3-rich-fields", action="store_true", help="Require schema3 hero, army, and town/siege predictor fields")
     parser.add_argument("--require-no-mmai-fallback", action="store_true")
     parser.add_argument("--require-mmai-initialized", action="store_true")
     parser.add_argument("--print-fallback-lines", type=int, default=20)
@@ -52,6 +53,210 @@ def parse_required_types(value: str | None) -> set[str]:
     if not value:
         return set()
     return {part.strip() for part in value.split(",") if part.strip()}
+
+
+def missing_keys(node: dict[str, Any], keys: list[str]) -> list[str]:
+    return [key for key in keys if key not in node]
+
+
+def validate_hero_fields(row: dict[str, Any], side: str) -> list[str]:
+    hero = row.get(f"{side}Hero")
+    if hero is None:
+        return []
+    if not isinstance(hero, dict):
+        return [f"{side}Hero is not an object"]
+
+    required = [
+        "objectId",
+        "type",
+        "level",
+        "mana",
+        "currentMana",
+        "manaLimit",
+        "hasSpellbook",
+        "combatSpellCount",
+        "fightingStrength",
+        "magicStrength",
+        "heroStrength",
+        "secondary",
+        "spells",
+        "combatSpells",
+        "primary",
+    ]
+    errors = [f"{side}Hero missing {key}" for key in missing_keys(hero, required)]
+    if "secondary" in hero and not isinstance(hero["secondary"], list):
+        errors.append(f"{side}Hero.secondary is not an array")
+    if "spells" in hero and not isinstance(hero["spells"], list):
+        errors.append(f"{side}Hero.spells is not an array")
+    if "combatSpells" in hero and not isinstance(hero["combatSpells"], list):
+        errors.append(f"{side}Hero.combatSpells is not an array")
+    if "primary" in hero and (not isinstance(hero["primary"], list) or len(hero["primary"]) != 4):
+        errors.append(f"{side}Hero.primary is not a 4-item array")
+    return errors
+
+
+def validate_army_fields(row: dict[str, Any], side: str) -> list[str]:
+    army = row.get(f"{side}Army")
+    if not isinstance(army, list):
+        return [f"{side}Army is not an array"]
+
+    errors = []
+    required_stack = ["slot", "creature", "count", "power", "stats", "experience"]
+    required_stats = [
+        "level",
+        "faction",
+        "fightValue",
+        "aiValue",
+        "growth",
+        "attack",
+        "defense",
+        "damageMin",
+        "damageMax",
+        "hitPoints",
+        "speed",
+        "shots",
+        "spellPoints",
+        "doubleWide",
+        "shooter",
+        "flying",
+        "blocksRetaliation",
+        "unlimitedRetaliations",
+        "additionalAttack",
+        "additionalRetaliation",
+        "returnAfterStrike",
+        "twoHexAttackBreath",
+        "attacksAllAdjacent",
+        "threeHeadedAttack",
+        "spellAfterAttack",
+        "spellcaster",
+        "mindImmune",
+        "undead",
+        "nonLiving",
+        "magicResistance",
+        "levelSpellImmunity",
+        "spellDamageReduction",
+        "blockAllMagic",
+        "spellSchoolImmunity",
+    ]
+    for index, stack in enumerate(army):
+        if not isinstance(stack, dict):
+            errors.append(f"{side}Army[{index}] is not an object")
+            continue
+        errors.extend(f"{side}Army[{index}] missing {key}" for key in missing_keys(stack, required_stack))
+        stats = stack.get("stats")
+        if not isinstance(stats, dict):
+            errors.append(f"{side}Army[{index}].stats is not an object")
+            continue
+        errors.extend(f"{side}Army[{index}].stats missing {key}" for key in missing_keys(stats, required_stats))
+    return errors
+
+
+def validate_town_fields(row: dict[str, Any]) -> list[str]:
+    type_name = battle_type(row)
+    if not type_name.startswith("town"):
+        return []
+
+    town = row.get("defendedTown")
+    if not isinstance(town, dict):
+        return ["town battle missing defendedTown object"]
+
+    required_town = [
+        "objectId",
+        "faction",
+        "fortLevel",
+        "hallLevel",
+        "mageGuildLevel",
+        "hasFort",
+        "hasBuiltTavern",
+        "hasBuiltGrail",
+        "hasVisitingHero",
+        "hasGarrisonHero",
+        "defendingHeroSource",
+        "battleTerrain",
+        "armyStrength",
+        "buildings",
+        "fortifications",
+        "towerDamage",
+        "keepDamage",
+    ]
+    errors = [f"defendedTown missing {key}" for key in missing_keys(town, required_town)]
+    if "buildings" in town and not isinstance(town["buildings"], list):
+        errors.append("defendedTown.buildings is not an array")
+
+    fortifications = town.get("fortifications")
+    if isinstance(fortifications, dict):
+        required_fortifications = [
+            "wallsHealth",
+            "citadelHealth",
+            "upperTowerHealth",
+            "lowerTowerHealth",
+            "hasMoat",
+            "citadelShooter",
+            "upperTowerShooter",
+            "lowerTowerShooter",
+            "moatSpell",
+        ]
+        errors.extend(f"defendedTown.fortifications missing {key}" for key in missing_keys(fortifications, required_fortifications))
+    elif "fortifications" in town:
+        errors.append("defendedTown.fortifications is not an object")
+
+    for key in ("towerDamage", "keepDamage"):
+        damage = town.get(key)
+        if isinstance(damage, dict):
+            errors.extend(f"defendedTown.{key} missing {part}" for part in missing_keys(damage, ["min", "max"]))
+        elif key in town:
+            errors.append(f"defendedTown.{key} is not an object")
+
+    final_wall_state = row.get("finalWallState")
+    if not isinstance(final_wall_state, dict):
+        errors.append("town battle missing finalWallState object")
+
+    defender_hero = row.get("defenderHero")
+    if type_name == "town-hero":
+        if not isinstance(defender_hero, dict):
+            errors.append("town-hero battle missing defenderHero object")
+        if not town.get("hasVisitingHero") and not town.get("hasGarrisonHero"):
+            errors.append("town-hero battle has no visiting or garrison hero marker")
+        if town.get("defendingHeroSource") not in ("visiting", "garrison"):
+            errors.append(f"town-hero battle has invalid defendingHeroSource={town.get('defendingHeroSource')}")
+    elif defender_hero is not None:
+        errors.append(f"{type_name} battle unexpectedly has defenderHero")
+    return errors
+
+
+def validate_schema3_rich_fields(path: str, max_examples: int = 20) -> dict[str, Any]:
+    rows = 0
+    invalid_rows = 0
+    examples: list[str] = []
+
+    for row in iter_json_lines(path):
+        rows += 1
+        row_errors = []
+        if int(row.get("schema", 1)) != 3:
+            row_errors.append(f"schema is {row.get('schema')}, not 3")
+
+        row_errors.extend(validate_hero_fields(row, "attacker"))
+        row_errors.extend(validate_hero_fields(row, "defender"))
+        row_errors.extend(validate_army_fields(row, "attacker"))
+        row_errors.extend(validate_army_fields(row, "defender"))
+        row_errors.extend(validate_town_fields(row))
+
+        for key in ["attackerArmyStrength", "defenderArmyStrength", "battleType", "hasFortifications", "hasMoat"]:
+            if key not in row:
+                row_errors.append(f"row missing {key}")
+
+        if row_errors:
+            invalid_rows += 1
+            if len(examples) < max_examples:
+                shard = row.get("shardIndex", "?")
+                row_index = row.get("row", "?")
+                examples.append(f"shard={shard} row={row_index}: " + "; ".join(row_errors[:8]))
+
+    return {
+        "rows_checked": rows,
+        "invalid_rows": invalid_rows,
+        "examples": examples,
+    }
 
 
 def iter_logs_from_directory(path: str) -> Iterable[tuple[str, Iterable[str]]]:
@@ -99,15 +304,25 @@ def load_summary(path: str) -> dict[str, Any]:
     battle_types: Counter[str] = Counter()
     shard_rows: Counter[int] = Counter()
     setup_groups: Counter[str] = Counter()
+    town_fort_levels: Counter[int] = Counter()
+    town_hero_sources: Counter[str] = Counter()
+    town_has_fortifications: Counter[str] = Counter()
     rows = 0
 
     for row in iter_json_lines(path):
         rows += 1
+        type_name = battle_type(row)
         schemas[int(row.get("schema", 1))] += 1
-        battle_types[battle_type(row)] += 1
+        battle_types[type_name] += 1
         if row.get("shardIndex") is not None:
             shard_rows[int(row["shardIndex"])] += 1
         setup_groups[setup_key(row)] += 1
+        town = row.get("defendedTown") or {}
+        if type_name.startswith("town") and isinstance(town, dict):
+            if town.get("fortLevel") is not None:
+                town_fort_levels[int(town["fortLevel"])] += 1
+            town_hero_sources[str(town.get("defendingHeroSource", "missing"))] += 1
+            town_has_fortifications[str(bool(row.get("hasFortifications"))).lower()] += 1
 
     return {
         "rows": rows,
@@ -120,10 +335,13 @@ def load_summary(path: str) -> dict[str, Any]:
         "setup_groups": len(setup_groups),
         "setup_group_rows_min": min(setup_groups.values()) if setup_groups else 0,
         "setup_group_rows_max": max(setup_groups.values()) if setup_groups else 0,
+        "town_fort_levels": dict(sorted(town_fort_levels.items())),
+        "town_hero_sources": dict(sorted(town_hero_sources.items())),
+        "town_has_fortifications": dict(sorted(town_has_fortifications.items())),
     }
 
 
-def validate(args: argparse.Namespace, summary: dict[str, Any], logs: LogScan) -> list[str]:
+def validate(args: argparse.Namespace, summary: dict[str, Any], logs: LogScan, rich_fields: dict[str, Any] | None) -> list[str]:
     errors = []
     required_types = parse_required_types(args.require_battle_types)
 
@@ -161,6 +379,9 @@ def validate(args: argparse.Namespace, summary: dict[str, Any], logs: LogScan) -
         elif logs.files_with_mmai_init != logs.files:
             errors.append(f"MMAI initialized in {logs.files_with_mmai_init}/{logs.files} shard logs")
 
+    if args.require_schema3_rich_fields and rich_fields and rich_fields["invalid_rows"] > 0:
+        errors.append(f"schema3 rich fields invalid in {rich_fields['invalid_rows']}/{rich_fields['rows_checked']} rows")
+
     return errors
 
 
@@ -168,13 +389,15 @@ def main() -> int:
     args = parse_args()
     summary = load_summary(args.dataset)
     logs = scan_logs(args.dataset)
-    errors = validate(args, summary, logs)
+    rich_fields = validate_schema3_rich_fields(args.dataset) if args.require_schema3_rich_fields else None
+    errors = validate(args, summary, logs, rich_fields)
 
     output = {
         **summary,
         "log_files": logs.files,
         "log_files_with_mmai_init": logs.files_with_mmai_init,
         "mmai_fallback_lines": len(logs.fallback_lines),
+        "schema3_rich_fields": rich_fields,
         "ok": not errors,
         "errors": errors,
     }
@@ -189,6 +412,21 @@ def main() -> int:
             f"setup_groups={summary['setup_groups']} logs={logs.files} "
             f"mmai_init_logs={logs.files_with_mmai_init} mmai_fallback_lines={len(logs.fallback_lines)}"
         )
+        if summary["town_fort_levels"]:
+            print(
+                f"town_fort_levels={summary['town_fort_levels']} "
+                f"town_hero_sources={summary['town_hero_sources']} "
+                f"town_has_fortifications={summary['town_has_fortifications']}"
+            )
+        if rich_fields:
+            print(
+                f"schema3_rich_fields rows_checked={rich_fields['rows_checked']} "
+                f"invalid_rows={rich_fields['invalid_rows']}"
+            )
+            if rich_fields["examples"]:
+                print("schema3 rich-field examples:")
+                for example in rich_fields["examples"]:
+                    print(f"  {example}")
         if logs.fallback_lines and args.print_fallback_lines > 0:
             print("fallback/config-error lines:")
             for line in logs.fallback_lines[: args.print_fallback_lines]:

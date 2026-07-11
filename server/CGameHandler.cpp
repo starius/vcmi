@@ -15,6 +15,7 @@
 #include "ServerNetPackVisitors.h"
 #include "ServerSpellCastEnvironment.h"
 #include "TurnStartVisitScheduler.h"
+#include "battles/BattleSimulationBatch.h"
 #include "battles/BattleProcessor.h"
 #include "processors/HeroPoolProcessor.h"
 #include "processors/NewTurnProcessor.h"
@@ -3672,6 +3673,11 @@ void CGameHandler::checkVictoryLossConditionsForPlayer(PlayerColor player)
 
 	if(gameState().getMap().battleOnly)
 	{
+		if(BattleSimulationBatch::isEnabled() && !BattleSimulationBatch::hasRecordedRows())
+			return;
+		if(!gameState().currentBattles.empty())
+			return;
+
 		for(const auto & playerIt : gameState().players)
 		{
 			PlayerEndsGame peg;
