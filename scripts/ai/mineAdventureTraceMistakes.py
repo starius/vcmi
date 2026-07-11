@@ -16,19 +16,50 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from summarizeAdventureTrace import as_dict, iter_trace_files, summarize  # noqa: E402
 
 
+ACTION_EXPECTATION_TO_COMMAND_EXPECTATION = {
+    "firstAction": "firstCommand",
+    "actionsExact": "commandsExact",
+    "actionsContain": "commandsContain",
+    "actionsDoNotContain": "commandsDoNotContain",
+}
+
+
 def slug(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9]+", "-", value).strip("-").lower()
     return cleaned or "mistake"
 
 
-def fixture_items(summary: dict[str, Any]) -> list[dict[str, Any]]:
+def deep_copy_json(value: Any) -> Any:
+    return json.loads(json.dumps(value))
+
+
+def imperative_fixture(fixture: dict[str, Any]) -> dict[str, Any]:
+    result = deep_copy_json(fixture)
+    result["mode"] = "imperative"
+    expect = as_dict(result.get("expect"))
+    for action_key, command_key in ACTION_EXPECTATION_TO_COMMAND_EXPECTATION.items():
+        if action_key in expect and command_key not in expect:
+            expect[command_key] = expect[action_key]
+        expect.pop(action_key, None)
+    result["expect"] = expect
+
+    note = "Draft imperative fixture: add refreshInput or hostResponses if the script needs fresh state after yielded commands."
+    existing_notes = str(result.get("notes", "")).strip()
+    result["notes"] = f"{existing_notes} {note}".strip() if existing_notes else note
+    return result
+
+
+def fixture_items(summary: dict[str, Any], fixture_mode: str = "plan") -> list[dict[str, Any]]:
     fixtures: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in as_dict(summary.get("mistakes")).get("items", []):
         item_dict = as_dict(item)
-        fixture = as_dict(item_dict.get("fixture"))
-        if not fixture:
+        source_fixture = as_dict(item_dict.get("fixture"))
+        if not source_fixture:
             continue
+        fixture = deep_copy_json(source_fixture)
+        if fixture_mode == "imperative":
+            fixture = imperative_fixture(fixture)
         key = json.dumps({
             "type": item_dict.get("type"),
             "expect": fixture.get("expect"),
@@ -84,10 +115,11 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=20, help="Maximum text rows or fixture files.")
     parser.add_argument("--mistake-limit", type=int, default=500, help="Maximum mistakes analyzed from the summary.")
     parser.add_argument("--write-fixtures", type=Path, help="Write draft JSON policy fixtures to this directory.")
+    parser.add_argument("--fixture-mode", choices=("plan", "imperative"), default="plan", help="Shape written fixture expectations for legacy planDay output actions or imperative runDay command streams.")
     args = parser.parse_args()
 
     summary = summarize(iter_trace_files(args.paths), max_mistakes=max(0, args.mistake_limit))
-    fixtures = fixture_items(summary)
+    fixtures = fixture_items(summary, args.fixture_mode)
     written: list[Path] = []
     if args.write_fixtures:
         written = write_fixtures(fixtures, args.write_fixtures, max(1, args.limit))

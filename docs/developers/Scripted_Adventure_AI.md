@@ -1247,7 +1247,10 @@ scripts/ai/mineAdventureTraceMistakes.py \
 ```
 
 The generated fixtures are review material, not automatic truth. Each one should be trimmed into a small
-input-output example before being committed as a Lua policy test.
+input-output example before being committed as a Lua policy test. For current binding-style scripts, pass
+`--fixture-mode imperative` so mined action expectations are written as yielded-command expectations for
+`runDay(ai, input)` fixtures instead of legacy `planDay(input)` output actions. Draft imperative fixtures may still
+need explicit `refreshInput` or `hostResponses` if the script expects fresh state after a yielded host command.
 
 After an evaluation verdict says `promote`, the candidate can replace the current champion script while archiving
 the previous champion:
@@ -2175,6 +2178,9 @@ Regression harness:
   imperative fixture can provide `mode = "imperative"`, optional host responses / refresh input, and expected
   yielded command sequences such as recruit -> refresh -> bounded native slice -> end turn. This lets future
   trace-mined Lua policy bugs become JSON input/output samples without adding a bespoke C++ test for each case.
+- Done: `mineAdventureTraceMistakes.py --fixture-mode imperative` rewrites mined draft fixture expectations from
+  plan-output action keys to imperative command keys (`actionsContain` -> `commandsContain`, etc.) and annotates
+  drafts that may need `refreshInput` / `hostResponses` before being promoted into committed tests.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions
