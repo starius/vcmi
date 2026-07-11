@@ -19,8 +19,8 @@ class IBattleInfo;
 
 struct BattleStartInfo
 {
-	BattleSideArray<const CArmedInstance *> armies;
-	BattleSideArray<const CGHeroInstance *> heroes;
+	BattleSideArray<const CArmedInstance *> armies{nullptr, nullptr};
+	BattleSideArray<const CGHeroInstance *> heroes{nullptr, nullptr};
 	int3 tile;
 	BattleLayout layout;
 	const CGTownInstance * town = nullptr;
