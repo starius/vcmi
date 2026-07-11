@@ -80,6 +80,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--test-fraction", type=float, default=0.25)
     parser.add_argument("--cv-folds", type=int, default=0, help="Run deterministic group k-fold cross-validation when greater than 1")
     parser.add_argument("--cv-print-failures", type=int, default=0, help="Print N worst held-out false-safe/false-unsafe groups per cross-validated model")
+    parser.add_argument(
+        "--cv-threshold-mode",
+        choices=["fixed", "train-best-safety", "train-best-accuracy"],
+        default="fixed",
+        help="Threshold to apply to fitted models in cross-validation. Non-fixed modes select the threshold on each training fold only.",
+    )
     parser.add_argument("--epochs", type=int, default=2500)
     parser.add_argument("--learning-rate", type=float, default=0.05)
     parser.add_argument("--l2", type=float, default=0.001)
@@ -1595,6 +1601,7 @@ def add_cv_failure(
     safe_ratio: float,
     probability: float,
     error: float,
+    threshold: float,
     limit: int,
 ) -> None:
     if limit <= 0:
@@ -1602,6 +1609,7 @@ def add_cv_failure(
     summary = compact_group_summary(group, model, safe_ratio)
     summary["model_probability"] = probability
     summary["model_error"] = error
+    summary["model_threshold"] = threshold
     failures[model_name][kind].append(summary)
     failures[model_name][kind] = trim_failure_groups(failures[model_name][kind], limit)
 
@@ -1616,6 +1624,7 @@ def cross_validate_models(
     model_safe_probability: float,
     fit_models: bool,
     failure_limit: int = 0,
+    threshold_mode: str = "fixed",
 ) -> dict[str, Any]:
     folds = max(2, folds)
     summaries = {
@@ -1689,7 +1698,8 @@ def cross_validate_models(
         if train and model_features:
             for name, features in model_features:
                 model = fit_logistic(train, epochs, learning_rate, l2, features)
-                model_summary = summarize_predictions(test, safe_ratio, model, model_safe_probability)
+                selected_threshold = choose_model_threshold(train, model, threshold_mode, model_safe_probability)
+                model_summary = summarize_predictions(test, safe_ratio, model, selected_threshold)
                 add_cv_summary(
                     summaries[name],
                     model_summary["rows"],
@@ -1705,11 +1715,12 @@ def cross_validate_models(
                     "brier": model_summary["model_brier"],
                     "false_safe_groups": model_summary["model_false_safe_groups"],
                     "false_unsafe_groups": model_summary["model_false_unsafe_groups"],
+                    "threshold": selected_threshold,
                 }
                 if failure_limit > 0:
                     for group in test:
                         probability = model.predict(group.row)
-                        if probability >= model_safe_probability and group.win_rate < 0.95:
+                        if probability >= selected_threshold and group.win_rate < 0.95:
                             add_cv_failure(
                                 failures,
                                 name,
@@ -1719,9 +1730,10 @@ def cross_validate_models(
                                 safe_ratio,
                                 probability,
                                 probability - group.win_rate,
+                                selected_threshold,
                                 failure_limit,
                             )
-                        if probability < model_safe_probability and group.win_rate >= 0.95:
+                        if probability < selected_threshold and group.win_rate >= 0.95:
                             add_cv_failure(
                                 failures,
                                 name,
@@ -1731,6 +1743,7 @@ def cross_validate_models(
                                 safe_ratio,
                                 probability,
                                 group.win_rate - probability,
+                                selected_threshold,
                                 failure_limit,
                             )
         fold_outputs.append(fold_result)
@@ -1738,43 +1751,57 @@ def cross_validate_models(
     return {
         "folds_requested": folds,
         "folds_evaluated": len(fold_outputs),
+        "threshold_mode": threshold_mode,
+        "fixed_threshold": model_safe_probability,
         "models": {name: finalize_cv_summary(summary) for name, summary in summaries.items()},
         "folds": fold_outputs,
         "failures": failures,
     }
 
 
-def threshold_summary(groups: list[Group], model: LogisticModel) -> dict[str, Any]:
+def evaluate_model_threshold(groups: list[Group], model: LogisticModel, threshold: float) -> dict[str, Any]:
     rows = sum(group.count for group in groups)
+    correct = 0.0
+    false_safe = 0
+    false_unsafe = 0
+    safe = 0
+    for group in groups:
+        prediction = model.predict(group.row) >= threshold
+        expected_win = group.win_rate
+        correct += group.count * (prediction == (expected_win >= 0.5))
+        false_safe += prediction and expected_win < 0.95
+        false_unsafe += (not prediction) and expected_win >= 0.95
+        safe += prediction
+    return {
+        "threshold": threshold,
+        "accuracy": correct / rows if rows else 0.0,
+        "false_safe_groups": false_safe,
+        "false_unsafe_groups": false_unsafe,
+        "safe_groups": safe,
+        "safety_cost": false_safe * 5 + false_unsafe,
+    }
 
-    def evaluate(threshold: float) -> dict[str, Any]:
-        correct = 0.0
-        false_safe = 0
-        false_unsafe = 0
-        safe = 0
-        for group in groups:
-            prediction = model.predict(group.row) >= threshold
-            expected_win = group.win_rate
-            correct += group.count * (prediction == (expected_win >= 0.5))
-            false_safe += prediction and expected_win < 0.95
-            false_unsafe += (not prediction) and expected_win >= 0.95
-            safe += prediction
-        return {
-            "threshold": threshold,
-            "accuracy": correct / rows if rows else 0.0,
-            "false_safe_groups": false_safe,
-            "false_unsafe_groups": false_unsafe,
-            "safe_groups": safe,
-            "safety_cost": false_safe * 5 + false_unsafe,
-        }
 
-    candidates = [evaluate(index / 100.0) for index in range(1, 100)]
+def threshold_summary(groups: list[Group], model: LogisticModel) -> dict[str, Any]:
+    candidates = [evaluate_model_threshold(groups, model, index / 100.0) for index in range(1, 100)]
     best_accuracy = max(candidates, key=lambda item: (item["accuracy"], -item["false_safe_groups"]))
     best_safety = min(candidates, key=lambda item: (item["safety_cost"], -item["accuracy"]))
     return {
         "best_accuracy": best_accuracy,
         "best_safety": best_safety,
     }
+
+
+def choose_model_threshold(groups: list[Group], model: LogisticModel, mode: str, fixed_threshold: float) -> float:
+    if mode == "fixed":
+        return fixed_threshold
+
+    summary = threshold_summary(groups, model)
+    if mode == "train-best-safety":
+        return float(summary["best_safety"]["threshold"])
+    if mode == "train-best-accuracy":
+        return float(summary["best_accuracy"]["threshold"])
+    raise ValueError(f"Unknown threshold mode: {mode}")
 
 
 def fit_loss_grid(groups: list[Group]) -> dict[str, Any]:
@@ -2003,11 +2030,13 @@ def print_group_report(title: str, groups: list[dict[str, Any]]) -> None:
     for index, group in enumerate(groups, start=1):
         probability = group["model_probability"]
         probability_text = "n/a" if probability is None else f"{probability:.4f}"
+        threshold = group.get("model_threshold")
+        threshold_text = "" if threshold is None else f" threshold={threshold:.4f}"
         error = group["model_error"]
         error_text = "n/a" if error is None else f"{error:.4f}"
         print(
             f"  {index}. type={group['battle_type']} count={group['count']} "
-            f"win_rate={group['win_rate']:.4f} model={probability_text} "
+            f"win_rate={group['win_rate']:.4f} model={probability_text}{threshold_text} "
             f"error={error_text} cxx_v3={group['cxx_v3_probability']:.4f} "
             f"cxx_v3_error={group['cxx_v3_error']:.4f} "
             f"baseline_safe={group['safe_baseline']} "
@@ -2097,6 +2126,7 @@ def main() -> int:
             args.town_deployable_safe_probability,
             fit_models,
             args.cv_print_failures,
+            args.cv_threshold_mode,
         )
     if town_danger_factors:
         metrics["town_danger_factors"] = {
@@ -2340,7 +2370,7 @@ def main() -> int:
             cv = metrics["cross_validation"]
             print(
                 f"cross-validation: folds={cv['folds_evaluated']}/{cv['folds_requested']} "
-                f"safe_probability={args.town_deployable_safe_probability:.4f}"
+                f"threshold_mode={cv['threshold_mode']} fixed_threshold={cv['fixed_threshold']:.4f}"
             )
             for model_name, summary in cv["models"].items():
                 print(
