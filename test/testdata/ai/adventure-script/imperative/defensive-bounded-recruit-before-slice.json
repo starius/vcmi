@@ -1,0 +1,84 @@
+{
+	"name": "defensive-bounded-recruit-before-slice",
+	"mode": "imperative",
+	"script": "scripts/ai/candidates/defensiveBoundedNullkillerControl.lua",
+	"input": {
+		"state": {
+			"turn": {
+				"active": true,
+				"queries": []
+			}
+		},
+		"memory": {
+			"version": 1
+		},
+		"limits": {
+			"maxActions": 16
+		},
+		"analysis": {
+			"defenseAlerts": [
+				{
+					"levelId": 3,
+					"level": "critical",
+					"town_id": 42
+				}
+			]
+		},
+		"actionSpace": {
+			"recruitOptions": [
+				{
+					"source_id": 42,
+					"creature_id": 1,
+					"amount": 12,
+					"level": 2,
+					"planAction": {
+						"type": "recruit",
+						"source_id": 42,
+						"creature_id": 1,
+						"amount": 12
+					}
+				}
+			]
+		}
+	},
+	"refreshInput": {
+		"state": {
+			"turn": {
+				"active": true,
+				"queries": []
+			}
+		},
+		"memory": {
+			"version": 1
+		},
+		"limits": {
+			"maxActions": 16
+		},
+		"analysis": {
+			"defenseAlerts": []
+		},
+		"actionSpace": {}
+	},
+	"expect": {
+		"status": "end_turn",
+		"commandsExact": [
+			{
+				"type": "recruit",
+				"source_id": 42,
+				"creature_id": 1
+			},
+			{
+				"kind": "refresh"
+			},
+			{
+				"type": "nullkiller_turn_slice"
+			},
+			{
+				"type": "end_turn"
+			}
+		],
+		"memoryContains": {
+			"totalEmergencyDefenseActions": 1
+		}
+	}
+}

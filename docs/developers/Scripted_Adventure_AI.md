@@ -2171,6 +2171,10 @@ Regression harness:
   in the previous "no important mistake" losses: seeds `02`, `07`, `10`, and `15`. This explains why the simple
   defensive candidate had a real target but was still too blunt; the next defense policy needs to decide when
   continued defense spending is worth delaying native expansion, not merely spend once whenever pressure exists.
+- Done: JSON policy fixtures now support imperative `runDay` scripts as well as legacy `planDay` scripts. An
+  imperative fixture can provide `mode = "imperative"`, optional host responses / refresh input, and expected
+  yielded command sequences such as recruit -> refresh -> bounded native slice -> end turn. This lets future
+  trace-mined Lua policy bugs become JSON input/output samples without adding a bespoke C++ test for each case.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions

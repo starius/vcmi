@@ -98,6 +98,25 @@ bool containsMatchingAction(const std::vector<JsonNode> & actions, const JsonNod
 	});
 }
 
+bool matchesCommandExpectation(const JsonNode & command, const JsonNode & expected)
+{
+	if(hasField(expected, "kind") || hasField(expected, "payload"))
+		return matchesPartialJson(command, expected);
+
+	if(hasField(command, "payload"))
+		return matchesPartialJson(command["payload"], expected);
+
+	return matchesPartialJson(command, expected);
+}
+
+bool containsMatchingCommand(const std::vector<JsonNode> & commands, const JsonNode & expected)
+{
+	return std::any_of(commands.begin(), commands.end(), [&](const JsonNode & command)
+	{
+		return matchesCommandExpectation(command, expected);
+	});
+}
+
 AI::AdventureScriptInput readFixtureInput(const JsonNode & fixture)
 {
 	AI::AdventureScriptInput input;
@@ -123,6 +142,49 @@ AI::AdventureScriptInput readFixtureInput(const JsonNode & fixture)
 	return input;
 }
 
+JsonNode defaultHostResponse(const JsonNode & fixture, const AI::AdventureScriptInput & input, const JsonNode & command)
+{
+	JsonNode response;
+	response["ok"] = JsonNode(true);
+
+	if(command["kind"].String() == "refresh")
+	{
+		response["input"] = hasField(fixture, "refreshInput") ? fixture["refreshInput"] : input.toJson();
+		return response;
+	}
+
+	response["result"]["ok"] = JsonNode(true);
+	response["result"]["type"] = command["payload"]["type"];
+	return response;
+}
+
+JsonNode fixtureHostResponse(const JsonNode & fixture, const AI::AdventureScriptInput & input, const JsonNode & command)
+{
+	if(hasField(fixture, "hostResponses"))
+	{
+		if(!fixture["hostResponses"].isVector())
+			throw std::runtime_error("hostResponses must be an array");
+		for(const JsonNode & item : fixture["hostResponses"].Vector())
+		{
+			const JsonNode & expectedCommand = hasField(item, "command") ? item["command"] : item["match"];
+			if(!matchesCommandExpectation(command, expectedCommand))
+				continue;
+
+			if(hasField(item, "response"))
+				return item["response"];
+
+			JsonNode response = defaultHostResponse(fixture, input, command);
+			if(hasField(item, "input"))
+				response["input"] = item["input"];
+			if(hasField(item, "result"))
+				response["result"] = item["result"];
+			return response;
+		}
+	}
+
+	return defaultHostResponse(fixture, input, command);
+}
+
 void expectStringContains(const std::string & value, const JsonNode & expected, const std::string & field)
 {
 	if(expected.isString())
@@ -136,6 +198,51 @@ void expectStringContains(const std::string & value, const JsonNode & expected, 
 	{
 		ASSERT_TRUE(item.isString()) << field << " must contain only strings";
 		EXPECT_NE(value.find(item.String()), std::string::npos) << field;
+	}
+}
+
+void verifyFixtureCommandExpectation(const std::filesystem::path & path, const JsonNode & fixture, const std::vector<JsonNode> & commands)
+{
+	SCOPED_TRACE(path.string());
+	const JsonNode & expect = fixture["expect"];
+
+	if(hasField(expect, "firstCommand"))
+	{
+		ASSERT_FALSE(commands.empty());
+		EXPECT_TRUE(matchesCommandExpectation(commands.front(), expect["firstCommand"]))
+			<< "expected: " << expect["firstCommand"].toCompactString()
+			<< "\nactual: " << commands.front().toCompactString();
+	}
+
+	if(hasField(expect, "commandsExact"))
+	{
+		ASSERT_TRUE(expect["commandsExact"].isVector());
+		ASSERT_EQ(commands.size(), expect["commandsExact"].Vector().size());
+		for(size_t index = 0; index < expect["commandsExact"].Vector().size(); ++index)
+		{
+			EXPECT_TRUE(matchesCommandExpectation(commands[index], expect["commandsExact"].Vector()[index]))
+				<< "command index: " << index
+				<< "\nexpected: " << expect["commandsExact"].Vector()[index].toCompactString()
+				<< "\nactual: " << commands[index].toCompactString();
+		}
+	}
+
+	if(hasField(expect, "commandsContain"))
+	{
+		ASSERT_TRUE(expect["commandsContain"].isVector());
+		for(const JsonNode & command : expect["commandsContain"].Vector())
+		{
+			EXPECT_TRUE(containsMatchingCommand(commands, command)) << command.toCompactString();
+		}
+	}
+
+	if(hasField(expect, "commandsDoNotContain"))
+	{
+		ASSERT_TRUE(expect["commandsDoNotContain"].isVector());
+		for(const JsonNode & command : expect["commandsDoNotContain"].Vector())
+		{
+			EXPECT_FALSE(containsMatchingCommand(commands, command)) << command.toCompactString();
+		}
 	}
 }
 
@@ -2986,8 +3093,22 @@ TEST(LuaAdventureScriptRunnerTest, JsonPolicyFixtures)
 		ASSERT_TRUE(fixture["script"].isString());
 
 		scripting::LuaAdventureScriptRunner runner(fixture["script"].String(), readAdventureScript(fixture["script"].String()));
-		const AI::AdventureScriptOutput output = runner.planDay(readFixtureInput(fixture));
+		const AI::AdventureScriptInput input = readFixtureInput(fixture);
+		if(hasField(fixture, "mode") && fixture["mode"].String() == "imperative")
+		{
+			std::vector<JsonNode> commands;
+			const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+			{
+				commands.push_back(command);
+				return fixtureHostResponse(fixture, input, command);
+			});
 
+			verifyFixtureExpectation(path, fixture, output);
+			verifyFixtureCommandExpectation(path, fixture, commands);
+			continue;
+		}
+
+		const AI::AdventureScriptOutput output = runner.planDay(input);
 		verifyFixtureExpectation(path, fixture, output);
 	}
 }
