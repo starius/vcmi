@@ -2429,6 +2429,141 @@ TEST(LuaAdventureScriptRunnerTest, BoundedNullkillerControlUsesImperativeActionB
 	EXPECT_EQ(output.memory["totalSlices"].Integer(), 6);
 }
 
+TEST(LuaAdventureScriptRunnerTest, DefensiveBoundedControlRecruitsBeforeNativeSliceUnderPressure)
+{
+	const std::string source = readAdventureScript("scripts/ai/candidates/defensiveBoundedNullkillerControl.lua");
+	scripting::LuaAdventureScriptRunner runner("test:defensive-bounded-control-recruit", source);
+
+	AI::AdventureScriptInput input = makeInput();
+	input.state["turn"]["active"] = JsonNode(true);
+	input.state["turn"]["queries"].Vector();
+	input.limits["maxActions"] = JsonNode(16);
+
+	JsonNode alert;
+	alert["town_id"] = JsonNode(42);
+	alert["levelId"] = JsonNode(3);
+	input.analysis["defenseAlerts"].Vector().push_back(alert);
+
+	JsonNode recruitOption;
+	recruitOption["source_id"] = JsonNode(42);
+	recruitOption["amount"] = JsonNode(12);
+	recruitOption["level"] = JsonNode(3);
+	recruitOption["planAction"]["type"] = JsonNode("recruit");
+	recruitOption["planAction"]["source_id"] = JsonNode(42);
+	recruitOption["planAction"]["creature_id"] = JsonNode(1);
+	recruitOption["planAction"]["amount"] = JsonNode(12);
+	input.actionSpace["recruitOptions"].Vector().push_back(recruitOption);
+
+	std::vector<JsonNode> commands;
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		const std::string kind = command["kind"].String();
+		if(kind == "refresh")
+		{
+			AI::AdventureScriptInput refreshed = input;
+			refreshed.analysis["defenseAlerts"].Vector().clear();
+			refreshed.actionSpace["recruitOptions"].Vector().clear();
+			response["input"] = refreshed.toJson();
+			return response;
+		}
+
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		if(command["payload"]["type"].String() == "nullkiller_turn_slice")
+		{
+			response["result"]["didWork"] = JsonNode(false);
+			response["result"]["shouldStopTurn"] = JsonNode(false);
+			response["result"]["exhaustedCandidates"] = JsonNode(false);
+		}
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 4);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "recruit");
+	EXPECT_EQ(commands[0]["payload"]["source_id"].Integer(), 42);
+	EXPECT_EQ(commands[1]["kind"].String(), "refresh");
+	EXPECT_EQ(commands[2]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[3]["payload"]["type"].String(), "end_turn");
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_EQ(output.memory["totalEmergencyDefenseActions"].Integer(), 1);
+}
+
+TEST(LuaAdventureScriptRunnerTest, DefensiveBoundedControlBuildsOnlyWhenRecruitmentIsUnavailable)
+{
+	const std::string source = readAdventureScript("scripts/ai/candidates/defensiveBoundedNullkillerControl.lua");
+	scripting::LuaAdventureScriptRunner runner("test:defensive-bounded-control-build", source);
+
+	AI::AdventureScriptInput input = makeInput();
+	input.state["turn"]["active"] = JsonNode(true);
+	input.state["turn"]["queries"].Vector();
+	input.limits["maxActions"] = JsonNode(16);
+
+	JsonNode alert;
+	alert["town_id"] = JsonNode(42);
+	alert["levelId"] = JsonNode(3);
+	input.analysis["defenseAlerts"].Vector().push_back(alert);
+
+	JsonNode hallOption;
+	hallOption["town_id"] = JsonNode(42);
+	hallOption["buildingKindId"] = JsonNode(5);
+	hallOption["cost"]["gold"] = JsonNode(2500);
+	hallOption["planAction"]["type"] = JsonNode("build");
+	hallOption["planAction"]["town_id"] = JsonNode(42);
+	hallOption["planAction"]["building_id"] = JsonNode(12);
+	input.actionSpace["buildOptions"].Vector().push_back(hallOption);
+
+	JsonNode fortOption;
+	fortOption["town_id"] = JsonNode(42);
+	fortOption["buildingKindId"] = JsonNode(4);
+	fortOption["cost"]["gold"] = JsonNode(1000);
+	fortOption["planAction"]["type"] = JsonNode("build");
+	fortOption["planAction"]["town_id"] = JsonNode(42);
+	fortOption["planAction"]["building_id"] = JsonNode(7);
+	input.actionSpace["buildOptions"].Vector().push_back(fortOption);
+
+	std::vector<JsonNode> commands;
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		const std::string kind = command["kind"].String();
+		if(kind == "refresh")
+		{
+			AI::AdventureScriptInput refreshed = input;
+			refreshed.analysis["defenseAlerts"].Vector().clear();
+			refreshed.actionSpace["buildOptions"].Vector().clear();
+			response["input"] = refreshed.toJson();
+			return response;
+		}
+
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		if(command["payload"]["type"].String() == "nullkiller_turn_slice")
+		{
+			response["result"]["didWork"] = JsonNode(false);
+			response["result"]["shouldStopTurn"] = JsonNode(false);
+			response["result"]["exhaustedCandidates"] = JsonNode(false);
+		}
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 4);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "build");
+	EXPECT_EQ(commands[0]["payload"]["town_id"].Integer(), 42);
+	EXPECT_EQ(commands[0]["payload"]["building_id"].Integer(), 7);
+	EXPECT_EQ(commands[1]["kind"].String(), "refresh");
+	EXPECT_EQ(commands[2]["payload"]["type"].String(), "nullkiller_turn_slice");
+	EXPECT_EQ(commands[3]["payload"]["type"].String(), "end_turn");
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	EXPECT_EQ(output.memory["totalEmergencyDefenseActions"].Integer(), 1);
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanReadNullkillerSnapshots)
 {
 	const std::string source = R"lua(
@@ -2865,6 +3000,7 @@ TEST(LuaAdventureScriptRunnerTest, BundledAdventureScriptVariantsRun)
 		"scripts/ai/economyAdventure.lua",
 		"scripts/ai/explorerAdventure.lua",
 		"scripts/ai/candidates/boundedNullkillerAdventure.lua",
+		"scripts/ai/candidates/defensiveBoundedNullkillerControl.lua",
 		"scripts/ai/candidates/fallbackAdventure.lua",
 		"scripts/ai/candidates/statisticsProbeAdventure.lua"
 	};
@@ -2876,6 +3012,7 @@ TEST(LuaAdventureScriptRunnerTest, BundledAdventureScriptVariantsRun)
 
 		if(script == "scripts/ai/defaultAdventure.lua"
 			|| script == "scripts/ai/candidates/boundedNullkillerAdventure.lua"
+			|| script == "scripts/ai/candidates/defensiveBoundedNullkillerControl.lua"
 			|| script == "scripts/ai/candidates/fallbackAdventure.lua"
 			|| script == "scripts/ai/candidates/statisticsProbeAdventure.lua")
 		{

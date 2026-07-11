@@ -2159,6 +2159,12 @@ Regression harness:
   (`/root/script-ai-runs/default-full16-notrace-ebca357-20260711`). The richer readable policy is useful as a
   source of ideas and fixture-tested scoring code, but it is not a competitive full-game replacement for the
   bounded Nullkiller control baseline.
+- Rejected / not promoted: `defensiveBoundedNullkillerControl.lua` adds a narrow emergency rule that executes one
+  host-provided recruit/build option for a high/critical town-defense alert before resuming bounded Nullkiller
+  slices. Unit coverage verifies the checked recruit/build ordering, but the 16-map no-trace screen regressed to
+  14 terminal results, 5 `ScriptedAdventureAI` wins, 9 `Nullkiller2` wins, and 2 infrastructure idles
+  (`/root/script-ai-runs/defensive-bounded-full16-notrace-20260711`). It did flip seed `14` from a baseline loss
+  to a Lua win, but lost too much elsewhere, so it remains an experiment rather than a champion.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions
