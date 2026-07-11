@@ -12,7 +12,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from runAdventureAIBatch import run_one
+from runAdventureAIBatch import compact_result, run_one
 
 
 class RunAdventureAIBatchTest(unittest.TestCase):
@@ -71,6 +71,11 @@ class RunAdventureAIBatchTest(unittest.TestCase):
             self.assertFalse(result["timedOut"])
             self.assertEqual(result["outcome"]["result"], "idle_timeout")
             self.assertNotEqual(result["returnCode"], 0)
+            self.assertGreater(result["stdoutSummary"]["bytes"], 0)
+            self.assertEqual(result["stdoutSummary"]["tailSignature"], "unknown")
+            self.assertIn("fake client started", result["stdoutSummary"]["tail"])
+            self.assertGreaterEqual(result["stdoutSummary"]["lastOutputAgeSeconds"], 0.0)
+            self.assertEqual(compact_result(result)["stdoutTailSignature"], "unknown")
 
 
 if __name__ == "__main__":

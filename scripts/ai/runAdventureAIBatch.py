@@ -28,6 +28,7 @@ TERMINAL_OUTCOME_MARKERS = (
     "Red player won. Ending game.",
     "Red player lost. Ending game.",
 )
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 AI_NAME_ALIASES = {
     "Nullkiller": "Nullkiller2",
 }
@@ -71,6 +72,47 @@ def stdout_has_terminal_outcome(stdout_path: Path) -> bool:
         return False
     text = stdout_path.read_text(encoding="utf-8", errors="replace")
     return any(marker in text for marker in TERMINAL_OUTCOME_MARKERS)
+
+
+def clean_stdout_line(line: str) -> str:
+    return ANSI_ESCAPE_RE.sub("", line.rstrip("\r\n"))
+
+
+def stdout_tail_lines(stdout_path: Path, max_lines: int = 80) -> list[str]:
+    if not stdout_path.exists():
+        return []
+    lines = stdout_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    return [clean_stdout_line(line) for line in lines[-max_lines:]]
+
+
+def stdout_tail_signature(lines: list[str]) -> str:
+    text = "\n".join(lines)
+    if "Red player won. Ending game." in text:
+        return "red_win"
+    if "Red player lost. Ending game." in text:
+        return "red_loss"
+    if "Reached test day limit" in text:
+        return "day_limit"
+    if "Creating battle AI" in text:
+        if "Invalid stack at tile" in text:
+            return "battle_ai_creation_invalid_stack"
+        return "battle_ai_creation"
+    if "Player " in text and " starting turn" in text:
+        return "turn_start"
+    if "PERFORMANCE: NK2 updateState" in text:
+        return "native_ai_state_update"
+    return "unknown"
+
+
+def stdout_summary(stdout_path: Path, last_output_at: float, now: float) -> dict[str, Any]:
+    tail = stdout_tail_lines(stdout_path)
+    return {
+        "path": str(stdout_path),
+        "bytes": stdout_path.stat().st_size if stdout_path.exists() else 0,
+        "lastOutputAgeSeconds": round(max(0.0, now - last_output_at), 3),
+        "tailSignature": stdout_tail_signature(tail),
+        "tail": tail,
+    }
 
 
 def scenario_source(scenario: dict[str, Any]) -> tuple[str, str]:
@@ -383,6 +425,8 @@ def run_one(args: argparse.Namespace, scenario_or_map: dict[str, Any] | str, run
     max_day = int(trace_summary.get("quality", {}).get("maxDay") or 0)
     if outcome["completedDays"] is None and max_day > 0:
         outcome["completedDays"] = max_day
+    finished_at = time.monotonic()
+    stdout_info = stdout_summary(stdout_path, last_output_at, finished_at)
     result = {
         "scenario": scenario.get("name"),
         "group": scenario.get("group"),
@@ -406,7 +450,8 @@ def run_one(args: argparse.Namespace, scenario_or_map: dict[str, Any] | str, run
         "idleTimedOut": idle_timed_out,
         "terminatedAfterOutcome": terminated_after_outcome,
         "returnCode": return_code,
-        "elapsedSeconds": round(time.monotonic() - started, 3),
+        "elapsedSeconds": round(finished_at - started, 3),
+        "stdoutSummary": stdout_info,
         "ai": list(args.ai),
         "script": script_override_value(args.script),
         "trace": bool(args.trace),
@@ -443,6 +488,7 @@ def compact_result(result: dict[str, Any]) -> dict[str, Any]:
         "terminatedAfterOutcome": result.get("terminatedAfterOutcome"),
         "returnCode": result.get("returnCode"),
         "elapsedSeconds": result.get("elapsedSeconds"),
+        "stdoutTailSignature": as_dict(result.get("stdoutSummary")).get("tailSignature"),
         "sourceType": result.get("sourceType"),
         "source": result.get("source"),
         "randomMap": result.get("randomMap"),
