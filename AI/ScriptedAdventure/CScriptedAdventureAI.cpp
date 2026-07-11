@@ -9870,6 +9870,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	actionSpace["formationOptions"].Vector();
 	actionSpace["tacticsOptions"].Vector();
 	actionSpace["garrisonSwapOptions"].Vector();
+	actionSpace["defenseResponseOptions"].Vector();
 	actionSpace["reachableObjects"].Vector();
 	actionSpace["movementOptions"].Vector();
 	actionSpace["shipyardOptions"].Vector();
@@ -9911,6 +9912,14 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 	std::shared_lock gameStateLock(CGameState::mutex);
 	const ResourceSet resources = cc->getResourceAmount();
 	const std::vector<int3> visibleTiles = visibleMapTiles(cc, playerID);
+	std::vector<const CGHeroInstance *> visibleEnemyHeroes;
+	for(const CGObjectInstance * object : cc->getAllVisitableObjs())
+	{
+		if(!object || !object->tempOwner.isValidPlayer() || !isOpponent(object->tempOwner) || !cc->isVisibleFor(object, playerID))
+			continue;
+		if(const auto * enemyHero = dynamic_cast<const CGHeroInstance *>(object))
+			visibleEnemyHeroes.push_back(enemyHero);
+	}
 
 	std::set<int32_t> seenNullkillerUpgradeArmies;
 	std::set<int32_t> seenNullkillerRecruitSources;
@@ -10124,6 +10133,51 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		option["planAction"]["town_id"] = option["town_id"];
 		actionSpace["garrisonSwapOptions"].Vector().push_back(option);
 	};
+	auto appendDefenseResponseOptions = [&](const CGTownInstance * town)
+	{
+		if(!town || town->tempOwner != playerID || !cc->isVisibleFor(town, playerID))
+			return;
+
+		constexpr int defenseAlertRadius = 12;
+		const CArmedInstance * upperArmy = town->getUpperArmy();
+		const int64_t townStrength = static_cast<int64_t>(upperArmy ? upperArmy->getArmyStrength(town->fortLevel()) : town->getArmyStrength(town->fortLevel()));
+		for(const CGHeroInstance * enemyHero : visibleEnemyHeroes)
+		{
+			if(!enemyHero || enemyHero->visitablePos().z != town->visitablePos().z)
+				continue;
+
+			const ui32 distanceSquared = town->visitablePos().dist2dSQ(enemyHero->visitablePos());
+			if(distanceSquared > defenseAlertRadius * defenseAlertRadius)
+				continue;
+
+			const int64_t enemyStrength = static_cast<int64_t>(enemyHero->getArmyStrength());
+			const double strengthRatio = static_cast<double>(enemyStrength) / std::max(1.0, static_cast<double>(townStrength));
+			const ScriptThreatLevel level = scriptThreatLevel(strengthRatio);
+
+			JsonNode option;
+			option["responseKindId"] = JsonNode(1);
+			option["responseKind"] = JsonNode("native_defend_town");
+			option["levelId"] = JsonNode(static_cast<int32_t>(level));
+			option["level"] = JsonNode(scriptThreatLevelName(level));
+			option["requiresImmediateResponse"] = JsonNode(level == ScriptThreatLevel::HIGH || level == ScriptThreatLevel::CRITICAL);
+			option["town_id"] = JsonNode(town->id.getNum());
+			option["town"] = jsonTown(town, resources, true);
+			option["townPosition"] = jsonPosition(town->visitablePos());
+			option["townStrength"] = JsonNode(townStrength);
+			option["enemyHeroId"] = JsonNode(enemyHero->id.getNum());
+			option["enemyHero"] = jsonHero(enemyHero, false);
+			option["enemyPosition"] = jsonPosition(enemyHero->visitablePos());
+			option["enemyStrength"] = JsonNode(enemyStrength);
+			option["distance"] = JsonNode(town->visitablePos().dist2d(enemyHero->visitablePos()));
+			option["distanceSquared"] = JsonNode(static_cast<int32_t>(distanceSquared));
+			option["strengthRatio"] = JsonNode(strengthRatio);
+			setScriptActionType(option["planAction"], "nullkiller_defend_town");
+			option["planAction"]["town_id"] = option["town_id"];
+			option["planAction"]["max_candidates"] = JsonNode(0);
+			option["planAction"]["max_attempts"] = JsonNode(0);
+			actionSpace["defenseResponseOptions"].Vector().push_back(option);
+		}
+	};
 
 	std::set<int32_t> seenUpgradeArmies;
 	auto appendUpgradeOptions = [&](const CArmedInstance * army)
@@ -10222,6 +10276,7 @@ JsonNode CScriptedAdventureAI::makeScriptActionSpace() const
 		appendNullkillerRecruitHelperOption(town, nullptr);
 		appendNullkillerMoveCreaturesToHeroHelperOption(town);
 		appendGarrisonSwapOption(town);
+		appendDefenseResponseOptions(town);
 		appendUpgradeOptions(town);
 		appendUpgradeOptions(town->getVisitingHero());
 		appendUpgradeOptions(town->getGarrisonHero());
@@ -10737,7 +10792,7 @@ JsonNode CScriptedAdventureAI::makeScriptAnalysis() const
 	analysis["scriptMemory"]["persistedInPlayerLocalSettings"] = JsonNode(true);
 	analysis["scriptMemory"]["localStateKey"] = JsonNode(SCRIPT_MEMORY_LOCAL_STATE_KEY);
 	analysis["candidateFields"].Vector();
-	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "typeId", "subtypeId", "kindId", "buildingKindId", "transferKindId", "preparationKindId", "pathActionId", "levelId", "statusId", "targetKindId", "spell_id", "task_id", "goalTypeId", "priorityTier", "heroRoleId", "nullkillerRoleId", "nullkillerArtifactScore", "nullkillerPotentialArtifactScore", "outcomeId", "failureActionId" })
+	for(const char * field : { "reason", "value", "riskId", "risk", "safe", "danger", "dangerRatio", "estimatedLoss", "blockedBy", "typeId", "subtypeId", "kindId", "buildingKindId", "transferKindId", "preparationKindId", "responseKindId", "pathActionId", "levelId", "statusId", "targetKindId", "spell_id", "task_id", "goalTypeId", "priorityTier", "heroRoleId", "nullkillerRoleId", "nullkillerArtifactScore", "nullkillerPotentialArtifactScore", "outcomeId", "failureActionId" })
 		analysis["candidateFields"].Vector().push_back(JsonNode(field));
 	analysis["danger"]["candidateDangerSource"] = JsonNode("Nullkiller direct object/guard danger evaluator");
 	analysis["danger"]["enemyReachSource"] = JsonNode("visible enemy distance and strength alerts");

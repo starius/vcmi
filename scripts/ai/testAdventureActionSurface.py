@@ -33,7 +33,7 @@ class AdventureActionSurfaceAuditTest(unittest.TestCase):
         self.assertGreaterEqual(result["registeredActionCount"], 50)
         self.assertGreaterEqual(result["luaActionIdCount"], 50)
         self.assertGreaterEqual(result["luaFacadeActionCount"], 50)
-        self.assertGreaterEqual(result["actionSpaceOptionFieldCount"], 15)
+        self.assertGreaterEqual(result["actionSpaceOptionFieldCount"], 16)
 
 
 if __name__ == "__main__":

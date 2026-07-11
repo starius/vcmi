@@ -1569,6 +1569,58 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteArmyManagementActionSp
 	EXPECT_EQ(*output.intent, "executed army-management action-space options");
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteDefenseResponseActionSpaceOptions)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				ai:runOption(input.actionSpace.defenseResponseOptions[1])
+				return ai:output("end_turn", "executed defense-response action-space option")
+			end
+		}
+	)lua";
+
+	AI::AdventureScriptInput input = makeInput();
+	JsonNode defense;
+	defense["responseKindId"] = JsonNode(1);
+	defense["levelId"] = JsonNode(3);
+	defense["town_id"] = JsonNode(42);
+	defense["enemyHeroId"] = JsonNode(77);
+	defense["requiresImmediateResponse"] = JsonNode(true);
+	defense["planAction"]["type"] = JsonNode("nullkiller_defend_town");
+	defense["planAction"]["type_id"] = JsonNode(122);
+	defense["planAction"]["town_id"] = JsonNode(42);
+	defense["planAction"]["max_candidates"] = JsonNode(0);
+	defense["planAction"]["max_attempts"] = JsonNode(0);
+	input.actionSpace["defenseResponseOptions"].Vector().push_back(defense);
+
+	scripting::LuaAdventureScriptRunner runner("test:imperative-defense-response-action-space-options", source);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		response["result"]["didExecute"] = JsonNode(false);
+		response["result"]["exhaustedCandidates"] = JsonNode(true);
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), 1);
+	EXPECT_EQ(commands[0]["payload"]["type"].String(), "nullkiller_defend_town");
+	EXPECT_EQ(commands[0]["payload"]["type_id"].Integer(), 122);
+	EXPECT_EQ(commands[0]["payload"]["town_id"].Integer(), 42);
+	EXPECT_EQ(commands[0]["payload"]["max_candidates"].Integer(), 0);
+	EXPECT_EQ(commands[0]["payload"]["max_attempts"].Integer(), 0);
+	EXPECT_EQ(output.status, AI::AdventureScriptStatus::END_TURN);
+	ASSERT_TRUE(output.intent);
+	EXPECT_EQ(*output.intent, "executed defense-response action-space option");
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanSelectAndRunOneNullkillerCandidate)
 {
 	const std::string source = R"lua(

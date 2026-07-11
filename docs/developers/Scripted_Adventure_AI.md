@@ -1686,6 +1686,10 @@ Regression harness:
 - Done: `actionSpace` now advertises direct formation, tactics, and garrison-swap options with checked
   `planAction` payloads, so scripts can discover and execute these army-management choices through `ai:runOption`
   instead of hard-coding object scans or action constructors.
+- Done: `actionSpace.defenseResponseOptions` exposes visible town-defense alerts as checked
+  `nullkiller_defend_town` actions with stable town/enemy hero ids, numeric threat levels, and bounded
+  all-candidate native search. This keeps defense-response experiments data-driven instead of requiring scripts to
+  hand-scan alert tables and construct helper calls manually.
 - Done: Lua can call Nullkiller's bounded creature-preparation helper through `ai:pickBestCreatures`, matching
   the existing artifact-preparation helper and avoiding Lua-side reimplementation of stack logistics.
 - Done: Lua can call Nullkiller's bounded town-army helper through `ai:nullkillerBuildArmy(townId)`, reusing the

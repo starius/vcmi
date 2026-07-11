@@ -92,6 +92,7 @@ DISCOVERABLE_ACTION_OPTIONS: dict[str, str] = {
     "buy_artifact": "buyArtifactOptions",
     "spell_research": "spellResearchOptions",
     "visit_town_building": "visitTownBuildingOptions",
+    "nullkiller_defend_town": "defenseResponseOptions",
 }
 
 
