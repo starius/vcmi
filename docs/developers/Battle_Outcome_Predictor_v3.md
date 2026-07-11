@@ -304,7 +304,7 @@ Current branch progress toward the service boundary:
 
 - `BattleStartInfo` now names the battle setup passed to start/restart battle flow: attacking and defending armies, heroes, tile, layout, and defended town. Existing UI retry and batch replay both use this same setup path through `BattleProcessor::restartBattle`.
 - `BattleSimulationBatch` now tracks `BattleSimulationSummary` counts in memory and returns a `BattleSimulationRecordResult` from result recording. The current batch collector still writes JSONL, but future runtime evaluation code can now consume aggregate attacker/defender/no-winner counts without parsing the output file.
-- `BattleSimulationSummary` exposes the safety outputs needed by the fallback plan: empirical attacker win rate, all-attacker-wins, all-defender-wins, and Wilson lower-bound attacker safety score.
+- `BattleSimulationSummary` and `BattleSimulationRecordResult` live in `BattleSimulationResult`, separate from the JSONL batch collector. `BattleSimulationSummary` exposes the safety outputs needed by the fallback plan: empirical attacker win rate, all-attacker-wins, all-defender-wins, and Wilson lower-bound attacker safety score.
 - This is still not a runtime Nullkiller evaluator. The remaining hard part is isolating repeated simulations from live adventure-map state and exposing them through a controlled server-owned API/cache.
 
 Batch collection caveat: when running `vcmibattlesim` with MMAI in parallel, each shard needs an isolated XDG config/cache profile. A shared profile can be rewritten by clients and silently disable the MMAI mod for later shards. Use `--xdg-config-template` and, if needed, `--xdg-profile-root` so each client starts from the same active-mod configuration.

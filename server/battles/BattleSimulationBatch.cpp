@@ -25,8 +25,6 @@
 #include "../../lib/networkPacks/PacksForClientBattle.h"
 #include "../../lib/spells/CSpell.h"
 
-#include <algorithm>
-#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <map>
@@ -35,62 +33,6 @@
 
 namespace BattleSimulationBatch
 {
-void BattleSimulationSummary::recordWinner(BattleSide winner)
-{
-	++rows;
-
-	switch(winner)
-	{
-		case BattleSide::ATTACKER:
-			++attackerWins;
-			break;
-		case BattleSide::DEFENDER:
-			++defenderWins;
-			break;
-		case BattleSide::NONE:
-			++noWinner;
-			break;
-		default:
-			++otherWinner;
-			break;
-	}
-}
-
-bool BattleSimulationSummary::hasSamples() const
-{
-	return rows > 0;
-}
-
-double BattleSimulationSummary::attackerWinRate() const
-{
-	return hasSamples() ? static_cast<double>(attackerWins) / rows : 0.0;
-}
-
-double BattleSimulationSummary::attackerWilsonLowerBound(double z) const
-{
-	if(!hasSamples())
-		return 0.0;
-
-	const double sampleCount = static_cast<double>(rows);
-	const double probability = attackerWinRate();
-	const double zSquared = z * z;
-	const double denominator = 1.0 + zSquared / sampleCount;
-	const double center = probability + zSquared / (2.0 * sampleCount);
-	const double margin = z * std::sqrt((probability * (1.0 - probability) + zSquared / (4.0 * sampleCount)) / sampleCount);
-
-	return std::clamp((center - margin) / denominator, 0.0, 1.0);
-}
-
-bool BattleSimulationSummary::attackerWonAllSamples() const
-{
-	return hasSamples() && attackerWins == rows;
-}
-
-bool BattleSimulationSummary::defenderWonAllSamples() const
-{
-	return hasSamples() && defenderWins == rows;
-}
-
 namespace
 {
 struct Config

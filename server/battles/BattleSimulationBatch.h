@@ -9,7 +9,7 @@
  */
 #pragma once
 
-#include "../../lib/battle/BattleSide.h"
+#include "BattleSimulationResult.h"
 
 #include <cstdint>
 
@@ -20,27 +20,8 @@ struct BattleResult;
 
 namespace BattleSimulationBatch
 {
-struct BattleSimulationSummary
-{
-	int64_t rows = 0;
-	int64_t attackerWins = 0;
-	int64_t defenderWins = 0;
-	int64_t noWinner = 0;
-	int64_t otherWinner = 0;
-
-	void recordWinner(BattleSide winner);
-	bool hasSamples() const;
-	double attackerWinRate() const;
-	double attackerWilsonLowerBound(double z = 1.959963984540054) const;
-	bool attackerWonAllSamples() const;
-	bool defenderWonAllSamples() const;
-};
-
-struct BattleSimulationRecordResult
-{
-	bool shouldReplay = false;
-	BattleSimulationSummary summary;
-};
+using BattleSimulation::BattleSimulationRecordResult;
+using BattleSimulation::BattleSimulationSummary;
 
 bool isEnabled();
 bool hasRecordedRows();

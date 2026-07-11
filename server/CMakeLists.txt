@@ -6,6 +6,7 @@ set(vcmiservercommon_SRCS
 		battles/BattleProcessor.cpp
 		battles/BattleResultProcessor.cpp
 		battles/BattleSimulationBatch.cpp
+		battles/BattleSimulationResult.cpp
 		battles/BattleStartInfo.cpp
 
 		queries/BattleQueries.cpp
@@ -37,6 +38,7 @@ set(vcmiservercommon_HEADERS
 		battles/BattleProcessor.h
 		battles/BattleResultProcessor.h
 		battles/BattleSimulationBatch.h
+		battles/BattleSimulationResult.h
 		battles/BattleStartInfo.h
 
 		queries/BattleQueries.h
