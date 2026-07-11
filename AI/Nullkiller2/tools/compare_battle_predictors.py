@@ -36,6 +36,18 @@ MAP_LOADED_RE = re.compile(r"\bMap loaded!")
 WINNER_RE = re.compile(r"\b([A-Za-z]+) player won\. Ending game\.")
 LOSER_RE = re.compile(r"\b([A-Za-z]+) player lost\. Ending game\.")
 TEST_DAY_LIMIT_RE = re.compile(r"\bReached test day limit\b")
+RUNTIME_SIMULATION_STATS_RE = re.compile(
+	r"Runtime battle simulation stats for player \d+ \(([^)]+)\): "
+	r"requests (\d+), complete (\d+), incomplete (\d+), safe (\d+), rejected (\d+)"
+)
+
+RUNTIME_SIMULATION_FIELDS = [
+	"requests",
+	"complete",
+	"incomplete",
+	"safe",
+	"rejected",
+]
 
 ADJUDICATION_FIELDS = [
 	"statusRank",
@@ -64,6 +76,13 @@ COLOR_ALIASES = {
 	"teal": "Teal",
 	"pink": "Pink",
 }
+
+
+@dataclass(frozen=True)
+class ConfigReplacement:
+	file: Path
+	old: str
+	new: str
 
 
 @dataclass(frozen=True)
@@ -97,6 +116,7 @@ class GameResult:
 	adjudication_day: int | None
 	adjudication_reason: str | None
 	adjudication_vectors: dict[str, list[float | int]] | None
+	runtime_simulation_stats_by_color: dict[str, dict[str, int]]
 	diagnostics: list[str]
 
 
@@ -136,6 +156,17 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument("--base-server-port", type=int, default=43030, help="First local server port assigned to game processes.")
 	parser.add_argument("--output-dir", type=Path, default=None, help="Output directory. Defaults to a timestamped directory.")
 	parser.add_argument("--extra-arg", action="append", default=[], help="Extra argument passed to vcmiclient. Repeat per argument.")
+	parser.add_argument(
+		"--config-replace",
+		nargs=3,
+		action="append",
+		default=[],
+		metavar=("FILE", "OLD", "NEW"),
+		help=(
+			"Temporarily replace literal OLD with NEW in FILE for the whole comparison run. "
+			"FILE is resolved relative to --workdir when not absolute. May be repeated."
+		),
+	)
 	parser.add_argument("--keep-engine-logs", action="store_true", help="Keep VCMI log files in each run directory. Stdout and summaries are always kept.")
 	parser.add_argument("--require-clean-exit", action="store_true", help="Mark nonzero vcmiclient exits as failed games.")
 	args = parser.parse_args()
@@ -175,6 +206,49 @@ def canonical_color(value: str | None) -> str | None:
 	if not value:
 		return None
 	return COLOR_ALIASES.get(value.lower(), value)
+
+
+def empty_runtime_simulation_stats() -> dict[str, int]:
+	return {key: 0 for key in RUNTIME_SIMULATION_FIELDS}
+
+
+def add_runtime_simulation_stats(target: dict[str, int], source: dict[str, int]) -> None:
+	for key in RUNTIME_SIMULATION_FIELDS:
+		target[key] = target.get(key, 0) + source.get(key, 0)
+
+
+def resolve_config_replacements(args: argparse.Namespace) -> list[ConfigReplacement]:
+	base = args.workdir or Path.cwd()
+	replacements: list[ConfigReplacement] = []
+
+	for raw_file, old, new in args.config_replace:
+		file = Path(raw_file)
+		if not file.is_absolute():
+			file = base / file
+		replacements.append(ConfigReplacement(file.resolve(), old, new))
+
+	return replacements
+
+
+def apply_config_replacements(
+	replacements: list[ConfigReplacement],
+	originals: dict[Path, bytes],
+) -> None:
+	for replacement in replacements:
+		if replacement.file not in originals:
+			originals[replacement.file] = replacement.file.read_bytes()
+
+		text = replacement.file.read_text()
+		if replacement.old not in text:
+			raise RuntimeError(
+				f"Replacement text not found in {replacement.file}: {replacement.old!r}"
+			)
+		replacement.file.write_text(text.replace(replacement.old, replacement.new))
+
+
+def restore_config_files(originals: dict[Path, bytes]) -> None:
+	for file, content in originals.items():
+		file.write_bytes(content)
 
 
 def opposite_two_player_color(color: str | None) -> str | None:
@@ -326,11 +400,12 @@ def iter_log_lines(run_dir: Path):
 				yield ANSI_RE.sub("", raw_line).strip()
 
 
-def parse_run_logs(task: GameTask) -> tuple[bool, str | None, str | None, bool, list[str]]:
+def parse_run_logs(task: GameTask) -> tuple[bool, str | None, str | None, bool, dict[str, dict[str, int]], list[str]]:
 	map_loaded = False
 	winner = None
 	loser = None
 	test_day_limited = False
+	runtime_simulation_stats_by_color: dict[str, dict[str, int]] = {}
 	diagnostics: list[str] = []
 
 	for line in iter_log_lines(task.run_dir):
@@ -349,11 +424,26 @@ def parse_run_logs(task: GameTask) -> tuple[bool, str | None, str | None, bool, 
 
 		if "Disaster" in line or "Reason:" in line:
 			diagnostics.append(line)
+		stats_match = RUNTIME_SIMULATION_STATS_RE.search(line)
+		if stats_match:
+			color = canonical_color(stats_match.group(1))
+			if color:
+				stats = runtime_simulation_stats_by_color.setdefault(color, empty_runtime_simulation_stats())
+				add_runtime_simulation_stats(
+					stats,
+					{
+						"requests": int(stats_match.group(2)),
+						"complete": int(stats_match.group(3)),
+						"incomplete": int(stats_match.group(4)),
+						"safe": int(stats_match.group(5)),
+						"rejected": int(stats_match.group(6)),
+					},
+				)
 
 	if winner is None and loser is not None:
 		winner = opposite_two_player_color(loser)
 
-	return map_loaded, winner, loser, test_day_limited, diagnostics[-20:]
+	return map_loaded, winner, loser, test_day_limited, runtime_simulation_stats_by_color, diagnostics[-20:]
 
 
 def parse_stat_number(row: dict[str, str], field: str) -> float | int:
@@ -468,7 +558,7 @@ def run_game(args: argparse.Namespace, task: GameTask) -> GameResult:
 			stdout.write(f"\nTimed out after {args.timeout} seconds.\n".encode())
 
 	duration = time.monotonic() - start
-	map_loaded, winner_color, loser_color, test_day_limited, diagnostics = parse_run_logs(task)
+	map_loaded, winner_color, loser_color, test_day_limited, runtime_simulation_stats_by_color, diagnostics = parse_run_logs(task)
 	adjudicated = False
 	adjudication_day = None
 	adjudication_reason = None
@@ -509,6 +599,7 @@ def run_game(args: argparse.Namespace, task: GameTask) -> GameResult:
 		adjudication_day=adjudication_day,
 		adjudication_reason=adjudication_reason,
 		adjudication_vectors=adjudication_vectors,
+		runtime_simulation_stats_by_color=runtime_simulation_stats_by_color,
 		diagnostics=diagnostics,
 	)
 	write_run_summary(result)
@@ -531,6 +622,16 @@ def process_status(return_code: int | None) -> dict[str, int | str | None]:
 
 def result_to_dict(result: GameResult) -> dict:
 	status = process_status(result.exit_code)
+	runtime_stats_by_model: dict[str, dict[str, int]] = {}
+	runtime_stats_total = empty_runtime_simulation_stats()
+	for color, stats in result.runtime_simulation_stats_by_color.items():
+		add_runtime_simulation_stats(runtime_stats_total, stats)
+		model = model_for_color(result.task, canonical_color(color))
+		if model:
+			add_runtime_simulation_stats(
+				runtime_stats_by_model.setdefault(model, empty_runtime_simulation_stats()),
+				stats,
+			)
 	return {
 		"sample": result.task.sample,
 		"run": result.task.run,
@@ -559,6 +660,9 @@ def result_to_dict(result: GameResult) -> dict:
 		"adjudicationReason": result.adjudication_reason,
 		"adjudicationFields": ADJUDICATION_FIELDS if result.adjudication_vectors else None,
 		"adjudicationVectors": result.adjudication_vectors,
+		"runtimeBattleSimulationStats": runtime_stats_total,
+		"runtimeBattleSimulationStatsByColor": result.runtime_simulation_stats_by_color,
+		"runtimeBattleSimulationStatsByModel": runtime_stats_by_model,
 		"diagnostics": result.diagnostics,
 	}
 
@@ -615,6 +719,17 @@ def analyze_results(args: argparse.Namespace, results: list[GameResult]) -> dict
 		results_by_sample.setdefault(result.task.sample, []).append(result)
 
 	valid_games = [result for result in results if is_valid_result(args, result)]
+	runtime_stats_by_model: dict[str, dict[str, int]] = {}
+	runtime_stats_total = empty_runtime_simulation_stats()
+	for result in valid_games:
+		for color, stats in result.runtime_simulation_stats_by_color.items():
+			add_runtime_simulation_stats(runtime_stats_total, stats)
+			model = model_for_color(result.task, canonical_color(color))
+			if model:
+				add_runtime_simulation_stats(
+					runtime_stats_by_model.setdefault(model, empty_runtime_simulation_stats()),
+					stats,
+				)
 	if args.comparison_mode == "red-role":
 		candidate_game_wins = sum(1 for result in valid_games if result.task.red_model == "candidate" and active_model_won(result))
 		legacy_game_wins = sum(1 for result in valid_games if result.task.red_model == "legacy" and active_model_won(result))
@@ -705,6 +820,10 @@ def analyze_results(args: argparse.Namespace, results: list[GameResult]) -> dict
 			"seedStart": args.seed_start,
 			"seedStep": args.seed_step,
 			"jobs": args.jobs,
+			"configReplacements": [
+				{"file": str(replacement.file), "old": replacement.old, "new": replacement.new}
+				for replacement in resolve_config_replacements(args)
+			],
 		},
 		"games": {
 			"total": len(results),
@@ -725,6 +844,10 @@ def analyze_results(args: argparse.Namespace, results: list[GameResult]) -> dict
 			"decisive": decisive,
 			"oneSidedCandidateBetterP": one_sided_p,
 			"twoSidedP": two_sided_p,
+		},
+		"runtimeBattleSimulation": {
+			"total": runtime_stats_total,
+			"byModel": runtime_stats_by_model,
 		},
 		"sampleRows": sample_rows,
 	}
@@ -752,6 +875,11 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 		"exitCode",
 		"signal",
 		"durationSeconds",
+		"runtimeRequests",
+		"runtimeComplete",
+		"runtimeIncomplete",
+		"runtimeSafe",
+		"runtimeRejected",
 		"runDir",
 	]
 	with (output_dir / "games.csv").open("w", newline="") as handle:
@@ -759,6 +887,16 @@ def write_csv(output_dir: Path, results: list[GameResult]) -> None:
 		writer.writeheader()
 		for result in results:
 			row = result_to_dict(result)
+			runtime_stats = row["runtimeBattleSimulationStats"]
+			row.update(
+				{
+					"runtimeRequests": runtime_stats["requests"],
+					"runtimeComplete": runtime_stats["complete"],
+					"runtimeIncomplete": runtime_stats["incomplete"],
+					"runtimeSafe": runtime_stats["safe"],
+					"runtimeRejected": runtime_stats["rejected"],
+				}
+			)
 			writer.writerow({key: row[key] for key in fieldnames})
 
 
@@ -794,6 +932,10 @@ def print_summary(analysis: dict, output_dir: Path) -> None:
 		f"oneSidedCandidateBetterP={paired['oneSidedCandidateBetterP']} "
 		f"twoSidedP={paired['twoSidedP']}"
 	)
+	runtime_stats = analysis["runtimeBattleSimulation"]
+	print(f"runtime simulation total: {runtime_stats['total']}")
+	for model, stats in sorted(runtime_stats["byModel"].items()):
+		print(f"runtime simulation {model}: {stats}")
 	print(f"raw logs and summaries: {output_dir}")
 
 
@@ -801,41 +943,48 @@ def main() -> int:
 	args = parse_args()
 	output_dir = args.output_dir or default_output_dir()
 	output_dir.mkdir(parents=True, exist_ok=True)
+	replacements = resolve_config_replacements(args)
+	originals: dict[Path, bytes] = {}
 
-	tasks = build_tasks(args, output_dir)
-	(output_dir / "tasks.json").write_text(
-		json.dumps([task.__dict__ | {"run_dir": str(task.run_dir)} for task in tasks], indent=2, default=str) + "\n"
-	)
+	try:
+		apply_config_replacements(replacements, originals)
 
-	results: list[GameResult] = []
-	with ThreadPoolExecutor(max_workers=args.jobs) as executor:
-		future_to_task = {executor.submit(run_game, args, task): task for task in tasks}
-		for future in as_completed(future_to_task):
-			task = future_to_task[future]
-			try:
-				result = future.result()
-			except Exception as exc:
-				print(f"sample={task.sample:04d} direction={task.direction} failed: {exc}", file=sys.stderr)
-				continue
+		tasks = build_tasks(args, output_dir)
+		(output_dir / "tasks.json").write_text(
+			json.dumps([task.__dict__ | {"run_dir": str(task.run_dir)} for task in tasks], indent=2, default=str) + "\n"
+		)
 
-			results.append(result)
-			winner = result.winner_model or "-"
-			adjudicated = " adjudicated" if result.adjudicated else ""
-			status = "timeout" if result.timed_out else process_status(result.exit_code)["exitCode"]
-			print(
-				f"sample={task.sample:04d} direction={task.direction} "
-				f"winner={winner}{adjudicated} loaded={str(result.map_loaded).lower()} "
-				f"exit={status} duration={result.duration_seconds:.1f}s"
-			)
+		results: list[GameResult] = []
+		with ThreadPoolExecutor(max_workers=args.jobs) as executor:
+			future_to_task = {executor.submit(run_game, args, task): task for task in tasks}
+			for future in as_completed(future_to_task):
+				task = future_to_task[future]
+				try:
+					result = future.result()
+				except Exception as exc:
+					print(f"sample={task.sample:04d} direction={task.direction} failed: {exc}", file=sys.stderr)
+					continue
 
-	results.sort(key=lambda result: (result.task.sample, result.task.run))
-	(output_dir / "games.json").write_text(
-		json.dumps([result_to_dict(result) for result in results], indent=2) + "\n"
-	)
-	write_csv(output_dir, results)
-	analysis = analyze_results(args, results)
-	(output_dir / "summary.json").write_text(json.dumps(analysis, indent=2) + "\n")
-	print_summary(analysis, output_dir)
+				results.append(result)
+				winner = result.winner_model or "-"
+				adjudicated = " adjudicated" if result.adjudicated else ""
+				status = "timeout" if result.timed_out else process_status(result.exit_code)["exitCode"]
+				print(
+					f"sample={task.sample:04d} direction={task.direction} "
+					f"winner={winner}{adjudicated} loaded={str(result.map_loaded).lower()} "
+					f"exit={status} duration={result.duration_seconds:.1f}s"
+				)
+
+		results.sort(key=lambda result: (result.task.sample, result.task.run))
+		(output_dir / "games.json").write_text(
+			json.dumps([result_to_dict(result) for result in results], indent=2) + "\n"
+		)
+		write_csv(output_dir, results)
+		analysis = analyze_results(args, results)
+		(output_dir / "summary.json").write_text(json.dumps(analysis, indent=2) + "\n")
+		print_summary(analysis, output_dir)
+	finally:
+		restore_config_files(originals)
 
 	expected_games = args.samples * 2
 	if len(results) != expected_games:

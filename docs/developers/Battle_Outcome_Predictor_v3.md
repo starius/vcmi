@@ -409,6 +409,27 @@ Current branch progress toward the service boundary:
 - Schema5 battle setup captures pre-merge town siege state before `CGTownInstance::mergeGarrisonOnSiege`: town army snapshot, defending hero army snapshot, and the IDs needed to match the next started battle. The isolated runtime runner can now support visiting-hero inside sieges by applying that merge only inside the cloned game state and recomputing layout before battle start.
 - `CClient::evaluateBattleSimulationForVisit` provides the current runtime Nullkiller evaluator by cloning the client's mirrored `CGameState`, remapping the battle setup into the clone, and running an isolated MMAI-backed simulation runner. This is linked through `vcmiclientcommon`'s existing dependency on `vcmiservercommon`, not through the Nullkiller2 AI object library.
 - Nullkiller's `battlePredictionSimulationSamples` final movement gate currently calls through `CCallback` to `IClient::evaluateBattleSimulationForVisit`. This setting defaults to 0, so normal games use static danger only. When samples are configured, the AI logs a one-time warning if simulation does not return a complete result, so A/B runs do not silently look like they are using runtime simulation.
+- `AI/Nullkiller2/tools/compare_battle_predictors.py` can now temporarily enable `battlePredictionSimulationSamples` through `--config-replace` and records `runtimeBattleSimulation` totals by model in `summary.json`. Treat any end-to-end result as invalid for the runtime-fallback question unless the candidate `Nullkiller2V3` rows show nonzero simulation `requests` and mostly `complete` samples.
+
+Example 250-game V3+runtime simulation A/B command:
+
+```bash
+python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
+  --comparison-mode color-swap \
+  --random-map \
+  --randommap-size S \
+  --randommap-levels 2 \
+  --randommap-water none \
+  --randommap-players 2 \
+  --samples 125 \
+  --legacy-ai Nullkiller2 \
+  --candidate-ai Nullkiller2V3 \
+  --testdays 28 \
+  --adjudicate-testdays \
+  --config-replace config/ai/nk2ai/nk2ai-settings.json \
+    '"battlePredictionSimulationSamples" : 0' \
+    '"battlePredictionSimulationSamples" : 3'
+```
 
 Batch collection caveat: when running `vcmibattlesim` with MMAI in parallel, each shard needs an isolated XDG config/cache profile. A shared profile can be rewritten by clients and silently disable the MMAI mod for later shards. Use `--xdg-config-template` and, if needed, `--xdg-profile-root` so each client starts from the same active-mod configuration.
 

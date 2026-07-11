@@ -108,6 +108,32 @@ python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
   --adjudicate-testdays
 ```
 
+To test V3 with runtime battle simulation enabled, keep `--legacy-ai
+Nullkiller2` and use `--candidate-ai Nullkiller2V3`, then temporarily replace
+the Nullkiller sample count in the build/run configuration:
+
+```sh
+python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
+  --comparison-mode color-swap \
+  --random-map \
+  --randommap-size S \
+  --randommap-levels 2 \
+  --randommap-water none \
+  --randommap-players 2 \
+  --samples 125 \
+  --legacy-ai Nullkiller2 \
+  --candidate-ai Nullkiller2V3 \
+  --testdays 28 \
+  --adjudicate-testdays \
+  --config-replace config/ai/nk2ai/nk2ai-settings.json \
+    '"battlePredictionSimulationSamples" : 0' \
+    '"battlePredictionSimulationSamples" : 3'
+```
+
+The replacement is restored before exit. Summary files include
+`runtimeBattleSimulation` totals by model; for a valid V3+simulation run, the
+candidate model should have nonzero `requests` and mostly `complete` samples.
+
 With `--adjudicate-testdays`, games that reach the completed-day limit without
 a standard winner are scored deterministically from the run-local
 `statistics.csv`. Full standard victories still take precedence when they occur.

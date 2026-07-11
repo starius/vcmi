@@ -63,6 +63,7 @@
 		"safeAttackRatio" : 1.1,
 		"battlePredictionModel" : "legacy",
 		"battlePredictionSafeProbability" : 0.65,
+		"battlePredictionSimulationSamples" : 0,
 		"maxArmyLossTarget" : 0.65
 	},
 
@@ -87,6 +88,7 @@
 		"safeAttackRatio" : 1.1,
 		"battlePredictionModel" : "legacy",
 		"battlePredictionSafeProbability" : 0.65,
+		"battlePredictionSimulationSamples" : 0,
 		"maxArmyLossTarget" : 0.50
 	},
 
@@ -111,6 +113,7 @@
 		"safeAttackRatio" : 1.1,
 		"battlePredictionModel" : "legacy",
 		"battlePredictionSafeProbability" : 0.65,
+		"battlePredictionSimulationSamples" : 0,
 		"maxArmyLossTarget" : 0.35
 	},
 
@@ -135,6 +138,7 @@
 		"safeAttackRatio" : 1.1,
 		"battlePredictionModel" : "legacy",
 		"battlePredictionSafeProbability" : 0.65,
+		"battlePredictionSimulationSamples" : 0,
 		"maxArmyLossTarget" : 0.35
 	},
 
@@ -159,6 +163,7 @@
 		"safeAttackRatio" : 1.1,
 		"battlePredictionModel" : "legacy",
 		"battlePredictionSafeProbability" : 0.65,
+		"battlePredictionSimulationSamples" : 0,
 		"maxArmyLossTarget" : 0.35
 	}
 }
