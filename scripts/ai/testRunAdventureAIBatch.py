@@ -12,7 +12,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from runAdventureAIBatch import compact_result, run_one, run_one_with_infrastructure_retries
+from runAdventureAIBatch import compact_result, run_one, run_one_with_infrastructure_retries, summarize_results
 
 
 class RunAdventureAIBatchTest(unittest.TestCase):
@@ -80,6 +80,9 @@ class RunAdventureAIBatchTest(unittest.TestCase):
             self.assertIn("fake client started", result["stdoutSummary"]["tail"])
             self.assertGreaterEqual(result["stdoutSummary"]["lastOutputAgeSeconds"], 0.0)
             self.assertEqual(compact_result(result)["stdoutTailSignature"], "unknown")
+            summary = summarize_results([result])
+            self.assertEqual(summary["idleTimeouts"], 1)
+            self.assertEqual(summary["nonzeroExit"], 0)
 
     def test_run_one_passes_player_script_overrides(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

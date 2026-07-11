@@ -156,7 +156,11 @@ def outcome_counts(results: list[dict[str, Any]]) -> Counter[str]:
 def run_metrics(results: list[dict[str, Any]], summary: dict[str, Any]) -> dict[str, Any]:
     timeouts = sum(1 for result in results if result["timedOut"])
     idle_timeouts = sum(1 for result in results if result.get("idleTimedOut"))
-    nonzero = sum(1 for result in results if not result["timedOut"] and result["returnCode"] != 0)
+    nonzero = sum(
+        1
+        for result in results
+        if not result["timedOut"] and not result.get("idleTimedOut") and result["returnCode"] != 0
+    )
     completed = sum(1 for result in results if not result["timedOut"] and result["returnCode"] == 0)
     infrastructure_failures = sum(1 for result in results if result.get("infrastructureFailure"))
     infrastructure_retried_attempts = sum(len(result.get("previousAttempts", [])) for result in results)

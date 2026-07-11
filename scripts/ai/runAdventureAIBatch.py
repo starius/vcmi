@@ -633,7 +633,11 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         "infrastructureFailures": sum(1 for result in results if result.get("infrastructureFailure")),
         "infrastructureRetriedAttempts": infrastructure_retried_attempts,
         "terminatedAfterOutcome": sum(1 for result in results if result.get("terminatedAfterOutcome")),
-        "nonzeroExit": sum(1 for result in results if not result.get("timedOut") and result.get("returnCode") != 0),
+        "nonzeroExit": sum(
+            1
+            for result in results
+            if not result.get("timedOut") and not result.get("idleTimedOut") and result.get("returnCode") != 0
+        ),
         "completedDayMin": min(completed_days) if completed_days else None,
         "completedDayMax": max(completed_days) if completed_days else None,
         "completedDayAverage": round(sum(completed_days) / len(completed_days), 2) if completed_days else None,

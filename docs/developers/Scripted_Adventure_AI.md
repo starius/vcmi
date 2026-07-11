@@ -1980,6 +1980,11 @@ Regression harness:
   restricted to non-terminal safety outcomes (`idle_timeout`, broad timeout, or nonzero exit) whose tail signature
   matches `battle_ai_creation` or `battle_ai_creation_invalid_stack`; strategic red wins/losses are never retried.
   Final JSON keeps `previousAttempts` so promotion analysis can see how much infrastructure noise was skipped.
+- Done: a 16-map no-trace run with one infrastructure retry produced 7 Lua/red wins, 7 Nullkiller2/blue wins, and
+  2 idle timeouts. Three infrastructure attempts were retried; seed `13` recovered to a Lua win and seed `14`
+  recovered to a Nullkiller2 win, while seed `08` remained a `battle_ai_creation` infrastructure failure after the
+  retry. A separate idle on seed `05` ended at `turn_start`, so it is not currently classified as battle-client
+  infrastructure.
 - Done: rerunning the five previously stalled seeds (`02`, `04`, `08`, `10`, `12`) with a 90-second idle timeout
   completed all five without an idle timeout. The rerun outcomes were two red losses (`02`, `04`) and three red wins
   (`08`, `10`, `12`), finishing in roughly 43-107 seconds. Treat the earlier battle-creation stalls as
