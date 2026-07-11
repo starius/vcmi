@@ -182,6 +182,12 @@ Offline validation:
 - false-safe and false-unsafe counts
 - separate metrics by battle type
 - holdout by generated setup, not by individual replay row
+- dataset integrity gate before analysis:
+  - expected row count and schema
+  - expected shard count and repeated rows per shard
+  - required battle-type coverage
+  - no MMAI fallback/config-error log lines
+  - MMAI model initialization in every shard log when MMAI labels are expected
 
 End-to-end validation:
 
@@ -281,6 +287,23 @@ Implementation outline:
 7. Run paired end-to-end AI games with old predictor vs static-v3+fallback before making it default. The battle-level proxy proves the fallback can predict outcomes; it does not by itself prove better adventure-map play.
 
 Batch collection caveat: when running `vcmibattlesim` with MMAI in parallel, each shard needs an isolated XDG config/cache profile. A shared profile can be rewritten by clients and silently disable the MMAI mod for later shards. Use `--xdg-config-template` and, if needed, `--xdg-profile-root` so each client starts from the same active-mod configuration.
+
+Use the dataset validator before fitting or reporting numbers:
+
+```bash
+python3 scripts/battle_prediction/validate_battle_dataset.py \
+  schema3-richstats-mmai-real-mixed-2k-combined-20260711.tar.gz \
+  --expected-rows 2000 \
+  --expected-schema 3 \
+  --expected-shards 100 \
+  --expected-shard-size 20 \
+  --require-complete-shards \
+  --require-battle-types hero-hero,hero-monster,town \
+  --require-no-mmai-fallback \
+  --require-mmai-initialized
+```
+
+The corrected archive passes this gate. The earlier contaminated `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-mixed-2k` run fails with 8980 MMAI fallback/config-error log lines and 0/100 shard logs initializing MMAI.
 
 ## Merge Strategy
 
