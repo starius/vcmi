@@ -10,6 +10,8 @@
 #include "StdInc.h"
 #include "BattleSimulationBatch.h"
 
+#include "BattleSimulationReplay.h"
+
 #include "../CGameHandler.h"
 
 #include "../../lib/CConfigHandler.h"
@@ -51,9 +53,7 @@ struct State
 	bool initialized = false;
 	Config config;
 	std::ofstream output;
-	int64_t rowsWritten = 0;
-	BattleSimulationSummary summary;
-	std::map<ObjectInstanceID, int32_t> initialHeroMana;
+	BattleSimulation::BattleSimulationReplaySession replay;
 };
 
 State state;
@@ -475,11 +475,7 @@ void appendCasualties(std::ostream & out, const std::map<CreatureID, si32> & cas
 
 int32_t rememberInitialMana(const CGHeroInstance * hero, int32_t fallback)
 {
-	if(!hero)
-		return fallback;
-
-	const auto result = state.initialHeroMana.try_emplace(hero->id, fallback);
-	return result.first->second;
+	return state.replay.rememberInitialMana(hero, fallback);
 }
 
 int countCombatSpells(const CGHeroInstance * hero)
@@ -603,12 +599,14 @@ void initialize()
 	state.output.open(state.config.outputPath, std::ios::out | std::ios::trunc);
 	if(!state.output)
 		throw std::runtime_error("Unable to open battle simulation output: " + state.config.outputPath);
+
+	state.replay.setSampleLimit(state.config.maxBattles);
 }
 
 void appendResultRow(const CBattleInfoCallback & battle, const BattleResult & result)
 {
 	const auto * info = battle.getBattle();
-	const int64_t rowIndex = state.rowsWritten;
+	const int64_t rowIndex = state.replay.recordedSamples();
 
 	state.output << "{";
 	state.output << "\"schema\":4";
@@ -659,21 +657,16 @@ void appendResultRow(const CBattleInfoCallback & battle, const BattleResult & re
 	if(!state.output)
 		throw std::runtime_error("Failed to write battle simulation result");
 
-	++state.rowsWritten;
 	state.output.flush();
 
-	if(state.rowsWritten % 1000 == 0)
+	const auto rowsWritten = rowIndex + 1;
+	if(rowsWritten % 1000 == 0)
 	{
 		logGlobal->info("Battle simulation wrote %lld/%lld rows to %s",
-			static_cast<long long>(state.rowsWritten),
+			static_cast<long long>(rowsWritten),
 			static_cast<long long>(state.config.maxBattles),
 			state.config.outputPath);
 	}
-}
-
-void recordSummary(const BattleResult & result)
-{
-	state.summary.recordWinner(result.winner);
 }
 }
 
@@ -686,13 +679,13 @@ bool isEnabled()
 bool hasRecordedRows()
 {
 	initialize();
-	return state.rowsWritten > 0;
+	return state.replay.hasRecordedSamples();
 }
 
 BattleSimulationSummary getSummary()
 {
 	initialize();
-	return state.summary;
+	return state.replay.getSummary();
 }
 
 int32_t getReplayInitialMana(const CGHeroInstance * hero, int32_t fallback)
@@ -701,11 +694,7 @@ int32_t getReplayInitialMana(const CGHeroInstance * hero, int32_t fallback)
 	if(!state.config.enabled || !hero)
 		return fallback;
 
-	const auto iter = state.initialHeroMana.find(hero->id);
-	if(iter == state.initialHeroMana.end())
-		return fallback;
-
-	return iter->second;
+	return state.replay.getReplayInitialMana(hero, fallback);
 }
 
 BattleSimulationRecordResult recordResult(CGameHandler &, const CBattleInfoCallback & battle, const BattleResult & result)
@@ -715,11 +704,7 @@ BattleSimulationRecordResult recordResult(CGameHandler &, const CBattleInfoCallb
 		return {};
 
 	appendResultRow(battle, result);
-	recordSummary(result);
-	return BattleSimulationRecordResult{
-		state.rowsWritten < state.config.maxBattles,
-		state.summary
-	};
+	return state.replay.recordResult(result);
 }
 
 bool recordResultAndShouldReplay(CGameHandler & gameHandler, const CBattleInfoCallback & battle, const BattleResult & result)
