@@ -588,7 +588,59 @@ def v3_compatible_feature_vector(row: dict[str, Any]) -> list[float]:
 TOWN_FACTION_BUCKETS = 9
 TOWN_TERRAIN_BUCKETS = 10
 TOWN_BATTLEFIELD_BUCKETS = 24
-TOWN_BUILDING_IDS = list(range(44)) + list(range(150, 156))
+TOWN_BUILDING_IDS = list(range(72)) + list(range(150, 156))
+TOWN_BUILDING_NAMES = {
+    0: "mageGuild1",
+    1: "mageGuild2",
+    2: "mageGuild3",
+    3: "mageGuild4",
+    4: "mageGuild5",
+    5: "tavern",
+    6: "shipyard",
+    7: "fort",
+    8: "citadel",
+    9: "castle",
+    10: "villageHall",
+    11: "townHall",
+    12: "cityHall",
+    13: "capitol",
+    14: "marketplace",
+    15: "resourceSilo",
+    16: "blacksmith",
+    17: "special1",
+    18: "horde1",
+    19: "horde1Upgr",
+    20: "ship",
+    21: "special2",
+    22: "special3",
+    23: "special4",
+    24: "horde2",
+    25: "horde2Upgr",
+    26: "grail",
+    27: "extraTownHall",
+    28: "extraCityHall",
+    29: "extraCapitol",
+}
+TOWN_BUILDING_NAMES.update({30 + index: f"dwellLvl{index + 1}" for index in range(7)})
+TOWN_BUILDING_NAMES.update({37 + index: f"dwellLvl{index + 1}Up" for index in range(7)})
+TOWN_BUILDING_NAMES.update({
+    44 + tier * 7 + index: f"dwellLvl{index + 1}Up{tier + 2}"
+    for tier in range(4)
+    for index in range(7)
+})
+TOWN_BUILDING_NAMES.update({
+    150: "dwellLvl8",
+    151: "dwellLvl8Up",
+    152: "dwellLvl8Up2",
+    153: "dwellLvl8Up3",
+    154: "dwellLvl8Up4",
+    155: "dwellLvl8Up5",
+})
+
+
+def town_building_label(building_id: int) -> str:
+    name = TOWN_BUILDING_NAMES.get(building_id)
+    return f"{building_id}:{name}" if name else str(building_id)
 
 
 def town_buildings(row: dict[str, Any]) -> set[int]:
@@ -1890,7 +1942,7 @@ def town_summary(row: dict[str, Any]) -> str:
     if not town:
         return "none"
     fortifications = town.get("fortifications") or {}
-    buildings = sorted(town_buildings(row))
+    buildings = [town_building_label(building) for building in sorted(town_buildings(row))]
     return (
         f"faction={town.get('faction')} fort={town.get('fortLevel')} "
         f"mage={town.get('mageGuildLevel')} tavern={town.get('hasBuiltTavern')} "

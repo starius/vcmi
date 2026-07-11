@@ -25,6 +25,7 @@ from evaluate_nullkiller_predictor import (
     hero_strength,
     load_shard_manifest,
     load_groups,
+    town_building_label,
     town_buildings,
     town_pre_merge_army_strength,
     town_pre_merge_largest_share,
@@ -310,7 +311,7 @@ def segments_for(row: dict[str, Any], actual: float, predicted: float) -> list[s
                 f"town_initial_gate_state={wall_state(row, 'initialWallState', 'gateState')}",
             ]
         )
-        result.extend(f"town_building={building_id}" for building_id in sorted(buildings))
+        result.extend(f"town_building={town_building_label(building_id)}" for building_id in sorted(buildings))
         if pre_merge:
             defender_army = max(float(row.get("defenderArmyStrength") or 0.0), 1.0)
             town_army = town_pre_merge_army_strength(row, "townArmy")
@@ -422,7 +423,7 @@ def town_summary(row: dict[str, Any]) -> str:
     if not isinstance(town, dict):
         return "none"
     fortifications = town.get("fortifications") or {}
-    buildings = sorted(town_buildings(row))
+    buildings = [town_building_label(building) for building in sorted(town_buildings(row))]
     initial_wall_total = wall_total(row, "initialWallState", ["bottomWall", "belowGate", "overGate", "upperWall"])
     final_wall_total = wall_total(row, "finalWallState", ["bottomWall", "belowGate", "overGate", "upperWall"])
     return (
