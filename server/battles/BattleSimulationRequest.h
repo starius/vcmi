@@ -25,8 +25,16 @@ struct BattleSimulationRequest
 	int32_t sampleCount = 0;
 };
 
+enum class BattleSimulationResponseStatus
+{
+	INVALID_REQUEST,
+	NOT_AVAILABLE,
+	COMPLETE
+};
+
 struct BattleSimulationResponse
 {
+	BattleSimulationResponseStatus status = BattleSimulationResponseStatus::NOT_AVAILABLE;
 	BattleSimulationSummary summary;
 	BattleSimulationEvaluation evaluation;
 };
@@ -36,5 +44,6 @@ bool isCompleteResponse(const BattleSimulationRequest & request, const BattleSim
 
 BattleSimulationResponse makeResponse(
 	const BattleSimulationSummary & summary,
-	const BattleSimulationDecisionThresholds & thresholds = {});
+	const BattleSimulationDecisionThresholds & thresholds = {},
+	BattleSimulationResponseStatus status = BattleSimulationResponseStatus::COMPLETE);
 }

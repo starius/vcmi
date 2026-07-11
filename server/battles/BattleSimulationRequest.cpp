@@ -30,14 +30,18 @@ bool isValidRequest(const BattleSimulationRequest & request)
 
 bool isCompleteResponse(const BattleSimulationRequest & request, const BattleSimulationResponse & response)
 {
-	return isValidRequest(request) && response.summary.rows >= request.sampleCount;
+	return isValidRequest(request)
+		&& response.status == BattleSimulationResponseStatus::COMPLETE
+		&& response.summary.rows >= request.sampleCount;
 }
 
 BattleSimulationResponse makeResponse(
 	const BattleSimulationSummary & summary,
-	const BattleSimulationDecisionThresholds & thresholds)
+	const BattleSimulationDecisionThresholds & thresholds,
+	BattleSimulationResponseStatus status)
 {
 	return BattleSimulationResponse{
+		status,
 		summary,
 		evaluateSummary(summary, thresholds)
 	};
