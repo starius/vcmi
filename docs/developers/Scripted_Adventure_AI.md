@@ -2183,6 +2183,14 @@ Regression harness:
   pre-slice defense spending while map tempo remains available; the next defense attempt should expose or call a
   bounded Nullkiller defense/reinforcement subroutine for the threatened town instead of spending generic
   build/recruit options from Lua.
+- Rejected / not promoted: a Lua-only bounded-defense-task variant inspected Nullkiller defense candidates,
+  selected a candidate whose structured goal tree referenced the threatened `town_id`, executed exactly that native
+  task, refreshed, and then returned to bounded day control. Unit tests passed, but the 16-map no-trace screen
+  produced 15 terminal results, 6 `ScriptedAdventureAI` wins, 9 `Nullkiller2` wins, and 1 final infrastructure idle
+  after 8 retries (`/root/script-ai-runs/defensive-bounded-native-defense-task-full16-notrace-20260711`). It fixed
+  some loss seeds (`02`, `09`, `10`) but regressed many previous wins, so selecting broad defense candidates by
+  `town_id` is still too blunt. A future defense API should expose a more specific reinforce/defend-town operation
+  with host-side scoring/stop conditions rather than forcing Lua to choose among partially serialized defense tasks.
 - Done: tightened trace mining for town-defense misses. Earlier same-day progress touching a threatened town no
   longer suppresses `defense_pressure_without_response` when the current input still exposes a matching recruit,
   build, or reinforce-town candidate. Re-summarizing the fresh traced baseline now surfaces repeated defense misses
