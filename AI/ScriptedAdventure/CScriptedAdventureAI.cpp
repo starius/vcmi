@@ -319,6 +319,63 @@ const char * scriptObjectControlKindName(ScriptObjectControlKind kind)
 	}
 }
 
+const char * scriptObjectPropertyName(ObjProperty property)
+{
+	switch(property)
+	{
+	case ObjProperty::OWNER:
+		return "owner";
+	case ObjProperty::PRIMARY_STACK_COUNT:
+		return "primary_stack_count";
+	case ObjProperty::VISITORS:
+		return "visitors";
+	case ObjProperty::VISITED:
+		return "visited";
+	case ObjProperty::ID:
+		return "id";
+	case ObjProperty::AVAILABLE_CREATURE:
+		return "available_creature";
+	case ObjProperty::MONSTER_COUNT:
+		return "monster_count";
+	case ObjProperty::MONSTER_POWER:
+		return "monster_power";
+	case ObjProperty::MONSTER_EXP:
+		return "monster_exp";
+	case ObjProperty::MONSTER_RESTORE_TYPE:
+		return "monster_restore_type";
+	case ObjProperty::MONSTER_REFUSED_JOIN:
+		return "monster_refused_join";
+	case ObjProperty::STRUCTURE_ADD_VISITING_HERO:
+		return "structure_add_visiting_hero";
+	case ObjProperty::STRUCTURE_CLEAR_VISITORS:
+		return "structure_clear_visitors";
+	case ObjProperty::STRUCTURE_ADD_GARRISONED_HERO:
+		return "structure_add_garrisoned_hero";
+	case ObjProperty::BONUS_VALUE_FIRST:
+		return "bonus_value_first";
+	case ObjProperty::BONUS_VALUE_SECOND:
+		return "bonus_value_second";
+	case ObjProperty::SEERHUT_VISITED:
+		return "seerhut_visited";
+	case ObjProperty::SEERHUT_COMPLETE:
+		return "seerhut_complete";
+	case ObjProperty::OBELISK_VISITED:
+		return "obelisk_visited";
+	case ObjProperty::BANK_DAYCOUNTER:
+		return "bank_daycounter";
+	case ObjProperty::BANK_CLEAR:
+		return "bank_clear";
+	case ObjProperty::REWARD_SELECT:
+		return "reward_select";
+	case ObjProperty::REWARD_CLEARED:
+		return "reward_cleared";
+	case ObjProperty::INVALID:
+	case ObjProperty::UNUSED:
+	default:
+		return "unknown";
+	}
+}
+
 const char * scriptArmyTransferKindName(ScriptArmyTransferKind kind)
 {
 	switch(kind)
@@ -4844,6 +4901,76 @@ void CScriptedAdventureAI::buildChanged(const CGTownInstance * town, BuildingID 
 	}
 
 	AIGateway::buildChanged(town, buildingID, what);
+}
+
+void CScriptedAdventureAI::beforeObjectPropertyChanged(const SetObjectProperty * sop)
+{
+	if(sop && cc)
+	{
+		const CGObjectInstance * object = cc->getObj(sop->id, false);
+		const bool visible = object && cc->isVisibleFor(object, playerID);
+		const bool owned = object && object->tempOwner == playerID;
+		if(visible || owned)
+		{
+			JsonNode data;
+			data["object_id"] = JsonNode(sop->id.getNum());
+			data["property_id"] = JsonNode(static_cast<int32_t>(sop->what));
+			data["property"] = JsonNode(scriptObjectPropertyName(sop->what));
+			data["identifier_id"] = JsonNode(sop->identifier.getNum());
+			data["identifier"] = JsonNode(std::to_string(sop->identifier.getNum()));
+			data["objectVisible"] = JsonNode(visible);
+			data["objectOwned"] = JsonNode(owned);
+			if(sop->what == ObjProperty::OWNER)
+			{
+				const PlayerColor owner = sop->identifier.as<PlayerColor>();
+				data["newOwnerId"] = JsonNode(owner.getNum());
+				data["newOwner"] = JsonNode(jsonPlayerColor(owner));
+			}
+			if(object && (visible || owned))
+				data["object"] = jsonMapObject(object, playerID, nullptr);
+
+			const bool opponent = (object && isOpponent(object->tempOwner))
+				|| (sop->what == ObjProperty::OWNER && isOpponent(sop->identifier.as<PlayerColor>()));
+			appendScriptUpdate("object_property_will_change", data, opponent);
+		}
+	}
+
+	AIGateway::beforeObjectPropertyChanged(sop);
+}
+
+void CScriptedAdventureAI::objectPropertyChanged(const SetObjectProperty * sop)
+{
+	if(sop && cc)
+	{
+		const CGObjectInstance * object = cc->getObj(sop->id, false);
+		const bool visible = object && cc->isVisibleFor(object, playerID);
+		const bool owned = object && object->tempOwner == playerID;
+		if(visible || owned)
+		{
+			JsonNode data;
+			data["object_id"] = JsonNode(sop->id.getNum());
+			data["property_id"] = JsonNode(static_cast<int32_t>(sop->what));
+			data["property"] = JsonNode(scriptObjectPropertyName(sop->what));
+			data["identifier_id"] = JsonNode(sop->identifier.getNum());
+			data["identifier"] = JsonNode(std::to_string(sop->identifier.getNum()));
+			data["objectVisible"] = JsonNode(visible);
+			data["objectOwned"] = JsonNode(owned);
+			if(sop->what == ObjProperty::OWNER)
+			{
+				const PlayerColor owner = sop->identifier.as<PlayerColor>();
+				data["newOwnerId"] = JsonNode(owner.getNum());
+				data["newOwner"] = JsonNode(jsonPlayerColor(owner));
+			}
+			if(object && (visible || owned))
+				data["object"] = jsonMapObject(object, playerID, nullptr);
+
+			const bool opponent = (object && isOpponent(object->tempOwner))
+				|| (sop->what == ObjProperty::OWNER && isOpponent(sop->identifier.as<PlayerColor>()));
+			appendScriptUpdate("object_property_changed", data, opponent);
+		}
+	}
+
+	AIGateway::objectPropertyChanged(sop);
 }
 
 void CScriptedAdventureAI::heroMoved(const TryMoveHero & details, bool verbose)

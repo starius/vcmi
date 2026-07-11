@@ -97,6 +97,8 @@ public:
 	void battleResultsApplied() override;
 	void battleEnded() override;
 	void showWorldViewEx(const std::vector<ObjectPosInfo> & objectPositions, bool showTerrain) override;
+	void beforeObjectPropertyChanged(const SetObjectProperty * sop) override;
+	void objectPropertyChanged(const SetObjectProperty * sop) override;
 	void setColorScheme(ColorScheme scheme) override;
 	void requestSent(const CPackForServer * pack, int requestID) override;
 	void requestRealized(PackageApplied * pa) override;

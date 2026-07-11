@@ -153,8 +153,8 @@ Input:
   are the script-facing data.
 - The update journal mirrors visible adventure state changes: hero movement/stat/mana/skill/bonus changes,
   garrison changes, artifact movement, available creature/artifact changes, resource receipts, adventure spell
-  casts, revealed tiles, and hidden tiles. Owned objects include detailed snapshots; visible non-owned objects stay
-  on public object fields.
+  casts, revealed tiles, hidden tiles, and object property changes such as ownership/visited/available-creature
+  updates. Owned objects include detailed snapshots; visible non-owned objects stay on public object fields.
 - It also mirrors player-visible lifecycle/window events such as hero visits, quest-log/world-view/puzzle-map
   windows, player turn starts/ends, battle-finished notifications, and game-over messages without adding hidden
   map state.
@@ -1888,6 +1888,10 @@ Regression harness:
 - Done: the imperative Lua facade refreshes its `type` to `type_id` mapping from host-provided
   `actionSpace.acceptedActions`, including after `ai:refresh()`. The hardcoded Lua ids remain a compatibility
   fallback, but normal play now uses the host-advertised integer action contract.
+- Done: the script update journal mirrors visible/owned `beforeObjectPropertyChanged` and
+  `objectPropertyChanged` callbacks as `object_property_will_change` and `object_property_changed`. Each update
+  carries stable object/property/identifier ids, trace labels, and a gated object snapshot only when the object is
+  visible or owned by the script player. This closes a read-side gap for map-control and ownership-memory policies.
 - Done: trace mistake mining now treats final `imperative-output` progress as part of the day-level script decision.
   Bounded `nullkiller_turn_slice` work can satisfy defense and hero-threat responses through native task
   `affectedObjectIds`, and normal imperative stop signals are no longer reported as stopped action batches. This
