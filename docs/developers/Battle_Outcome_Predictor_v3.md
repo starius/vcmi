@@ -216,12 +216,13 @@ As of 2026-07-11, the best empirical result is fallback-only deterministic repea
 - corrected 2k town-hero run (`schema3-richstats-mmai-town-hero-2k-fix-20260711`, `simulation-fallback-cxx-v3-town-allwins.txt`):
   - 3 samples: 100.00% win/loss accuracy, 95.37% safety accuracy on 367 held-out rows
   - 5 samples: 98.39% win/loss accuracy, 95.18% safety accuracy on 311 held-out rows
-- partial corrected 5k town-hero run, 64 complete shards / 3200 rows (`schema3-richstats-mmai-town-hero-5k-partial-complete-20260711T064234Z`, `simulation-fallback-cxx-v3-town-allwins.txt`):
-  - 5 samples: 97.56% win/loss accuracy, 98.49% safety accuracy on 861 held-out rows
-  - 10 samples: 97.73% win/loss accuracy, 98.87% safety accuracy on 706 held-out rows
-  - 20 samples: 97.07% win/loss accuracy, 100.00% safety accuracy on 410 held-out rows
+- partial corrected 5k town-hero run, 78 complete shards / 3900 rows (`schema3-richstats-mmai-town-hero-5k-partial-complete-20260711T065855Z`, `simulation-fallback-cxx-v3-town-allwins.txt`):
+  - 5 samples: 97.94% win/loss accuracy, 94.31% safety accuracy on 1020 held-out rows
+  - 10 samples: 98.11% win/loss accuracy, 94.32% safety accuracy on 845 held-out rows
+  - 20 samples: 97.64% win/loss accuracy, 100.00% safety accuracy on 509 held-out rows
+  - 30 samples: 100.00% win/loss accuracy, 92.86% safety accuracy on 280 held-out rows; this bucket is still small and had one false-unsafe case
 
-The best static models are not merge-ready: current cxx-v3 was about 69.39% / Brier 0.287 on corrected 5k non-town deployed-static holdout rows and about 58.76% / Brier 0.363 on corrected 2k town-hero holdout rows. Skill/spell static features are promising but overfit in the current small generated datasets. The practical direction is therefore a server-owned runtime simulation fallback, with static prediction kept as a cheap coarse estimate until a better validated model exists.
+The best static models are not merge-ready: current cxx-v3 was about 69.39% / Brier 0.287 on corrected 5k non-town deployed-static holdout rows, about 58.76% / Brier 0.363 on corrected 2k town-hero holdout rows, and 56.82% / Brier 0.362 on the 3900-row partial corrected town-hero holdout. On the same 3900-row town-hero split, skill/spell static features reached 81.26% / Brier 0.129, but this is still offline generated-data evidence and not enough to merge as Nullkiller2 logic. The practical direction is therefore a server-owned runtime simulation fallback, with static prediction kept as a cheap coarse estimate until a better validated model exists.
 
 Remote analysis outputs:
 
@@ -243,6 +244,7 @@ Remote analysis outputs:
 - `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-real-mixed-2k-combined-20260711/simulation-fallback-allwins.txt`
 - `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-real-mixed-5k-20260711`
 - `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-town-hero-2k-fix-20260711`
+- `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-town-hero-5k-partial-complete-20260711T065855Z`
 
 Observed pattern:
 
