@@ -211,6 +211,9 @@ Remote analysis outputs:
 - `/root/vcmi-battle-results/mmai-100k-simulation-fallback-allwins-diagnostics.txt`
 - `/root/vcmi-battle-results/mmai-100k-simulation-fallback-wilson093-diagnostics.txt`
 - `/root/vcmi-battle-results/mmai-100k-simulation-fallback-wilson094-diagnostics.txt`
+- `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-real-parallel-smoke`
+- `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-real-mixed-2k-combined-20260711/evaluation.txt`
+- `/root/vcmi-nk-ratio-results/schema3-richstats-mmai-real-mixed-2k-combined-20260711/simulation-fallback-allwins.txt`
 
 Observed pattern:
 
@@ -225,6 +228,12 @@ Observed pattern:
 - an all-wins safety policy is conservative but directly attacks false-safe risk: at 50 samples on the 100k holdout it kept 99.38% win/loss accuracy and produced 0 false-safe rows, at the cost of 10 false-unsafe groups / 266 rows
 - Wilson lower-bound policies give a tunable version of the same tradeoff: with one-sided 90% Wilson lower bound and threshold 0.94, 50 samples again produced 0 false-safe rows and 10 false-unsafe groups / 266 rows; threshold 0.93 allowed one 49/50 sampled-win false-safe case
 - the schema3 mixed dataset with town battles is still too small, but all-wins safety had 100% win/loss and safety accuracy on its eligible held-out rows at 5 and 10 samples, including town rows
+- the initial schema3 mixed/town run that was named `mmai` was not valid MMAI training evidence: shard logs showed missing MMAI config and fallback to BattleAI. Correct MMAI collection requires the MMAI mod to be active and isolated per parallel client.
+- the corrected schema3 MMAI mixed run from 2026-07-11 has 2000 rows, 100 generated setup shards, 20 repeats per shard, 760 town rows, and 0 MMAI fallback lines. It used per-shard XDG config/cache profiles to avoid profile races between parallel clients.
+- on that corrected schema3 MMAI data, static prediction is not good enough: held-out cxx-v3 accuracy was about 69%, v3-compatible fitted accuracy about 85%, and full fitted model accuracy about 73%. The high training accuracy did not generalize.
+- corrected schema3 worst cxx-v3 errors include confident sign mistakes: e.g. predicted probabilities below 1% for setups that MMAI won 100% of the time, and a 98.5% predicted win for a setup lost 100% of the time. This points to root-cause modeling gaps, not a threshold-only problem.
+- on the same corrected schema3 data, fallback-only repeated simulation with an all-wins safety rule reached 97.6% win/loss accuracy and 100% safety accuracy with 3 samples, 98.5% / 100% with 5 samples, and 100% / 100% with 10 samples on eligible held-out rows. The dataset is still small, but it matches the broader 100k proxy direction.
+- a hybrid static-probability band such as `[0.20, 0.95]` is not enough yet: one corrected schema3 holdout setup had static probability below 1% while actual holdout win rate was 100%, so static confidence cannot currently decide when simulation may be skipped.
 - worst errors are repeated matchup/special-case failures, not just calibration threshold mistakes
 
 The next likely useful model needs either a stronger non-linear model with better generalization evidence or a deterministic simulation fallback for high-impact uncertain battles. Another global ratio-only coefficient update is unlikely to reach the target by itself.
@@ -234,7 +243,8 @@ The next likely useful model needs either a stronger non-linear model with bette
 Measured fallback behavior uses repeated MMAI outcomes as a proxy for running a battle several times at decision time. This is not a direct implementation yet, but it gives a target:
 
 - use the static v3/rich model as a cheap first pass
-- invoke battle simulation for high-impact decisions and for probabilities below a conservative safety cutoff, not for every object on every path
+- invoke battle simulation for attack decisions until static confidence is empirically trustworthy. The corrected schema3 run shows static confidence can be confidently wrong, so a narrow uncertainty band is unsafe as the first runtime gate.
+- after runtime simulation exists, a cheap static model can still be used to order candidates, cache keys, or skip strategically irrelevant checks, but not as the only safety gate for taking a battle.
 - use deterministic seeds derived from game seed, hero id, target object id, turn, and fallback sample index
 - evaluate at least 5 samples for win/loss prediction; use 10+ samples or a stricter all-wins style rule for safety-sensitive attacks
 - treat win/loss probability and safety as separate outputs:
@@ -269,6 +279,8 @@ Implementation outline:
    - high-impact-only
    - always for attack decisions
 7. Run paired end-to-end AI games with old predictor vs static-v3+fallback before making it default. The battle-level proxy proves the fallback can predict outcomes; it does not by itself prove better adventure-map play.
+
+Batch collection caveat: when running `vcmibattlesim` with MMAI in parallel, each shard needs an isolated XDG config/cache profile. A shared profile can be rewritten by clients and silently disable the MMAI mod for later shards. Use `--xdg-config-template` and, if needed, `--xdg-profile-root` so each client starts from the same active-mod configuration.
 
 ## Merge Strategy
 

@@ -35,11 +35,14 @@ struct Options
 	std::vector<std::string> maps;
 	std::filesystem::path mapsFile;
 	std::filesystem::path outputDirectory;
+	std::filesystem::path xdgConfigTemplate;
+	std::filesystem::path xdgProfileRoot;
 	std::string combatAI = "BattleAI";
 	std::string generatedMode = "mixed";
 	std::vector<std::string> extraClientArgs;
 	uint64_t battles = 0;
 	uint64_t shards = 0;
+	uint64_t firstShardIndex = 0;
 	unsigned jobs = std::max(1u, std::thread::hardware_concurrency());
 	int64_t globalSeed = 1;
 	bool generateMap = false;
@@ -72,9 +75,12 @@ void printHelp()
 		<< "  --battles N                total battle result rows to collect\n"
 		<< "  --jobs N                   concurrent client processes\n"
 		<< "  --shards N                 total client shards, default: max(jobs, maps)\n"
+		<< "  --first-shard-index N      first generated shard index, default: 0\n"
 		<< "  --seed N                   global deterministic seed, default: 1\n"
 		<< "  --combat-ai NAME           combat AI passed to the client, default: BattleAI\n"
 		<< "  --extra-client-arg ARG     extra argument passed to every client, can be repeated\n"
+		<< "  --xdg-config-template DIR  copy XDG config template to an isolated per-shard profile\n"
+		<< "  --xdg-profile-root DIR     per-shard XDG profile root, default: output-dir/profiles\n"
 		<< "  --dry-run                  print commands without running them\n"
 		<< "  --help                     display this help and exit\n";
 }
@@ -92,6 +98,23 @@ uint64_t parsePositive(const std::string & value, const std::string & option)
 		throw std::runtime_error("Invalid numeric value for " + option + ": " + value);
 	}
 	if(parsed != value.size() || result == 0)
+		throw std::runtime_error("Invalid numeric value for " + option + ": " + value);
+	return result;
+}
+
+uint64_t parseNonNegative(const std::string & value, const std::string & option)
+{
+	size_t parsed = 0;
+	uint64_t result = 0;
+	try
+	{
+		result = std::stoull(value, &parsed, 10);
+	}
+	catch(const std::exception &)
+	{
+		throw std::runtime_error("Invalid numeric value for " + option + ": " + value);
+	}
+	if(parsed != value.size())
 		throw std::runtime_error("Invalid numeric value for " + option + ": " + value);
 	return result;
 }
@@ -150,12 +173,18 @@ Options parseOptions(int argc, char ** argv)
 			options.jobs = static_cast<unsigned>(parsePositive(requireValue(argc, argv, i, arg), arg));
 		else if(arg == "--shards")
 			options.shards = parsePositive(requireValue(argc, argv, i, arg), arg);
+		else if(arg == "--first-shard-index")
+			options.firstShardIndex = parseNonNegative(requireValue(argc, argv, i, arg), arg);
 		else if(arg == "--seed")
 			options.globalSeed = parseInteger(requireValue(argc, argv, i, arg), arg);
 		else if(arg == "--combat-ai")
 			options.combatAI = requireValue(argc, argv, i, arg);
 		else if(arg == "--extra-client-arg")
 			options.extraClientArgs.push_back(requireValue(argc, argv, i, arg));
+		else if(arg == "--xdg-config-template")
+			options.xdgConfigTemplate = requireValue(argc, argv, i, arg);
+		else if(arg == "--xdg-profile-root")
+			options.xdgProfileRoot = requireValue(argc, argv, i, arg);
 		else if(arg == "--dry-run")
 			options.dryRun = true;
 		else
@@ -198,11 +227,17 @@ void validateOptions(Options & options, const std::vector<std::string> & maps)
 		throw std::runtime_error("--jobs must be positive");
 	if(options.generatedMode != "mixed" && options.generatedMode != "hero" && options.generatedMode != "monster" && options.generatedMode != "town")
 		throw std::runtime_error("--generated-mode must be mixed, hero, monster, or town");
+	if(!options.xdgConfigTemplate.empty() && !std::filesystem::is_directory(options.xdgConfigTemplate))
+		throw std::runtime_error("--xdg-config-template must be a directory: " + options.xdgConfigTemplate.string());
+	if(options.xdgConfigTemplate.empty() && !options.xdgProfileRoot.empty())
+		throw std::runtime_error("--xdg-profile-root requires --xdg-config-template");
 	if(options.shards == 0)
 		options.shards = std::max<uint64_t>(options.jobs, options.generateMap ? 1 : maps.size());
 	if(options.shards > options.battles)
 		options.shards = options.battles;
 	options.jobs = static_cast<unsigned>(std::min<uint64_t>(options.jobs, options.shards));
+	if(!options.xdgConfigTemplate.empty() && options.xdgProfileRoot.empty())
+		options.xdgProfileRoot = options.outputDirectory / "profiles";
 }
 
 uint64_t splitmix64(uint64_t value)
@@ -229,6 +264,11 @@ std::string shardName(uint64_t index, const std::string & extension)
 	return out.str();
 }
 
+std::filesystem::path shardProfileRoot(const Options & options, const Shard & shard)
+{
+	return options.xdgProfileRoot / shardName(shard.index, "");
+}
+
 std::vector<Shard> makeShards(const Options & options, const std::vector<std::string> & maps)
 {
 	std::vector<Shard> shards;
@@ -239,14 +279,15 @@ std::vector<Shard> makeShards(const Options & options, const std::vector<std::st
 
 	for(uint64_t i = 0; i < options.shards; ++i)
 	{
+		const uint64_t shardIndex = options.firstShardIndex + i;
 		Shard shard;
-		shard.index = i;
+		shard.index = shardIndex;
 		shard.battles = base + (i < remainder ? 1 : 0);
-		shard.seed = shardSeed(options.globalSeed, i);
+		shard.seed = shardSeed(options.globalSeed, shardIndex);
 		if(!maps.empty())
 			shard.map = maps[i % maps.size()];
-		shard.outputPath = options.outputDirectory / shardName(i, ".jsonl");
-		shard.logPath = options.outputDirectory / shardName(i, ".log");
+		shard.outputPath = options.outputDirectory / shardName(shardIndex, ".jsonl");
+		shard.logPath = options.outputDirectory / shardName(shardIndex, ".log");
 		shards.push_back(std::move(shard));
 	}
 
@@ -301,6 +342,13 @@ std::string jsonQuote(const std::string & value)
 std::string makeCommand(const Options & options, const Shard & shard, uint64_t shardCount)
 {
 	std::ostringstream command;
+	if(!options.xdgConfigTemplate.empty())
+	{
+		const auto profileRoot = shardProfileRoot(options, shard);
+		command << "XDG_CONFIG_HOME=" << shellQuote((profileRoot / "config").string())
+			<< " XDG_CACHE_HOME=" << shellQuote((profileRoot / "cache").string()) << ' ';
+	}
+
 	command << shellQuote(options.clientPath.string())
 		<< " --battle-sim-output " << shellQuote(shard.outputPath.string())
 		<< " --battle-sim-max-battles " << shard.battles
@@ -320,6 +368,29 @@ std::string makeCommand(const Options & options, const Shard & shard, uint64_t s
 
 	command << " > " << shellQuote(shard.logPath.string()) << " 2>&1";
 	return command.str();
+}
+
+void copyDirectoryContents(const std::filesystem::path & source, const std::filesystem::path & destination)
+{
+	std::filesystem::create_directories(destination);
+	for(const auto & entry : std::filesystem::directory_iterator(source))
+	{
+		std::filesystem::copy(
+			entry.path(),
+			destination / entry.path().filename(),
+			std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing);
+	}
+}
+
+void prepareShardProfile(const Options & options, const Shard & shard)
+{
+	if(options.xdgConfigTemplate.empty())
+		return;
+
+	const auto profileRoot = shardProfileRoot(options, shard);
+	std::filesystem::remove_all(profileRoot);
+	copyDirectoryContents(options.xdgConfigTemplate, profileRoot / "config");
+	std::filesystem::create_directories(profileRoot / "cache");
 }
 
 int decodeSystemResult(int result)
@@ -364,6 +435,8 @@ bool runShard(const Options & options, const Shard & shard, uint64_t shardCount)
 	if(options.dryRun)
 		return true;
 
+	prepareShardProfile(options, shard);
+
 	const auto started = std::chrono::steady_clock::now();
 	const int exitCode = decodeSystemResult(std::system(command.c_str()));
 	const auto finished = std::chrono::steady_clock::now();
@@ -390,6 +463,7 @@ bool runShards(const Options & options, const std::vector<Shard> & shards)
 	std::atomic<bool> allOk = true;
 	std::vector<std::thread> workers;
 	workers.reserve(options.jobs);
+	const uint64_t reportedShardCount = options.firstShardIndex + shards.size();
 
 	for(unsigned worker = 0; worker < options.jobs; ++worker)
 	{
@@ -399,7 +473,7 @@ bool runShards(const Options & options, const std::vector<Shard> & shards)
 				const auto index = nextShard.fetch_add(1);
 				if(index >= shards.size())
 					return;
-				if(!runShard(options, shards[index], shards.size()))
+				if(!runShard(options, shards[index], reportedShardCount))
 					allOk = false;
 			}
 		});
@@ -424,8 +498,11 @@ void writeManifest(const Options & options, const std::vector<Shard> & shards)
 			<< ",\"seed\":" << shard.seed
 			<< ",\"map\":" << jsonQuote(shard.map)
 			<< ",\"output\":" << jsonQuote(shard.outputPath.string())
-			<< ",\"log\":" << jsonQuote(shard.logPath.string())
-			<< "}\n";
+			<< ",\"log\":" << jsonQuote(shard.logPath.string());
+		if(!options.xdgConfigTemplate.empty())
+			manifest << ",\"xdgConfigHome\":" << jsonQuote((shardProfileRoot(options, shard) / "config").string())
+				<< ",\"xdgCacheHome\":" << jsonQuote((shardProfileRoot(options, shard) / "cache").string());
+		manifest << "}\n";
 	}
 }
 }
@@ -443,7 +520,10 @@ int main(int argc, char ** argv)
 		writeManifest(options, shards);
 
 		std::cout << "running " << options.battles << " battles across " << shards.size()
-			<< " shards with " << options.jobs << " jobs\n";
+			<< " shards with " << options.jobs << " jobs";
+		if(options.firstShardIndex != 0)
+			std::cout << " from shard " << options.firstShardIndex;
+		std::cout << '\n';
 		const bool ok = runShards(options, shards);
 		return ok ? 0 : 2;
 	}
