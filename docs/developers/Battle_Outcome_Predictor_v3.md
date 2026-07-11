@@ -211,6 +211,10 @@ Recent MMAI-labeled datasets show that simple global ratio/logistic tuning is no
 
 As of 2026-07-11, the best empirical result is fallback-only deterministic repeated simulation with MMAI labels and an all-wins safety rule. These are still offline proxy results, not a deployed Nullkiller2 runtime result.
 
+- live 20k schema5 town-hero run, current shard-group snapshot (`schema5-mmai-town-hero-20k-20260711`):
+  - at 208 complete shard groups / 10400 complete-shard rows, 8 samples reached 95.35% held-out win/loss accuracy; 15 and 20 samples reached 97.67% held-out accuracy
+  - all three sample counts had 0 false-safe groups and 1 conservative false-unsafe group on the held-out split
+  - at 212 complete shard groups / 10600 complete-shard rows, annotated static-miss inspection confirmed that 8/15/20 all-wins simulation would block the inspected close-even and worst cxx-v3 false-safe groups, while rescuing the top static false-unsafe groups
 - corrected 5k mixed run, current deployed non-town scope (`schema3-richstats-mmai-real-mixed-5k-20260711`, `simulation-fallback-cxx-v3-deployed-static-allwins.txt`):
   - 3 samples: 97.23% win/loss accuracy, 100.00% safety accuracy on 649 held-out rows
   - 20 samples: 99.69% win/loss accuracy, 98.44% safety accuracy on 321 held-out rows
