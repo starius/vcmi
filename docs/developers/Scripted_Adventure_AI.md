@@ -1763,6 +1763,10 @@ Regression harness:
   boundaries, battle result summaries, battle-finished notifications, game-over messages, object-removal
   completion, and color-scheme changes. Puzzle-map updates do not expose the Grail location; world-view overlays
   expose only the object positions/types supplied to the player by the spell effect.
+- Done: `scripts/ai/auditAdventureCallbackSurface.py` guards this callback surface. It parses the gateway and
+  game-interface callback declarations, verifies that ScriptedAdventureAI either overrides them or documents a
+  deliberate inherited/plumbing exception, and checks that implemented callbacks publish a Lua update/query or
+  have an explicit non-state reason.
 - Done: Lua can invoke Nullkiller's local object-interaction helper for one owned hero at one visible current
   object, then regain control. This exposes native post-visit handling for towns and hill forts as a bounded
   subroutine instead of requiring full-day delegation.
