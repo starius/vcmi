@@ -72,6 +72,11 @@ def parse_args() -> argparse.Namespace:
         help="Group repeated rows by full setup features or by generated shard metadata. Use shard for generated repeated-simulation datasets.",
     )
     parser.add_argument("--min-group-size", type=int, default=1)
+    parser.add_argument(
+        "--complete-shards-only",
+        action="store_true",
+        help="With --group-key shard, keep only shard groups whose row count matches manifest.jsonl.",
+    )
     parser.add_argument("--test-fraction", type=float, default=0.25)
     parser.add_argument("--epochs", type=int, default=2500)
     parser.add_argument("--learning-rate", type=float, default=0.05)
@@ -1090,6 +1095,56 @@ def load_groups(path: str, group_key: str = "setup") -> tuple[list[Group], Count
     return list(groups.values()), schema_counts, rows
 
 
+def load_shard_manifest(path: str) -> dict[int, int]:
+    def parse_lines(lines: Iterable[str]) -> dict[int, int]:
+        result: dict[int, int] = {}
+        for line in lines:
+            if not line.strip():
+                continue
+            entry = json.loads(line)
+            if entry.get("shard") is not None and entry.get("battles") is not None:
+                result[int(entry["shard"])] = int(entry["battles"])
+        return result
+
+    if os.path.isdir(path):
+        manifest_path = os.path.join(path, "manifest.jsonl")
+        if not os.path.exists(manifest_path):
+            return {}
+        with open(manifest_path, encoding="utf-8") as handle:
+            return parse_lines(handle)
+
+    if path.endswith(".tar.gz") or path.endswith(".tgz"):
+        with tarfile.open(path, "r:gz") as archive:
+            member = next(
+                (item for item in archive.getmembers() if os.path.basename(item.name) == "manifest.jsonl"),
+                None,
+            )
+            if member is None:
+                return {}
+            extracted = archive.extractfile(member)
+            if extracted is None:
+                return {}
+            return parse_lines(raw.decode("utf-8") for raw in extracted)
+
+    return {}
+
+
+def shard_index_for_group(group: Group) -> int | None:
+    value = group.row.get("shardIndex")
+    if value is None:
+        return None
+    return int(value)
+
+
+def filter_complete_shard_groups(groups: list[Group], manifest: dict[int, int]) -> list[Group]:
+    return [
+        group
+        for group in groups
+        if (shard_index := shard_index_for_group(group)) is not None
+        and manifest.get(shard_index) == group.count
+    ]
+
+
 def split_groups(groups: list[Group], test_fraction: float) -> tuple[list[Group], list[Group]]:
     test_cutoff = int(max(0.0, min(1.0, test_fraction)) * 10000)
     train: list[Group] = []
@@ -1678,6 +1733,13 @@ def main() -> int:
     args = parse_args()
     town_danger_factors = parse_float_list(args.town_danger_factors)
     groups, schema_counts, row_count = load_groups(args.dataset, args.group_key)
+    if args.complete_shards_only:
+        if args.group_key != "shard":
+            raise SystemExit("--complete-shards-only requires --group-key shard")
+        manifest = load_shard_manifest(args.dataset)
+        if not manifest:
+            raise SystemExit("--complete-shards-only requires manifest.jsonl in the dataset")
+        groups = filter_complete_shard_groups(groups, manifest)
     groups = [
         group
         for group in groups
@@ -1710,6 +1772,7 @@ def main() -> int:
         "rows_after_filter": sum(group.count for group in groups),
         "schema_counts": dict(schema_counts),
         "groups_after_filter": len(groups),
+        "complete_shards_only": args.complete_shards_only,
         "train": summarize_predictions(train, args.safe_ratio, full_model),
         "test": summarize_predictions(test, args.safe_ratio, full_model),
     }
@@ -1863,6 +1926,7 @@ def main() -> int:
         print(f"rows: {row_count}")
         print(f"scope: {args.scope}")
         print(f"group key: {args.group_key}")
+        print(f"complete shards only: {args.complete_shards_only}")
         print(f"rows after filter: {metrics['rows_after_filter']}")
         print(f"schemas: {dict(schema_counts)}")
         print(f"groups after filter: {len(groups)}")

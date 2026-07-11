@@ -465,6 +465,7 @@ python3 scripts/battle_prediction/evaluate_nullkiller_predictor.py \
   /root/vcmi-nk-ratio-results/schema5-mmai-town-hero-20k-20260711 \
   --scope town \
   --group-key shard \
+  --complete-shards-only \
   --l2 0.03 \
   --print-near-even 40 \
   --print-worst 40 \
@@ -478,6 +479,7 @@ python3 scripts/battle_prediction/analyze_v3_failure_segments.py \
   /root/vcmi-nk-ratio-results/schema5-mmai-town-hero-20k-20260711 \
   --scope town \
   --group-key shard \
+  --complete-shards-only \
   --predictor cxx-v3 \
   --actual-min 0.25 \
   --actual-max 0.75 \
@@ -490,13 +492,8 @@ The schema4 run can still be validated and inspected for wall-state-only evidenc
 ```bash
 python3 scripts/battle_prediction/validate_battle_dataset.py \
   /root/vcmi-nk-ratio-results/schema4-mmai-town-hero-20k-20260711 \
-  --expected-rows 20000 \
   --expected-schema 4 \
-  --expected-shards 400 \
-  --expected-shard-size 50 \
   --group-key shard \
-  --expected-groups 400 \
-  --require-complete-shards \
   --require-battle-types town-hero \
   --require-no-mmai-fallback \
   --require-mmai-initialized \
@@ -506,6 +503,7 @@ python3 scripts/battle_prediction/evaluate_nullkiller_predictor.py \
   /root/vcmi-nk-ratio-results/schema4-mmai-town-hero-20k-20260711 \
   --scope town \
   --group-key shard \
+  --complete-shards-only \
   --l2 0.03 \
   --print-near-even 40 \
   --print-worst 40 \
@@ -519,12 +517,21 @@ python3 scripts/battle_prediction/analyze_v3_failure_segments.py \
   /root/vcmi-nk-ratio-results/schema4-mmai-town-hero-20k-20260711 \
   --scope town \
   --group-key shard \
+  --complete-shards-only \
   --predictor cxx-v3 \
   --actual-min 0.25 \
   --actual-max 0.75 \
   --error-min 0.25 \
   --print-groups 40
 ```
+
+Interim schema4 complete-shard findings on 2026-07-11:
+
+- `--group-key shard --complete-shards-only` kept 55 complete groups / 2750 rows from 2965 validated rows.
+- cxx-v3 diagnostic town accuracy remained poor: train 52.17% / Brier 0.3357 with 16 false-safe groups; test 22.22% / Brier 0.5846 with 6 false-safe groups and 1 false-unsafe group.
+- close-even cxx-v3 misses on complete shards narrowed to 2 groups / 100 rows in the 25-75% empirical win-rate window, both false-safe.
+- simple deployed town danger multipliers are not enough: factor 1.5 removed train false-safes but still left 2 test false-safes; factor 2 removed test false-safes only by marking every test town group unsafe.
+- this reinforces the current direction: do not deploy open-field cxx-v3 calibration to town/siege rows; use schema5 pre-merge data plus simulation labels to validate a separate town model or runtime simulation fallback.
 
 Use the dataset validator before fitting or reporting numbers:
 

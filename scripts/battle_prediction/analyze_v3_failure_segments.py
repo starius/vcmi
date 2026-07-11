@@ -18,7 +18,9 @@ from evaluate_nullkiller_predictor import (
     cxx_v3_probability,
     cxx_v3_static_calibration_applies,
     deployed_safe_prediction,
+    filter_complete_shard_groups,
     hero_strength,
+    load_shard_manifest,
     load_groups,
     town_pre_merge_army_strength,
     town_pre_merge_largest_share,
@@ -64,6 +66,11 @@ def parse_args() -> argparse.Namespace:
         help="Group repeated rows by full setup features or by generated shard metadata. Use shard for generated repeated-simulation datasets.",
     )
     parser.add_argument("--min-group-size", type=int, default=1)
+    parser.add_argument(
+        "--complete-shards-only",
+        action="store_true",
+        help="With --group-key shard, keep only shard groups whose row count matches manifest.jsonl.",
+    )
     parser.add_argument("--min-segment-groups", type=int, default=3)
     parser.add_argument("--top", type=int, default=40)
     parser.add_argument("--predictor", choices=["cxx-v3", "deployed-danger"], default="cxx-v3")
@@ -437,6 +444,13 @@ def segment_sort_key(stats: SegmentStats, sort: str) -> tuple[float, int]:
 def main() -> int:
     args = parse_args()
     groups, schema_counts, rows = load_groups(args.dataset, args.group_key)
+    if args.complete_shards_only:
+        if args.group_key != "shard":
+            raise SystemExit("--complete-shards-only requires --group-key shard")
+        manifest = load_shard_manifest(args.dataset)
+        if not manifest:
+            raise SystemExit("--complete-shards-only requires manifest.jsonl in the dataset")
+        groups = filter_complete_shard_groups(groups, manifest)
     groups = [
         group
         for group in groups
@@ -476,7 +490,8 @@ def main() -> int:
     scoped_rows = sum(group.count for group in groups)
     print(
         f"rows={rows} scoped_rows={scoped_rows} schemas={dict(sorted(schema_counts.items()))} "
-        f"group_key={args.group_key} groups={len(groups)} scope={args.scope}"
+        f"group_key={args.group_key} complete_shards_only={args.complete_shards_only} "
+        f"groups={len(groups)} scope={args.scope}"
     )
     print(
         f"predictor={args.predictor} safe_probability={args.safe_probability:.4f} "
