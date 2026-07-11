@@ -60,6 +60,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--town-deployable-safe-probability", type=float, default=0.62)
     parser.add_argument("--town-danger-factors", default="1.0,1.25,1.5,1.75,2.0")
     parser.add_argument("--guard-results", type=int, default=40)
+    parser.add_argument(
+        "--skip-predictor",
+        action="store_true",
+        help="Skip the fitted evaluate_nullkiller_predictor.py pass. Useful for quick live snapshots.",
+    )
+    parser.add_argument(
+        "--allow-validation-failure",
+        action="store_true",
+        help="Return success when validation fails but all analysis passes succeed. Useful for live incomplete datasets.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Print and record commands without executing them.")
     return parser.parse_args()
 
@@ -257,15 +267,17 @@ def segment_command(args: argparse.Namespace, mode: str) -> list[str]:
 
 
 def build_runs(args: argparse.Namespace, output_dir: Path) -> list[CommandRun]:
-    return [
+    runs = [
         CommandRun("validation", validation_command(args), output_dir / "validation.json", output_dir / "validation.stderr.txt"),
-        CommandRun("predictor", predictor_command(args), output_dir / "nullkiller-predictor.json", output_dir / "nullkiller-predictor.stderr.txt"),
         CommandRun("static-misses", static_miss_command(args), output_dir / "v3-static-misses.json", output_dir / "v3-static-misses.stderr.txt"),
         CommandRun("close-even-segments", segment_command(args, "close_even"), output_dir / "close-even-segments.txt", output_dir / "close-even-segments.stderr.txt"),
         CommandRun("false-safe-segments", segment_command(args, "false_safe"), output_dir / "false-safe-segments.txt", output_dir / "false-safe-segments.stderr.txt"),
         CommandRun("false-unsafe-segments", segment_command(args, "false_unsafe"), output_dir / "false-unsafe-segments.txt", output_dir / "false-unsafe-segments.stderr.txt"),
         CommandRun("fallback-proof", fallback_command(args, output_dir / "fallback-proof.json"), output_dir / "fallback-proof.txt", output_dir / "fallback-proof.stderr.txt"),
     ]
+    if not args.skip_predictor:
+        runs.insert(1, CommandRun("predictor", predictor_command(args), output_dir / "nullkiller-predictor.json", output_dir / "nullkiller-predictor.stderr.txt"))
+    return runs
 
 
 def write_command_file(output_dir: Path, runs: list[CommandRun]) -> None:
@@ -291,6 +303,12 @@ def execute_run(run: CommandRun, dry_run: bool) -> None:
         print(f"{run.name} failed with exit code {completed.returncode}", file=sys.stderr)
 
 
+def run_ok(args: argparse.Namespace, run: CommandRun) -> bool:
+    if run.returncode in (0, None):
+        return True
+    return args.allow_validation_failure and run.name == "validation"
+
+
 def summary_to_dict(args: argparse.Namespace, output_dir: Path, runs: list[CommandRun]) -> dict[str, Any]:
     return {
         "dataset": args.dataset,
@@ -303,8 +321,10 @@ def summary_to_dict(args: argparse.Namespace, output_dir: Path, runs: list[Comma
         "expectedShards": args.expected_shards,
         "expectedShardSize": args.expected_shard_size,
         "expectedGroups": args.expected_groups,
+        "skipPredictor": args.skip_predictor,
+        "allowValidationFailure": args.allow_validation_failure,
         "dryRun": args.dry_run,
-        "ok": all(run.returncode in (0, None) for run in runs),
+        "ok": all(run_ok(args, run) for run in runs),
         "runs": [
             {
                 "name": run.name,

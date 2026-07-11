@@ -540,6 +540,7 @@ Current live remote schema5 run:
 - refreshed fallback proxy at 281 complete shard groups / 14209 parsed schema5 town rows: static cxx-v3 on the held-out split was 41.27% accurate with Brier 0.4077, 25 false-safe groups, and 7 false-unsafe groups. Fallback-only all-wins simulation with 20 samples reached 96.83% held-out accuracy, 98.41% safety accuracy, Brier 0.0028, 0 false-safe groups, and 1 conservative false-unsafe group. The conservative miss was a static false-unsafe group with actual 96.67% attacker wins; its first 20 samples were 19 attacker wins and 1 loss, so all-wins intentionally rejected it.
 - refreshed strict fallback proxy at 288 manifest-complete shard groups / 14531 parsed schema5 town rows: static cxx-v3 on the held-out split was 41.54% accurate with Brier 0.4034, 25 false-safe groups, and 7 false-unsafe groups. Fallback-only all-wins simulation with 20 samples reached 96.92% held-out accuracy, 98.46% safety accuracy, Brier 0.0035, 0 false-safe groups, and 1 conservative false-unsafe group. The same 19/20-sample static false-unsafe group remained the only conservative miss.
 - refreshed strict fallback proxy at 289 manifest-complete shard groups / 14662 parsed schema5 town rows, with a minimum held-out fallback group gate: static cxx-v3 on the held-out split was 42.42% accurate with Brier 0.3973, 25 false-safe groups, and 7 false-unsafe groups. Fallback-only all-wins simulation with 20 samples kept passing the stricter proof: 66 held-out fallback groups, 96.97% held-out accuracy, 98.48% safety accuracy, Brier 0.0035, 0 false-safe groups, and 1 conservative false-unsafe group.
+- live complete-shard snapshot at 305 schema5 town groups / 15250 complete-shard rows, while the 20000-row collection was still running: validation intentionally failed because live incomplete shards were present, but complete-shard analysis artifacts were produced under `/root/vcmi-nk-ratio-results/schema5-mmai-town-hero-20k-20260711/v3-analysis-live-fast`. Static cxx-v3 stayed structurally wrong on town/siege rows: all complete groups were 56.39% accurate, Brier 0.3239, with 109 false-safe and 23 false-unsafe groups; the held-out split had 25 false-safe and 8 false-unsafe groups. The 20-sample fallback-only all-wins policy on the same live split reached 97.10% accuracy, 98.55% safety accuracy, Brier 0.0033, 0 false-safe groups, and 1 conservative false-unsafe group. Top false-safe segments were visiting-hero towns with defender spellbooks, defender combat-spell advantage, tavern, citadel/castle, moat, and defender flying-share cases; top false-unsafe segments were attacker spellbook/spell advantage, attacker current-mana advantage, secondary-skill advantage, and knowledge advantage. This supports a policy conclusion: do not try to rescue town/siege safety with scalar static calibration; town/siege offensive decisions need the runtime all-wins simulation gate.
 
 Then validate and inspect the schema5 model failures:
 
@@ -630,6 +631,18 @@ python3 scripts/battle_prediction/run_town_battle_analysis.py \
 ```
 
 This writes `commands.sh`, `analysis-summary.json`, `validation.json`, `nullkiller-predictor.json`, `v3-static-misses.json`, `fallback-proof.json`, `fallback-proof.txt`, and close-even / false-safe / false-unsafe segment reports. Use it for post-run root-cause analysis so each result can be traced to the exact command line.
+
+For a live collection snapshot where incomplete shard files are expected, skip the slow fitted predictor pass and allow the validation step to fail while still requiring all static-miss, segment, and fallback-proof reports to pass:
+
+```bash
+python3 scripts/battle_prediction/run_town_battle_analysis.py \
+  /root/vcmi-nk-ratio-results/schema5-mmai-town-hero-20k-20260711 \
+  --output-dir /root/vcmi-nk-ratio-results/schema5-mmai-town-hero-20k-20260711/v3-analysis-live-fast \
+  --expected-schema 5 \
+  --expected-shard-size 50 \
+  --skip-predictor \
+  --allow-validation-failure
+```
 
 Next schema6 collection should use the same generated `town-hero` setup. A real schema6 remote build is available at `/root/vcmi-schema6-real-build`; do not use `/root/vcmi-schema6-build` for collection because that directory was configured against `/root/vcmi-schema5-src` and emitted schema5 rows. The real build was configured from `/root/vcmi-schema6-src` with `ENABLE_VIDEO=OFF`, `ENABLE_EDITOR=OFF`, `ENABLE_LAUNCHER=OFF`, and `ENABLE_DISCORD=OFF`, then linked `Data` and `Maps` in `bin/` to the same data paths as the working schema5 build.
 
