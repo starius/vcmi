@@ -985,6 +985,7 @@ ScriptPriorityPassResult Nullkiller::executeScriptPriorityPass(const int passInd
 			result.attempts += 1;
 			result.lastPriority = bestPrioPassTask->priority;
 			result.lastTaskDescription = bestPrioPassTask->toString();
+			result.lastTask = bestPrioPassTask;
 			logAi->info("Pass %d: priorityPass %d: Performing task %s with prio: %d", passIndex, i, bestPrioPassTask->toString(), bestPrioPassTask->priority);
 
 			const bool isRecruitHeroGoal = dynamic_cast<RecruitHero*>(bestPrioPassTask.get()) != nullptr;

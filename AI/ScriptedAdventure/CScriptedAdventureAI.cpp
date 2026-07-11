@@ -7217,11 +7217,33 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 	{
 		const int32_t passIndex = std::max(1, readInteger(action, "pass_index", 1));
 		NK2AI::ScriptPriorityPassResult result;
+		std::optional<JsonNode> lastTask;
 		{
 			std::shared_lock gameStateLock(CGameState::mutex);
 			std::lock_guard sharedStorageLock(NK2AI::AISharedStorage::locker);
 			NK2AI::Nullkiller::ScriptVisibleOnlyScope visibleOnly(*nullkiller);
 			result = nullkiller->executeScriptPriorityPass(passIndex);
+			if(result.lastTask)
+			{
+				NK2AI::HeroRole heroRole = NK2AI::HeroRole::MAIN;
+				if(const CGHeroInstance * hero = result.lastTask->getHero())
+				{
+					NK2AI::HeroPtr heroPtr(hero, cc.get());
+					if(heroPtr.isVerified() && nullkiller->heroManager)
+						heroRole = nullkiller->heroManager->getHeroRoleOrDefault(heroPtr);
+				}
+
+				lastTask = jsonNullkillerTaskCandidate(
+					0,
+					NK2AI::ScriptTaskCandidate{
+						result.lastTask,
+						NK2AI::ScriptTaskSearchMode::PRIORITY,
+						NK2AI::PriorityEvaluator::PriorityTier::BUILDINGS,
+						heroRole
+					},
+					cc,
+					playerID);
+			}
 		}
 
 		actionResult["ok"] = JsonNode(true);
@@ -7231,6 +7253,10 @@ bool CScriptedAdventureAI::executeScriptAction(const JsonNode & action, JsonNode
 		actionResult["attempts"] = JsonNode(result.attempts);
 		actionResult["executed"] = JsonNode(result.executed);
 		actionResult["lastPriority"].Float() = result.lastPriority;
+		if(!result.lastTaskDescription.empty())
+			actionResult["lastTaskDescription"] = JsonNode(result.lastTaskDescription);
+		if(lastTask)
+			actionResult["lastTask"] = *lastTask;
 		if(!result.error.empty())
 			actionResult["error"] = JsonNode(result.error);
 		if(!waitTillFreeForScriptAction(actionResult, type))

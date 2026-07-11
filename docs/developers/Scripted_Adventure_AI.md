@@ -274,8 +274,8 @@ The `ai` facade:
 - `ai:nullkillerTrade()`: ask the host to run Nullkiller's resource-trading helper once, returning whether it
   traded anything.
 - `ai:nullkillerPriorityPass(passIndex?)`: ask the host to run Nullkiller's bounded native priority pass once.
-  This can execute several build/recruit/hire tasks from the priority loop, returns metrics, and then gives
-  control back to Lua.
+  This can execute several build/recruit/hire tasks from the priority loop, returns metrics plus the last selected
+  priority task in the same stable JSON shape as `ai:nullkillerTasks`, and then gives control back to Lua.
 - `ai:nullkillerBuildArmy(townId)`: ask the host to run Nullkiller's bounded town-army helper once for one
   visible owned town. It may upgrade, recruit, and move creatures to the visiting hero, then returns control to
   Lua.
@@ -1851,6 +1851,8 @@ Regression harness:
 - Done: trace summaries and script evaluations now report longitudinal `mapProgress` metrics from the first and
   final visible map snapshots per run/player series. The evaluator folds the map-progress score into traced
   iteration scoring and comparison deltas.
+- Done: bounded `nullkiller_priority_pass` results now include `lastTask` as stable task JSON, so Lua policies and
+  trace mining can inspect native build/recruit/hire choices instead of relying on a display-only task string.
 - Done: after adding explicit `nullkiller_reset`, a 16-map, 1-day traced integration smoke completed all scenarios
   at the day limit with 16 `end_turn` outputs, 20 bounded `nullkiller_turn_slice` calls, 145 checked `visit_object`
   actions, 18 bounded query answers, zero failed checked actions, and zero fallback outputs.

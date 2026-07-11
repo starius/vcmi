@@ -138,6 +138,7 @@ struct ScriptPriorityPassResult
 	int executed = 0;
 	float lastPriority = 0.0f;
 	std::string lastTaskDescription;
+	Goals::TTask lastTask;
 	std::string error;
 };
 
