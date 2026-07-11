@@ -477,7 +477,6 @@ BattleOutcomeSimulationResult CClient::evaluateBattleSimulationForVisit(
 	}
 
 	std::optional<BattleSimulation::BattleSimulationRequest> request;
-	std::shared_ptr<CGameState> snapshot;
 	{
 		std::unique_lock lock(CGameState::mutex);
 		request = BattleSimulation::makeBattleSimulationRequestForVisit(
@@ -493,6 +492,21 @@ BattleOutcomeSimulationResult CClient::evaluateBattleSimulationForVisit(
 			result.status = BattleOutcomeSimulationStatus::INVALID_REQUEST;
 			return result;
 		}
+	}
+
+	{
+		std::unique_lock evaluatorLock(battleSimulationEvaluatorMutex);
+		if(!battleSimulationEvaluator)
+			battleSimulationEvaluator = std::make_unique<BattleSimulation::BattleSimulationEvaluator>();
+
+		const auto cachedResponse = battleSimulationEvaluator->evaluate(*request);
+		if(cachedResponse.status == BattleSimulation::BattleSimulationResponseStatus::COMPLETE)
+			return convertBattleOutcomeSimulationResponse(cachedResponse);
+	}
+
+	std::shared_ptr<CGameState> snapshot;
+	{
+		std::unique_lock lock(CGameState::mutex);
 
 		snapshot = BattleSimulation::cloneGameStateForSimulation(*gamestate);
 		if(!snapshot)
@@ -508,20 +522,20 @@ BattleOutcomeSimulationResult CClient::evaluateBattleSimulationForVisit(
 		request->setup = *snapshotSetup;
 	}
 
-	std::unique_lock evaluatorLock(battleSimulationEvaluatorMutex);
-	if(!battleSimulationActionProviderFactory)
 	{
-		battleSimulationActionProviderFactory = std::make_shared<BattleSimulation::BattleSimulationGameInterfaceActionProviderFactory>(
-			&createBattleOutcomeSimulationAI);
-	}
-	if(!battleSimulationEvaluator)
-		battleSimulationEvaluator = std::make_unique<BattleSimulation::BattleSimulationEvaluator>();
+		std::unique_lock evaluatorLock(battleSimulationEvaluatorMutex);
+		if(!battleSimulationActionProviderFactory)
+		{
+			battleSimulationActionProviderFactory = std::make_shared<BattleSimulation::BattleSimulationGameInterfaceActionProviderFactory>(
+				&createBattleOutcomeSimulationAI);
+		}
 
-	auto runner = std::make_shared<SnapshotBattleSimulationRunner>(std::move(snapshot), battleSimulationActionProviderFactory);
-	battleSimulationEvaluator->setRunner(runner);
-	const auto response = battleSimulationEvaluator->evaluate(*request);
-	battleSimulationEvaluator->setRunner(nullptr);
-	return convertBattleOutcomeSimulationResponse(response);
+		auto runner = std::make_shared<SnapshotBattleSimulationRunner>(std::move(snapshot), battleSimulationActionProviderFactory);
+		battleSimulationEvaluator->setRunner(runner);
+		const auto response = battleSimulationEvaluator->evaluate(*request);
+		battleSimulationEvaluator->setRunner(nullptr);
+		return convertBattleOutcomeSimulationResponse(response);
+	}
 }
 
 int CClient::sendRequest(const CPackForServer & request, PlayerColor player, bool waitTillRealize)
