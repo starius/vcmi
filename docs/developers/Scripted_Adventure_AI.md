@@ -1871,6 +1871,12 @@ Regression harness:
 - Done: after adding explicit `nullkiller_reset`, a 16-map, 1-day traced integration smoke completed all scenarios
   at the day limit with 16 `end_turn` outputs, 20 bounded `nullkiller_turn_slice` calls, 145 checked `visit_object`
   actions, 18 bounded query answers, zero failed checked actions, and zero fallback outputs.
+- Done: API parity is now the explicit gate before Lua policy optimization. A partial full-outcome bounded-helper
+  probe was stopped after 7/10 completed scenarios because it was already below target and the remaining games had
+  moved into long late-month play; the result is treated as inconclusive smoke data, not a policy benchmark.
+- Done: bounded scripted Nullkiller query handling now mirrors native Nullkiller's hero-exchange army/artifact
+  transfer direction. This keeps `ai:nullkillerAnswerQuery` aligned with `AIGateway::heroExchangeStarted` instead
+  of letting bounded control rearrange heroes differently after meetings.
 - Remaining: decide which generated-map seeds graduate into the stable training/held-out corpus.
 
 ## Open Design Questions

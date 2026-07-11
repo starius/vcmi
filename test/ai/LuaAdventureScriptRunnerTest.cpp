@@ -1113,6 +1113,132 @@ TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanUseNumericActionTypeIds)
 	EXPECT_EQ(*output.intent, "used numeric action ids");
 }
 
+TEST(LuaAdventureScriptRunnerTest, ImperativeFacadeCoversAdvertisedActionTypeIds)
+{
+	const std::string source = R"lua(
+		return {
+			runDay = function(ai, input)
+				for _, action in ipairs(input.actionSpace.acceptedActions or {}) do
+					ai:runAction({ type = action.type })
+				end
+				return {
+					status = "end_turn",
+					memory = {
+						version = 1,
+						checkedActions = #(input.actionSpace.acceptedActions or {})
+					},
+					actions = {}
+				}
+			end
+		}
+	)lua";
+
+	const std::vector<std::string> advertisedActions = {
+		"build",
+		"recruit",
+		"hire_hero",
+		"transfer_army",
+		"move_hero",
+		"visit_object",
+		"answer_query",
+		"cancel_query",
+		"end_turn",
+		"pick_best_creatures",
+		"pick_best_artifacts",
+		"prepare_hero",
+		"swap_artifacts",
+		"bulk_move_artifacts",
+		"sort_backpack_artifacts",
+		"scroll_backpack_artifacts",
+		"manage_hero_costume",
+		"assemble_artifacts",
+		"ignore_script_query",
+		"erase_transition_artifact",
+		"swap_creatures",
+		"merge_stacks",
+		"merge_or_swap_stacks",
+		"split_stack",
+		"bulk_move_army",
+		"bulk_split_stack",
+		"bulk_merge_stacks",
+		"bulk_split_rebalance_stack",
+		"dismiss_creature",
+		"upgrade_creature",
+		"set_formation",
+		"set_tactics",
+		"set_town_name",
+		"swap_garrison_hero",
+		"trade_resources",
+		"market_trade",
+		"request_statistic",
+		"dismiss_hero",
+		"build_boat",
+		"castle_teleport",
+		"dig",
+		"cast_spell",
+		"buy_artifact",
+		"spell_research",
+		"visit_town_building",
+		"nullkiller_reset",
+		"nullkiller_lock_resources",
+		"nullkiller_lock_hero",
+		"nullkiller_unlock_hero",
+		"nullkiller_trade",
+		"nullkiller_priority_pass",
+		"nullkiller_turn_slice",
+		"nullkiller_build_army",
+		"nullkiller_upgrade_army",
+		"nullkiller_recruit_creatures",
+		"nullkiller_move_creatures_to_hero",
+		"nullkiller_dismiss_weak_hero",
+		"nullkiller_optimize_artifacts",
+		"nullkiller_add_single_creature_stacks",
+		"nullkiller_rearrange_for_whirlpool",
+		"nullkiller_rearrange_for_siege",
+		"nullkiller_tasks",
+		"nullkiller_task",
+		"nullkiller_step",
+		"nullkiller_pass",
+		"nullkiller_answer_query",
+		"nullkiller_object_interaction"
+	};
+
+	AI::AdventureScriptInput input = makeInput();
+	input.actionSpace["acceptedActions"].Vector();
+	for(const std::string & type : advertisedActions)
+	{
+		JsonNode action;
+		action["type"] = JsonNode(type);
+		input.actionSpace["acceptedActions"].Vector().push_back(action);
+	}
+
+	AI::AdventureScriptLimits limits;
+	limits.maxActions = advertisedActions.size();
+	scripting::LuaAdventureScriptRunner runner("test:imperative-action-type-coverage", source, limits);
+	std::vector<JsonNode> commands;
+
+	const AI::AdventureScriptOutput output = runner.runDayImperative(input, [&](const JsonNode & command)
+	{
+		commands.push_back(command);
+
+		JsonNode response;
+		response["ok"] = JsonNode(true);
+		response["result"]["ok"] = JsonNode(true);
+		response["result"]["type"] = command["payload"]["type"];
+		return response;
+	});
+
+	ASSERT_EQ(commands.size(), advertisedActions.size());
+	EXPECT_EQ(output.memory["checkedActions"].Integer(), static_cast<int64_t>(advertisedActions.size()));
+	for(size_t index = 0; index < commands.size(); ++index)
+	{
+		const JsonNode & payload = commands[index]["payload"];
+		EXPECT_EQ(payload["type"].String(), advertisedActions[index]) << index;
+		ASSERT_TRUE(hasField(payload, "type_id")) << advertisedActions[index];
+		EXPECT_GT(payload["type_id"].Integer(), 0) << advertisedActions[index];
+	}
+}
+
 TEST(LuaAdventureScriptRunnerTest, ImperativeDayCanExecuteActionSpaceOptions)
 {
 	const std::string source = R"lua(

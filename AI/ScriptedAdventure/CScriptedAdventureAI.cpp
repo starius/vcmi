@@ -6080,16 +6080,16 @@ bool CScriptedAdventureAI::executeNullkillerQueryAction(const JsonNode & action,
 		const CGHeroInstance * secondHero = cc->getHero(ObjectInstanceID(readInteger(*query, "hero2_id")));
 		if(firstHero && secondHero && firstHero->tempOwner == secondHero->tempOwner)
 		{
-			auto transferFromSecondToFirst = [this](const CGHeroInstance * first, const CGHeroInstance * second)
+			auto transferFromSourceToDestination = [this](const CGHeroInstance * destination, const CGHeroInstance * source)
 			{
-				pickBestCreatures(first, second);
-				AIGateway::pickBestArtifacts(cc, first, second);
+				pickBestCreatures(destination, source);
+				AIGateway::pickBestArtifacts(cc, destination, source);
 			};
 
 			if(nullkiller->isActive(firstHero))
-				transferFromSecondToFirst(firstHero, secondHero);
+				transferFromSourceToDestination(secondHero, firstHero);
 			else
-				transferFromSecondToFirst(secondHero, firstHero);
+				transferFromSourceToDestination(firstHero, secondHero);
 		}
 		return answerAndWait(0);
 	}
