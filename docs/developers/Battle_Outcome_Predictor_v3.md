@@ -433,7 +433,7 @@ python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
   --require-runtime-simulation candidate \
   --config-replace config/ai/nk2ai/nk2ai-settings.json \
     '"battlePredictionSimulationSamples" : 0' \
-    '"battlePredictionSimulationSamples" : 3' \
+    '"battlePredictionSimulationSamples" : 15' \
   --config-replace config/ai/nk2ai/nk2ai-settings.json \
     '"battlePredictionSimulationPlanningSafeAttackRatio" : 0' \
     '"battlePredictionSimulationPlanningSafeAttackRatio" : 1.0'
@@ -491,7 +491,7 @@ Current live remote schema5 run:
 - latest complete-shard no-fit town snapshot while the run was still live: train/test split kept 112 complete groups / 5600 rows. Current cxx-v3 remained poor on the test split at 43.48% accuracy, Brier 0.4287, 10 false-safe groups, and 2 false-unsafe groups. Deployed-danger factor 1.0 improved test accuracy to 65.22% but still had 4 false-safe and 3 false-unsafe groups. Factor 2.0 removed test false-safe groups only by allowing 1/23 test groups as safe, so it is not a useful town/siege fix.
 - latest fallback-only repeated-simulation proxy on the same live schema5 town data, using shard groups and all-wins safety: 8 MMAI samples was the first clean safety point on the held-out split, with 91.30% win/loss accuracy, 100% safety accuracy, Brier 0.0278, and 0 false-safe / 0 false-unsafe groups. Ten samples kept 91.30% / 100% with Brier 0.0205; 15 and 20 samples reached 95.65% / 100% with Brier 0.0095 and 0.0029 respectively. This is still a proxy over existing repeated rows, not an end-to-end runtime benchmark.
 - latest close-even town diagnostics at 114 complete groups / 5700 rows found 9 cxx-v3 misses in the 25-75% empirical win-rate band with error at least 0.25; 5 were false-safe. The worst close-even misses were bidirectional, from actual 70% predicted 0.07% to actual 30% predicted 99.51%, reinforcing that a static scalar threshold cannot fix town/siege prediction.
-- runtime gate smoke after filtering target eligibility: a 5-pair generated-map run with `battlePredictionSimulationSamples = 3` and `--require-runtime-simulation candidate` passed with 4/4 candidate runtime requests complete, 0 incomplete, 0 invalid, 2 safe, and 2 rejected. The preceding repro had 11 requests with 8 invalid due to unguarded reward objects; the intermediate stack-count-only fix left one invalid friendly/blocking hero visit, which the relation-aware filter removed.
+- runtime gate smoke after filtering target eligibility: a 5-pair generated-map run with `battlePredictionSimulationSamples = 3` and `--require-runtime-simulation candidate` passed with 4/4 candidate runtime requests complete, 0 incomplete, 0 invalid, 2 safe, and 2 rejected. The preceding repro had 11 requests with 8 invalid due to unguarded reward objects; the intermediate stack-count-only fix left one invalid friendly/blocking hero visit, which the relation-aware filter removed. Follow-up 5-pair smokes with 8 and 15 samples also passed with no incomplete or invalid runtime requests; 8 samples completed 6/6 requests and 15 samples completed 5/5 requests. The next statistically meaningful A/B should use 15 samples because current town proxy data first crossed 95% win/loss accuracy at 15 samples.
 
 Then validate and inspect the schema5 model failures:
 

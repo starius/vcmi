@@ -128,7 +128,7 @@ python3 AI/Nullkiller2/tools/compare_battle_predictors.py \
   --require-runtime-simulation candidate \
   --config-replace config/ai/nk2ai/nk2ai-settings.json \
     '"battlePredictionSimulationSamples" : 0' \
-    '"battlePredictionSimulationSamples" : 3' \
+    '"battlePredictionSimulationSamples" : 15' \
   --config-replace config/ai/nk2ai/nk2ai-settings.json \
     '"battlePredictionSimulationPlanningSafeAttackRatio" : 0' \
     '"battlePredictionSimulationPlanningSafeAttackRatio" : 1.0'
