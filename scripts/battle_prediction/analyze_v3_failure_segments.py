@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Segment cxx-v3 battle predictor errors by interpretable battle features."""
+"""Segment battle predictor errors by interpretable battle features."""
 
 from __future__ import annotations
 
@@ -11,11 +11,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from evaluate_nullkiller_predictor import (
+    SAFE_ATTACK_RATIO,
     V3_SAFE_PROBABILITY,
     army_rich_stats,
     battle_type,
     cxx_v3_probability,
     cxx_v3_static_calibration_applies,
+    deployed_safe_prediction,
     hero_strength,
     load_groups,
 )
@@ -54,14 +56,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-group-size", type=int, default=1)
     parser.add_argument("--min-segment-groups", type=int, default=3)
     parser.add_argument("--top", type=int, default=40)
+    parser.add_argument("--predictor", choices=["cxx-v3", "deployed-danger"], default="cxx-v3")
     parser.add_argument("--safe-probability", type=float, default=V3_SAFE_PROBABILITY)
+    parser.add_argument("--safe-ratio", type=float, default=SAFE_ATTACK_RATIO)
+    parser.add_argument("--town-danger-factor", type=float, default=1.0)
     parser.add_argument("--actual-safe-probability", type=float, default=0.95)
     parser.add_argument("--actual-min", type=float, default=0.0, help="Only include groups with empirical win rate at least this value")
     parser.add_argument("--actual-max", type=float, default=1.0, help="Only include groups with empirical win rate at most this value")
-    parser.add_argument("--prediction-min", type=float, default=0.0, help="Only include groups with cxx-v3 probability at least this value")
-    parser.add_argument("--prediction-max", type=float, default=1.0, help="Only include groups with cxx-v3 probability at most this value")
-    parser.add_argument("--error-min", type=float, default=0.0, help="Only include groups where abs(cxx-v3 probability - empirical win rate) is at least this value")
-    parser.add_argument("--print-groups", type=int, default=0, help="Print N included groups with largest absolute cxx-v3 error")
+    parser.add_argument("--prediction-min", type=float, default=0.0, help="Only include groups with predictor score at least this value")
+    parser.add_argument("--prediction-max", type=float, default=1.0, help="Only include groups with predictor score at most this value")
+    parser.add_argument("--error-min", type=float, default=0.0, help="Only include groups where abs(predictor score - empirical win rate) is at least this value")
+    parser.add_argument("--print-groups", type=int, default=0, help="Print N included groups with largest absolute predictor error")
     parser.add_argument(
         "--sort",
         choices=["mae", "brier", "false-safe", "false-unsafe", "accuracy"],
@@ -202,6 +207,14 @@ def matches_error_window(group: Any, predicted: float, args: argparse.Namespace)
     )
 
 
+def predict_group(row: dict[str, Any], args: argparse.Namespace) -> float:
+    if args.predictor == "cxx-v3":
+        return cxx_v3_probability(row)
+    if args.predictor == "deployed-danger":
+        return 1.0 if deployed_safe_prediction(row, args.safe_ratio, args.town_danger_factor) else 0.0
+    raise ValueError(f"Unknown predictor: {args.predictor}")
+
+
 def hero_summary(hero: dict[str, Any] | None) -> str:
     if not hero:
         return "none"
@@ -337,7 +350,7 @@ def main() -> int:
 
     for group in groups:
         actual = group.win_rate
-        predicted = cxx_v3_probability(group.row)
+        predicted = predict_group(group.row, args)
         if not matches_error_window(group, predicted, args):
             continue
 
@@ -363,13 +376,17 @@ def main() -> int:
     scoped_rows = sum(group.count for group in groups)
     print(f"rows={rows} scoped_rows={scoped_rows} schemas={dict(sorted(schema_counts.items()))} groups={len(groups)} scope={args.scope}")
     print(
+        f"predictor={args.predictor} safe_probability={args.safe_probability:.4f} "
+        f"safe_ratio={args.safe_ratio:.4f} town_danger_factor={args.town_danger_factor:.4f}"
+    )
+    print(
         "filter "
         f"actual=[{args.actual_min:.4f},{args.actual_max:.4f}] "
         f"prediction=[{args.prediction_min:.4f},{args.prediction_max:.4f}] "
         f"error_min={args.error_min:.4f} "
         f"included_groups={included_groups} included_rows={included_rows}"
     )
-    print(f"cxx_v3 false_safe={error_direction['false_safe']} false_unsafe={error_direction['false_unsafe']}")
+    print(f"{args.predictor} false_safe={error_direction['false_safe']} false_unsafe={error_direction['false_unsafe']}")
     print(f"worst segments by {args.sort}:")
     for segment, stats in candidates[: args.top]:
         print_segment(segment, stats)

@@ -861,18 +861,29 @@ def deployed_danger(row: dict[str, Any], town_danger_factor: float = 1.0) -> flo
         return side_strength(row, "defender")
 
     town = row.get("defendedTown") or {}
-    danger = defender_army
+    source = town.get("defendingHeroSource")
+    has_visiting_hero = bool(town.get("hasVisitingHero"))
+    has_garrison_hero = bool(town.get("hasGarrisonHero"))
+    town_army = max(float(town.get("armyStrength") or 0.0), 0.0)
 
-    if danger > 0.0 or town.get("hasVisitingHero"):
-        danger += town_fort_danger_bonus(row)
-
-    if town.get("hasVisitingHero"):
-        if town.get("hasGarrisonHero"):
+    if type_name == "town-hero" and source == "visiting":
+        if has_garrison_hero:
             danger = defender_army
         else:
+            danger = town_army
+            if danger > 0.0 or has_visiting_hero:
+                danger += town_fort_danger_bonus(row)
             danger += defender_army
+    elif type_name == "town-hero" and source == "garrison":
+        danger = defender_army
+        if danger > 0.0:
+            danger += town_fort_danger_bonus(row)
+    else:
+        danger = town_army
+        if danger > 0.0:
+            danger += town_fort_danger_bonus(row)
 
-    if defender_hero:
+    if defender_hero and type_name == "town-hero":
         danger *= hero_strength(defender_hero)
 
     return danger * town_danger_factor
