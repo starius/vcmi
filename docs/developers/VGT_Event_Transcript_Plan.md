@@ -23,7 +23,7 @@ The target is a compact YAML transcript that can be read by a human, parsed by n
 
 The transcript names the map, content set, settings, map game-setting overrides, players, and all events. It does not embed the map, but it must identify the exact map file with a cryptographic hash.
 
-A replay/player tool starts from the declared map and content, verifies the map hash, initializes the game from the declared settings, then applies VGT events. For generated random maps, the writer must save the generated map as a normal map file, hash that saved file, and reference it from the transcript.
+A replay/player tool starts from the declared map and content, verifies the map hash, initializes the game from the declared settings, restores small deterministic initialization state such as the map object-name counter, then applies VGT events. For generated random maps, the writer must save the generated map as a normal map file, hash that saved file, and reference it from the transcript.
 
 This keeps the transcript readable while detecting the most dangerous external input drift: the map file. Mod/content hashing can be added later if needed, but it is not required for the first implementation.
 
@@ -40,6 +40,7 @@ map:
   name: "Coldshadow's Fantasy"
   source: generated-map-file
   hash: { algorithm: sha256, value: "8db3480a8b6f7e7a8c3d2a17f8c1b0c77a2b8b7c4f7f4ce0f1b5b83e7a3e0000" }
+  objectNameCounter: 5576
 content:
   ruleset: sod
   mods: [{ id: vcmi, version: "1.8.0" }, { id: core, version: "1.8.0" }]

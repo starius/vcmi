@@ -2112,6 +2112,7 @@ void VGTRecorder::ensureHeader(const CGameState & gameState)
 	output << "  uri: " << yamlString(startInfo->fileURI) << "\n";
 	output << "  name: " << yamlString(startInfo->mapname) << "\n";
 	output << "  hash: { algorithm: sha256, value: " << yamlString(*hash) << " }\n";
+	output << "  objectNameCounter: " << gameState.getMap().getUniqueInstanceNameCounter() << "\n";
 	output << "settings:\n";
 	output << "  start: " << startMode(startInfo->mode) << "\n";
 	output << "  startTime: " << static_cast<int64_t>(startInfo->startTime) << "\n";

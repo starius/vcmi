@@ -129,6 +129,8 @@ public:
 
 	/// Generates unique string identifier for provided object instance
 	void generateUniqueInstanceName(CGObjectInstance * target);
+	si32 getUniqueInstanceNameCounter() const;
+	void setUniqueInstanceNameCounter(si32 value);
 
 	/// Generates new, unique numeric identifier that can be used for creation of a new object
 	ObjectInstanceID allocateUniqueInstanceID();

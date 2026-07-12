@@ -611,6 +611,16 @@ void CMap::generateUniqueInstanceName(CGObjectInstance * target)
 	target->instanceName = fmt.str();
 }
 
+si32 CMap::getUniqueInstanceNameCounter() const
+{
+	return uidCounter;
+}
+
+void CMap::setUniqueInstanceNameCounter(si32 value)
+{
+	uidCounter = value;
+}
+
 void CMap::addNewObject(std::shared_ptr<CGObjectInstance> obj)
 {
 	if (!obj->id.hasValue())

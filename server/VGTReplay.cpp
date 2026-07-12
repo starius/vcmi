@@ -32,6 +32,7 @@
 #include <boost/filesystem.hpp>
 #include <cctype>
 #include <fstream>
+#include <limits>
 #include <sstream>
 
 namespace
@@ -1149,6 +1150,23 @@ void applyGameSettingsOverrides(CGameHandler & gameHandler, const JsonNode & hea
 		throw std::runtime_error("VGT replay game settings overrides do not match loaded map");
 }
 
+void applyMapEngineState(CGameHandler & gameHandler, const JsonNode & header)
+{
+	const auto & mapNode = requireField(header, "map");
+	const auto * counterNode = findField(mapNode, "objectNameCounter");
+	if(!counterNode)
+		return;
+
+	if(!counterNode->isNumber())
+		throw std::runtime_error("VGT replay map objectNameCounter is not numeric");
+
+	const auto counter = counterNode->Integer();
+	if(counter < std::numeric_limits<si32>::min() || counter > std::numeric_limits<si32>::max())
+		throw std::runtime_error("VGT replay map objectNameCounter is out of range");
+
+	gameHandler.gs->getMap().setUniqueInstanceNameCounter(static_cast<si32>(counter));
+}
+
 void replayPack(CGameHandler & gameHandler, CPackForServer & pack, PlayerColor player)
 {
 	pack.player = player;
@@ -1776,6 +1794,7 @@ int replayVGTJson(const VGTReplayOptions & options)
 
 	Load::ProgressAccumulator progress;
 	gameHandler.init(&startInfo, progress);
+	applyMapEngineState(gameHandler, header);
 	applyGameSettingsOverrides(gameHandler, header);
 	replayTranscriptDocuments(gameHandler, documents);
 	gameHandler.saveToFile(options.outputSave);
