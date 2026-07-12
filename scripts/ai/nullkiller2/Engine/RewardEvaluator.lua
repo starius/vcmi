@@ -9,6 +9,8 @@ local MINIMUM_STRATEGICAL_VALUE_NON_TOWN = 0.3
 local UNIVERSITY_GOLD_COST = 2000
 local CITADEL = 2
 local CASTLE = 3
+local HERO_ROLE_SCOUT = 0
+local HERO_ROLE_MAIN = 1
 
 local CREATURE_GENERATORS = {
 	CREATURE_GENERATOR1 = true,
@@ -349,6 +351,37 @@ local function artifactArmyValue(artifact)
 	return artifact.potentialScore or artifact.armyValue or artifact.score or 0
 end
 
+local function spellLevel(spell)
+	return spell and (spell.level or spell.spellLevel or 1) or 1
+end
+
+local function canLearnSpell(hero, spell)
+	if spell and spell.canLearn ~= nil then
+		return spell.canLearn
+	end
+	if spell and spell.known ~= nil then
+		return not spell.known
+	end
+	return hero and hero.canLearnSpells ~= false
+end
+
+local function heroHasSkill(hero, skill)
+	local skills = hero and (hero.skills or hero.secSkills) or {}
+	return skills[skill] ~= nil and skills[skill] ~= 0
+end
+
+local function heroSkillSlotsFull(hero)
+	if hero and hero.skillSlotsFull ~= nil then
+		return hero.skillSlotsFull
+	end
+	local skills = hero and (hero.skills or hero.secSkills) or {}
+	local count = 0
+	for _ in pairs(skills) do
+		count = count + 1
+	end
+	return hero and hero.skillLimit and count >= hero.skillLimit or false
+end
+
 local function rewardArtifactsValue(reward)
 	local value = 0
 	for _, artifact in ipairs(reward.grantedArtifacts or reward.artifacts or {}) do
@@ -673,8 +706,102 @@ function RewardEvaluator.getConquestValue(selfOrTarget, maybeTarget, maybeAiNk)
 	return 0
 end
 
+function RewardEvaluator.evaluateWitchHutSkillScore(selfOrHut, maybeHut, maybeHero, maybeRole)
+	local hut = selfOrHut
+	local hero = maybeHut
+	local role = maybeHero
+	if selfOrHut and selfOrHut.aiNk ~= nil then
+		hut = maybeHut
+		hero = maybeHero
+		role = maybeRole
+	end
+
+	if hut and hut.wasVisited == false then
+		return role == HERO_ROLE_SCOUT and 2 or 0
+	end
+
+	local skill = hut and (hut.gainedSkill or hut.secondarySkill)
+	if skill and (heroHasSkill(hero, skill) or heroSkillSlotsFull(hero)) then
+		return 0
+	end
+
+	local score = hut and (hut.skillScore or hut.secondarySkillScore) or 0
+	if score >= 2 then
+		return role == HERO_ROLE_MAIN and 10 or 4
+	end
+	return score
+end
+
+function RewardEvaluator.getSkillReward(selfOrTarget, maybeTarget, maybeHero, maybeRole, maybeAiNk)
+	local target = selfOrTarget
+	local hero = maybeTarget
+	local role = maybeHero
+	local aiNk = maybeRole
+	if selfOrTarget and selfOrTarget.aiNk ~= nil then
+		target = maybeTarget
+		hero = maybeHero
+		role = maybeRole
+		aiNk = maybeAiNk or selfOrTarget.aiNk
+	end
+	if not target then
+		return 0
+	end
+
+	local id = objectType(target)
+	if id == "STAR_AXIS"
+		or id == "SCHOLAR"
+		or id == "SCHOOL_OF_MAGIC"
+		or id == "SCHOOL_OF_WAR"
+		or id == "GARDEN_OF_REVELATION"
+		or id == "MARLETTO_TOWER"
+		or id == "MERCENARY_CAMP"
+		or id == "TREE_OF_KNOWLEDGE" then
+		return 1
+	elseif id == "LEARNING_STONE" then
+		return 1.0 / math.sqrt(hero and hero.level or 1)
+	elseif id == "ARENA" then
+		return 2
+	elseif id == "SHRINE_OF_MAGIC_INCANTATION" then
+		return 0.25
+	elseif id == "SHRINE_OF_MAGIC_GESTURE" then
+		return 1.0
+	elseif id == "SHRINE_OF_MAGIC_THOUGHT" then
+		return 2.0
+	elseif id == "LIBRARY_OF_ENLIGHTENMENT" then
+		return 8
+	elseif id == "WITCH_HUT" then
+		return RewardEvaluator.evaluateWitchHutSkillScore(target, hero, role)
+	elseif id == "PANDORAS_BOX" then
+		return 2.5
+	elseif id == "HERO" then
+		return isEnemies(relationToHero(target, hero or { owner = playerID(aiNk) }, aiNk)) and 0.5 * (target.level or 0) or 0
+	end
+
+	local totalValue = 0.0
+	for _, reward in ipairs(target.rewards or {}) do
+		local spells = reward.spells or {}
+		if #spells > 0 then
+			local rewardValue = 0.0
+			for _, spell in ipairs(spells) do
+				if canLearnSpell(hero, spell) then
+					rewardValue = rewardValue + math.sqrt(spellLevel(spell)) / 4.0
+				end
+			end
+			totalValue = totalValue + rewardValue / #spells
+		end
+
+		for _, value in ipairs(reward.primary or {}) do
+			totalValue = totalValue + value
+		end
+	end
+
+	return totalValue
+end
+
 RewardEvaluator.GOLD = GOLD
 RewardEvaluator.HERO_GOLD_COST = HERO_GOLD_COST
 RewardEvaluator.MINIMUM_STRATEGICAL_VALUE_NON_TOWN = MINIMUM_STRATEGICAL_VALUE_NON_TOWN
+RewardEvaluator.HERO_ROLE_SCOUT = HERO_ROLE_SCOUT
+RewardEvaluator.HERO_ROLE_MAIN = HERO_ROLE_MAIN
 
 return RewardEvaluator

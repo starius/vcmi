@@ -168,3 +168,45 @@ assert(almostEquals(evaluator:getStrategicalValue({
 		{ resources = { [6] = 100 } }
 	}
 }, hero), 0.6))
+
+assert(evaluator:getSkillReward({ ID = "STAR_AXIS" }, hero, RewardEvaluator.HERO_ROLE_MAIN) == 1)
+assert(almostEquals(evaluator:getSkillReward({ ID = "LEARNING_STONE" }, { level = 4 }, RewardEvaluator.HERO_ROLE_SCOUT), 0.5))
+assert(evaluator:getSkillReward({ ID = "ARENA" }, hero, RewardEvaluator.HERO_ROLE_MAIN) == 2)
+assert(evaluator:getSkillReward({ ID = "SHRINE_OF_MAGIC_INCANTATION" }, hero, RewardEvaluator.HERO_ROLE_MAIN) == 0.25)
+assert(evaluator:getSkillReward({ ID = "SHRINE_OF_MAGIC_GESTURE" }, hero, RewardEvaluator.HERO_ROLE_MAIN) == 1)
+assert(evaluator:getSkillReward({ ID = "SHRINE_OF_MAGIC_THOUGHT" }, hero, RewardEvaluator.HERO_ROLE_MAIN) == 2)
+assert(evaluator:getSkillReward({ ID = "LIBRARY_OF_ENLIGHTENMENT" }, hero, RewardEvaluator.HERO_ROLE_MAIN) == 8)
+assert(evaluator:getSkillReward({ ID = "PANDORAS_BOX" }, hero, RewardEvaluator.HERO_ROLE_MAIN) == 2.5)
+assert(evaluator:getSkillReward({
+	ID = "WITCH_HUT",
+	wasVisited = false
+}, hero, RewardEvaluator.HERO_ROLE_SCOUT) == 2)
+assert(evaluator:getSkillReward({
+	ID = "WITCH_HUT",
+	wasVisited = true,
+	gainedSkill = 7,
+	skillScore = 3
+}, { skills = {} }, RewardEvaluator.HERO_ROLE_MAIN) == 10)
+assert(evaluator:getSkillReward({
+	ID = "WITCH_HUT",
+	wasVisited = true,
+	gainedSkill = 7,
+	skillScore = 3
+}, { skills = { [7] = 1 } }, RewardEvaluator.HERO_ROLE_MAIN) == 0)
+assert(evaluator:getSkillReward({
+	ID = "HERO",
+	owner = 2,
+	level = 12
+}, hero, RewardEvaluator.HERO_ROLE_MAIN) == 6)
+assert(almostEquals(evaluator:getSkillReward({
+	ID = "REWARDABLE",
+	rewards = {
+		{
+			spells = {
+				{ level = 1, canLearn = true },
+				{ level = 4, canLearn = true }
+			},
+			primary = { 1, 2 }
+		}
+	}
+}, hero, RewardEvaluator.HERO_ROLE_MAIN), 3.375))

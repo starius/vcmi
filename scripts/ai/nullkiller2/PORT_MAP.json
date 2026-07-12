@@ -157,9 +157,11 @@
         "RewardEvaluator::townArmyGrowth",
         "RewardEvaluator::getManaRecoveryArmyReward",
         "RewardEvaluator::getStrategicalValue",
-        "RewardEvaluator::getConquestValue"
+        "RewardEvaluator::getConquestValue",
+        "RewardEvaluator::evaluateWitchHutSkillScore",
+        "RewardEvaluator::getSkillReward"
       ],
-      "notes": "Deterministic resource pressure, army-cost, simple army reward/growth/cost, gold reward, strategic value, conquest value, town growth, and mana recovery helpers are ported with fixture coverage and object-style calls through EvaluationContext.evaluator. Full Rewardable inspection, artifact potential scoring, skill reward, upgrade reward, and enemy danger remain pending."
+      "notes": "Deterministic resource pressure, army-cost, simple army reward/growth/cost, gold reward, strategic value, conquest value, town growth, mana recovery, witch-hut skill, and skill-reward helpers are ported with fixture coverage and object-style calls through EvaluationContext.evaluator. Full Rewardable inspection, artifact potential scoring, upgrade reward, and enemy danger remain pending."
     },
     {
       "cpp": "AI/Nullkiller2/Goals/AbstractGoal.h",
