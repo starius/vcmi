@@ -259,6 +259,15 @@ JsonNode heroReferenceSnapshot(const CGHeroInstance * hero)
 	return result;
 }
 
+JsonNode artifactLocationReferenceSnapshot(const ArtifactLocation & location)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	result["holder"].Integer() = location.artHolder.getNum();
+	result["slot"].Integer() = location.slot.getNum();
+	return result;
+}
+
 JsonNode statusNativeOutput(const std::string & status)
 {
 	JsonNode output;
@@ -609,11 +618,38 @@ void AIGateway::centerView(int3 pos, int focusTime)
 void AIGateway::artifactMoved(const ArtifactLocation & src, const ArtifactLocation & dst)
 {
 	LOG_TRACE(logAi);
+	JsonNode input = emptyInput();
+	input["src"] = artifactLocationReferenceSnapshot(src);
+	input["dst"] = artifactLocationReferenceSnapshot(dst);
+	const auto id = boost::str(
+		boost::format("artifactMoved.%d.%d.%d.%d")
+		% src.artHolder.getNum()
+		% src.slot.getNum()
+		% dst.artHolder.getNum()
+		% dst.slot.getNum());
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		id,
+		"artifactMoved",
+		std::move(input),
+		"artifact_moved");
 }
 
 void AIGateway::artifactAssembled(const ArtifactLocation & al)
 {
 	LOG_TRACE(logAi);
+	JsonNode input = emptyInput();
+	input["location"] = artifactLocationReferenceSnapshot(al);
+	const auto id = boost::str(
+		boost::format("artifactAssembled.%d.%d")
+		% al.artHolder.getNum()
+		% al.slot.getNum());
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		id,
+		"artifactAssembled",
+		std::move(input),
+		"artifact_assembled");
 }
 
 void AIGateway::showTavernWindow(const CGObjectInstance * object, const CGHeroInstance * visitor, QueryID queryID)
@@ -698,16 +734,52 @@ void AIGateway::gameOver(PlayerColor player, const EVictoryLossCheckResult & vic
 void AIGateway::artifactPut(const ArtifactLocation & al)
 {
 	LOG_TRACE(logAi);
+	JsonNode input = emptyInput();
+	input["location"] = artifactLocationReferenceSnapshot(al);
+	const auto id = boost::str(
+		boost::format("artifactPut.%d.%d")
+		% al.artHolder.getNum()
+		% al.slot.getNum());
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		id,
+		"artifactPut",
+		std::move(input),
+		"artifact_put");
 }
 
 void AIGateway::artifactRemoved(const ArtifactLocation & al)
 {
 	LOG_TRACE(logAi);
+	JsonNode input = emptyInput();
+	input["location"] = artifactLocationReferenceSnapshot(al);
+	const auto id = boost::str(
+		boost::format("artifactRemoved.%d.%d")
+		% al.artHolder.getNum()
+		% al.slot.getNum());
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		id,
+		"artifactRemoved",
+		std::move(input),
+		"artifact_removed");
 }
 
 void AIGateway::artifactDisassembled(const ArtifactLocation & al)
 {
 	LOG_TRACE(logAi);
+	JsonNode input = emptyInput();
+	input["location"] = artifactLocationReferenceSnapshot(al);
+	const auto id = boost::str(
+		boost::format("artifactDisassembled.%d.%d")
+		% al.artHolder.getNum()
+		% al.slot.getNum());
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		id,
+		"artifactDisassembled",
+		std::move(input),
+		"artifact_disassembled");
 }
 
 void AIGateway::heroVisit(const CGHeroInstance * visitor, const CGObjectInstance * visitedObj, bool start)

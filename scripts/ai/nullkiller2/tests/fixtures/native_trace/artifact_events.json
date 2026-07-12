@@ -1,0 +1,79 @@
+{
+  "schema": "LuaNullkiller2.nativeDecisionTrace.v1",
+  "source": "Nullkiller2",
+  "compareMode": "exact",
+  "compare": [
+    "status"
+  ],
+  "decisions": [
+    {
+      "id": "artifact-moved",
+      "function": "artifactMoved",
+      "input": {
+        "src": {
+          "holder": 1001,
+          "slot": 5
+        },
+        "dst": {
+          "holder": 1002,
+          "slot": 6
+        }
+      },
+      "native": {
+        "status": "artifact_moved"
+      }
+    },
+    {
+      "id": "artifact-assembled",
+      "function": "artifactAssembled",
+      "input": {
+        "location": {
+          "holder": 1001,
+          "slot": 7
+        }
+      },
+      "native": {
+        "status": "artifact_assembled"
+      }
+    },
+    {
+      "id": "artifact-put",
+      "function": "artifactPut",
+      "input": {
+        "location": {
+          "holder": 1001,
+          "slot": 8
+        }
+      },
+      "native": {
+        "status": "artifact_put"
+      }
+    },
+    {
+      "id": "artifact-removed",
+      "function": "artifactRemoved",
+      "input": {
+        "location": {
+          "holder": 1001,
+          "slot": 9
+        }
+      },
+      "native": {
+        "status": "artifact_removed"
+      }
+    },
+    {
+      "id": "artifact-disassembled",
+      "function": "artifactDisassembled",
+      "input": {
+        "location": {
+          "holder": 1001,
+          "slot": 10
+        }
+      },
+      "native": {
+        "status": "artifact_disassembled"
+      }
+    }
+  ]
+}
