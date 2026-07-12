@@ -26,6 +26,55 @@
     },
     {
       "cpp": "AI/Nullkiller2/Engine/Nullkiller.h",
+      "lua": "scripts/ai/nullkiller2/Engine/TaskPlan.lua",
+      "status": "ported",
+      "symbols": [
+        "TaskPlanItem",
+        "TaskPlan",
+        "TaskFailureAction"
+      ],
+      "notes": "Task plan merge/filter API and failure-action values are mirrored in Lua."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Engine/Nullkiller.cpp",
+      "lua": "scripts/ai/nullkiller2/Engine/TaskPlan.lua",
+      "status": "ported",
+      "symbols": [
+        "TaskPlanItem::TaskPlanItem",
+        "TaskPlan::getTasks",
+        "TaskPlan::mergeAndFilter",
+        "chooseTaskFailureAction",
+        "Nullkiller::choseBestTask",
+        "Nullkiller::buildPlanAndFilter"
+      ],
+      "notes": "Parallel priority evaluation is intentionally serial in Lua; evaluator logic remains Lua-owned and deterministic."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Engine/DeepDecomposer.h",
+      "lua": "scripts/ai/nullkiller2/Engine/DeepDecomposer.lua",
+      "status": "ported",
+      "symbols": [
+        "DeepDecomposer",
+        "GoalHash"
+      ]
+    },
+    {
+      "cpp": "AI/Nullkiller2/Engine/DeepDecomposer.cpp",
+      "lua": "scripts/ai/nullkiller2/Engine/DeepDecomposer.lua",
+      "status": "ported",
+      "symbols": [
+        "DeepDecomposer::reset",
+        "DeepDecomposer::decompose",
+        "DeepDecomposer::aggregateGoals",
+        "DeepDecomposer::unwrapComposition",
+        "DeepDecomposer::isCompositionLoop",
+        "DeepDecomposer::decomposeCached",
+        "DeepDecomposer::addToCache"
+      ],
+      "notes": "Shipyard equivalence uses host object snapshots when available; otherwise it falls back to normal goal equality."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Engine/Nullkiller.h",
       "lua": "scripts/ai/nullkiller2/Engine/State.lua",
       "status": "scaffolded",
       "symbols": [
@@ -190,6 +239,32 @@
         "Goals::BuyArmy::accept"
       ],
       "notes": "Full accept parity depends on Lua snapshots for army value, recruit costs, slots, and host command execution."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/Composition.h",
+      "lua": "scripts/ai/nullkiller2/Goals/Composition.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::Composition"
+      ]
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/Composition.cpp",
+      "lua": "scripts/ai/nullkiller2/Goals/Composition.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::Composition::operator==",
+        "Goals::Composition::toString",
+        "Goals::Composition::accept",
+        "Goals::Composition::addNext",
+        "Goals::Composition::addNextSequence",
+        "Goals::Composition::decompose",
+        "Goals::Composition::isElementar",
+        "Goals::Composition::getHeroExchangeCount",
+        "Goals::Composition::getAffectedObjects",
+        "Goals::Composition::isObjectAffected"
+      ],
+      "notes": "Lua accept uses return values instead of C++ fulfilled exceptions, while preserving the same task order."
     },
     {
       "cpp": "AI/Nullkiller2/Goals/DigAtTile.h",

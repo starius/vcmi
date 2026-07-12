@@ -3,6 +3,7 @@
 local HostCommands = require("Actions.HostCommands")
 local Settings = require("Engine.Settings")
 local State = require("Engine.State")
+local TaskPlan = require("Engine.TaskPlan")
 
 local Nullkiller = {}
 
@@ -31,19 +32,7 @@ local function loadSettings(input)
 end
 
 function Nullkiller.chooseTaskFailureAction(hasAnySuccess, hasRemainingTasks, canReplan)
-	if hasAnySuccess then
-		return "REPLAN"
-	end
-
-	if hasRemainingTasks then
-		return "TRY_NEXT_TASK"
-	end
-
-	if canReplan then
-		return "REPLAN"
-	end
-
-	return "STOP_TURN"
+	return TaskPlan.chooseTaskFailureAction(hasAnySuccess, hasRemainingTasks, canReplan)
 end
 
 function Nullkiller.updateStateAndExecutePriorityPass(ai, state, settings, passIndex)

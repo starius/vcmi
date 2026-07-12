@@ -7,6 +7,7 @@ return {
 	CGoal = require("Goals.CGoal"),
 	BuildThis = require("Goals.BuildThis"),
 	BuyArmy = require("Goals.BuyArmy"),
+	Composition = require("Goals.Composition"),
 	DigAtTile = require("Goals.DigAtTile"),
 	DismissHero = require("Goals.DismissHero"),
 	Invalid = require("Goals.Invalid"),
