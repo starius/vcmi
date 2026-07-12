@@ -97,6 +97,33 @@ std::string yamlKey(const std::string & value)
 	return isPlainYamlKey(value) ? value : yamlString(value);
 }
 
+bool isPlainYamlIdentifier(const std::string & value)
+{
+	if(value.empty())
+		return false;
+	if(!std::isalpha(static_cast<unsigned char>(value.front())) && value.front() != '_')
+		return false;
+
+	for(const char ch : value)
+	{
+		const auto byte = static_cast<unsigned char>(ch);
+		if(!std::isalnum(byte) && ch != '_' && ch != '-' && ch != '/')
+			return false;
+	}
+	return true;
+}
+
+std::string yamlIdentifier(const std::string & value)
+{
+	return isPlainYamlIdentifier(value) ? value : yamlString(value);
+}
+
+std::string transcriptIdentifier(std::string identifier)
+{
+	boost::algorithm::replace_all(identifier, ":", "/");
+	return yamlIdentifier(identifier);
+}
+
 struct BattleBlockRecord
 {
 	std::string battleID;
@@ -191,6 +218,7 @@ std::string objectAlias(const CGameState & gameState, ObjectInstanceID id)
 	std::string type = MapObjectID::encode(object->ID.getNum());
 	if(type.empty())
 		type = "object";
+	boost::algorithm::replace_all(type, ":", "/");
 
 	std::string owner;
 	if(object->tempOwner.isValidPlayer())
@@ -252,21 +280,21 @@ std::string resourceKey(GameResID id)
 std::string creature(CreatureID id)
 {
 	if(id.getNum() < 0)
-		return yamlString("core:none");
-	return yamlString(CreatureID::encode(id.getNum()));
+		return "none";
+	return transcriptIdentifier(CreatureID::encode(id.getNum()));
 }
 
 std::string spell(SpellID id)
 {
 	if(id.getNum() < 0)
-		return yamlString("core:none");
-	return yamlString(SpellID::encode(id.getNum()));
+		return "none";
+	return transcriptIdentifier(SpellID::encode(id.getNum()));
 }
 
 std::string heroType(HeroTypeID id)
 {
 	if(id == HeroTypeID::NONE)
-		return yamlString("core:none");
+		return "none";
 	if(id == HeroTypeID::RANDOM)
 		return yamlString("random");
 	if(id == HeroTypeID::CAMP_STRONGEST)
@@ -276,33 +304,33 @@ std::string heroType(HeroTypeID id)
 	if(id == HeroTypeID::CAMP_RANDOM)
 		return yamlString("campaignRandom");
 	if(id.getNum() < 0)
-		return yamlString("hero:" + std::to_string(id.getNum()));
-	return yamlString(HeroTypeID::encode(id.getNum()));
+		return transcriptIdentifier("hero:" + std::to_string(id.getNum()));
+	return transcriptIdentifier(HeroTypeID::encode(id.getNum()));
 }
 
 std::string faction(FactionID id)
 {
 	if(id == FactionID::NONE)
-		return yamlString("core:none");
+		return "none";
 	if(id == FactionID::RANDOM)
 		return yamlString("random");
 	if(id.getNum() < 0)
-		return yamlString("faction:" + std::to_string(id.getNum()));
-	return yamlString(FactionID::encode(id.getNum()));
+		return transcriptIdentifier("faction:" + std::to_string(id.getNum()));
+	return transcriptIdentifier(FactionID::encode(id.getNum()));
 }
 
 std::string primarySkill(PrimarySkill id)
 {
 	if(id.getNum() < 0)
 		return yamlString("none");
-	return yamlString(PrimarySkill::encode(id.getNum()));
+	return transcriptIdentifier(PrimarySkill::encode(id.getNum()));
 }
 
 std::string secondarySkill(SecondarySkill id)
 {
 	if(id.getNum() < 0)
 		return yamlString("none");
-	return yamlString(SecondarySkill::encode(id.getNum()));
+	return transcriptIdentifier(SecondarySkill::encode(id.getNum()));
 }
 
 std::string building(BuildingID id)
@@ -310,15 +338,15 @@ std::string building(BuildingID id)
 	if(id.getNum() < 0)
 		return "none";
 	if(id.getNum() >= 0 && id.getNum() < std::size(EBuildingType::names))
-		return yamlString("core:" + EBuildingType::names[id.getNum()]);
-	return yamlString("building:" + std::to_string(id.getNum()));
+		return transcriptIdentifier("core:" + EBuildingType::names[id.getNum()]);
+	return transcriptIdentifier("building:" + std::to_string(id.getNum()));
 }
 
 std::string artifact(ArtifactID id)
 {
 	if(id.getNum() < 0)
-		return yamlString("core:none");
-	return yamlString(ArtifactID::encode(id.getNum()));
+		return "none";
+	return transcriptIdentifier(ArtifactID::encode(id.getNum()));
 }
 
 std::string slot(SlotID id)
@@ -392,12 +420,12 @@ std::string randomMapMonsterStrength(EMonsterStrength::EMonsterStrength value)
 std::string road(RoadId id)
 {
 	if(id == RoadId::NO_ROAD)
-		return yamlString("core:none");
+		return "none";
 
 	std::string identifier = RoadId::encode(id.getNum());
 	if(identifier.empty())
 		identifier = "road:" + std::to_string(id.getNum());
-	return yamlString(identifier);
+	return transcriptIdentifier(identifier);
 }
 
 std::string randomMapRoads(const CMapGenOptions & options)
@@ -700,7 +728,7 @@ std::string objectPropertyValue(const CGameState & gameState, const SetObjectPro
 		case ObjProperty::VISITORS:
 			return objectAlias(gameState, pack.identifier.as<ObjectInstanceID>());
 		case ObjProperty::ID:
-			return yamlString(MapObjectID::encode(pack.identifier.as<MapObjectID>().getNum()));
+			return transcriptIdentifier(MapObjectID::encode(pack.identifier.as<MapObjectID>().getNum()));
 		case ObjProperty::AVAILABLE_CREATURE:
 			return creature(pack.identifier.as<CreatureID>());
 		case ObjProperty::OBELISK_VISITED:
@@ -2018,7 +2046,7 @@ public:
 
 		line = "newObject: { id: object/id-" + std::to_string(object->id.getNum()) +
 			", name: " + yamlString(object->instanceName) +
-			", type: " + yamlString(MapObjectID::encode(object->ID.getNum())) +
+			", type: " + transcriptIdentifier(MapObjectID::encode(object->ID.getNum())) +
 			", subtype: " + std::to_string(object->subID.getNum()) +
 			", owner: " + color(object->tempOwner) +
 			", position: " + pos(object->visitablePos()) +

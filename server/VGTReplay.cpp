@@ -244,9 +244,21 @@ PlayerColor decodeColor(const std::string & value)
 	return decodePlayerColor(value);
 }
 
+std::string normalizeScopedIdentifier(std::string value)
+{
+	std::replace(value.begin(), value.end(), '/', ':');
+	return value;
+}
+
+bool isNoneIdentifier(const std::string & value)
+{
+	const auto identifier = normalizeScopedIdentifier(value);
+	return identifier == "none" || identifier == "core:none";
+}
+
 MapObjectID decodeMapObject(const std::string & value)
 {
-	std::string identifier = value;
+	std::string identifier = normalizeScopedIdentifier(value);
 	const std::string corePrefix = "core:";
 	if(identifier.starts_with(corePrefix))
 		identifier.erase(0, corePrefix.size());
@@ -255,7 +267,7 @@ MapObjectID decodeMapObject(const std::string & value)
 
 HeroTypeID decodeHeroType(const std::string & value)
 {
-	if(value == "core:none")
+	if(isNoneIdentifier(value))
 		return HeroTypeID::NONE;
 	if(value == "random")
 		return HeroTypeID::RANDOM;
@@ -265,51 +277,51 @@ HeroTypeID decodeHeroType(const std::string & value)
 		return HeroTypeID::CAMP_GENERATED;
 	if(value == "campaignRandom")
 		return HeroTypeID::CAMP_RANDOM;
-	return HeroTypeID(HeroTypeID::decode(value));
+	return HeroTypeID(HeroTypeID::decode(normalizeScopedIdentifier(value)));
 }
 
 FactionID decodeFaction(const std::string & value)
 {
-	if(value == "core:none")
+	if(isNoneIdentifier(value))
 		return FactionID::NONE;
 	if(value == "random")
 		return FactionID::RANDOM;
-	return FactionID(FactionID::decode(value));
+	return FactionID(FactionID::decode(normalizeScopedIdentifier(value)));
 }
 
 GameResID decodeResource(const std::string & value)
 {
-	if(value == "core:none" || value == "none")
+	if(isNoneIdentifier(value))
 		return GameResID::NONE;
-	return GameResID(GameResID::decode(value));
+	return GameResID(GameResID::decode(normalizeScopedIdentifier(value)));
 }
 
 SpellID decodeSpell(const std::string & value)
 {
-	if(value == "core:none")
+	if(isNoneIdentifier(value))
 		return SpellID::NONE;
-	return SpellID(SpellID::decode(value));
+	return SpellID(SpellID::decode(normalizeScopedIdentifier(value)));
 }
 
 PrimarySkill decodePrimarySkill(const std::string & value)
 {
-	if(value == "core:none")
+	if(isNoneIdentifier(value))
 		return PrimarySkill::NONE;
-	return PrimarySkill(PrimarySkill::decode(value));
+	return PrimarySkill(PrimarySkill::decode(normalizeScopedIdentifier(value)));
 }
 
 SecondarySkill decodeSecondarySkill(const std::string & value)
 {
-	if(value == "core:none")
+	if(isNoneIdentifier(value))
 		return SecondarySkill::NONE;
-	return SecondarySkill(SecondarySkill::decode(value));
+	return SecondarySkill(SecondarySkill::decode(normalizeScopedIdentifier(value)));
 }
 
 CreatureID decodeCreature(const std::string & value)
 {
-	if(value == "core:none")
+	if(isNoneIdentifier(value))
 		return CreatureID::NONE;
-	return CreatureID(CreatureID::decode(value));
+	return CreatureID(CreatureID::decode(normalizeScopedIdentifier(value)));
 }
 
 CGCreature::Character decodeCreatureCharacter(const std::string & value)
@@ -333,17 +345,17 @@ CGCreature::UpgradedStackPresence decodeUpgradedStackPresence(const std::string 
 
 ArtifactID decodeArtifact(const std::string & value)
 {
-	if(value == "core:none")
+	if(isNoneIdentifier(value))
 		return ArtifactID::NONE;
-	return ArtifactID(ArtifactID::decode(value));
+	return ArtifactID(ArtifactID::decode(normalizeScopedIdentifier(value)));
 }
 
 BuildingID decodeBuilding(const std::string & value)
 {
-	if(value == "none")
+	if(isNoneIdentifier(value))
 		return BuildingID::NONE;
 
-	std::string identifier = value;
+	std::string identifier = normalizeScopedIdentifier(value);
 	const std::string corePrefix = "core:";
 	if(identifier.starts_with(corePrefix))
 		identifier.erase(0, corePrefix.size());
@@ -477,14 +489,15 @@ TeamID decodeTeam(const JsonNode & node)
 
 RoadId decodeRoad(const std::string & value)
 {
-	if(value == "core:none")
+	if(isNoneIdentifier(value))
 		return RoadId::NO_ROAD;
 
+	const auto identifier = normalizeScopedIdentifier(value);
 	const std::string fallbackPrefix = "road:";
-	if(value.starts_with(fallbackPrefix))
-		return RoadId(std::stoi(value.substr(fallbackPrefix.size())));
+	if(identifier.starts_with(fallbackPrefix))
+		return RoadId(std::stoi(identifier.substr(fallbackPrefix.size())));
 
-	return RoadId(RoadId::decode(value));
+	return RoadId(RoadId::decode(identifier));
 }
 
 RumorState::ERumorType decodeRumorType(const std::string & value)
@@ -713,6 +726,13 @@ std::string sanitizedAliasName(std::string name)
 	return name;
 }
 
+std::string objectAliasType(MapObjectID id)
+{
+	auto type = MapObjectID::encode(id.getNum());
+	std::replace(type.begin(), type.end(), ':', '/');
+	return type;
+}
+
 std::vector<std::string> splitAlias(const std::string & value)
 {
 	std::vector<std::string> result;
@@ -721,6 +741,24 @@ std::vector<std::string> splitAlias(const std::string & value)
 	while(std::getline(stream, token, '/'))
 		result.push_back(token);
 	return result;
+}
+
+std::string joinAliasParts(const std::vector<std::string> & parts, size_t first, size_t last)
+{
+	std::string result;
+	for(size_t index = first; index < last; ++index)
+	{
+		if(!result.empty())
+			result += "/";
+		result += parts[index];
+	}
+	return result;
+}
+
+bool isAliasOwnerSegment(const std::string & value)
+{
+	const auto color = PlayerColor::decode(value);
+	return color >= 0 && color < PlayerColor::PLAYER_LIMIT_I;
 }
 
 std::optional<int3> positionFromAlias(const std::string & alias)
@@ -754,15 +792,22 @@ ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::str
 		std::optional<std::string> expectedName;
 		if(parts.size() >= 4 && parts[0] == "object")
 		{
-			expectedType = parts[1];
-			const bool hasOwner = parts.size() >= 5 && parts[2] != "at-" + std::to_string(position->x) + "-" + std::to_string(position->y) + "-" + std::to_string(position->z);
-			if(hasOwner)
+			const std::string positionPart = "at-" + std::to_string(position->x) + "-" + std::to_string(position->y) + "-" + std::to_string(position->z);
+			auto positionPartIter = std::find(parts.begin() + 1, parts.end(), positionPart);
+			if(positionPartIter != parts.end() && positionPartIter - parts.begin() >= 3)
 			{
-				expectedOwner = parts[2];
-				expectedName = parts[3];
+				const auto positionPartIndex = static_cast<size_t>(positionPartIter - parts.begin());
+				const auto nameIndex = positionPartIndex - 1;
+				size_t typeEnd = nameIndex;
+				expectedName = parts[nameIndex];
+				if(nameIndex > 2 && isAliasOwnerSegment(parts[nameIndex - 1]))
+				{
+					expectedOwner = parts[nameIndex - 1];
+					typeEnd = nameIndex - 1;
+				}
+				expectedType = joinAliasParts(parts, 1, typeEnd);
+				std::replace(expectedType.begin(), expectedType.end(), ':', '/');
 			}
-			else
-				expectedName = parts[2];
 		}
 
 		std::optional<ObjectInstanceID> positionOnlyMatch;
@@ -773,7 +818,7 @@ ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::str
 				if(!positionOnlyMatch)
 					positionOnlyMatch = object->id;
 
-				if(!expectedType.empty() && MapObjectID::encode(object->ID.getNum()) != expectedType)
+				if(!expectedType.empty() && objectAliasType(object->ID) != expectedType)
 					continue;
 				if(expectedOwner && object->tempOwner.toString() != *expectedOwner)
 					continue;
@@ -792,7 +837,7 @@ ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::str
 			{
 				if(!object)
 					continue;
-				if(!expectedType.empty() && MapObjectID::encode(object->ID.getNum()) != expectedType)
+				if(!expectedType.empty() && objectAliasType(object->ID) != expectedType)
 					continue;
 				if(expectedOwner && object->tempOwner.toString() != *expectedOwner)
 					continue;
@@ -1116,7 +1161,7 @@ ObjPropertyID decodeObjPropertyValue(const CGameState & gameState, ObjProperty p
 			case ObjProperty::VISITORS:
 				return ObjPropertyID(resolveObjectAlias(gameState, value));
 			case ObjProperty::ID:
-				return ObjPropertyID(MapObjectID(MapObjectID::decode(value)));
+				return ObjPropertyID(MapObjectID(MapObjectID::decode(normalizeScopedIdentifier(value))));
 			case ObjProperty::AVAILABLE_CREATURE:
 				return ObjPropertyID(decodeCreature(value));
 			default:
