@@ -1,6 +1,7 @@
 -- Mirrors AI/Nullkiller2/Behaviors/BuyArmyBehavior.{h,cpp}: BuyArmyBehavior.
 
 local AbstractGoal = require("Goals.AbstractGoal")
+local ArmyManager = require("Analyzers.ArmyManager")
 local BuyArmy = require("Goals.BuyArmy")
 local CGoal = require("Goals.CGoal")
 local PriorityEvaluator = require("Engine.PriorityEvaluator")
@@ -71,7 +72,13 @@ local function reinforcementAvailable(aiNk, town, hero)
 		return armyManager:howManyReinforcementsCanGet(hero, hero, town.townArmyAvailableToBuy, town.terrainId)
 	end
 
-	return 0
+	local sourceArmy = town.townArmyAvailableToBuy
+		or ArmyManager.getArmyAvailableToBuyAsCCreatureSet(town, aiNk and aiNk.freeResources)
+	return ArmyManager.howManyReinforcementsCanGet(hero, hero, sourceArmy, town.terrainId, {
+		settings = aiNk and aiNk.settings,
+		moraleEvaluator = town.moraleEvaluator,
+		moraleByCreatureID = town.moraleByCreatureID
+	})
 end
 
 local function reinforcementCanBuy(aiNk, town)
@@ -84,7 +91,10 @@ local function reinforcementCanBuy(aiNk, town)
 		return armyManager:howManyReinforcementsCanBuy(town.upperArmy, town)
 	end
 
-	return math.huge
+	return ArmyManager.howManyReinforcementsCanBuy(town.upperArmy or town, town, aiNk and aiNk.freeResources, 0, {
+		settings = aiNk and aiNk.settings,
+		calendar = aiNk and aiNk.calendar
+	})
 end
 
 function BuyArmyBehavior:toString()

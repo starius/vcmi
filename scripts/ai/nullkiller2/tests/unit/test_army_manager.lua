@@ -104,3 +104,56 @@ assert(#scoutSplitArmy == 1)
 assert(scoutSplitArmy[1].creature == wyvern)
 assert(scoutSplitArmy[1].count == 2)
 assert(scoutSplitArmy[1].power == 200)
+
+assert(ArmyManager.evaluateStackPower(wyvern, 2) == 160)
+
+local townCreature = { id = 5, factionID = 1, aiValue = 20, fullRecruitCost = { [7] = 50 } }
+local betterTownCreature = { id = 6, factionID = 1, aiValue = 50, fullRecruitCost = { [7] = 100 } }
+local outsider = { id = 7, factionID = 2, aiValue = 5, fullRecruitCost = { [7] = 10 } }
+local fullArmy = {
+	armySize = 7,
+	stacksCount = 7,
+	slots = {
+		{ slot = 0, creature = townCreature, count = 1, marketValue = 1000 },
+		{ slot = 1, creature = outsider, count = 1, marketValue = 100 },
+		{ slot = 2, creature = { id = 8, factionID = 3, fullRecruitCost = { [7] = 200 } }, count = 1, marketValue = 200 },
+		{ slot = 3, creature = { id = 9, factionID = 3, fullRecruitCost = { [7] = 200 } }, count = 1, marketValue = 200 },
+		{ slot = 4, creature = { id = 10, factionID = 3, fullRecruitCost = { [7] = 200 } }, count = 1, marketValue = 200 },
+		{ slot = 5, creature = { id = 11, factionID = 3, fullRecruitCost = { [7] = 200 } }, count = 1, marketValue = 200 },
+		{ slot = 6, creature = { id = 12, factionID = 3, fullRecruitCost = { [7] = 200 } }, count = 1, marketValue = 200 }
+	}
+}
+local dwelling = {
+	factionID = 1,
+	availableToBuy = {
+		{ level = 0, count = 3, creature = townCreature },
+		{ level = 1, count = 5, creature = betterTownCreature }
+	}
+}
+local armyAvailable = ArmyManager.getArmyAvailableToBuy(fullArmy, dwelling, { [7] = 1000 })
+assert(#armyAvailable == 2)
+assert(armyAvailable[1].creature == betterTownCreature)
+assert(armyAvailable[1].count == 4)
+assert(armyAvailable[1].level == 1)
+assert(armyAvailable[2].creature == townCreature)
+assert(armyAvailable[2].count == 3)
+
+assert(ArmyManager.howManyReinforcementsCanBuy(fullArmy, dwelling, { [7] = 1000 }) == 260)
+
+local sourceSet = ArmyManager.getArmyAvailableToBuyAsCCreatureSet(dwelling, { [7] = 650 })
+assert(sourceSet.stacksCount == 2)
+assert(sourceSet.slots[1].creature == betterTownCreature)
+assert(sourceSet.slots[1].count == 5)
+
+local reinforcementDelta = ArmyManager.howManyReinforcementsCanGet(nil, {
+	armyStrength = 100,
+	slots = {
+		{ creature = townCreature, count = 5, power = 100 }
+	}
+}, {
+	stacksCount = 1,
+	slots = {
+		{ creature = betterTownCreature, count = 5, power = 250 }
+	}
+}, nil, {})
+assert(reinforcementDelta == 250)

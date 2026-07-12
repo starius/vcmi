@@ -187,6 +187,45 @@ assert(buyTasks[1].goalType == AbstractGoal.EGoals.BUY_ARMY)
 assert(buyTasks[1].value == 1000)
 assert(buyTasks[1].priority == 1000)
 
+local analyzerBuyTasks = BuyArmyBehavior.new():decompose({
+	heroesInfo = {
+		{
+			id = 72,
+			role = PriorityEvaluator.HeroRole.MAIN,
+			armyStrength = 100,
+			slots = {
+				{ creature = { id = 7001, factionID = 1, aiValue = 20 }, count = 5, power = 100 }
+			}
+		}
+	},
+	townsInfo = {
+		{
+			id = 82,
+			name = "Analyzer Town",
+			factionID = 1,
+			closestThreatTurn = 0,
+			upperArmy = { armySize = 7, stacksCount = 0, slots = {} },
+			availableToBuy = {
+				{
+					level = 0,
+					count = 5,
+					creature = {
+						id = 7002,
+						factionID = 1,
+						aiValue = 50,
+						fullRecruitCost = { [7] = 100 }
+					}
+				}
+			}
+		}
+	},
+	freeResources = { [7] = 500 },
+	heroManager = {}
+})
+assert(#analyzerBuyTasks == 1)
+assert(analyzerBuyTasks[1].value == 250)
+assert(analyzerBuyTasks[1].priority == 250)
+
 local blockedBuyTasks = BuyArmyBehavior.new():decompose({
 	heroesInfo = {
 		{ id = 70, role = PriorityEvaluator.HeroRole.MAIN }

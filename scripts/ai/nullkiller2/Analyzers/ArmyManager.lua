@@ -59,6 +59,10 @@ local function stackPower(stack)
 	return aiValue * stackCount(stack)
 end
 
+local function creatureAIValue(creature)
+	return type(creature) == "table" and (creature.aiValue or creature.AIValue or creature.value) or 0
+end
+
 local function factionID(creature)
 	if type(creature) ~= "table" then
 		return nil
@@ -74,12 +78,61 @@ local function movementRange(creature)
 	return type(creature) == "table" and (creature.movementRange or creature.speed or creature.moveRange or 0) or 0
 end
 
+local function armySize(army)
+	return army and (army.armySize or army.ARMY_SIZE) or ArmyManager.ARMY_SIZE
+end
+
 local function stacksCount(army)
 	local result = call(army, "stacksCount")
 	if result ~= nil then
 		return result
 	end
 	return army and (army.stacksCount or #armySlots(army)) or 0
+end
+
+local function stackSlot(stack, fallback)
+	return type(stack) == "table" and (stack.slot or fallback) or fallback
+end
+
+local function slotForCreature(army, creature)
+	local result = call(army, "getSlotFor", creature)
+	if result ~= nil then
+		if type(result) == "table" then
+			if result.validSlot == false then
+				return nil
+			end
+			return result.num or result.id or result[1]
+		end
+		return result ~= false and result ~= -1 and result or nil
+	end
+
+	local id = creatureID(creature)
+	local slotsByCreature = army and army.slotsByCreature
+	if slotsByCreature then
+		local slot = slotsByCreature[id] or slotsByCreature[tostring(id)]
+		if slot ~= nil then
+			return slot
+		end
+	end
+
+	for slot, stack in pairs(armySlots(army)) do
+		if creatureID(stackCreature(stack)) == id then
+			return stackSlot(stack, slot)
+		end
+	end
+	return nil
+end
+
+local function hasStackAtSlot(army, targetSlot)
+	if targetSlot == nil then
+		return false
+	end
+	for slot, stack in pairs(armySlots(army)) do
+		if stackSlot(stack, slot) == targetSlot then
+			return true
+		end
+	end
+	return false
 end
 
 local function setting(context, ...)
@@ -118,6 +171,94 @@ local function vectorValue(vector, zeroBasedIndex)
 		return vector[zeroBasedIndex]
 	end
 	return vector[zeroBasedIndex + 1]
+end
+
+local function resourceAmount(resources, resourceID)
+	if type(resources) == "number" then
+		return resourceID == 6 and resources or 0
+	end
+	if type(resources) ~= "table" then
+		return 0
+	end
+	if resourceID == "gold" or resourceID == "GOLD" or resourceID == 6 then
+		return resources[6] or resources[7] or resources.gold or resources.GOLD or 0
+	end
+	if resources[0] == nil and resources[7] ~= nil then
+		return resources[resourceID + 1] or 0
+	end
+	return resources[resourceID] or resources[tostring(resourceID)] or 0
+end
+
+local function resourceCost(creature)
+	if type(creature) ~= "table" then
+		return 0
+	end
+	return creature.fullRecruitCost or creature.recruitCost or creature.cost or 0
+end
+
+local function costMarketValue(cost)
+	if type(cost) == "number" then
+		return cost
+	end
+	if type(cost) ~= "table" then
+		return 0
+	end
+	return cost.marketValue or cost.gold or cost.GOLD or cost[6] or cost[7] or 0
+end
+
+local function maxAffordableCount(resources, cost)
+	if type(cost) == "number" then
+		if cost <= 0 then
+			return math.huge
+		end
+		return math.floor(resourceAmount(resources, 6) / cost)
+	end
+
+	local result = math.huge
+	for resourceID = 0, 6 do
+		local needed = resourceAmount(cost, resourceID)
+		if needed > 0 then
+			result = math.min(result, math.floor(resourceAmount(resources, resourceID) / needed))
+		end
+	end
+	return result
+end
+
+local function subtractCost(resources, cost, count)
+	if type(resources) ~= "table" then
+		return resources
+	end
+
+	local result = {}
+	for key, value in pairs(resources) do
+		result[key] = value
+	end
+
+	if type(cost) == "number" then
+		result[6] = resourceAmount(result, 6) - cost * count
+		return result
+	end
+
+	for resourceID = 0, 6 do
+		local needed = resourceAmount(cost, resourceID)
+		if needed > 0 then
+			local key = cost[resourceID] ~= nil and resourceID or cost[resourceID + 1] ~= nil and resourceID + 1 or resourceID
+			result[key] = resourceAmount(result, resourceID) - needed * count
+		end
+	end
+	return result
+end
+
+local function stackMarketValue(stack)
+	if type(stack) ~= "table" then
+		return 0
+	end
+	if stack.marketValue then
+		return stack.marketValue
+	end
+
+	local creature = stackCreature(stack)
+	return costMarketValue(resourceCost(creature)) * stackCount(stack)
 end
 
 local function vectorLength(vector)
@@ -388,6 +529,205 @@ function ArmyManager.getBestArmy(armyCarrier, target, source, context)
 	end
 
 	return resultingArmy
+end
+
+local function creatureEntries(dwelling)
+	if not dwelling then
+		return {}
+	end
+
+	local available = call(dwelling, "getArmyAvailableToBuy") or dwelling.availableToBuy or dwelling.armyAvailableToBuy
+	if available then
+		local result = {}
+		for index = #available, 1, -1 do
+			local entry = available[index]
+			local creature = entry.creature or entry.creID or entry
+			table.insert(result, {
+				count = entry.count or 0,
+				creature = creature,
+				creatureID = creatureID(creature),
+				level = entry.level or index - 1
+			})
+		end
+		return result
+	end
+
+	local result = {}
+	for level = #(dwelling.creatures or {}), 1, -1 do
+		local entry = dwelling.creatures[level]
+		local count = entry.count or entry[1] or 0
+		local creatures = entry.creatures or entry.ids or entry[2] or {}
+		local creature = creatures[#creatures] or entry.creature or entry.creID
+		if creature then
+			table.insert(result, {
+				count = count,
+				creature = creature,
+				creatureID = creatureID(creature),
+				level = level - 1
+			})
+		end
+	end
+	return result
+end
+
+local function countGrowth(context, turn)
+	local calendar = context and context.calendar
+	if not calendar then
+		return false
+	end
+	local dayOfWeek = calendar.dayOfWeek or calendar.getDayOfWeek and calendar:getDayOfWeek() or 0
+	local daysInWeek = calendar.daysInWeek or calendar.getDaysInWeek and calendar:getDaysInWeek() or 7
+	return dayOfWeek + (turn or 0) > daysInWeek
+end
+
+local function creatureGrowth(dwelling, entry)
+	if dwelling and dwelling.creatureGrowth then
+		if type(dwelling.creatureGrowth) == "function" then
+			return dwelling:creatureGrowth(entry.level)
+		end
+		return dwelling.creatureGrowth[entry.level] or dwelling.creatureGrowth[entry.level + 1] or 0
+	end
+	return type(entry.creature) == "table" and (entry.creature.growth or 0) or 0
+end
+
+function ArmyManager.evaluateStackPower(creature, count)
+	return creatureAIValue(creature) * (count or 0)
+end
+
+function ArmyManager.getArmyAvailableToBuy(targetArmy, dwelling, availableResources, turn, context)
+	local resources = availableResources or context and context.freeResources or dwelling and dwelling.freeResources or {}
+	local freeHeroSlots = armySize(targetArmy) - stacksCount(targetArmy)
+	local includeGrowth = countGrowth(context, turn)
+	local townFaction = factionID(dwelling)
+	local alreadyDisbanded = {}
+	local creaturesInDwellings = {}
+
+	for _, entry in ipairs(creatureEntries(dwelling)) do
+		local creature = entry.creature
+		local count = entry.count
+		if entry.level < ArmyManager.ARMY_SIZE and includeGrowth then
+			count = count + creatureGrowth(dwelling, entry)
+		end
+		if count > 0 then
+			local cost = resourceCost(creature)
+			local newStackValue = costMarketValue(cost) * count
+			local destinationSlot = slotForCreature(targetArmy, creature)
+			local shouldDisband = false
+			local leastValuableSlot = nil
+			local leastValuableStackValue = math.huge
+
+			if not hasStackAtSlot(targetArmy, destinationSlot) then
+				if freeHeroSlots <= 0 then
+					for slot, stack in pairs(armySlots(targetArmy)) do
+						local actualSlot = stackSlot(stack, slot)
+						if not alreadyDisbanded[actualSlot] then
+							local stackCreatureValue = stackCreature(stack)
+							if creatureID(stackCreatureValue) ~= nil and factionID(stackCreatureValue) ~= townFaction then
+								local currentStackValue = stackMarketValue(stack)
+								if currentStackValue < leastValuableStackValue then
+									leastValuableStackValue = currentStackValue
+									leastValuableSlot = actualSlot
+								end
+							end
+						end
+					end
+
+					if newStackValue <= leastValuableStackValue then
+						count = 0
+					else
+						shouldDisband = true
+					end
+				else
+					freeHeroSlots = freeHeroSlots - 1
+				end
+			end
+
+			if count > 0 then
+				count = math.min(count, maxAffordableCount(resources, cost))
+				if shouldDisband then
+					local unitCostValue = costMarketValue(cost)
+					local disbandMalus = unitCostValue > 0 and math.floor(leastValuableStackValue / unitCostValue) or 0
+					alreadyDisbanded[leastValuableSlot] = true
+					count = count - disbandMalus
+				end
+			end
+
+			if count > 0 then
+				table.insert(creaturesInDwellings, {
+					count = count,
+					creature = creature,
+					creatureID = entry.creatureID,
+					creID = entry.creatureID,
+					level = entry.level
+				})
+				resources = subtractCost(resources, cost, count)
+			end
+		end
+	end
+
+	return creaturesInDwellings
+end
+
+function ArmyManager.getArmyAvailableToBuyAsCCreatureSet(dwelling, availableResources)
+	local army = {
+		armySize = ArmyManager.ARMY_SIZE,
+		stacksCount = 0,
+		slots = {}
+	}
+	local resources = availableResources or dwelling and dwelling.freeResources or {}
+
+	for _, entry in ipairs(creatureEntries(dwelling)) do
+		local creature = entry.creature
+		local count = math.min(entry.count, maxAffordableCount(resources, resourceCost(creature)))
+		if count > 0 and army.stacksCount < ArmyManager.ARMY_SIZE then
+			table.insert(army.slots, {
+				slot = army.stacksCount,
+				count = count,
+				power = ArmyManager.evaluateStackPower(creature, count),
+				creature = creature,
+				creatureID = entry.creatureID
+			})
+			army.stacksCount = army.stacksCount + 1
+			resources = subtractCost(resources, resourceCost(creature), count)
+		end
+	end
+
+	return army
+end
+
+function ArmyManager.howManyReinforcementsCanBuy(targetArmy, dwelling, availableResources, turn, context)
+	local value = 0
+	for _, info in ipairs(ArmyManager.getArmyAvailableToBuy(targetArmy, dwelling, availableResources, turn, context)) do
+		value = value + info.count * creatureAIValue(info.creature)
+	end
+	return value
+end
+
+function ArmyManager.howManyReinforcementsCanGet(armyCarrier, target, source, armyTerrain, context)
+	if stacksCount(source) == 0 then
+		return 0
+	end
+
+	local bestArmy = ArmyManager.getBestArmy(armyCarrier, target, source, {
+		terrain = armyTerrain,
+		settings = context and context.settings,
+		armySize = armySize(target),
+		moraleEvaluator = context and context.moraleEvaluator,
+		moraleByCreatureID = context and context.moraleByCreatureID
+	})
+	local newArmy = 0
+	for _, slot in ipairs(bestArmy) do
+		newArmy = newArmy + slot.power
+	end
+
+	local oldArmy = target and (target.armyStrength or target.totalStrength) or 0
+	if oldArmy == 0 then
+		for _, stack in pairs(armySlots(target)) do
+			oldArmy = oldArmy + stackPower(stack)
+		end
+	end
+
+	return newArmy > oldArmy and newArmy - oldArmy or 0
 end
 
 return ArmyManager
