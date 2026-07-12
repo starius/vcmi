@@ -15,6 +15,8 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 PORT_MAP = REPO_ROOT / "scripts/ai/nullkiller2/PORT_MAP.json"
 LUA_ROOT = REPO_ROOT / "scripts/ai/nullkiller2"
 CPP_ROOT = REPO_ROOT / "AI/LuaNullkiller2"
+LUA_RUNNER = CPP_ROOT / "LuaNullkiller2Runner.cpp"
+LUA_AI = CPP_ROOT / "CLuaNullkiller2AI.cpp"
 
 
 FORBIDDEN_SCRIPT_PATTERNS = [
@@ -116,6 +118,18 @@ def check_forbidden_patterns(errors: list[str]) -> None:
                 errors.append(f"Forbidden C++ dependency '{pattern.pattern}' in {rel}")
 
 
+def check_command_payload_fields(errors: list[str]) -> None:
+    runner_text = LUA_RUNNER.read_text(encoding="utf-8")
+    ai_text = LUA_AI.read_text(encoding="utf-8")
+    fields_start = runner_text.find("INTEGER_FIELDS")
+    fields_end = runner_text.find("for(const char * field")
+    read_fields = set(re.findall(r'"([A-Za-z0-9_]+)"', runner_text[fields_start:fields_end]))
+    used_fields = set(re.findall(r'commandInteger\s*\(\s*command\s*,\s*"([A-Za-z0-9_]+)"\s*\)', ai_text))
+    missing = sorted(used_fields - read_fields)
+    if missing:
+        errors.append(f"Lua command integer payload fields are not read by LuaNullkiller2Runner: {', '.join(missing)}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--json", action="store_true", help="emit machine-readable result")
@@ -124,6 +138,7 @@ def main() -> int:
     errors: list[str] = []
     check_port_map(errors)
     check_forbidden_patterns(errors)
+    check_command_payload_fields(errors)
 
     if args.json:
         print(json.dumps({"ok": not errors, "errors": errors}, indent=2, sort_keys=True))
