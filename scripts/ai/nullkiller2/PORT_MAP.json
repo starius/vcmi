@@ -522,6 +522,25 @@
       "notes": "Hero/town/threat values are Lua snapshot inputs. Defensive emergency composition generation is Lua-owned."
     },
     {
+      "cpp": "AI/Nullkiller2/Behaviors/BuildingBehavior.h",
+      "lua": "scripts/ai/nullkiller2/Behaviors/BuildingBehavior.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::BuildingBehavior"
+      ],
+      "notes": "Behavior identity and equality are ported."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Behaviors/BuildingBehavior.cpp",
+      "lua": "scripts/ai/nullkiller2/Behaviors/BuildingBehavior.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::BuildingBehavior::toString",
+        "Goals::BuildingBehavior::decompose"
+      ],
+      "notes": "Emergency fortification, gold-pressure filtering, missing-resource composition, and locked-resource skipping are Lua-owned against build analyzer snapshots."
+    },
+    {
       "cpp": "AI/Nullkiller2/Engine/ResourceTrader.h",
       "lua": "scripts/ai/nullkiller2/Engine/ResourceTrader.lua",
       "status": "ported",

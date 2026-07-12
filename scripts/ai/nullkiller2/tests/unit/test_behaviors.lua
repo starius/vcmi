@@ -1,4 +1,5 @@
 local AbstractGoal = require("Goals.AbstractGoal")
+local BuildingBehavior = require("Behaviors.BuildingBehavior")
 local BuyArmyBehavior = require("Behaviors.BuyArmyBehavior")
 local ExchangeSwapTownHeroes = require("Goals.ExchangeSwapTownHeroes")
 local PriorityEvaluator = require("Engine.PriorityEvaluator")
@@ -115,3 +116,116 @@ local blockedBuyTasks = BuyArmyBehavior.new():decompose({
 	goldPressureOverMax = true
 })
 assert(#blockedBuyTasks == 0)
+
+local buildBehavior = BuildingBehavior.new()
+assert(buildBehavior:toString() == "Build")
+assert(buildBehavior:equals(BuildingBehavior.new()) == true)
+
+local threatenedTown = {
+	id = 100,
+	name = "Stonewatch",
+	fortLevel = BuildingBehavior.FortLevel.CASTLE - 1,
+	threats = { { turn = 1 } }
+}
+local emergencyBuildTasks = buildBehavior:decompose({
+	buildAnalyzer = {
+		developmentInfos = {
+			{
+				town = threatenedTown,
+				toBuild = {
+					{ id = 1, name = "Mage Guild", isMissingResources = false },
+					{ id = BuildingBehavior.BuildingID.CITADEL, name = "Citadel", isMissingResources = false },
+					{ id = BuildingBehavior.BuildingID.CASTLE, name = "Castle", isMissingResources = true }
+				}
+			}
+		}
+	},
+	dangerHitMap = {
+		getTownThreats = function(_, townInfo)
+			return townInfo.threats
+		end
+	}
+})
+assert(#emergencyBuildTasks == 1)
+assert(emergencyBuildTasks[1].goalType == AbstractGoal.EGoals.BUILD_STRUCTURE)
+assert(emergencyBuildTasks[1].bid == BuildingBehavior.BuildingID.CITADEL)
+
+local missingCost = { [0] = 5, [6] = 1000 }
+local developmentTown = { id = 101, name = "Clearwater", fortLevel = 0 }
+local missingResourceTasks = buildBehavior:decompose({
+	buildAnalyzer = {
+		goldPressureOverMax = false,
+		developmentInfos = {
+			{
+				town = developmentTown,
+				toBuild = {
+					{
+						id = 14,
+						name = "Marketplace",
+						isMissingResources = true,
+						buildCost = missingCost,
+						dailyIncome = {}
+					}
+				}
+			}
+		}
+	},
+	lockedResources = {
+		canAfford = function(_, cost)
+			assert(cost == missingCost)
+			return false
+		end
+	}
+})
+assert(#missingResourceTasks == 1)
+assert(missingResourceTasks[1].goalType == AbstractGoal.EGoals.COMPOSITION)
+local missingResourceSequence = missingResourceTasks[1]:decompose({})
+assert(#missingResourceSequence == 2)
+assert(missingResourceSequence[1].goalType == AbstractGoal.EGoals.BUILD_STRUCTURE)
+assert(missingResourceSequence[2].goalType == AbstractGoal.EGoals.SAVE_RESOURCES)
+assert(missingResourceSequence[2].resources == missingCost)
+
+local lockedResourceTasks = buildBehavior:decompose({
+	buildAnalyzer = {
+		goldPressureOverMax = false,
+		developmentInfos = {
+			{
+				town = developmentTown,
+				toBuild = {
+					{
+						id = 14,
+						name = "Marketplace",
+						isMissingResources = true,
+						buildCost = missingCost,
+						dailyIncome = {}
+					}
+				}
+			}
+		}
+	},
+	lockedResources = {
+		canAfford = function()
+			return true
+		end
+	}
+})
+assert(#lockedResourceTasks == 0)
+
+local goldPressureTasks = buildBehavior:decompose({
+	buildAnalyzer = {
+		isGoldPressureOverMax = function()
+			return true
+		end,
+		developmentInfos = {
+			{
+				town = { id = 102, name = "Goldkeep", fortLevel = BuildingBehavior.FortLevel.CASTLE },
+				toBuild = {
+					{ id = 11, name = "Town Hall", isMissingResources = false, dailyIncome = { [6] = 0 } },
+					{ id = 12, name = "City Hall", isMissingResources = false, dailyIncome = { [6] = 1000 } }
+				}
+			}
+		}
+	}
+})
+assert(#goldPressureTasks == 1)
+assert(goldPressureTasks[1].bid == 12)
