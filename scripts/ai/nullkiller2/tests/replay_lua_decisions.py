@@ -176,9 +176,8 @@ print(encode({{
 """
 
 
-def run_fixture(lua: str, path: Path) -> tuple[dict[str, Any] | None, str]:
-    fixture = json.loads(path.read_text(encoding="utf-8"))
-    script = replay_script(fixture["function"], fixture.get("input", {}))
+def run_decision(lua: str, function_name: str, input_value: Any) -> tuple[dict[str, Any] | None, str]:
+    script = replay_script(function_name, input_value)
     env = os.environ.copy()
     env["LUA_PATH"] = lua_path()
     completed = subprocess.run(
@@ -197,6 +196,11 @@ def run_fixture(lua: str, path: Path) -> tuple[dict[str, Any] | None, str]:
         return json.loads(completed.stdout), ""
     except json.JSONDecodeError as exc:
         return None, f"{exc}\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+
+
+def run_fixture(lua: str, path: Path) -> tuple[dict[str, Any] | None, str]:
+    fixture = json.loads(path.read_text(encoding="utf-8"))
+    return run_decision(lua, fixture["function"], fixture.get("input", {}))
 
 
 def assert_subset(expected: Any, actual: Any, path: str = "$") -> list[str]:

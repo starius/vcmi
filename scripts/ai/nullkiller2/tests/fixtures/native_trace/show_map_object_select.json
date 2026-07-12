@@ -1,0 +1,37 @@
+{
+  "schema": "LuaNullkiller2.nativeDecisionTrace.v1",
+  "source": "Nullkiller2",
+  "compareMode": "exact",
+  "compare": [
+    "status",
+    "selection",
+    "commandJournal"
+  ],
+  "decisions": [
+    {
+      "id": "map-object-select",
+      "function": "showMapObjectSelectDialog",
+      "input": {
+        "queryID": 101,
+        "selectedObject": 44,
+        "objects": [
+          11,
+          44
+        ]
+      },
+      "native": {
+        "status": "answered",
+        "selection": 44,
+        "commandJournal": [
+          {
+            "name": "answerQuery",
+            "payload": {
+              "query": 101,
+              "selection": 44
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

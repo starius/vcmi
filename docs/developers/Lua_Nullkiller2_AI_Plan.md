@@ -148,7 +148,9 @@ The branch now has the initial standalone AI and parity infrastructure in place:
   native dependencies and unmapped/stale Lua policy files.
 - Pure Lua tests, fixture-based differential smoke tests, and JSON replay fixtures run through
   `scripts/ai/nullkiller2/tests/run_lua_tests.py`; replay coverage now includes a `runDay` hero-chain
-  special-action command journal fixture.
+  special-action command journal fixture. The same runner also exposes a `native-trace` preset that replays
+  normalized native `Nullkiller2` decision records through Lua and compares selected output fields exactly by
+  default.
 
 The current Lua policy surface includes the core day loop, settings, state locks, task plan execution, priority
 formula scaffolding, deterministic `RewardEvaluator` resource, reward, growth, cost, strategic, and conquest helpers,
@@ -270,11 +272,15 @@ Planned layout:
 ```text
 scripts/ai/nullkiller2/tests/
   unit/
+  differential/
   fixtures/
+    differential/
+    native_trace/
     replay/
     discrepancies/
   golden/
   integration/
+  compare_native_trace.py
   run_lua_tests.py
   replay_lua_decisions.py
   update_golden.py
@@ -285,7 +291,11 @@ or real game execution run only in the remote build/test workflow. Golden update
 runs compare against checked-in expected output and fail on drift.
 `replay_lua_decisions.py` replays normalized JSON decision fixtures through `main.lua`, compares expected subsets of
 status, command journals, trace, and memory, and writes actual JSON plus a first-difference summary under
-`tests/fixtures/discrepancies/` when a replay drifts.
+`tests/fixtures/discrepancies/` when a replay drifts. `compare_native_trace.py` consumes
+`tests/fixtures/native_trace/*.json` files or explicitly passed trace files with the
+`LuaNullkiller2.nativeDecisionTrace.v1` shape, runs each native decision input through Lua, and compares fields such
+as `status`, `selection`, `intent`, `side`, `ended`, and `commandJournal`; exact comparison is the default, while
+`compareMode: "subset"` is reserved for reduced traces during triage.
 
 ## Differential Testing
 
@@ -300,7 +310,9 @@ Required modes:
 - Lockstep mode: execute both AIs from the same seed/map with deterministic settings. After every pass or action,
   normalize and compare trace events. Stop at the first divergence with a compact explanation.
 - Replay mode: take a previously captured C++ trace and replay each decision point through Lua without running a
-  full game, useful for fast local Lua tests and reduced discrepancy fixtures.
+  full game, useful for fast Lua tests and reduced discrepancy fixtures. The current `native-trace` test preset is
+  the Lua-side consumer for this format; the native exporter must emit matching `function`, `input`, and `native`
+  records.
 - Tolerance mode: allow explicitly documented benign differences such as unordered equal-priority candidates or
   floating-point epsilon, while treating selected task/action/query-answer drift as a failure.
 - Bisect mode: run the lockstep corpus across recent commits or fixture revisions to find the first change that
@@ -476,7 +488,7 @@ Commit messages must stay focused on the code change and must not mention the re
 3. Extend garrison, hero exchange, artifact sequencing, and checked host validators with richer edge-case coverage.
 4. Finish `RewardEvaluator` and object-specific priority context builders, then add fixture tests for raw context and
    final priority parity.
-5. Add a native `Nullkiller2` trace exporter and a Lua replay/snapshot comparator so discrepancies produce
+5. Add the native `Nullkiller2` trace exporter for the existing Lua native-trace comparator so discrepancies produce
    minimized fixtures under `scripts/ai/nullkiller2/tests/fixtures/discrepancies/`.
 6. Add richer Lua policies for artifact assembly, shipyard, and battle preservation decisions where native currently
    does more than passive status/event forwarding.

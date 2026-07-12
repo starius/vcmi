@@ -18,6 +18,7 @@ UNIT_ROOT = LUA_ROOT / "tests/unit"
 DIFFERENTIAL_ROOT = LUA_ROOT / "tests/differential"
 FIXTURE_ROOT = LUA_ROOT / "tests/fixtures/differential"
 REPLAY_RUNNER = LUA_ROOT / "tests/replay_lua_decisions.py"
+NATIVE_TRACE_RUNNER = LUA_ROOT / "tests/compare_native_trace.py"
 
 
 def find_lua_interpreter(explicit: str | None) -> str | None:
@@ -112,9 +113,24 @@ def run_replay_tests(lua: str) -> int:
     return completed.returncode
 
 
+def run_native_trace_tests(lua: str) -> int:
+    print(f"[native-trace] {NATIVE_TRACE_RUNNER.relative_to(REPO_ROOT)}")
+    completed = subprocess.run(
+        [sys.executable, str(NATIVE_TRACE_RUNNER), "--lua", lua],
+        cwd=REPO_ROOT,
+        check=False,
+    )
+    return completed.returncode
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("preset", nargs="?", default="unit", choices=["unit", "differential-smoke", "replay", "all", "list"])
+    parser.add_argument(
+        "preset",
+        nargs="?",
+        default="unit",
+        choices=["unit", "differential-smoke", "replay", "native-trace", "all", "list"],
+    )
     parser.add_argument("--lua", help="Lua interpreter to use")
     args = parser.parse_args()
 
@@ -122,6 +138,8 @@ def main() -> int:
         for test in unit_tests() + differential_tests():
             print(test.relative_to(REPO_ROOT))
         for fixture in sorted((LUA_ROOT / "tests/fixtures/replay").glob("*.json")):
+            print(fixture.relative_to(REPO_ROOT))
+        for fixture in sorted((LUA_ROOT / "tests/fixtures/native_trace").glob("*.json")):
             print(fixture.relative_to(REPO_ROOT))
         return 0
 
@@ -136,11 +154,14 @@ def main() -> int:
         return run_differential_tests(lua, differential_tests())
     if args.preset == "replay":
         return run_replay_tests(lua)
+    if args.preset == "native-trace":
+        return run_native_trace_tests(lua)
 
     unit_result = run_tests(lua, unit_tests())
     differential_result = run_differential_tests(lua, differential_tests())
     replay_result = run_replay_tests(lua)
-    return 1 if unit_result or differential_result or replay_result else 0
+    native_trace_result = run_native_trace_tests(lua)
+    return 1 if unit_result or differential_result or replay_result or native_trace_result else 0
 
 
 if __name__ == "__main__":
