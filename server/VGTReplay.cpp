@@ -220,6 +220,10 @@ PlayerColor decodePlayerColor(const std::string & value)
 
 PlayerColor decodeColor(const std::string & value)
 {
+	if(value == "cannotDetermine")
+		return PlayerColor::CANNOT_DETERMINE;
+	if(value == "unflaggable")
+		return PlayerColor::UNFLAGGABLE;
 	if(value == "invalid")
 		return PlayerColor::CANNOT_DETERMINE;
 	if(value == "neutral")
@@ -912,7 +916,10 @@ std::string armySummary(const CCreatureSet & army)
 	{
 		if(!stack)
 			continue;
-		entries.push_back(std::to_string(slot.getNum()) + ":" + CreatureID::encode(stack->getCreatureID().getNum()) + "x" + std::to_string(stack->getCount()));
+		entries.push_back(std::to_string(slot.getNum()) + ":" + CreatureID::encode(stack->getCreatureID().getNum()) +
+			"x" + std::to_string(stack->getCount()) +
+			"#xp" + std::to_string(stack->getTotalExperience()) +
+			"#bonuses" + std::to_string(stack->getExportedBonusList().size()));
 	}
 	return "[" + boost::algorithm::join(entries, ", ") + "]";
 }
@@ -2733,6 +2740,7 @@ void writeGameStateSummary(const CGameState & gameState, std::ostream & output)
 	{
 		if(!object)
 			continue;
+		const auto * bonusNode = dynamic_cast<const CBonusSystemNode *>(object);
 		output << "object id=" << object->id.getNum()
 			<< " name=" << object->instanceName
 			<< " type=" << MapObjectID::encode(object->ID.getNum())
@@ -2742,6 +2750,7 @@ void writeGameStateSummary(const CGameState & gameState, std::ostream & output)
 			<< " blockVisit=" << object->blockVisit
 			<< " removable=" << object->removable
 			<< " appearance=" << (object->appearance ? object->appearance->stringID : "")
+			<< " exportedBonuses=" << (bonusNode ? bonusNode->getExportedBonusList().size() : 0)
 			<< "\n";
 	}
 }

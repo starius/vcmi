@@ -101,6 +101,10 @@ std::string path(const std::vector<int3> & value)
 
 std::string color(PlayerColor value)
 {
+	if(value == PlayerColor::CANNOT_DETERMINE)
+		return "cannotDetermine";
+	if(value == PlayerColor::UNFLAGGABLE)
+		return "unflaggable";
 	return value.toString();
 }
 
