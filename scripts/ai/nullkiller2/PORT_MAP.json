@@ -584,6 +584,28 @@
       "notes": "Town/path filtering and composition creation are Lua-owned; path calculation is a snapshot/helper input."
     },
     {
+      "cpp": "AI/Nullkiller2/Behaviors/StartupBehavior.h",
+      "lua": "scripts/ai/nullkiller2/Behaviors/StartupBehavior.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::StartupBehavior"
+      ],
+      "notes": "Behavior identity and equality are ported."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Behaviors/StartupBehavior.cpp",
+      "lua": "scripts/ai/nullkiller2/Behaviors/StartupBehavior.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::StartupBehavior::toString",
+        "Goals::StartupBehavior::decompose",
+        "getShortestPath",
+        "getNearestHero",
+        "needToRecruitHero"
+      ],
+      "notes": "Startup tavern build, nearest-hero chain, recruit allowance, startup swaps, fallback recruit, and garrison unlock task generation are Lua-owned against snapshots."
+    },
+    {
       "cpp": "AI/Nullkiller2/Engine/ResourceTrader.h",
       "lua": "scripts/ai/nullkiller2/Engine/ResourceTrader.lua",
       "status": "ported",

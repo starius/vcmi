@@ -6,6 +6,7 @@ local PriorityEvaluator = require("Engine.PriorityEvaluator")
 local RecruitHeroBehavior = require("Behaviors.RecruitHeroBehavior")
 local State = require("Engine.State")
 local StayAtTownBehavior = require("Behaviors.StayAtTownBehavior")
+local StartupBehavior = require("Behaviors.StartupBehavior")
 
 local town = { id = 10, name = "Castle", factionID = 1, townLevel = 5, canRecruitHero = true }
 local weakHero = { id = 20, name = "Weak", armyCost = 500, totalStrength = 1000, evaluateHeroScore = 10, factionID = 1 }
@@ -287,3 +288,132 @@ local occupiedStayTasks = stayBehavior:decompose({
 	}
 })
 assert(#occupiedStayTasks == 0)
+
+local startupBehavior = StartupBehavior.new()
+assert(startupBehavior:toString() == "Startup")
+assert(startupBehavior:equals(StartupBehavior.new()) == true)
+
+local startupTown = {
+	id = 301,
+	name = "Castle",
+	hasTavern = false,
+	canBuildTavern = true
+}
+local startupBuildTasks = startupBehavior:decompose({
+	townsInfo = { startupTown }
+})
+assert(#startupBuildTasks == 1)
+assert(startupBuildTasks[1].goalType == AbstractGoal.EGoals.BUILD_STRUCTURE)
+assert(startupBuildTasks[1].bid == StartupBehavior.BuildingID.TAVERN)
+assert(startupBuildTasks[1].priority == 100)
+
+local startupHero = {
+	id = 302,
+	name = "Nearest",
+	visitablePos = { x = 1, y = 0, z = 0 },
+	movementPointsRemaining = 1000
+}
+local chainTown = {
+	id = 303,
+	name = "Rampart",
+	hasTavern = true,
+	canRecruitHero = false,
+	visitablePos = { x = 0, y = 0, z = 0 },
+	upperArmy = {}
+}
+local chainPath = {
+	targetHero = startupHero,
+	tile = chainTown.visitablePos,
+	nodes = { { targetHero = startupHero } },
+	turn = 0,
+	movementCost = 1
+}
+local startupChainTasks = startupBehavior:decompose({
+	townsInfo = { chainTown },
+	pathfinder = {
+		getPathInfo = function(_, tile)
+			assert(tile == chainTown.visitablePos)
+			return { chainPath }
+		end
+	},
+	armyManager = {
+		howManyReinforcementsCanGet = function()
+			return 250
+		end
+	}
+})
+assert(#startupChainTasks == 1)
+assert(startupChainTasks[1].goalType == AbstractGoal.EGoals.EXECUTE_HERO_CHAIN)
+assert(startupChainTasks[1].priority == 100)
+
+local richTown = {
+	id = 304,
+	name = "Tower",
+	hasTavern = true,
+	canRecruitHero = true,
+	garrisonHero = { id = 305 },
+	visitablePos = { x = 0, y = 0, z = 0 }
+}
+assert(StartupBehavior.needToRecruitHero({
+	townsInfo = { richTown },
+	heroCount = 2,
+	mapSize = { x = 100 },
+	nearbyObjects = {
+		{ ID = StartupBehavior.Obj.TREASURE_CHEST },
+		{ ID = "CAMPFIRE" },
+		{ resourceID = 6 },
+		{ rewardResources = { [6] = 500 } },
+		{ ID = StartupBehavior.Obj.WATER_WHEEL, armyStrength = 10 }
+	}
+}, richTown) == true)
+
+local visitingMain = {
+	id = 306,
+	name = "Main",
+	role = PriorityEvaluator.HeroRole.MAIN,
+	evaluateHeroScore = 100,
+	visitablePos = { x = 1, y = 0, z = 0 }
+}
+local garrisonScout = { id = 307, name = "Scout", role = PriorityEvaluator.HeroRole.SCOUT, evaluateHeroScore = 50 }
+local swapTown = {
+	id = 308,
+	name = "Inferno",
+	hasTavern = true,
+	canRecruitHero = true,
+	visitingHero = visitingMain,
+	garrisonHero = garrisonScout,
+	visitablePos = { x = 0, y = 0, z = 0 }
+}
+local startupSwapTasks = startupBehavior:decompose({
+	townsInfo = { swapTown },
+	heroCount = 1,
+	pathfinder = {
+		getPathInfo = function()
+			return {
+				{
+					targetHero = visitingMain,
+					tile = swapTown.visitablePos,
+					nodes = { { targetHero = visitingMain } },
+					turn = 0,
+					movementCost = 1
+				}
+			}
+		end
+	}
+})
+assert(#startupSwapTasks == 1)
+assert(startupSwapTasks[1].goalType == AbstractGoal.EGoals.EXCHANGE_SWAP_TOWN_HEROES)
+assert(startupSwapTasks[1].priority == 100)
+assert(startupSwapTasks[1]:getLockingReason() == State.HeroLockedReason.STARTUP)
+
+local recruitStartupTown = {
+	id = 309,
+	name = "Conflux",
+	hasTavern = true,
+	canRecruitHero = true
+}
+local startupRecruitTasks = startupBehavior:decompose({
+	townsInfo = { recruitStartupTown }
+})
+assert(#startupRecruitTasks == 1)
+assert(startupRecruitTasks[1].goalType == AbstractGoal.EGoals.RECRUIT_HERO)
