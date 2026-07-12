@@ -253,6 +253,7 @@ local function buildAiState(input, host, settings, state)
 		return self.targetObject
 	end
 
+	host.nullkiller = aiNk
 	return aiNk
 end
 

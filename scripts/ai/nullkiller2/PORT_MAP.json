@@ -414,7 +414,7 @@
       "symbols": [
         "Goals::ExchangeSwapTownHeroes"
       ],
-      "notes": "Constructor, affected object policy, equality, and string policy are ported. Full accept parity requires host garrison/army command execution."
+      "notes": "Constructor, affected object policy, equality, string policy, and host-backed lock/unlock command sequencing are ported."
     },
     {
       "cpp": "AI/Nullkiller2/Goals/ExchangeSwapTownHeroes.cpp",
@@ -428,7 +428,7 @@
         "Goals::ExchangeSwapTownHeroes::operator==",
         "Goals::ExchangeSwapTownHeroes::accept"
       ],
-      "notes": "Lua accept emits an exchangeSwapTownHeroes host command intent and does not call native AIGateway policy."
+      "notes": "Lua accept emits granular swap, move-to-town, dismiss-creature, lock, and unlock commands. makePossibleUpgrades and buildArmyIn parity remain pending."
     },
     {
       "cpp": "AI/Nullkiller2/Goals/ExecuteHeroChain.h",

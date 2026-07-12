@@ -131,6 +131,38 @@ assert(exchange:isObjectAffected(52) == true)
 assert(#exchange:getAffectedObjects() == 3)
 assert(exchange:accept({}).action == "exchangeSwapTownHeroes")
 
+local exchangeLog = {}
+local executableExchangeTown = {
+	id = 55,
+	name = "Executable Rampart",
+	visitablePos = { x = 1, y = 2, z = 0 },
+	visitingHero = { id = 56 },
+	garrisonHero = { id = 57 },
+	upperArmy = { id = 58, stacksCount = 0, slots = {} }
+}
+ExchangeSwapTownHeroes.new(
+	executableExchangeTown,
+	executableExchangeTown.garrisonHero,
+	State.HeroLockedReason.DEFENCE):accept({
+	swapGarrisonHero = function(_, townArg)
+		table.insert(exchangeLog, "swap:" .. townArg.id)
+	end,
+	executeHeroChain = function(_, path, objid)
+		table.insert(exchangeLog, "move:" .. path.targetHero.id .. ":" .. objid .. ":" .. path.targetTile.x)
+	end,
+	lockHero = function(_, hero, reason)
+		table.insert(exchangeLog, "lock:" .. hero.id .. ":" .. reason)
+	end,
+	unlockHero = function(_, hero)
+		table.insert(exchangeLog, "unlock:" .. hero.id)
+	end
+})
+assert(exchangeLog[1] == "swap:55")
+assert(exchangeLog[2] == "move:57:55:1")
+assert(exchangeLog[3] == "swap:55")
+assert(exchangeLog[4] == "lock:57:2")
+assert(exchangeLog[5] == "unlock:56")
+
 local buyTasks = BuyArmyBehavior.new():decompose({
 	heroesInfo = {
 		{ id = 70, role = PriorityEvaluator.HeroRole.MAIN },

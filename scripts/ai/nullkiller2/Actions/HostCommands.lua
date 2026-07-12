@@ -137,6 +137,29 @@ function HostCommands:lockResources(resources)
 	})
 end
 
+function HostCommands:lockHero(hero, reason)
+	if self.nullkiller and type(self.nullkiller.lockHero) == "function" then
+		self.nullkiller:lockHero(hero, reason)
+	end
+	return {
+		ok = true,
+		state = "lockHero",
+		hero = objectID(hero),
+		reason = reason
+	}
+end
+
+function HostCommands:unlockHero(hero)
+	if self.nullkiller and type(self.nullkiller.unlockHero) == "function" then
+		self.nullkiller:unlockHero(hero)
+	end
+	return {
+		ok = true,
+		state = "unlockHero",
+		hero = objectID(hero)
+	}
+end
+
 function HostCommands:executeHeroChain(path, objid)
 	local tile = nil
 	if path then
