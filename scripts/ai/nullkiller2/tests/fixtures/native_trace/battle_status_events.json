@@ -1,0 +1,110 @@
+{
+  "schema": "LuaNullkiller2.nativeDecisionTrace.v1",
+  "source": "Nullkiller2",
+  "compareMode": "exact",
+  "compare": [
+    "status"
+  ],
+  "decisions": [
+    {
+      "id": "player-blocked-battle",
+      "function": "playerBlocked",
+      "input": {
+        "reason": 0,
+        "reasonName": "UPCOMING_BATTLE",
+        "start": true
+      },
+      "native": {
+        "status": "player_blocked"
+      }
+    },
+    {
+      "id": "player-blocked-movement",
+      "function": "playerBlocked",
+      "input": {
+        "reason": 1,
+        "reasonName": "ONGOING_MOVEMENT",
+        "start": false
+      },
+      "native": {
+        "status": "player_blocked"
+      }
+    },
+    {
+      "id": "hero-created",
+      "function": "heroCreated",
+      "input": {
+        "hero": {
+          "id": 2001,
+          "level": 1
+        },
+        "pathfinderInvalidated": true
+      },
+      "native": {
+        "status": "hero_created"
+      }
+    },
+    {
+      "id": "battle-start",
+      "function": "battleStart",
+      "input": {
+        "battleID": 77,
+        "tile": {
+          "x": 12,
+          "y": 34,
+          "z": 0,
+          "valid": true
+        },
+        "side": 0,
+        "sideName": "ATTACKER",
+        "replayAllowed": false,
+        "hero1": {
+          "id": 2001,
+          "level": 12
+        },
+        "hero2": {
+          "id": 2002,
+          "level": 9
+        },
+        "presumedEnemy": {
+          "id": 3001,
+          "typeID": 54
+        }
+      },
+      "native": {
+        "status": "battle_start"
+      }
+    },
+    {
+      "id": "battle-end",
+      "function": "battleEnd",
+      "input": {
+        "battleID": 77,
+        "queryID": -1,
+        "result": 0,
+        "winner": 1,
+        "winnerName": "DEFENDER",
+        "attacker": 2001
+      },
+      "native": {
+        "status": "battle_end"
+      }
+    },
+    {
+      "id": "battle-results-applied",
+      "function": "battleResultsApplied",
+      "input": {},
+      "native": {
+        "status": "battle_results_applied"
+      }
+    },
+    {
+      "id": "battle-ended",
+      "function": "battleEnded",
+      "input": {},
+      "native": {
+        "status": "battle_ended"
+      }
+    }
+  ]
+}

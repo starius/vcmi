@@ -110,6 +110,36 @@ std::string objectTypeName(Obj type)
 	}
 }
 
+std::string battleSideName(BattleSide side)
+{
+	switch(side)
+	{
+	case BattleSide::NONE:
+		return "NONE";
+	case BattleSide::INVALID:
+		return "INVALID";
+	case BattleSide::ALL_KNOWING:
+		return "ALL_KNOWING";
+	case BattleSide::ATTACKER:
+		return "ATTACKER";
+	case BattleSide::DEFENDER:
+		return "DEFENDER";
+	}
+	return "UNKNOWN";
+}
+
+std::string playerBlockedReasonName(int reason)
+{
+	switch(reason)
+	{
+	case PlayerBlocked::UPCOMING_BATTLE:
+		return "UPCOMING_BATTLE";
+	case PlayerBlocked::ONGOING_MOVEMENT:
+		return "ONGOING_MOVEMENT";
+	}
+	return "UNKNOWN";
+}
+
 JsonNode tileSnapshot(const int3 & tile)
 {
 	JsonNode result;
@@ -699,6 +729,17 @@ void AIGateway::showThievesGuildWindow(const CGObjectInstance * obj)
 void AIGateway::playerBlocked(int reason, bool start)
 {
 	LOG_TRACE_PARAMS(logAi, "reason '%i', start '%i'", reason % start);
+	JsonNode input = emptyInput();
+	input["reason"].Integer() = reason;
+	input["reasonName"].String() = playerBlockedReasonName(reason);
+	input["start"].Bool() = start;
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		boost::str(boost::format("playerBlocked.%d.%d") % reason % start),
+		"playerBlocked",
+		std::move(input),
+		"player_blocked");
+
 	if(start && reason == PlayerBlocked::UPCOMING_BATTLE)
 		status.setBattle(UPCOMING_BATTLE);
 
@@ -1053,6 +1094,17 @@ void AIGateway::playerBonusChanged(const Bonus & bonus, bool gain)
 void AIGateway::heroCreated(const CGHeroInstance * h)
 {
 	LOG_TRACE(logAi);
+	JsonNode input = emptyInput();
+	if(h)
+		input["hero"] = heroReferenceSnapshot(h);
+	input["pathfinderInvalidated"].Bool() = true;
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		boost::str(boost::format("heroCreated.%d") % (h ? h->id.getNum() : -1)),
+		"heroCreated",
+		std::move(input),
+		"hero_created");
+
 	nullkiller->invalidatePathfinderData(); // new hero needs to look around
 }
 
@@ -1162,6 +1214,12 @@ void AIGateway::battleResultsApplied()
 {
 	LOG_TRACE(logAi);
 	assert(status.getBattle() == ENDING_BATTLE);
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		"battleResultsApplied",
+		"battleResultsApplied",
+		emptyInput(),
+		"battle_results_applied");
 }
 
 void AIGateway::battleEnded()
@@ -1169,6 +1227,12 @@ void AIGateway::battleEnded()
 	LOG_TRACE(logAi);
 	assert(status.getBattle() == ENDING_BATTLE);
 	status.setBattle(NO_BATTLE);
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		"battleEnded",
+		"battleEnded",
+		emptyInput(),
+		"battle_ended");
 }
 
 void AIGateway::beforeObjectPropertyChanged(const SetObjectProperty * sop)
@@ -1866,6 +1930,24 @@ void AIGateway::battleStart(const BattleID & battleID, const CCreatureSet * army
 	assert(!playerID.isValidPlayer() || status.getBattle() == UPCOMING_BATTLE);
 	status.setBattle(ONGOING_BATTLE);
 	const CGObjectInstance * presumedEnemy = vstd::backOrNull(cc->getVisitableObjs(tile)); //may be nullptr in some very are cases -> eg. visited monolith and fighting with an enemy at the FoW covered exit
+	JsonNode input = emptyInput();
+	input["battleID"].Integer() = battleID.getNum();
+	input["tile"] = tileSnapshot(tile);
+	input["side"].Integer() = static_cast<int>(side);
+	input["sideName"].String() = battleSideName(side);
+	input["replayAllowed"].Bool() = replayAllowed;
+	if(hero1)
+		input["hero1"] = heroReferenceSnapshot(hero1);
+	if(hero2)
+		input["hero2"] = heroReferenceSnapshot(hero2);
+	if(presumedEnemy)
+		input["presumedEnemy"] = objectReferenceSnapshot(presumedEnemy);
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		boost::str(boost::format("battleStart.%d") % battleID.getNum()),
+		"battleStart",
+		std::move(input),
+		"battle_start");
 	battlename = boost::str(boost::format("Starting battle of %s attacking %s at %s") % (hero1 ? hero1->getNameTranslated() : "a army") % (presumedEnemy ? presumedEnemy->getObjectName() : "unknown enemy") % tile.toString());
 	CAdventureAI::battleStart(battleID, army1, army2, tile, hero1, hero2, side, replayAllowed);
 }
@@ -1875,6 +1957,19 @@ void AIGateway::battleEnd(const BattleID & battleID, const BattleResult * br, Qu
 	assert(status.getBattle() == ONGOING_BATTLE);
 	status.setBattle(ENDING_BATTLE);
 	bool won = br->winner == cc->getBattle(battleID)->battleGetMySide();
+	JsonNode input = emptyInput();
+	input["battleID"].Integer() = battleID.getNum();
+	input["queryID"].Integer() = queryID.getNum();
+	input["result"].Integer() = static_cast<int>(br->result);
+	input["winner"].Integer() = static_cast<int>(br->winner);
+	input["winnerName"].String() = battleSideName(br->winner);
+	input["attacker"].Integer() = br->attacker.getNum();
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		boost::str(boost::format("battleEnd.%d") % battleID.getNum()),
+		"battleEnd",
+		std::move(input),
+		"battle_end");
 	logAi->debug("Player %d (%s): I %s the %s!", playerID, playerID.toString(), (won ? "won" : "lost"), battlename);
 	battlename.clear();
 
