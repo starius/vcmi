@@ -228,6 +228,58 @@ void recordAnswerQueryNativeTrace(NativeTrace * nativeTrace, const std::string &
 		{ "status", "selection", "commandJournal" });
 }
 
+JsonNode emptyInput()
+{
+	JsonNode input;
+	input.setType(JsonNode::JsonType::DATA_STRUCT);
+	return input;
+}
+
+JsonNode objectReferenceSnapshot(const CGObjectInstance * object)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	if(!object)
+		return result;
+
+	result["id"].Integer() = object->id.getNum();
+	result["typeID"].Integer() = static_cast<int>(object->ID);
+	return result;
+}
+
+JsonNode heroReferenceSnapshot(const CGHeroInstance * hero)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	if(!hero)
+		return result;
+
+	result["id"].Integer() = hero->id.getNum();
+	result["level"].Integer() = hero->level;
+	return result;
+}
+
+JsonNode statusNativeOutput(const std::string & status)
+{
+	JsonNode output;
+	output.setType(JsonNode::JsonType::DATA_STRUCT);
+	output["status"].String() = status;
+	return output;
+}
+
+void recordStatusNativeTrace(NativeTrace * nativeTrace, const std::string & id, const std::string & functionName, JsonNode input, const std::string & status)
+{
+	if(!nativeTrace)
+		return;
+
+	nativeTrace->recordDecision(
+		id,
+		functionName,
+		std::move(input),
+		statusNativeOutput(status),
+		{ "status" });
+}
+
 JsonNode mapObjectSelectInput(QueryID queryID, int selection, const std::vector<ObjectInstanceID> & objects)
 {
 	JsonNode input;
@@ -578,6 +630,15 @@ void AIGateway::showTavernWindow(const CGObjectInstance * object, const CGHeroIn
 void AIGateway::showThievesGuildWindow(const CGObjectInstance * obj)
 {
 	LOG_TRACE(logAi);
+	JsonNode input = emptyInput();
+	if(obj)
+		input["object"] = objectReferenceSnapshot(obj);
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		boost::str(boost::format("showThievesGuildWindow.%d") % (obj ? obj->id.getNum() : -1)),
+		"showThievesGuildWindow",
+		std::move(input),
+		"show_thieves_guild_window");
 }
 
 void AIGateway::playerBlocked(int reason, bool start)
@@ -598,6 +659,16 @@ void AIGateway::showPuzzleMap()
 void AIGateway::showShipyardDialog(const IShipyard * obj)
 {
 	LOG_TRACE(logAi);
+	JsonNode input = emptyInput();
+	const auto * mapObject = dynamic_cast<const CGObjectInstance *>(obj);
+	if(mapObject)
+		input["object"] = objectReferenceSnapshot(mapObject);
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		boost::str(boost::format("showShipyardDialog.%d") % (mapObject ? mapObject->id.getNum() : -1)),
+		"showShipyardDialog",
+		std::move(input),
+		"show_shipyard_dialog");
 }
 
 void AIGateway::gameOver(PlayerColor player, const EVictoryLossCheckResult & victoryLossCheckResult)
@@ -796,6 +867,17 @@ void AIGateway::objectRemoved(const CGObjectInstance * obj, const PlayerColor & 
 void AIGateway::showHillFortWindow(const CGObjectInstance * object, const CGHeroInstance * visitor)
 {
 	LOG_TRACE(logAi);
+	JsonNode input = emptyInput();
+	if(object)
+		input["object"] = objectReferenceSnapshot(object);
+	if(visitor)
+		input["visitor"] = heroReferenceSnapshot(visitor);
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		boost::str(boost::format("showHillFortWindow.%d.%d") % (object ? object->id.getNum() : -1) % (visitor ? visitor->id.getNum() : -1)),
+		"showHillFortWindow",
+		std::move(input),
+		"show_hill_fort_window");
 }
 
 void AIGateway::playerBonusChanged(const Bonus & bonus, bool gain)
@@ -817,6 +899,17 @@ void AIGateway::advmapSpellCast(const CGHeroInstance * caster, SpellID spellID)
 void AIGateway::showInfoDialog(EInfoWindowMode type, const std::string & text, const std::vector<Component> & components, int soundID)
 {
 	LOG_TRACE_PARAMS(logAi, "soundID '%i'", soundID);
+	JsonNode input = emptyInput();
+	input["type"].Integer() = static_cast<int>(type);
+	input["text"].String() = text;
+	input["soundID"].Integer() = soundID;
+	input["components"] = componentsSnapshot(components);
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		boost::str(boost::format("showInfoDialog.%d") % soundID),
+		"showInfoDialog",
+		std::move(input),
+		"show_info_dialog");
 }
 
 void AIGateway::requestRealized(PackageApplied * pa)

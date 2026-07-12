@@ -1,0 +1,73 @@
+{
+  "schema": "LuaNullkiller2.nativeDecisionTrace.v1",
+  "source": "Nullkiller2",
+  "compareMode": "exact",
+  "compare": [
+    "status"
+  ],
+  "decisions": [
+    {
+      "id": "thieves-guild",
+      "function": "showThievesGuildWindow",
+      "input": {
+        "object": {
+          "id": 1001,
+          "typeID": 83
+        }
+      },
+      "native": {
+        "status": "show_thieves_guild_window"
+      }
+    },
+    {
+      "id": "shipyard",
+      "function": "showShipyardDialog",
+      "input": {
+        "object": {
+          "id": 1002,
+          "typeID": 87
+        }
+      },
+      "native": {
+        "status": "show_shipyard_dialog"
+      }
+    },
+    {
+      "id": "hill-fort",
+      "function": "showHillFortWindow",
+      "input": {
+        "object": {
+          "id": 1003,
+          "typeID": 53
+        },
+        "visitor": {
+          "id": 2001,
+          "level": 8
+        }
+      },
+      "native": {
+        "status": "show_hill_fort_window"
+      }
+    },
+    {
+      "id": "info-dialog",
+      "function": "showInfoDialog",
+      "input": {
+        "type": 0,
+        "text": "informational message",
+        "soundID": 12,
+        "components": [
+          {
+            "type": "RESOURCE",
+            "typeID": 3,
+            "subType": 6,
+            "value": 500
+          }
+        ]
+      },
+      "native": {
+        "status": "show_info_dialog"
+      }
+    }
+  ]
+}
