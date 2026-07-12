@@ -157,3 +157,40 @@ local reinforcementDelta = ArmyManager.howManyReinforcementsCanGet(nil, {
 	}
 }, nil, {})
 assert(reinforcementDelta == 250)
+
+local totalArmy = ArmyManager.update({
+	heroesInfo = {
+		{
+			id = 1001,
+			slots = {
+				{ creature = pikeman, count = 5, power = 50 },
+				{ creature = archer, count = 3, power = 36 }
+			}
+		}
+	},
+	townsInfo = {
+		{
+			id = 1002,
+			upperArmy = {
+				slots = {
+					{ creature = pikeman, count = 2, power = 20 },
+					{ creature = griffin, count = 1, power = 60 }
+				}
+			}
+		}
+	}
+})
+assert(totalArmy[1].count == 7)
+assert(totalArmy[1].power == 70)
+assert(totalArmy[2].count == 3)
+assert(totalArmy[3].count == 1)
+
+local totalPikemen = ArmyManager.getTotalCreaturesAvailable(pikeman)
+assert(totalPikemen.creature == pikeman)
+assert(totalPikemen.count == 7)
+assert(totalPikemen.power == 70)
+
+local missingCreature = ArmyManager.getTotalCreaturesAvailable({ id = 9999 })
+assert(missingCreature.creatureID == 9999)
+assert(missingCreature.count == 0)
+assert(missingCreature.power == 0)

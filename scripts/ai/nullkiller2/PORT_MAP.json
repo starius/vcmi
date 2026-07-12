@@ -663,9 +663,11 @@
         "IArmyManager::getArmyAvailableToBuyAsCCreatureSet",
         "IArmyManager::howManyReinforcementsCanBuy",
         "IArmyManager::howManyReinforcementsCanGet",
-        "IArmyManager::evaluateStackPower"
+        "IArmyManager::evaluateStackPower",
+        "IArmyManager::update",
+        "IArmyManager::getTotalCreaturesAvailable"
       ],
-      "notes": "Lua exposes the mirrored SlotInfo shape, army-transfer selection helpers, and reinforcement value helpers used by BuyArmyBehavior."
+      "notes": "Lua exposes the mirrored SlotInfo shape, army-transfer selection helpers, reinforcement value helpers used by BuyArmyBehavior, and total-army aggregation."
     },
     {
       "cpp": "AI/Nullkiller2/Analyzers/ArmyManager.cpp",
@@ -679,9 +681,11 @@
         "ArmyManager::getArmyAvailableToBuyAsCCreatureSet",
         "ArmyManager::howManyReinforcementsCanBuy",
         "ArmyManager::howManyReinforcementsCanGet",
-        "ArmyManager::evaluateStackPower"
+        "ArmyManager::evaluateStackPower",
+        "ArmyManager::update",
+        "ArmyManager::getTotalCreaturesAvailable"
       ],
-      "notes": "Sorted-slot consolidation, faction/morale best-army filtering, scout-unit choice, scout last-stack retention, dwelling purchase selection, reinforcement purchase value, reinforcement transfer value, and stack-power evaluation are Lua-owned against snapshot fields. Upgrade calculation and total-army aggregation remain pending."
+      "notes": "Sorted-slot consolidation, faction/morale best-army filtering, scout-unit choice, scout last-stack retention, dwelling purchase selection, reinforcement purchase value, reinforcement transfer value, stack-power evaluation, and total-army aggregation are Lua-owned against snapshot fields. Upgrade calculation remains pending."
     },
     {
       "cpp": "AI/Nullkiller2/Behaviors/RecruitHeroBehavior.h",

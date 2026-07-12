@@ -3,6 +3,7 @@
 local ArmyManager = {}
 
 ArmyManager.ARMY_SIZE = 7
+ArmyManager.totalArmy = {}
 
 local function call(object, name, ...)
 	if object and type(object[name]) == "function" then
@@ -592,6 +593,49 @@ end
 
 function ArmyManager.evaluateStackPower(creature, count)
 	return creatureAIValue(creature) * (count or 0)
+end
+
+local function aggregateArmy(totalArmy, army)
+	for _, stack in pairs(armySlots(army)) do
+		local creature = stackCreature(stack)
+		local id = creatureID(creature)
+		if id ~= nil then
+			local slotInfo = totalArmy[id]
+			if not slotInfo then
+				slotInfo = {
+					creature = creature,
+					creatureID = id,
+					count = 0,
+					power = 0
+				}
+				totalArmy[id] = slotInfo
+			end
+			slotInfo.count = slotInfo.count + stackCount(stack)
+			slotInfo.power = slotInfo.power + stackPower(stack)
+		end
+	end
+end
+
+function ArmyManager.update(context)
+	local totalArmy = {}
+	for _, hero in ipairs(context and context.heroesInfo or {}) do
+		aggregateArmy(totalArmy, hero)
+	end
+	for _, town in ipairs(context and context.townsInfo or {}) do
+		aggregateArmy(totalArmy, town.upperArmy or town)
+	end
+	ArmyManager.totalArmy = totalArmy
+	return totalArmy
+end
+
+function ArmyManager.getTotalCreaturesAvailable(creature)
+	local id = creatureID(creature)
+	return ArmyManager.totalArmy[id] or {
+		creature = nil,
+		creatureID = id,
+		count = 0,
+		power = 0
+	}
 end
 
 function ArmyManager.getArmyAvailableToBuy(targetArmy, dwelling, availableResources, turn, context)

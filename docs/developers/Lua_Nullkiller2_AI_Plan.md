@@ -150,7 +150,7 @@ cast spell, granular hero movement, resource locks, and end turn. `ExchangeSwapT
 the `buildArmyIn` order through upgrades, recruitment, first-slot army correction, and Lua-owned transfer command
 sequencing from snapshots. `Analyzers/ArmyManager.lua` now owns sorted-slot consolidation, faction/morale best-army
 filtering, scout-unit choice, scout last-stack retention, dwelling purchase selection, reinforcement purchase value,
-reinforcement transfer value, and stack-power evaluation; the transfer sequencer emits the matching scout split
+reinforcement transfer value, stack-power evaluation, and total-army aggregation; the transfer sequencer emits the matching scout split
 commands when a source army must keep one stack.
 
 Major parity gaps remain:
@@ -161,8 +161,7 @@ Major parity gaps remain:
 - artifact equipment sequencing, full Rewardable inspection, and richer live object inspection remain incomplete
   outside the deterministic scoring helpers
 - garrison, hero exchange, artifact, and remaining army-transfer edge cases need complete Lua-owned sequencing plus
-  host validators; specifically, the remaining ArmyManager upgrade and total-army aggregation methods still need
-  direct Lua ports
+  host validators; specifically, the remaining ArmyManager upgrade methods still need direct Lua ports
 - differential tests currently cover command journals and end-turn smoke; they do not yet compare real native
   `Nullkiller2` traces against Lua traces at each decision point
 
@@ -414,8 +413,8 @@ Commit messages must stay focused on the code change and must not mention the re
    fixtures no longer need hand-written placeholder fields.
 2. Complete `ExecuteHeroChain` parity: Dimension Door stale recovery, special actions, siege formation, visit/attack
    selection, and object-graph shortcutting.
-3. Finish `ExchangeSwapTownHeroes`, garrison, remaining ArmyManager upgrade/total-army methods, and artifact command
-   sequencing with Lua-owned policy and checked host validators.
+3. Finish `ExchangeSwapTownHeroes`, garrison, remaining ArmyManager upgrade methods, and artifact command sequencing
+   with Lua-owned policy and checked host validators.
 4. Finish `RewardEvaluator` and object-specific priority context builders, then add fixture tests for raw context and
    final priority parity.
 5. Add a native `Nullkiller2` trace exporter and a Lua replay/snapshot comparator so discrepancies produce
