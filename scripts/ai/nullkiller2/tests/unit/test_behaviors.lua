@@ -7,8 +7,10 @@ local EscapeBehavior = require("Behaviors.EscapeBehavior")
 local ExplorationBehavior = require("Behaviors.ExplorationBehavior")
 local ExchangeSwapTownHeroes = require("Goals.ExchangeSwapTownHeroes")
 local CaptureObject = require("Goals.CaptureObject")
+local ArmyUpgrade = require("Markers.ArmyUpgrade")
 local ExplorationHelper = require("Helpers.ExplorationHelper")
 local ExplorationPoint = require("Markers.ExplorationPoint")
+local HeroExchange = require("Markers.HeroExchange")
 local PriorityEvaluator = require("Engine.PriorityEvaluator")
 local RecruitHeroBehavior = require("Behaviors.RecruitHeroBehavior")
 local State = require("Engine.State")
@@ -732,3 +734,24 @@ assert(#neighbourTasks == 1)
 local neighbourSequence = neighbourTasks[1]:decompose({})
 assert(neighbourSequence[1].goalType == AbstractGoal.EGoals.EXPLORATION_POINT)
 assert(neighbourSequence[2].goalType == AbstractGoal.EGoals.EXPLORE_NEIGHBOUR_TILE)
+
+local exchangeTargetHero = { id = 801, name = "Main", armyStrength = 1000 }
+local exchangePath = {
+	name = "path-to-main",
+	heroArmy = { armyStrength = 2000 },
+	reinforcementArmyStrength = 750
+}
+local heroExchange = HeroExchange.new(exchangeTargetHero, exchangePath)
+assert(heroExchange:equals(HeroExchange.new(exchangeTargetHero, exchangePath)) == false)
+assert(heroExchange:toString() == "Hero exchange for Main by path-to-main")
+assert(heroExchange:getReinforcementArmyStrength({}) == 750)
+
+local upgrader = { id = 802, objectName = "Castle", visitablePos = { x = 1, y = 2, z = 0 } }
+local armyUpgrade = ArmyUpgrade.new(
+	{ targetHero = exchangeTargetHero, heroArmy = { armyStrength = 1500 } },
+	upgrader,
+	{ upgradeValue = 5000, upgradeCost = { [6] = 1200 } })
+assert(armyUpgrade:equals(ArmyUpgrade.new(exchangeTargetHero, upgrader, {})) == false)
+assert(armyUpgrade:getUpgradeValue() == 5000)
+assert(armyUpgrade:getInitialArmyValue() == 1500)
+assert(armyUpgrade:toString() == "Army upgrade at Castle(1 2 0)")

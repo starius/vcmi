@@ -491,6 +491,44 @@
       ]
     },
     {
+      "cpp": "AI/Nullkiller2/Markers/HeroExchange.h",
+      "lua": "scripts/ai/nullkiller2/Markers/HeroExchange.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::HeroExchange"
+      ],
+      "notes": "Constructor state and reinforcement-strength helper are ported against army-manager/path snapshots."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Markers/HeroExchange.cpp",
+      "lua": "scripts/ai/nullkiller2/Markers/HeroExchange.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::HeroExchange::operator==",
+        "Goals::HeroExchange::toString",
+        "Goals::HeroExchange::getReinforcementArmyStrength"
+      ]
+    },
+    {
+      "cpp": "AI/Nullkiller2/Markers/ArmyUpgrade.h",
+      "lua": "scripts/ai/nullkiller2/Markers/ArmyUpgrade.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::ArmyUpgrade"
+      ],
+      "notes": "Both constructors, value getters, equality behavior, and string policy are ported."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Markers/ArmyUpgrade.cpp",
+      "lua": "scripts/ai/nullkiller2/Markers/ArmyUpgrade.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::ArmyUpgrade::ArmyUpgrade",
+        "Goals::ArmyUpgrade::operator==",
+        "Goals::ArmyUpgrade::toString"
+      ]
+    },
+    {
       "cpp": "AI/Nullkiller2/Goals/ExploreNeighbourTile.h",
       "lua": "scripts/ai/nullkiller2/Goals/ExploreNeighbourTile.lua",
       "status": "scaffolded",
