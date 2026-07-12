@@ -469,6 +469,9 @@ end
 
 function RewardEvaluator.getArmyCost(selfOrArmy, maybeArmy)
 	local army = maybeArmy or selfOrArmy
+	if army and army.armyCost ~= nil then
+		return army.armyCost
+	end
 	local value = 0
 	for _, stack in pairs(stacks(army)) do
 		value = value + stackMarketValue(stack) * stackCount(stack)

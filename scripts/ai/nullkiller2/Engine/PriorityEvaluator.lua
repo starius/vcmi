@@ -154,6 +154,26 @@ local function pathTurn(path)
 	return call(path, "turn") or path and (path.turn or path.turns) or 0
 end
 
+local function pathNodes(path)
+	return path and path.nodes or {}
+end
+
+local function pathTargetTile(path)
+	local result = call(path, "targetTile")
+	if result ~= nil then
+		return result
+	end
+	return path and (path.targetTile or path.tile)
+end
+
+local function pathTotalArmyLoss(path)
+	return call(path, "getTotalArmyLoss") or path and (path.totalArmyLoss or path.armyLoss) or 0
+end
+
+local function pathHeroStrength(path)
+	return call(path, "getHeroStrength") or path and (path.heroStrength or armyStrength(path.targetHero)) or 0
+end
+
 local function mageGuildLevel(town)
 	return call(town, "mageGuildLevel") or town and (town.mageGuildLevel or town.mageGuild or 0) or 0
 end
@@ -187,6 +207,27 @@ local function tableSize(value)
 	return result
 end
 
+local function objectType(object)
+	return object and (object.ID or object.objectType or object.type or object.typeName)
+end
+
+local function ownerOf(object)
+	return object and (object.tempOwner or object.owner)
+end
+
+local function isEnemyObject(aiNk, object)
+	if object and object.enemy ~= nil then
+		return object.enemy
+	end
+	local owner = ownerOf(object)
+	local player = aiNk and aiNk.playerID
+	if owner == nil or player == nil then
+		return false
+	end
+	local relation = call(aiNk and aiNk.cc, "getPlayerRelations", player, owner)
+	return relation == "ENEMIES" or relation == 2 or (relation == nil and owner ~= player)
+end
+
 local function developmentInfoCount(aiNk)
 	local info = call(aiNk and aiNk.buildAnalyzer, "getDevelopmentInfo")
 		or aiNk and (aiNk.developmentInfos or aiNk.developmentInfo)
@@ -217,6 +258,25 @@ local function addTileDanger(context, tile, turn, ourStrength)
 		context.enemyHeroDangerRatio = math.max(context.enemyHeroDangerRatio, dangerRatio)
 		context.threat = math.max(context.threat, enemyDanger.threat or enemyDanger.danger or 0)
 	end
+end
+
+local function totalPowerByCreature(aiNk, creatureID)
+	local result = aiNk and aiNk.totalCreaturesAvailableByCreature and aiNk.totalCreaturesAvailableByCreature[creatureID]
+	if type(result) == "table" then
+		return result.power or 0
+	end
+	if type(result) == "number" then
+		return result
+	end
+	return 0
+end
+
+local function stackCreatureID(stack)
+	return stack and (stack.creatureID or stack.creature and (stack.creature.id or stack.creatureID))
+end
+
+local function stackPower(stack)
+	return call(stack, "getPower") or stack and (stack.power or stack.stackPower) or 0
 end
 
 PriorityEvaluator.EvaluationContext = {}
@@ -462,6 +522,125 @@ local function objectByID(aiNk, id)
 		or call(aiNk and aiNk.cc, "getObj", id)
 end
 
+local function computePowerRatio(aiNk, hero, path)
+	if path and path.powerRatio ~= nil then
+		return path.powerRatio
+	end
+	if hero and hero.powerRatio ~= nil then
+		return hero.powerRatio
+	end
+
+	local heroPower = 0
+	local totalPower = 0
+	local seen = {}
+	for _, stack in pairs(hero and (hero.slots or hero.stacks) or {}) do
+		local creatureID = stackCreatureID(stack)
+		heroPower = heroPower + stackPower(stack)
+		if creatureID ~= nil and not seen[creatureID] then
+			seen[creatureID] = true
+			totalPower = totalPower + totalPowerByCreature(aiNk, creatureID)
+		end
+	end
+
+	if totalPower > 0 then
+		return heroPower / totalPower
+	end
+	return 0
+end
+
+local function buildExecuteHeroChainContext(context, task, aiNk)
+	if task.goalType ~= AbstractGoal.EGoals.EXECUTE_HERO_CHAIN then
+		return
+	end
+
+	local path = call(task, "getPath") or task.chainPath or {}
+	local movementCost = pathMovementCost(path)
+	if isAlmostZero(movementCost) then
+		return
+	end
+
+	context.danger = math.max(context.danger, pathDanger(path))
+	context.movementCost = context.movementCost + movementCost
+	context.closestWayRatio = task.closestWayRatio or context.closestWayRatio
+
+	local costsPerHero = {}
+	local heroCount = 0
+	for _, node in ipairs(pathNodes(path)) do
+		local nodeHero = node.targetHero
+		local key = numericID(nodeHero) or nodeHero
+		if key ~= nil then
+			if costsPerHero[key] == nil then
+				costsPerHero[key] = {
+					hero = nodeHero,
+					cost = 0
+				}
+				heroCount = heroCount + 1
+			end
+			costsPerHero[key].cost = math.max(costsPerHero[key].cost, node.cost or 0)
+		end
+		if node.layer == "SAIL" or node.layer == 1 or node.sailing == true then
+			context.involvesSailing = true
+		end
+	end
+
+	local highestCostForSingleHero = 0
+	for _, pair in pairs(costsPerHero) do
+		local role = heroRole(aiNk, pair.hero)
+		addMovementByRole(context, role, pair.cost)
+		highestCostForSingleHero = math.max(highestCostForSingleHero, pair.cost)
+	end
+	if highestCostForSingleHero > 1 and heroCount > 1 then
+		return
+	end
+	if heroCount > 0 then
+		context.movementCost = context.movementCost * heroCount
+	end
+
+	local hero = task.hero
+	local army = path.heroArmy or hero
+	local target = task.targetObject or path.targetObject or objectByID(aiNk, task.objid)
+	local role = heroRole(aiNk, hero)
+	if role == PriorityEvaluator.HeroRole.MAIN then
+		context.heroRole = role
+	end
+
+	local powerRatio = computePowerRatio(aiNk, hero, path)
+	if powerRatio > 0 then
+		context.powerRatio = powerRatio
+	end
+
+	if target then
+		local checkGold = context.danger == 0
+		context.goldReward = context.goldReward + context.evaluator:getGoldReward(target, hero)
+		context.armyReward = context.armyReward + context.evaluator:getArmyReward(target, hero, army, checkGold)
+		context.armyGrowth = context.armyGrowth + context.evaluator:getArmyGrowth(target, hero, army)
+		context.skillReward = context.skillReward + context.evaluator:getSkillReward(target, hero, role)
+		context:addNonCriticalStrategicalValue(context.evaluator:getStrategicalValue(target, hero))
+		context.conquestValue = context.conquestValue + context.evaluator:getConquestValue(target)
+		if objectType(target) == "HERO" then
+			context.isHero = true
+		end
+		if isEnemyObject(aiNk, target) then
+			context.isEnemy = true
+		end
+		if objectType(target) == "TOWN" then
+			context.defenseValue = fortLevel(target)
+		end
+		context.goldCost = context.goldCost + context.evaluator:getGoldCost(target, hero, army)
+		if context.danger > 0 and armyStrength(hero) > 0 then
+			context.skillReward = context.skillReward + context.danger / armyStrength(hero)
+		end
+	end
+
+	local armyStrengthValue = armyStrength(army)
+	context.armyInvolvement = context.armyInvolvement + RewardEvaluator.getArmyCost(army)
+	if armyStrengthValue > 0 then
+		context.armyLossRatio = math.max(context.armyLossRatio, pathTotalArmyLoss(path) / armyStrengthValue)
+	end
+	addTileDanger(context, pathTargetTile(path), pathTurn(path), pathHeroStrength(path))
+	context.turn = math.max(context.turn, pathTurn(path))
+end
+
 local function clusterObjects(cluster, aiNk)
 	local result = {}
 	local objects = cluster and cluster.objects or {}
@@ -623,6 +802,7 @@ local function buildContextForSubgoal(context, task, aiNk)
 	buildDefendTownContext(context, task, aiNk)
 	buildExchangeSwapTownHeroesContext(context, task, aiNk)
 	buildDismissHeroContext(context, task, aiNk)
+	buildExecuteHeroChainContext(context, task, aiNk)
 	buildClusterContext(context, task, aiNk)
 	buildThisContext(context, task, aiNk)
 end

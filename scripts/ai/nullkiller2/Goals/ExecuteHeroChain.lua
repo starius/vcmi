@@ -70,6 +70,7 @@ end
 
 function ExecuteHeroChain:init(path, object)
 	self.chainPath = path or {}
+	self.targetObject = object
 	self.closestWayRatio = 1
 	self:sethero(self.chainPath.targetHero)
 	self:settile(targetTile(self.chainPath))
@@ -91,6 +92,10 @@ end
 
 function ExecuteHeroChain:getHeroExchangeCount()
 	return self.chainPath.exchangeCount or 0
+end
+
+function ExecuteHeroChain:getPath()
+	return self.chainPath
 end
 
 function ExecuteHeroChain:getAffectedObjects()

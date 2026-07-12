@@ -5,6 +5,7 @@ local BuildThis = require("Goals.BuildThis")
 local CGoal = require("Goals.CGoal")
 local DismissHero = require("Goals.DismissHero")
 local ExchangeSwapTownHeroes = require("Goals.ExchangeSwapTownHeroes")
+local ExecuteHeroChain = require("Goals.ExecuteHeroChain")
 local ExplorationPoint = require("Markers.ExplorationPoint")
 local DefendTown = require("Markers.DefendTown")
 local HeroExchange = require("Markers.HeroExchange")
@@ -289,6 +290,74 @@ assert(almostEquals(clusterContext.strategicalValue, 0.3))
 assert(clusterContext.movementCost == 4)
 assert(clusterContext.movementCostByRole[PriorityEvaluator.HeroRole.MAIN] == 4)
 assert(clusterContext.turn == 4)
+
+local chainHero = {
+	id = 1001,
+	role = PriorityEvaluator.HeroRole.MAIN,
+	armyStrength = 1000,
+	armyCost = 600,
+	slots = {
+		{ creatureID = 77, power = 200 }
+	}
+}
+local chainPath = {
+	targetHero = chainHero,
+	tile = {
+		x = 8,
+		y = 9,
+		z = 0,
+		enemyHeroDanger = {
+			maximumDanger = { danger = 300, threat = 400, turn = 1 }
+		}
+	},
+	movementCost = 0.5,
+	totalDanger = 100,
+	totalArmyLoss = 200,
+	heroStrength = 1000,
+	turn = 1,
+	heroArmy = {
+		armyStrength = 1000,
+		armyCost = 600
+	},
+	nodes = {
+		{ targetHero = chainHero, cost = 0.5, layer = "SAIL" }
+	}
+}
+local chainContext = PriorityEvaluator.buildEvaluationContext(ExecuteHeroChain.new(chainPath, {
+	id = 1002,
+	ID = "PANDORAS_BOX"
+}), {
+	playerID = 1,
+	totalCreaturesAvailableByCreature = {
+		[77] = { power = 1000 }
+	}
+})
+assert(chainContext.danger == 100)
+assert(almostEquals(chainContext.movementCost, 0.5))
+assert(almostEquals(chainContext.movementCostByRole[PriorityEvaluator.HeroRole.MAIN], 0.5))
+assert(chainContext.involvesSailing == true)
+assert(chainContext.heroRole == PriorityEvaluator.HeroRole.MAIN)
+assert(almostEquals(chainContext.powerRatio, 0.2))
+assert(chainContext.goldReward == 2500)
+assert(chainContext.armyReward == 5000)
+assert(almostEquals(chainContext.skillReward, 2.6))
+assert(chainContext.armyInvolvement == 600)
+assert(almostEquals(chainContext.armyLossRatio, 0.2))
+assert(almostEquals(chainContext.enemyHeroDangerRatio, 0.3))
+assert(chainContext.threat == 400)
+assert(chainContext.turn == 1)
+
+local expensiveChain = PriorityEvaluator.buildEvaluationContext(ExecuteHeroChain.new({
+	targetHero = chainHero,
+	tile = { x = 1, y = 1, z = 0 },
+	movementCost = 2,
+	nodes = {
+		{ targetHero = { id = 1003, role = PriorityEvaluator.HeroRole.SCOUT }, cost = 2 },
+		{ targetHero = { id = 1004, role = PriorityEvaluator.HeroRole.SCOUT }, cost = 2 }
+	}
+}), {})
+assert(expensiveChain.movementCost == 2)
+assert(expensiveChain.goldReward == 0)
 
 local buildingScore = PriorityEvaluator.evaluate(EvalGoal.new({
 	strategicalValue = 1,
