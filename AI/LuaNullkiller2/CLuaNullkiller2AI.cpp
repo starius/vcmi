@@ -679,7 +679,38 @@ void CLuaNullkiller2AI::showBlockingDialog(const std::string & text, const std::
 
 void CLuaNullkiller2AI::showGarrisonDialog(const CArmedInstance * up, const CGHeroInstance * down, bool removableUnits, QueryID queryID, const MetaString & customTitle)
 {
-	answerQuery(queryID);
+	if(!up || !down)
+	{
+		answerQuery(queryID);
+		return;
+	}
+
+	LuaNullkiller2Runner runner;
+	LuaRunInput input;
+	input.difficultyLevel = cc->getStartInfo()->difficulty;
+	input.snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	input.snapshot["queryID"].Integer() = queryID.getNum();
+	input.snapshot["up"] = armySnapshot(up);
+	input.snapshot["down"] = heroSnapshot(down);
+	input.snapshot["removableUnits"].Bool() = removableUnits;
+	input.snapshot["restrictedGarrisonsForAI"].Bool() = cc->getStartInfo()->restrictedGarrisonsForAI();
+
+	bool queryAnswered = false;
+	input.commandHandler = [this, &queryAnswered](const LuaCommand & command)
+	{
+		const bool executed = executeCommand(command);
+		if(executed && command.name == "answerQuery")
+			queryAnswered = true;
+		return executed;
+	};
+
+	const LuaTurnResult result = runner.runFunction("showGarrisonDialog", [](){}, input);
+
+	if(!result.ok)
+		logAi->error("LuaNullkiller2 showGarrisonDialog failed: %s", result.error);
+
+	if(!queryAnswered)
+		answerQuery(queryID);
 }
 
 void CLuaNullkiller2AI::showTeleportDialog(const CGHeroInstance * hero, TeleportChannelID channel, TTeleportExitsList exits, bool impassable, QueryID askID)

@@ -765,4 +765,40 @@ function Nullkiller.showMapObjectSelectDialog(ai, input)
 	}
 end
 
+function Nullkiller.showGarrisonDialog(ai, input)
+	input = input or {}
+	local host = HostCommands.new(ai)
+	local settings = input.settings and input.settings.values or input.settings
+	local up = input.up or input.upperArmy
+	local down = input.down or input.hero
+	local moved = false
+
+	if GatewayPolicy.shouldUseGarrisonTroops({
+		up = up,
+		down = down,
+		removableUnits = input.removableUnits,
+		settings = settings,
+		restrictedGarrisonsForAI = input.restrictedGarrisonsForAI
+	}) then
+		moved = ExchangeSwapTownHeroes.moveCreaturesToHero(host, {
+			id = objectID(up),
+			owner = up and up.owner,
+			tempOwner = up and up.tempOwner,
+			upperArmy = up,
+			bestArmy = input.bestArmy,
+			settings = settings
+		}, down)
+	end
+
+	if input.queryID ~= nil and type(host.answerQuery) == "function" then
+		host:answerQuery(input.queryID, 0)
+	end
+
+	return {
+		status = "answered",
+		moved = moved,
+		commandJournal = host:getJournal()
+	}
+end
+
 return Nullkiller

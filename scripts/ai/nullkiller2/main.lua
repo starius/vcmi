@@ -17,4 +17,8 @@ function Script.showMapObjectSelectDialog(ai, input)
 	return Nullkiller.showMapObjectSelectDialog(ai, input or {})
 end
 
+function Script.showGarrisonDialog(ai, input)
+	return Nullkiller.showGarrisonDialog(ai, input or {})
+end
+
 return Script

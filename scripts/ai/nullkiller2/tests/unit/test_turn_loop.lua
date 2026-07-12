@@ -259,3 +259,62 @@ assert(#mapObjectResult.commandJournal == 1)
 assert(mapObjectResult.commandJournal[1].name == "answerQuery")
 assert(mapObjectResult.commandJournal[1].payload.query == 902)
 assert(mapObjectResult.commandJournal[1].payload.selection == 52)
+
+local garrisonRun = makeAI()
+local garrisonResult = Script.showGarrisonDialog(garrisonRun.ai, {
+	queryID = 903,
+	removableUnits = true,
+	restrictedGarrisonsForAI = false,
+	up = {
+		id = 60,
+		owner = 1,
+		tempOwner = 1,
+		stacksCount = 1,
+		armySize = 7,
+		slots = {
+			{
+				slot = 0,
+				creature = { id = 61, factionID = 1, level = 2, movementRange = 5 },
+				count = 10,
+				power = 100
+			}
+		}
+	},
+	down = {
+		id = 62,
+		owner = 1,
+		tempOwner = 1,
+		stacksCount = 0,
+		armySize = 7,
+		slots = {}
+	},
+	bestArmy = {
+		{ creature = { id = 61 } }
+	}
+})
+assert(garrisonRun.ended() == false)
+assert(garrisonResult.status == "answered")
+assert(garrisonResult.moved == true)
+assert(#garrisonResult.commandJournal == 2)
+assert(garrisonResult.commandJournal[1].name == "mergeOrSwapStacks")
+assert(garrisonResult.commandJournal[1].payload.src == 60)
+assert(garrisonResult.commandJournal[1].payload.dst == 62)
+assert(garrisonResult.commandJournal[1].payload.fromSlot == 0)
+assert(garrisonResult.commandJournal[1].payload.toSlot == 0)
+assert(garrisonResult.commandJournal[2].name == "answerQuery")
+assert(garrisonResult.commandJournal[2].payload.query == 903)
+assert(garrisonResult.commandJournal[2].payload.selection == 0)
+
+local restrictedGarrisonRun = makeAI()
+local restrictedGarrisonResult = Script.showGarrisonDialog(restrictedGarrisonRun.ai, {
+	queryID = 904,
+	removableUnits = true,
+	restrictedGarrisonsForAI = true,
+	up = { id = 63, owner = 1, tempOwner = 1, stacksCount = 1 },
+	down = { id = 64, owner = 1, tempOwner = 1, stacksCount = 0 }
+})
+assert(restrictedGarrisonResult.status == "answered")
+assert(restrictedGarrisonResult.moved == false)
+assert(#restrictedGarrisonResult.commandJournal == 1)
+assert(restrictedGarrisonResult.commandJournal[1].name == "answerQuery")
+assert(restrictedGarrisonResult.commandJournal[1].payload.query == 904)

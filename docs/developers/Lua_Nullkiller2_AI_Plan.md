@@ -135,8 +135,8 @@ The branch now has the initial standalone AI and parity infrastructure in place:
 - `CLuaNullkiller2AI` derives directly from `CAdventureAI`, loads the Lua runner, passes visible turn and callback
   snapshots, and executes checked host commands without linking to or instantiating native `Nullkiller2`.
 - The Lua runner loads `scripts/ai/nullkiller2/main.lua`, exposes settings, trace, command, and snapshot input,
-  supports named entry points such as `runDay`, `heroExchangeStarted`, and `showMapObjectSelectDialog`, and records
-  a command journal that is usable by differential tests.
+  supports named entry points such as `runDay`, `heroExchangeStarted`, `showGarrisonDialog`, and
+  `showMapObjectSelectDialog`, and records a command journal that is usable by differential tests.
 - Lua normalizes vector snapshots into `heroesByID` and `objectsByID` lookup tables before turn planning, so C++
   snapshots do not need duplicate indexed maps for task presence checks.
 - `scripts/ai/nullkiller2/PORT_MAP.json` tracks mirrored C++ files and symbols, with audit coverage for forbidden
@@ -161,7 +161,8 @@ artifact snapshots for empty legal equipment slots, higher-scoring replacement a
 backpack fallback when a direct swap is illegal. The `heroExchangeStarted` callback is wired through Lua, chooses
 the same transfer direction as native `AIGateway`, emits Lua-owned army/artifact exchange commands, and answers the
 pending query through the same host command journal. Map-object selection dialogs now route through Lua
-`GatewayPolicy.chooseMapObjectSelection` before emitting `answerQuery`.
+`GatewayPolicy.chooseMapObjectSelection` before emitting `answerQuery`. Garrison dialogs route through Lua
+`GatewayPolicy.shouldUseGarrisonTroops` and the Lua army-transfer sequencer before answering.
 
 Major parity gaps remain:
 
