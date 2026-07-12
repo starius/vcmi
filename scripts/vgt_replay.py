@@ -63,6 +63,26 @@ def header(documents: list[dict[str, Any]]) -> dict[str, Any]:
         raise VGTError(f"unsupported map hash algorithm: {hash_info.get('algorithm')!r}")
     if not isinstance(hash_info.get("value"), str) or not hash_info["value"]:
         raise VGTError("header map.hash.value is missing")
+    settings = result.get("settings")
+    if not isinstance(settings, dict):
+        raise VGTError("header settings field is missing or invalid")
+    for field in ("start", "startTime", "difficulty", "randomSeed", "simturns", "timer", "extraOptions"):
+        if field not in settings:
+            raise VGTError(f"header settings.{field} is missing")
+    for field in ("simturns", "timer", "extraOptions"):
+        if not isinstance(settings[field], dict):
+            raise VGTError(f"header settings.{field} must be a mapping")
+    players = result.get("players")
+    if not isinstance(players, dict) or not players:
+        raise VGTError("header players field is missing or invalid")
+    for color, player in players.items():
+        if not isinstance(player, dict):
+            raise VGTError(f"header players.{color} must be a mapping")
+        for field in ("controller", "faction", "hero", "heroPortrait", "heroNameTextId", "startingBonus", "handicap", "name", "connections", "computerOnly"):
+            if field not in player:
+                raise VGTError(f"header players.{color}.{field} is missing")
+        if not isinstance(player["handicap"], dict):
+            raise VGTError(f"header players.{color}.handicap must be a mapping")
     return result
 
 

@@ -98,6 +98,11 @@ std::string color(PlayerColor value)
 	return value.toString();
 }
 
+std::string boolValue(bool value)
+{
+	return value ? "true" : "false";
+}
+
 std::string objectAlias(const CGameState & gameState, ObjectInstanceID id)
 {
 	if(id == ObjectInstanceID::NONE)
@@ -164,7 +169,11 @@ std::string resource(GameResID id)
 {
 	if(id.getNum() < 0)
 		return yamlString("core:none");
-	return yamlString(GameResID::encode(id.getNum()));
+
+	std::string identifier = GameResID::encode(id.getNum());
+	if(identifier.find(':') == std::string::npos)
+		identifier = "core:" + identifier;
+	return yamlString(identifier);
 }
 
 std::string creature(CreatureID id)
@@ -183,15 +192,29 @@ std::string spell(SpellID id)
 
 std::string heroType(HeroTypeID id)
 {
-	if(id.getNum() < 0)
+	if(id == HeroTypeID::NONE)
 		return yamlString("core:none");
+	if(id == HeroTypeID::RANDOM)
+		return yamlString("random");
+	if(id == HeroTypeID::CAMP_STRONGEST)
+		return yamlString("campaignStrongest");
+	if(id == HeroTypeID::CAMP_GENERATED)
+		return yamlString("campaignGenerated");
+	if(id == HeroTypeID::CAMP_RANDOM)
+		return yamlString("campaignRandom");
+	if(id.getNum() < 0)
+		return yamlString("hero:" + std::to_string(id.getNum()));
 	return yamlString(HeroTypeID::encode(id.getNum()));
 }
 
 std::string faction(FactionID id)
 {
-	if(id.getNum() < 0)
+	if(id == FactionID::NONE)
 		return yamlString("core:none");
+	if(id == FactionID::RANDOM)
+		return yamlString("random");
+	if(id.getNum() < 0)
+		return yamlString("faction:" + std::to_string(id.getNum()));
 	return yamlString(FactionID::encode(id.getNum()));
 }
 
@@ -478,6 +501,72 @@ std::string resourceValues(const ResourceSet & values)
 	for(size_t i = 0; i < values.size(); ++i)
 		entries.push_back("{ resource: " + resource(GameResID(static_cast<int>(i))) + ", amount: " + std::to_string(values[i]) + " }");
 	return flowList(entries);
+}
+
+std::string startingBonus(PlayerStartingBonus value)
+{
+	switch(value)
+	{
+		case PlayerStartingBonus::RANDOM: return "random";
+		case PlayerStartingBonus::ARTIFACT: return "artifact";
+		case PlayerStartingBonus::GOLD: return "gold";
+		case PlayerStartingBonus::RESOURCE: return "resource";
+	}
+	return "unknown";
+}
+
+std::string connectionList(const std::set<PlayerConnectionID> & values)
+{
+	std::vector<std::string> entries;
+	for(const auto & entry : values)
+		entries.push_back(std::to_string(static_cast<int>(entry)));
+	return flowList(entries);
+}
+
+std::string handicap(const Handicap & value)
+{
+	return "{ resources: " + resourceValues(value.startBonus) +
+		", incomePercent: " + std::to_string(value.percentIncome) +
+		", growthPercent: " + std::to_string(value.percentGrowth) + " }";
+}
+
+std::string simturnsInfo(const SimturnsInfo & value)
+{
+	return "{ requiredTurns: " + std::to_string(value.requiredTurns) +
+		", optionalTurns: " + std::to_string(value.optionalTurns) +
+		", allowHumanWithAI: " + boolValue(value.allowHumanWithAI) +
+		", ignoreAlliedContacts: " + boolValue(value.ignoreAlliedContacts) + " }";
+}
+
+std::string timerInfo(const TurnTimerInfo & value)
+{
+	return "{ enabled: " + boolValue(value.isEnabled()) +
+		", turn: " + std::to_string(value.turnTimer) +
+		", base: " + std::to_string(value.baseTimer) +
+		", battle: " + std::to_string(value.battleTimer) +
+		", unit: " + std::to_string(value.unitTimer) +
+		", accumulatingTurn: " + boolValue(value.accumulatingTurnTimer) +
+		", accumulatingUnit: " + boolValue(value.accumulatingUnitTimer) + " }";
+}
+
+std::string extraOptions(const ExtraOptionsInfo & value)
+{
+	return "{ cheatsAllowed: " + boolValue(value.cheatsAllowed) +
+		", unlimitedReplay: " + boolValue(value.unlimitedReplay) + " }";
+}
+
+std::string playerSettings(const PlayerSettings & value)
+{
+	return "{ controller: " + std::string(value.isControlledByHuman() ? "human" : "ai") +
+		", faction: " + faction(value.castle) +
+		", hero: " + heroType(value.hero) +
+		", heroPortrait: " + heroType(value.heroPortrait) +
+		", heroNameTextId: " + yamlString(value.heroNameTextId) +
+		", startingBonus: " + startingBonus(value.bonus) +
+		", handicap: " + handicap(value.handicap) +
+		", name: " + yamlString(value.name) +
+		", connections: " + connectionList(value.connectedPlayerIDs) +
+		", computerOnly: " + boolValue(value.compOnly) + " }";
 }
 
 std::string simpleArmy(const CSimpleArmy & army)
@@ -1865,17 +1954,12 @@ void VGTRecorder::ensureHeader(const CGameState & gameState)
 	output << "  difficulty: " << difficulty(startInfo->difficulty) << "\n";
 	if(randomSeed)
 		output << "  randomSeed: " << *randomSeed << "\n";
-	output << "  timer: " << (startInfo->turnTimerInfo.isEnabled() ? "enabled" : "none") << "\n";
+	output << "  simturns: " << simturnsInfo(startInfo->simturnsInfo) << "\n";
+	output << "  timer: " << timerInfo(startInfo->turnTimerInfo) << "\n";
+	output << "  extraOptions: " << extraOptions(startInfo->extraOptionsInfo) << "\n";
 	output << "players:\n";
 	for(const auto & player : startInfo->playerInfos)
-	{
-		output << "  " << color(player.first) << ": { controller: "
-			<< (player.second.isControlledByHuman() ? "human" : "ai")
-			<< ", faction: " << faction(player.second.castle)
-			<< ", hero: " << heroType(player.second.hero)
-			<< ", name: " << yamlString(player.second.name)
-			<< " }\n";
-	}
+		output << "  " << color(player.first) << ": " << playerSettings(player.second) << "\n";
 	headerWritten = true;
 	output.flush();
 }
