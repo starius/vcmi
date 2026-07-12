@@ -25,6 +25,8 @@ class AsyncRunner;
 namespace NK2AI
 {
 
+class NativeTrace;
+
 class AIStatus
 {
 	AIGateway * aiGw;
@@ -70,6 +72,7 @@ public:
 	std::vector<ObjectInstanceID> teleportChannelProbingList; //list of teleport channel exits that not visible and need to be (re-)explored
 
 	AIStatus status;
+	std::unique_ptr<NativeTrace> nativeTrace;
 	std::string battlename;
 	/// Same instance as in cbc. cbc is used to keep CAdventureAI simpler without unnecessary class requirements
 	std::shared_ptr<CCallback> cc;

@@ -1130,7 +1130,19 @@
         "normalized expected-subset comparator",
         "discrepancy artifact writer"
       ],
-      "notes": "JSON replay fixtures under tests/fixtures/replay exercise Lua entry points without a full game and compare normalized status, command journals, trace, and memory, including runDay hero-chain special-action command journals. Failures write actual JSON plus a first-difference summary under tests/fixtures/discrepancies. Native trace export and lockstep comparison remain pending."
+      "notes": "JSON replay fixtures under tests/fixtures/replay exercise Lua entry points without a full game and compare normalized status, command journals, trace, and memory, including runDay hero-chain special-action command journals. Failures write actual JSON plus a first-difference summary under tests/fixtures/discrepancies. Native trace comparison is scaffolded separately; broad native trace export and lockstep comparison remain pending."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Engine/NativeTrace.cpp",
+      "lua": "scripts/ai/nullkiller2/tests/compare_native_trace.py",
+      "status": "scaffolded",
+      "symbols": [
+        "NativeTrace::recordDecision",
+        "AIGateway::showMapObjectSelectDialog native trace hook",
+        "LuaNullkiller2.nativeDecisionTrace.v1",
+        "native-trace preset"
+      ],
+      "notes": "Native trace export is opt-in through VCMI_NK2_NATIVE_TRACE and currently emits comparator-compatible showMapObjectSelectDialog records with query input, native selection, and answerQuery command journals. The Lua comparator consumes the same schema and writes discrepancy artifacts. More native decision hooks and lockstep trace export remain pending."
     },
     {
       "cpp": null,

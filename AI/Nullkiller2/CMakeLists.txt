@@ -49,6 +49,7 @@ set(Nullkiller2_SRCS
 		Markers/ExplorationPoint.cpp
 		Engine/Nullkiller.cpp
 		Engine/DeepDecomposer.cpp
+		Engine/NativeTrace.cpp
 		Engine/PriorityEvaluator.cpp
 		Engine/ResourceTrader.cpp
 		Analyzers/DangerHitMapAnalyzer.cpp
@@ -129,6 +130,7 @@ set(Nullkiller2_HEADERS
 		Markers/ExplorationPoint.h
 		Engine/Nullkiller.h
 		Engine/DeepDecomposer.h
+		Engine/NativeTrace.h
 		Engine/PriorityEvaluator.h
 		Engine/ResourceTrader.h
 		Analyzers/DangerHitMapAnalyzer.h

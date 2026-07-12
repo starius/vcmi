@@ -35,9 +35,58 @@
 
 #include "AIGateway.h"
 #include "Goals/Goals.h"
+#include "Engine/NativeTrace.h"
 
 namespace NK2AI
 {
+
+namespace
+{
+JsonNode objectIDsSnapshot(const std::vector<ObjectInstanceID> & objects)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_VECTOR);
+	for(const auto & object : objects)
+		result.Vector().push_back(JsonNode(static_cast<int64_t>(object.getNum())));
+	return result;
+}
+
+JsonNode answerQueryCommandJournal(QueryID queryID, int selection)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_VECTOR);
+
+	JsonNode command;
+	command.setType(JsonNode::JsonType::DATA_STRUCT);
+	command["name"].String() = "answerQuery";
+	command["payload"].setType(JsonNode::JsonType::DATA_STRUCT);
+	command["payload"]["query"].Integer() = queryID.getNum();
+	command["payload"]["selection"].Integer() = selection;
+	result.Vector().push_back(std::move(command));
+
+	return result;
+}
+
+JsonNode mapObjectSelectInput(QueryID queryID, int selection, const std::vector<ObjectInstanceID> & objects)
+{
+	JsonNode input;
+	input.setType(JsonNode::JsonType::DATA_STRUCT);
+	input["queryID"].Integer() = queryID.getNum();
+	input["selectedObject"].Integer() = selection;
+	input["objects"] = objectIDsSnapshot(objects);
+	return input;
+}
+
+JsonNode mapObjectSelectNativeOutput(QueryID queryID, int selection)
+{
+	JsonNode output;
+	output.setType(JsonNode::JsonType::DATA_STRUCT);
+	output["status"].String() = "answered";
+	output["selection"].Integer() = selection;
+	output["commandJournal"] = answerQueryCommandJournal(queryID, selection);
+	return output;
+}
+}
 
 AIGateway::AIGateway()
 	:status(this)
@@ -46,6 +95,7 @@ AIGateway::AIGateway()
 	destinationTeleport = ObjectInstanceID();
 	destinationTeleportPos = int3(-1);
 	nullkiller.reset(new Nullkiller());
+	nativeTrace = std::make_unique<NativeTrace>();
 	asyncTasks = std::make_unique<AsyncRunner>();
 }
 
@@ -715,7 +765,19 @@ void AIGateway::showGarrisonDialog(const CArmedInstance * up, const CGHeroInstan
 void AIGateway::showMapObjectSelectDialog(QueryID askID, const Component & icon, const MetaString & title, const MetaString & description, const std::vector<ObjectInstanceID> & objects)
 {
 	status.addQuery(askID, "Map object select query");
-	executeActionAsync("showMapObjectSelectDialog", [this, askID](){ answerQuery(askID, selectedObject.getNum()); });
+	executeActionAsync("showMapObjectSelectDialog", [this, askID, objects]()
+	{
+		const int selection = selectedObject.getNum();
+		if(nativeTrace)
+		{
+			nativeTrace->recordDecision(
+				boost::str(boost::format("showMapObjectSelectDialog.%d") % askID.getNum()),
+				"showMapObjectSelectDialog",
+				mapObjectSelectInput(askID, selection, objects),
+				mapObjectSelectNativeOutput(askID, selection));
+		}
+		answerQuery(askID, selection);
+	});
 }
 
 bool AIGateway::makePossibleUpgrades(const CArmedInstance * obj)
