@@ -33,7 +33,10 @@ class VGTRecorder final
 	bool baselineGameStateSaveEnabled = false;
 	bool headerWritten = false;
 	bool documentOpen = false;
+	bool exitAfterAppliedState = false;
 	std::optional<int> randomSeed;
+	std::optional<int> exitAfterTurnEnds;
+	int observedTurnEnds = 0;
 	std::optional<PlayerColor> currentTurnPlayer;
 
 	VGTRecorder() = default;

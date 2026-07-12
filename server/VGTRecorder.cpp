@@ -43,8 +43,10 @@
 
 #include <array>
 #include <cctype>
+#include <cstdio>
 #include <cstdlib>
 #include <iomanip>
+#include <limits>
 #include <optional>
 #include <sstream>
 
@@ -2336,6 +2338,17 @@ void VGTRecorder::initializeFromEnvironment()
 			boost::filesystem::create_directories(savePath.parent_path());
 		baselineGameStateSaveEnabled = true;
 	}
+
+	const char * exitAfterTurnEndsValue = std::getenv("VCMI_VGT_EXIT_AFTER_TURN_ENDS");
+	if(exitAfterTurnEndsValue && !std::string(exitAfterTurnEndsValue).empty())
+	{
+		char * parseEnd = nullptr;
+		const long parsedValue = std::strtol(exitAfterTurnEndsValue, &parseEnd, 10);
+		if(parseEnd != exitAfterTurnEndsValue && *parseEnd == '\0' && parsedValue > 0 && parsedValue <= std::numeric_limits<int>::max())
+			exitAfterTurnEnds = static_cast<int>(parsedValue);
+		else
+			logGlobal->error("Ignoring invalid VGT turn-end exit limit '%s'", exitAfterTurnEndsValue);
+	}
 }
 
 void VGTRecorder::ensureHeader(const CGameState & gameState)
@@ -2525,6 +2538,12 @@ void VGTRecorder::recordEffect(const CGameState & gameState, CPackForClient & pa
 	EffectRecorder recorder(gameState);
 	pack.visit(recorder);
 	writeActionLine(gameState, recorder.result());
+	if(exitAfterTurnEnds && dynamic_cast<PlayerEndsTurn *>(&pack))
+	{
+		++observedTurnEnds;
+		if(observedTurnEnds >= *exitAfterTurnEnds)
+			exitAfterAppliedState = true;
+	}
 }
 
 void VGTRecorder::recordAppliedState(CGameHandler & gameHandler)
@@ -2532,4 +2551,12 @@ void VGTRecorder::recordAppliedState(CGameHandler & gameHandler)
 	std::scoped_lock lock(outputMutex);
 	initializeFromEnvironment();
 	writeBaselineSave(gameHandler);
+	if(exitAfterAppliedState)
+	{
+		if(output)
+			output.flush();
+		logGlobal->info("VGT capture reached requested turn-end limit");
+		std::fflush(nullptr);
+		std::_Exit(EXIT_SUCCESS);
+	}
 }
