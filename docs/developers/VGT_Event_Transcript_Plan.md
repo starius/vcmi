@@ -10,6 +10,7 @@ The target is a compact YAML transcript that can be read by a human, parsed by n
 - The file is append-friendly. New turns or world phases can be appended to the end.
 - The file contains no binary payloads, no save snapshots, and no state checkpoint hashes.
 - The header contains a required hash of the referenced map file, so replay can fail early if the map changed.
+- The map-file hash is an input-integrity check, not a replay checkpoint. It is the only required hash in the first version.
 - Records use identifiers instead of enum numbers.
 - Records use full readable field names. Avoid VGT-specific abbreviations.
 - Only material events are recorded. Do not record acknowledgements, duplicate network delivery, timer ticks, internal implementation noise, or random draws that never realize into game state or a decision.
