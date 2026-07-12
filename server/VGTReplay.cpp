@@ -338,6 +338,19 @@ EWeekType decodeWeekType(const std::string & value)
 	throw std::runtime_error("Unsupported VGT week type: " + value);
 }
 
+RumorState::ERumorType decodeRumorType(const std::string & value)
+{
+	if(value == "none")
+		return RumorState::TYPE_NONE;
+	if(value == "random")
+		return RumorState::TYPE_RAND;
+	if(value == "special")
+		return RumorState::TYPE_SPECIAL;
+	if(value == "map")
+		return RumorState::TYPE_MAP;
+	throw std::runtime_error("Unsupported VGT rumor type: " + value);
+}
+
 ETileVisibility decodeVisibility(const std::string & value)
 {
 	if(value == "hidden")
@@ -925,6 +938,74 @@ std::vector<std::pair<ui32, std::vector<CreatureID>>> decodeAvailableCreatures(c
 	return result;
 }
 
+std::vector<SetMovePoints> decodeNewTurnMovement(const CGameState & gameState, const JsonNode & node)
+{
+	if(!node.isVector())
+		throw std::runtime_error("VGT replay newTurn movement must be a list");
+
+	std::vector<SetMovePoints> result;
+	for(const auto & entry : node.Vector())
+	{
+		SetMovePoints pack;
+		pack.hid = resolveObjectAlias(gameState, requireString(entry, "hero"));
+		pack.val = static_cast<si32>(requireInteger(entry, "value"));
+		result.push_back(pack);
+	}
+	return result;
+}
+
+std::vector<SetMana> decodeNewTurnMana(const CGameState & gameState, const JsonNode & node)
+{
+	if(!node.isVector())
+		throw std::runtime_error("VGT replay newTurn mana must be a list");
+
+	std::vector<SetMana> result;
+	for(const auto & entry : node.Vector())
+	{
+		SetMana pack;
+		pack.hid = resolveObjectAlias(gameState, requireString(entry, "hero"));
+		pack.mode = decodeChangeMode(requireString(entry, "mode"));
+		pack.val = static_cast<si32>(requireInteger(entry, "value"));
+		result.push_back(pack);
+	}
+	return result;
+}
+
+std::vector<SetAvailableCreatures> decodeNewTurnAvailableCreatures(const CGameState & gameState, const JsonNode & node)
+{
+	if(!node.isVector())
+		throw std::runtime_error("VGT replay newTurn available creatures must be a list");
+
+	std::vector<SetAvailableCreatures> result;
+	for(const auto & entry : node.Vector())
+	{
+		SetAvailableCreatures pack;
+		pack.tid = resolveObjectAlias(gameState, requireString(entry, "object"));
+		pack.creatures = decodeAvailableCreatures(requireField(entry, "levels"));
+		result.push_back(pack);
+	}
+	return result;
+}
+
+RumorState decodeRumorState(const JsonNode & node)
+{
+	RumorState result;
+	result.type = decodeRumorType(requireString(node, "type"));
+	result.last.clear();
+
+	const auto & last = requireField(node, "last");
+	if(!last.isVector())
+		throw std::runtime_error("VGT replay rumor last must be a list");
+	for(const auto & entry : last.Vector())
+	{
+		result.last[decodeRumorType(requireString(entry, "type"))] = {
+			static_cast<int>(requireInteger(entry, "id")),
+			static_cast<int>(requireInteger(entry, "extra"))
+		};
+	}
+	return result;
+}
+
 Handicap decodeHandicap(const JsonNode & node)
 {
 	Handicap result;
@@ -1278,6 +1359,15 @@ void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, con
 			throw std::runtime_error("VGT replay newTurn income must be a list");
 		for(const auto & entry : income.Vector())
 			pack.playerIncome[decodePlayerColor(requireString(entry, "player"))] = decodeResources(requireField(entry, "resources"));
+
+		if(const auto * movement = findField(node, "movement"))
+			pack.heroesMovement = decodeNewTurnMovement(gameHandler.gameState(), *movement);
+		if(const auto * mana = findField(node, "mana"))
+			pack.heroesMana = decodeNewTurnMana(gameHandler.gameState(), *mana);
+		if(const auto * available = findField(node, "availableCreatures"))
+			pack.availableCreatures = decodeNewTurnAvailableCreatures(gameHandler.gameState(), *available);
+		if(const auto * rumor = findField(node, "rumor"))
+			pack.newRumor = decodeRumorState(*rumor);
 
 		applyEffectPack(gameHandler, pack);
 		return;

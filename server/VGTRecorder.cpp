@@ -678,6 +678,66 @@ std::string stackExperienceValues(const std::map<SlotID, si64> & values)
 	return flowList(entries);
 }
 
+std::string newTurnMovement(const CGameState & gameState, const std::vector<SetMovePoints> & values)
+{
+	std::vector<std::string> entries;
+	for(const auto & entry : values)
+	{
+		entries.push_back("{ hero: " + heroAlias(gameState, entry.hid) +
+			", value: " + std::to_string(entry.val) + " }");
+	}
+	return flowList(entries);
+}
+
+std::string newTurnMana(const CGameState & gameState, const std::vector<SetMana> & values)
+{
+	std::vector<std::string> entries;
+	for(const auto & entry : values)
+	{
+		entries.push_back("{ hero: " + heroAlias(gameState, entry.hid) +
+			", mode: " + mode(entry.mode) +
+			", value: " + std::to_string(entry.val) + " }");
+	}
+	return flowList(entries);
+}
+
+std::string newTurnAvailableCreatures(const CGameState & gameState, const std::vector<SetAvailableCreatures> & values)
+{
+	std::vector<std::string> entries;
+	for(const auto & entry : values)
+	{
+		entries.push_back("{ object: " + objectAlias(gameState, entry.tid) +
+			", levels: " + availableCreatures(entry.creatures) + " }");
+	}
+	return flowList(entries);
+}
+
+std::string rumorType(RumorState::ERumorType type)
+{
+	switch(type)
+	{
+		case RumorState::TYPE_NONE: return "none";
+		case RumorState::TYPE_RAND: return "random";
+		case RumorState::TYPE_SPECIAL: return "special";
+		case RumorState::TYPE_MAP: return "map";
+	}
+	return "unknown";
+}
+
+std::string rumorState(const RumorState & rumor)
+{
+	std::vector<std::string> last;
+	for(const auto & entry : rumor.last)
+	{
+		last.push_back("{ type: " + rumorType(entry.first) +
+			", id: " + std::to_string(entry.second.first) +
+			", extra: " + std::to_string(entry.second.second) + " }");
+	}
+
+	return "{ type: " + rumorType(rumor.type) +
+		", last: " + flowList(last) + " }";
+}
+
 std::string fowTiles(const FowTilesType & tiles)
 {
 	std::map<std::pair<int, int>, std::vector<int>> runsByLine;
@@ -1660,6 +1720,15 @@ public:
 			line += "{ player: " + color(entry.first) + ", resources: " + resources(entry.second) + " }";
 		}
 		line += "] }";
+
+		if(!pack.heroesMovement.empty())
+			line.insert(line.size() - 2, ", movement: " + newTurnMovement(gameState, pack.heroesMovement));
+		if(!pack.heroesMana.empty())
+			line.insert(line.size() - 2, ", mana: " + newTurnMana(gameState, pack.heroesMana));
+		if(!pack.availableCreatures.empty())
+			line.insert(line.size() - 2, ", availableCreatures: " + newTurnAvailableCreatures(gameState, pack.availableCreatures));
+		if(pack.newRumor)
+			line.insert(line.size() - 2, ", rumor: " + rumorState(*pack.newRumor));
 	}
 
 	void visitSetObjectProperty(SetObjectProperty & pack) override
