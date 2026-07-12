@@ -16,9 +16,25 @@
 #include "../../lib/battle/BattleAction.h"
 #include "../../lib/callback/CCallback.h"
 #include "../../lib/StartInfo.h"
+#include "../../lib/mapObjects/CGHeroInstance.h"
+#include "../../lib/mapObjects/CGTownInstance.h"
+#include "../../lib/mapObjects/IObjectInterface.h"
 
 namespace LuaNullkiller2AI
 {
+namespace
+{
+
+std::optional<int> commandInteger(const LuaCommand & command, const std::string & key)
+{
+	const auto found = command.integers.find(key);
+	if(found == command.integers.end())
+		return std::nullopt;
+
+	return found->second;
+}
+
+}
 
 std::string CLuaNullkiller2AI::getBattleAIName() const
 {
@@ -39,6 +55,118 @@ void CLuaNullkiller2AI::answerQuery(QueryID queryID, int selection) const
 	cc->selectionMade(selection, queryID);
 }
 
+bool CLuaNullkiller2AI::executeCommand(const LuaCommand & command) const
+{
+	if(command.name == "lockResources")
+		return true;
+
+	if(command.name == "recruitHero")
+	{
+		const auto townID = commandInteger(command, "town");
+		const auto heroID = commandInteger(command, "hero");
+		if(!townID || !heroID)
+			return false;
+
+		const auto * townOrTavern = cc->getObj(ObjectInstanceID(*townID), false);
+		const auto * hero = cc->getHero(ObjectInstanceID(*heroID));
+		if(!townOrTavern || !hero)
+			return false;
+
+		cc->recruitHero(townOrTavern, hero);
+		return true;
+	}
+
+	if(command.name == "buildBuilding")
+	{
+		const auto townID = commandInteger(command, "town");
+		const auto buildingID = commandInteger(command, "bid");
+		if(!townID || !buildingID)
+			return false;
+
+		const auto * town = cc->getTown(ObjectInstanceID(*townID));
+		return town && cc->buildBuilding(town, BuildingID(*buildingID));
+	}
+
+	if(command.name == "buildBoat")
+	{
+		const auto shipyardID = commandInteger(command, "shipyard");
+		if(!shipyardID)
+			return false;
+
+		const auto * object = cc->getObj(ObjectInstanceID(*shipyardID), false);
+		const auto * shipyard = dynamic_cast<const IShipyard *>(object);
+		if(!shipyard)
+			return false;
+
+		cc->buildBoat(shipyard);
+		return true;
+	}
+
+	if(command.name == "dismissHero")
+	{
+		const auto heroID = commandInteger(command, "hero");
+		if(!heroID)
+			return false;
+
+		const auto * hero = cc->getHero(ObjectInstanceID(*heroID));
+		return hero && cc->dismissHero(hero);
+	}
+
+	if(command.name == "swapGarrisonHero")
+	{
+		const auto townID = commandInteger(command, "town");
+		if(!townID)
+			return false;
+
+		const auto * town = cc->getTown(ObjectInstanceID(*townID));
+		if(!town)
+			return false;
+
+		cc->swapGarrisonHero(town);
+		return true;
+	}
+
+	if(command.name == "castSpell")
+	{
+		const auto heroID = commandInteger(command, "hero");
+		const auto spellID = commandInteger(command, "spell");
+		if(!heroID || !spellID)
+			return false;
+
+		const auto * hero = cc->getHero(ObjectInstanceID(*heroID));
+		if(!hero)
+			return false;
+
+		const int3 target(
+			commandInteger(command, "x").value_or(-1),
+			commandInteger(command, "y").value_or(-1),
+			commandInteger(command, "z").value_or(-1));
+		cc->castSpell(hero, SpellID(*spellID), target);
+		return true;
+	}
+
+	if(command.name == "executeHeroChain")
+	{
+		const auto heroID = commandInteger(command, "hero");
+		const auto x = commandInteger(command, "x");
+		const auto y = commandInteger(command, "y");
+		const auto z = commandInteger(command, "z");
+		if(!heroID || !x || !y || !z)
+			return false;
+
+		const auto * hero = cc->getHero(ObjectInstanceID(*heroID));
+		if(!hero)
+			return false;
+
+		const int3 visitableDestination(*x, *y, *z);
+		cc->moveHero(hero, hero->convertFromVisitablePos(visitableDestination), false);
+		return true;
+	}
+
+	logAi->warn("LuaNullkiller2 unsupported command: %s", command.name.c_str());
+	return false;
+}
+
 void CLuaNullkiller2AI::yourTurn(QueryID queryID)
 {
 	answerQuery(queryID);
@@ -46,6 +174,10 @@ void CLuaNullkiller2AI::yourTurn(QueryID queryID)
 	LuaNullkiller2Runner runner;
 	LuaRunInput input;
 	input.difficultyLevel = cc->getStartInfo()->difficulty;
+	input.commandHandler = [this](const LuaCommand & command)
+	{
+		return executeCommand(command);
+	};
 
 	const LuaTurnResult result = runner.runDay([this]()
 	{

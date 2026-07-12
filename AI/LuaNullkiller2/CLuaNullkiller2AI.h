@@ -14,11 +14,14 @@
 namespace LuaNullkiller2AI
 {
 
+struct LuaCommand;
+
 class CLuaNullkiller2AI final : public CAdventureAI
 {
 	std::shared_ptr<CCallback> cc;
 
 	void answerQuery(QueryID queryID, int selection = 0) const;
+	bool executeCommand(const LuaCommand & command) const;
 
 public:
 	std::string getBattleAIName() const override;

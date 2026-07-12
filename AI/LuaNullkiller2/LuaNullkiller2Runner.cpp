@@ -17,6 +17,8 @@
 #include "../../lib/json/JsonNode.h"
 #include "../../lib/json/JsonUtils.h"
 
+#include <array>
+
 #if __has_include(<lua.hpp>)
 #  include <lua.hpp>
 #else
@@ -37,8 +39,9 @@ constexpr const char * SETTINGS_MODULE = "config/ai/nk2ai/nk2ai-settings";
 struct RunContext
 {
 	const std::function<void()> * endTurn = nullptr;
+	const std::function<bool(const LuaCommand &)> * commandHandler = nullptr;
 	bool requestedEndTurn = false;
-	std::vector<std::string> commands;
+	std::vector<LuaCommand> commands;
 };
 
 std::string toStringRaw(lua_State * state, int index)
@@ -46,6 +49,46 @@ std::string toStringRaw(lua_State * state, int index)
 	size_t len = 0;
 	const auto * raw = lua_tolstring(state, index, &len);
 	return raw ? std::string(raw, len) : std::string();
+}
+
+void readIntegerPayloadField(lua_State * state, int tableIndex, LuaCommand & command, const char * field)
+{
+	lua_getfield(state, tableIndex, field);
+	if(lua_isnumber(state, -1))
+		command.integers[field] = static_cast<int>(lua_tointeger(state, -1));
+	lua_pop(state, 1);
+}
+
+LuaCommand readCommand(lua_State * state, const std::string & commandName, int payloadIndex)
+{
+	LuaCommand command;
+	command.name = commandName;
+
+	if(payloadIndex < 0)
+		payloadIndex = lua_gettop(state) + payloadIndex + 1;
+
+	if(lua_istable(state, payloadIndex))
+	{
+		static constexpr std::array<const char *, 11> INTEGER_FIELDS =
+		{
+			"town",
+			"hero",
+			"bid",
+			"shipyard",
+			"spell",
+			"x",
+			"y",
+			"z",
+			"objid",
+			"creature",
+			"count"
+		};
+
+		for(const char * field : INTEGER_FIELDS)
+			readIntegerPayloadField(state, payloadIndex, command, field);
+	}
+
+	return command;
 }
 
 std::string moduleToResourcePath(const std::string & moduleName)
@@ -201,13 +244,36 @@ int luaCommand(lua_State * state)
 		return lua_error(state);
 	}
 
-	context->commands.emplace_back(command);
+	LuaCommand luaCommand = readCommand(state, command, 3);
+	context->commands.push_back(luaCommand);
 	logAi->debug("LuaNullkiller2 command: %s", command);
+
+	bool executed = false;
+	if(context->commandHandler)
+	{
+		try
+		{
+			executed = (*context->commandHandler)(luaCommand);
+		}
+		catch(const std::exception & e)
+		{
+			lua_pushfstring(state, "command '%s' failed: %s", command, e.what());
+			return lua_error(state);
+		}
+
+		if(!executed)
+		{
+			lua_pushfstring(state, "command '%s' failed", command);
+			return lua_error(state);
+		}
+	}
 
 	lua_newtable(state);
 	lua_pushboolean(state, true);
 	lua_setfield(state, -2, "ok");
-	lua_pushboolean(state, true);
+	lua_pushboolean(state, executed);
+	lua_setfield(state, -2, "executed");
+	lua_pushboolean(state, !executed);
 	lua_setfield(state, -2, "queued");
 	lua_pushinteger(state, static_cast<lua_Integer>(context->commands.size()));
 	lua_setfield(state, -2, "commandIndex");
@@ -312,6 +378,7 @@ LuaTurnResult LuaNullkiller2Runner::runDay(const std::function<void()> & endTurn
 
 	RunContext context;
 	context.endTurn = &endTurn;
+	context.commandHandler = input.commandHandler ? &input.commandHandler : nullptr;
 
 	openSafeLibraries(state);
 
@@ -341,6 +408,7 @@ LuaTurnResult LuaNullkiller2Runner::runDay(const std::function<void()> & endTurn
 	result.ok = true;
 	result.requestedEndTurn = context.requestedEndTurn;
 	result.commandCount = static_cast<int>(context.commands.size());
+	result.commands = std::move(context.commands);
 
 	lua_getfield(state, -1, "status");
 	if(lua_isstring(state, -1))

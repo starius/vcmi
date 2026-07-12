@@ -10,10 +10,18 @@
 #pragma once
 
 #include <functional>
+#include <map>
 #include <string>
+#include <vector>
 
 namespace LuaNullkiller2AI
 {
+
+struct LuaCommand
+{
+	std::string name;
+	std::map<std::string, int> integers;
+};
 
 struct LuaTurnResult
 {
@@ -22,11 +30,13 @@ struct LuaTurnResult
 	int commandCount = 0;
 	std::string status;
 	std::string error;
+	std::vector<LuaCommand> commands;
 };
 
 struct LuaRunInput
 {
 	int difficultyLevel = 1;
+	std::function<bool(const LuaCommand &)> commandHandler;
 };
 
 class LuaNullkiller2Runner
