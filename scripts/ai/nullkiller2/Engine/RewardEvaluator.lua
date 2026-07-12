@@ -6,6 +6,16 @@ RewardEvaluator.__index = RewardEvaluator
 local GOLD = 6
 local HERO_GOLD_COST = 2500
 local MINIMUM_STRATEGICAL_VALUE_NON_TOWN = 0.3
+local UNIVERSITY_GOLD_COST = 2000
+local CITADEL = 2
+local CASTLE = 3
+
+local CREATURE_GENERATORS = {
+	CREATURE_GENERATOR1 = true,
+	CREATURE_GENERATOR2 = true,
+	CREATURE_GENERATOR3 = true,
+	CREATURE_GENERATOR4 = true
+}
 
 function RewardEvaluator.new(aiNk)
 	return setmetatable({
@@ -42,6 +52,22 @@ local function resourceValue(resources, resType)
 	return resources[resType] or 0
 end
 
+local function resourceTable(resType, amount)
+	return {
+		[resourceID(resType)] = amount or 0
+	}
+end
+
+local function settings(aiNk)
+	return aiNk and aiNk.settings or {}
+end
+
+local function getFreeResources(aiNk)
+	return call(aiNk, "getFreeResources")
+		or aiNk and aiNk.freeResources
+		or {}
+end
+
 local function missingResourcesNow(aiNk)
 	return call(aiNk and aiNk.buildAnalyzer, "getMissingResourcesNow")
 		or aiNk and aiNk.missingResourcesNow
@@ -62,6 +88,18 @@ end
 
 local function objectType(object)
 	return object and (object.ID or object.objectType or object.type or object.typeName)
+end
+
+local function ownerOf(object)
+	return object and (object.tempOwner or object.owner)
+end
+
+local function playerID(aiNk)
+	return aiNk and (aiNk.playerID or aiNk.player)
+end
+
+local function isOwnedByPlayer(object, aiNk)
+	return ownerOf(object) ~= nil and ownerOf(object) == playerID(aiNk)
 end
 
 local function producedResource(object)
@@ -87,6 +125,24 @@ end
 
 local function isEnemies(relation)
 	return relation == "ENEMIES" or relation == 2
+end
+
+local function canAfford(resources, cost)
+	for resType = 0, GOLD do
+		if resourceValue(resources, resType) < resourceValue(cost, resType) then
+			return false
+		end
+	end
+	return true
+end
+
+local function canAffordCount(resources, cost, count)
+	for resType = 0, GOLD do
+		if resourceValue(resources, resType) < resourceValue(cost, resType) * (count or 1) then
+			return false
+		end
+	end
+	return true
 end
 
 local function stackCount(stack)
@@ -120,6 +176,122 @@ local function stacks(army)
 	return army.slots or army.stacks or {}
 end
 
+local function creatureValue(creature, key, fallback)
+	return creature and (creature[key] or call(creature, key)) or fallback
+end
+
+local function entryCreature(entry)
+	local ids = entry and (entry.creatures or entry.ids or entry[2])
+	if ids then
+		return ids[#ids]
+	end
+	return entry and (entry.creature or entry[1] and type(entry[1]) == "table" and entry[1] or nil)
+end
+
+local function creatureEntries(dwelling)
+	local result = {}
+	for _, entry in ipairs(dwelling and dwelling.creatures or {}) do
+		local creature = entryCreature(entry)
+		if creature then
+			table.insert(result, {
+				count = entry.count or entry.available or entry[1] or 0,
+				creature = creature,
+				growth = entry.growth or creature.growth or 0
+			})
+		end
+	end
+	return result
+end
+
+local function creatureAIValue(creature)
+	return creatureValue(creature, "aiValue", 0)
+		or creatureValue(creature, "value", 0)
+		or 0
+end
+
+local function creatureLevel(creature)
+	return creatureValue(creature, "level", 1) or 1
+end
+
+local function creatureGrowth(creature, fallback)
+	return creatureValue(creature, "growth", fallback or 0) or fallback or 0
+end
+
+local function creatureCost(creature)
+	return creature and (creature.fullRecruitCost or creature.cost) or {}
+end
+
+local function marketValue(cost)
+	if type(cost) == "number" then
+		return cost
+	end
+	if type(cost) == "table" and cost.marketValue then
+		return cost.marketValue
+	end
+	return RewardEvaluator.getResourcesGoldReward(cost)
+end
+
+local function getDwellingArmyValue(aiNk, dwelling, checkGold)
+	local score = 0
+	local resources = getFreeResources(aiNk)
+	for _, entry in ipairs(creatureEntries(dwelling)) do
+		if entry.count > 0 then
+			local creature = entry.creature
+			local creaturesAreFree = creatureLevel(creature) == 1
+			local cost = creatureCost(creature)
+			if creaturesAreFree or not checkGold or canAffordCount(resources, cost, entry.count) then
+				score = score + creatureAIValue(creature) * entry.count
+			end
+		end
+	end
+	return score
+end
+
+local function dwellingsAccumulateWhenOwned(aiNk)
+	local configured = call(settings(aiNk), "getBoolean", "DWELLINGS_ACCUMULATE_WHEN_OWNED")
+	if configured ~= nil then
+		return configured
+	end
+	if settings(aiNk).dwellingsAccumulateWhenOwned ~= nil then
+		return settings(aiNk).dwellingsAccumulateWhenOwned
+	end
+	return true
+end
+
+local function dayOfWeek(aiNk)
+	local calendar = aiNk and aiNk.calendar or {}
+	return calendar.dayOfWeek or 1
+end
+
+local function getDwellingArmyGrowth(aiNk, dwelling, hero)
+	if ownerOf(dwelling) == ownerOf(hero) then
+		return 0
+	end
+
+	local score = 0
+	for _, entry in ipairs(creatureEntries(dwelling)) do
+		local creature = entry.creature
+		score = score + creatureAIValue(creature) * creatureGrowth(creature, entry.growth)
+		if not dwellingsAccumulateWhenOwned(aiNk) then
+			score = score * dayOfWeek(aiNk)
+		end
+	end
+	return score
+end
+
+local function getDwellingArmyCost(dwelling)
+	local cost = 0
+	for _, entry in ipairs(creatureEntries(dwelling)) do
+		if entry.count > 0 then
+			local creature = entry.creature
+			if creatureLevel(creature) ~= 1 then
+				cost = cost + marketValue(creatureCost(creature)) * entry.count
+			end
+		end
+	end
+	return cost
+end
+
 local function estimateTownIncome(target, hero, aiNk)
 	local relation = relationToHero(target, hero, aiNk)
 	if not isEnemies(relation) then
@@ -143,6 +315,64 @@ local function estimateTownIncome(target, hero, aiNk)
 		return booster * booster * 500
 	end
 	return booster * 250
+end
+
+local function developmentInfoEmpty(aiNk)
+	if aiNk and aiNk.buildAnalyzer and type(aiNk.buildAnalyzer.getDevelopmentInfo) == "function" then
+		local info = aiNk.buildAnalyzer:getDevelopmentInfo()
+		return not info or #info == 0
+	end
+	return aiNk and aiNk.developmentInfoEmpty == true
+end
+
+local function dailyGoldIncome(target)
+	local income = call(target, "dailyIncome") or target and target.dailyIncome or {}
+	return resourceValue(income, GOLD)
+end
+
+local function enemyHeroStrategicalValue(target)
+	if target.enemyStrategicalValue ~= nil then
+		return target.enemyStrategicalValue
+	end
+	local objectValue = target.objectValueUnderThreat or 0
+	local level = target.level or 1
+	return math.min(1.5, objectValue * 0.9 + (1.5 - (1.5 / (1 + level))))
+end
+
+local function artifactArmyValue(artifact)
+	if not artifact then
+		return 0
+	end
+	if artifact.ID == "SPELL_SCROLL" or artifact.id == "SPELL_SCROLL" or artifact.spellScroll then
+		return 1500
+	end
+	return artifact.potentialScore or artifact.armyValue or artifact.score or 0
+end
+
+local function rewardArtifactsValue(reward)
+	local value = 0
+	for _, artifact in ipairs(reward.grantedArtifacts or reward.artifacts or {}) do
+		value = value + artifactArmyValue(artifact)
+	end
+	for _ in ipairs(reward.grantedScrolls or reward.scrolls or {}) do
+		value = value + 1500
+	end
+	return value
+end
+
+local function rewardCreaturesValue(reward)
+	local value = 0
+	for _, stack in ipairs(reward.creatures or {}) do
+		value = value + creatureAIValue(stack.creature or stack.type or stack) * (stack.count or stack[1] or 0)
+	end
+	return value
+end
+
+local function resolveTargetHeroArmyCheck(selfOrTarget, maybeTarget, maybeHero, maybeArmy, maybeCheckGold, maybeAiNk)
+	if selfOrTarget and selfOrTarget.aiNk ~= nil then
+		return maybeTarget, maybeHero, maybeArmy, maybeCheckGold, maybeAiNk or selfOrTarget.aiNk
+	end
+	return selfOrTarget, maybeTarget, maybeHero, maybeArmy, maybeCheckGold
 end
 
 function RewardEvaluator.getResourcesGoldReward(resources)
@@ -206,6 +436,122 @@ function RewardEvaluator.getArmyCost(selfOrArmy, maybeArmy)
 	return value
 end
 
+function RewardEvaluator.getManaRecoveryArmyReward(selfOrHero, maybeHero)
+	local hero = maybeHero or selfOrHero
+	local magicStrength = hero and (hero.magicStrength or call(hero, "getMagicStrength")) or 0
+	local mana = hero and (hero.mana or 0) or 0
+	local manaLimit = hero and (hero.manaLimit or hero.maxMana or 1) or 1
+	if manaLimit <= 0 then
+		return 0
+	end
+	return magicStrength * 10000 * (1.0 - math.sqrt(mana / manaLimit))
+end
+
+function RewardEvaluator.townArmyGrowth(selfOrTown, maybeTown)
+	local town = maybeTown or selfOrTown
+	local result = 0
+	for _, entry in ipairs(creatureEntries(town)) do
+		local creature = entry.creature
+		result = result + creatureAIValue(creature) * creatureGrowth(creature, entry.growth)
+	end
+	return result
+end
+
+function RewardEvaluator.getArmyReward(selfOrTarget, maybeTarget, maybeHero, maybeArmy, maybeCheckGold, maybeAiNk)
+	local target, hero, army, checkGold, aiNk = resolveTargetHeroArmyCheck(
+		selfOrTarget,
+		maybeTarget,
+		maybeHero,
+		maybeArmy,
+		maybeCheckGold,
+		maybeAiNk)
+	if not target then
+		return 0
+	end
+
+	local id = objectType(target)
+	if id == "HILL_FORT" then
+		return target.upgradeValue or army and army.upgradeValue or 0
+	elseif CREATURE_GENERATORS[id] then
+		return getDwellingArmyValue(aiNk, target, checkGold)
+	elseif id == "SPELL_SCROLL" then
+		return 1500
+	elseif id == "ARTIFACT" then
+		return artifactArmyValue(target.artifact or target)
+	elseif id == "HERO" then
+		return isEnemies(relationToHero(target, hero, aiNk)) and 0.5 * (target.armyStrength or target.totalStrength or 0) or 0
+	elseif id == "PANDORAS_BOX" then
+		return 5000
+	elseif id == "MAGIC_WELL" or id == "MAGIC_SPRING" then
+		return RewardEvaluator.getManaRecoveryArmyReward(hero)
+	end
+
+	local totalValue = 0
+	for _, reward in ipairs(target.rewards or {}) do
+		totalValue = totalValue + rewardArtifactsValue(reward) + rewardCreaturesValue(reward)
+	end
+	return totalValue
+end
+
+function RewardEvaluator.getArmyGrowth(selfOrTarget, maybeTarget, maybeHero, maybeArmy, maybeAiNk)
+	local target = selfOrTarget
+	local hero = maybeTarget
+	local aiNk = maybeArmy
+	if selfOrTarget and selfOrTarget.aiNk ~= nil then
+		target = maybeTarget
+		hero = maybeHero
+		aiNk = maybeAiNk or selfOrTarget.aiNk
+	end
+	if not target then
+		return 0
+	end
+	if not isEnemies(relationToHero(target, hero, aiNk)) then
+		return 0
+	end
+
+	local id = objectType(target)
+	if id == "TOWN" then
+		local fortLevel = target.fortLevel or 0
+		local neutral = ownerOf(target) == nil or ownerOf(target) == "NEUTRAL"
+		local booster = (target.controlledByAI or neutral) and 1 or 2
+		if fortLevel < CITADEL then
+			return target.hasFort and booster * 500 or 0
+		end
+		return booster * (fortLevel == CASTLE and 5000 or 2000)
+	elseif CREATURE_GENERATORS[id] then
+		return getDwellingArmyGrowth(aiNk, target, hero)
+	end
+	return 0
+end
+
+function RewardEvaluator.getGoldCost(selfOrTarget, maybeTarget, maybeHero, maybeArmy, maybeAiNk)
+	local target = selfOrTarget
+	local army = maybeHero
+	local aiNk = maybeArmy
+	if selfOrTarget and selfOrTarget.aiNk ~= nil then
+		target = maybeTarget
+		army = maybeHero
+		aiNk = maybeAiNk or selfOrTarget.aiNk
+	end
+	if not target then
+		return 0
+	end
+
+	if target.allowsResourceSkill or target.allowsTradeResourceSkill then
+		return settings(aiNk).marketsUniversityGoldCost or UNIVERSITY_GOLD_COST
+	end
+
+	local id = objectType(target)
+	if id == "HILL_FORT" then
+		return target.upgradeCostGold or army and army.upgradeCostGold or 0
+	elseif id == "SCHOOL_OF_MAGIC" or id == "SCHOOL_OF_WAR" then
+		return 1000
+	elseif CREATURE_GENERATORS[id] then
+		return getDwellingArmyCost(target)
+	end
+	return 0
+end
+
 function RewardEvaluator.getGoldReward(selfOrTarget, maybeTarget, maybeHero, maybeAiNk)
 	local target = selfOrTarget
 	local hero = maybeTarget
@@ -247,6 +593,84 @@ function RewardEvaluator.getGoldReward(selfOrTarget, maybeTarget, maybeHero, may
 		goldReward = goldReward + RewardEvaluator.getResourcesGoldReward(reward.resources)
 	end
 	return goldReward
+end
+
+function RewardEvaluator.getStrategicalValue(selfOrTarget, maybeTarget, maybeHero, maybeAiNk)
+	local target = selfOrTarget
+	local hero = maybeTarget
+	local aiNk = maybeHero
+	if selfOrTarget and selfOrTarget.aiNk ~= nil then
+		target = maybeTarget
+		hero = maybeHero
+		aiNk = maybeAiNk or selfOrTarget.aiNk
+	end
+	if not target then
+		return 0
+	end
+
+	local id = objectType(target)
+	if id == "MINE" then
+		return 1.0 + RewardEvaluator.getCombinedResourceRequirementStrength(aiNk, resourceTable(producedResource(target), target.producedQuantity or 1))
+	elseif id == "RESOURCE" then
+		return RewardEvaluator.getCombinedResourceRequirementStrength(aiNk, resourceTable(producedResource(target), target.amount or target.count or 1))
+	elseif id == "TOWN" then
+		if developmentInfoEmpty(aiNk) then
+			return 10.0
+		end
+		if isOwnedByPlayer(target, aiNk) then
+			return math.min(1.0, math.sqrt(RewardEvaluator.townArmyGrowth(target) / 40000.0))
+				+ math.min(0.3, dailyGoldIncome(target) / 10000.0)
+		end
+		local booster = target.controlledByAI and 0.4 or 1.0
+		local fortLevel = target.fortLevel or 0
+		if target.hasCapitol then
+			return booster * 1.5
+		end
+		if fortLevel < CITADEL then
+			return booster * (target.hasFort and 1.0 or 0.8)
+		end
+		return booster * (fortLevel == CASTLE and 1.4 or 1.2)
+	elseif id == "HERO" then
+		return isEnemies(relationToHero(target, hero or { owner = playerID(aiNk) }, aiNk)) and enemyHeroStrategicalValue(target) or 0
+	elseif id == "KEYMASTER" then
+		return 0.6
+	end
+
+	local resourceReward = 0.0
+	for _, reward in ipairs(target.rewards or {}) do
+		resourceReward = resourceReward + RewardEvaluator.getCombinedResourceRequirementStrength(aiNk, reward.resources)
+	end
+	return resourceReward
+end
+
+function RewardEvaluator.getConquestValue(selfOrTarget, maybeTarget, maybeAiNk)
+	local target = selfOrTarget
+	local aiNk = maybeTarget
+	if selfOrTarget and selfOrTarget.aiNk ~= nil then
+		target = maybeTarget
+		aiNk = maybeAiNk or selfOrTarget.aiNk
+	end
+	if not target or isOwnedByPlayer(target, aiNk) then
+		return 0
+	end
+
+	local id = objectType(target)
+	if id == "TOWN" then
+		if developmentInfoEmpty(aiNk) then
+			return 10.0
+		end
+		local fortLevel = target.fortLevel or 0
+		if target.hasCapitol then
+			return 1.5
+		end
+		if fortLevel < CITADEL then
+			return target.hasFort and 1.0 or 0.8
+		end
+		return fortLevel == CASTLE and 1.4 or 1.2
+	elseif id == "HERO" then
+		return isEnemies(relationToHero(target, { owner = playerID(aiNk) }, aiNk)) and enemyHeroStrategicalValue(target) or 0
+	end
+	return 0
 end
 
 RewardEvaluator.GOLD = GOLD

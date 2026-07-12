@@ -5,9 +5,18 @@ local function almostEquals(lhs, rhs)
 end
 
 local aiNk = {
+	playerID = 1,
 	missingResourcesNow = { [0] = 2, [1] = 0, [6] = 500 },
 	missingResourcesInTotal = { [0] = 0, [1] = 3, [6] = 500 },
-	dailyIncome = { [0] = 1, [1] = 0, [6] = 1000 }
+	dailyIncome = { [0] = 1, [1] = 0, [6] = 1000 },
+	freeResources = { [6] = 300 },
+	settings = {
+		marketsUniversityGoldCost = 2000,
+		dwellingsAccumulateWhenOwned = false
+	},
+	calendar = {
+		dayOfWeek = 3
+	}
 }
 
 assert(RewardEvaluator.getResourcesGoldReward({ [0] = 2, [3] = 1, [6] = 500 }) == 800)
@@ -29,8 +38,24 @@ local army = {
 }
 assert(RewardEvaluator.getArmyCost(army) == 880)
 assert(evaluator:getArmyCost(army) == 880)
+assert(almostEquals(evaluator:getManaRecoveryArmyReward({ magicStrength = 2, mana = 25, manaLimit = 100 }), 10000))
 
 local hero = { owner = 1, tempOwner = 1 }
+local dwelling = {
+	ID = "CREATURE_GENERATOR1",
+	owner = 2,
+	creatures = {
+		{ 5, { { aiValue = 20, level = 2, fullRecruitCost = { [6] = 100 }, growth = 3 } } },
+		{ 2, { { aiValue = 10, level = 1, fullRecruitCost = { [6] = 50 }, growth = 4 } } }
+	}
+}
+assert(evaluator:getArmyReward(dwelling, hero, nil, false) == 120)
+assert(evaluator:getArmyReward(dwelling, hero, nil, true) == 20)
+assert(evaluator:getArmyGrowth(dwelling, hero) == 660)
+assert(evaluator:getGoldCost(dwelling, hero) == 500)
+assert(evaluator:getGoldCost({ ID = "SCHOOL_OF_MAGIC" }, hero) == 1000)
+assert(evaluator:getGoldCost({ ID = "MARKET", allowsResourceSkill = true }, hero) == 2000)
+
 assert(RewardEvaluator.getGoldReward({ ID = "RESOURCE", resourceID = 6 }, hero, aiNk) == 600)
 assert(evaluator:getGoldReward({ ID = "RESOURCE", resourceID = 6 }, hero) == 600)
 assert(RewardEvaluator.getGoldReward({ ID = "RESOURCE", resourceID = 0 }, hero, aiNk) == 100)
@@ -59,6 +84,32 @@ assert(RewardEvaluator.getGoldReward({
 	hasCapitol = true
 }, hero, aiNk) == 0)
 
+assert(almostEquals(evaluator:getStrategicalValue({
+	ID = "MINE",
+	producedResource = 0,
+	producedQuantity = 2
+}), 1.3))
+assert(almostEquals(evaluator:getStrategicalValue({
+	ID = "RESOURCE",
+	resourceID = 1,
+	amount = 3
+}), 0.3))
+assert(evaluator:getStrategicalValue({
+	ID = "TOWN",
+	owner = 2,
+	fortLevel = 3
+}) == 1.4)
+assert(evaluator:getConquestValue({
+	ID = "TOWN",
+	owner = 2,
+	fortLevel = 2
+}) == 1.2)
+assert(evaluator:getConquestValue({
+	ID = "TOWN",
+	owner = 1,
+	fortLevel = 3
+}) == 0)
+
 assert(almostEquals(RewardEvaluator.getGoldReward({
 	ID = "HERO",
 	owner = 2,
@@ -66,6 +117,22 @@ assert(almostEquals(RewardEvaluator.getGoldReward({
 		{ count = 10, marketValue = 100 }
 	}
 }, hero, aiNk), 1450))
+assert(almostEquals(evaluator:getArmyReward({
+	ID = "HERO",
+	owner = 2,
+	armyStrength = 8000
+}, hero), 4000))
+assert(almostEquals(evaluator:getStrategicalValue({
+	ID = "HERO",
+	owner = 2,
+	level = 4,
+	objectValueUnderThreat = 1
+}, hero), 1.5))
+assert(almostEquals(evaluator:getConquestValue({
+	ID = "HERO",
+	owner = 2,
+	level = 1
+}), 0.75))
 
 assert(RewardEvaluator.getGoldReward({
 	ID = "HERO",
@@ -82,3 +149,22 @@ assert(RewardEvaluator.getGoldReward({
 		{ resources = { [6] = 300 } }
 	}
 }, hero, aiNk) == 500)
+assert(evaluator:getArmyReward({
+	ID = "REWARDABLE",
+	rewards = {
+		{
+			grantedArtifacts = { { potentialScore = 700 } },
+			grantedScrolls = { 1 },
+			creatures = {
+				{ creature = { aiValue = 30 }, count = 4 }
+			}
+		}
+	}
+}, hero) == 2320)
+assert(almostEquals(evaluator:getStrategicalValue({
+	ID = "REWARDABLE",
+	rewards = {
+		{ resources = { [0] = 1 } },
+		{ resources = { [6] = 100 } }
+	}
+}, hero), 0.6))
