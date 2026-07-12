@@ -1,0 +1,209 @@
+{
+  "schema": "LuaNullkiller2.nativeDecisionTrace.v1",
+  "source": "Nullkiller2",
+  "compareMode": "exact",
+  "compare": [
+    "status"
+  ],
+  "decisions": [
+    {
+      "id": "available-creatures",
+      "function": "availableCreaturesChanged",
+      "input": {
+        "dwelling": {
+          "id": 1001,
+          "typeID": 17
+        }
+      },
+      "native": {
+        "status": "available_creatures_changed"
+      }
+    },
+    {
+      "id": "hero-in-garrison",
+      "function": "heroInGarrisonChange",
+      "input": {
+        "town": {
+          "id": 1002,
+          "typeID": 98
+        }
+      },
+      "native": {
+        "status": "hero_in_garrison_change"
+      }
+    },
+    {
+      "id": "available-artifacts",
+      "function": "availableArtifactsChanged",
+      "input": {
+        "hasBlackMarket": true,
+        "blackMarket": {
+          "id": 1003,
+          "typeID": 5
+        }
+      },
+      "native": {
+        "status": "available_artifacts_changed"
+      }
+    },
+    {
+      "id": "hero-visits-town",
+      "function": "heroVisitsTown",
+      "input": {
+        "hero": {
+          "id": 2001,
+          "level": 12
+        },
+        "town": {
+          "id": 1004,
+          "typeID": 98
+        }
+      },
+      "native": {
+        "status": "hero_visits_town"
+      }
+    },
+    {
+      "id": "hero-experience",
+      "function": "heroExperienceChanged",
+      "input": {
+        "hero": {
+          "id": 2001,
+          "level": 12
+        },
+        "value": 1500
+      },
+      "native": {
+        "status": "hero_experience_changed"
+      }
+    },
+    {
+      "id": "hero-primary-skill",
+      "function": "heroPrimarySkillChanged",
+      "input": {
+        "hero": {
+          "id": 2001,
+          "level": 12
+        },
+        "skill": 0,
+        "value": 7
+      },
+      "native": {
+        "status": "hero_primary_skill_changed"
+      }
+    },
+    {
+      "id": "hero-move-points",
+      "function": "heroMovePointsChanged",
+      "input": {
+        "hero": {
+          "id": 2001,
+          "level": 12
+        }
+      },
+      "native": {
+        "status": "hero_move_points_changed"
+      }
+    },
+    {
+      "id": "garrisons-changed",
+      "function": "garrisonsChanged",
+      "input": {
+        "id1": 1004,
+        "id2": 2001
+      },
+      "native": {
+        "status": "garrisons_changed"
+      }
+    },
+    {
+      "id": "player-bonus",
+      "function": "playerBonusChanged",
+      "input": {
+        "gain": true
+      },
+      "native": {
+        "status": "player_bonus_changed"
+      }
+    },
+    {
+      "id": "advmap-spell-cast",
+      "function": "advmapSpellCast",
+      "input": {
+        "caster": {
+          "id": 2001,
+          "level": 12
+        },
+        "spell": 18
+      },
+      "native": {
+        "status": "advmap_spell_cast"
+      }
+    },
+    {
+      "id": "received-resource",
+      "function": "receivedResource",
+      "input": {},
+      "native": {
+        "status": "received_resource"
+      }
+    },
+    {
+      "id": "hero-mana",
+      "function": "heroManaPointsChanged",
+      "input": {
+        "hero": {
+          "id": 2001,
+          "level": 12
+        }
+      },
+      "native": {
+        "status": "hero_mana_points_changed"
+      }
+    },
+    {
+      "id": "hero-secondary-skill",
+      "function": "heroSecondarySkillChanged",
+      "input": {
+        "hero": {
+          "id": 2001,
+          "level": 12
+        },
+        "skill": 6,
+        "value": 3
+      },
+      "native": {
+        "status": "hero_secondary_skill_changed"
+      }
+    },
+    {
+      "id": "build-changed",
+      "function": "buildChanged",
+      "input": {
+        "town": {
+          "id": 1004,
+          "typeID": 98
+        },
+        "building": 8,
+        "what": 1
+      },
+      "native": {
+        "status": "build_changed"
+      }
+    },
+    {
+      "id": "hero-bonus",
+      "function": "heroBonusChanged",
+      "input": {
+        "hero": {
+          "id": 2001,
+          "level": 12
+        },
+        "gain": false
+      },
+      "native": {
+        "status": "hero_bonus_changed"
+      }
+    }
+  ]
+}

@@ -560,6 +560,16 @@ AIGateway::~AIGateway()
 void AIGateway::availableCreaturesChanged(const CGDwelling * town)
 {
 	LOG_TRACE(logAi);
+	JsonNode input = emptyInput();
+	const auto * object = dynamic_cast<const CGObjectInstance *>(town);
+	if(object)
+		input["dwelling"] = objectReferenceSnapshot(object);
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		boost::str(boost::format("availableCreaturesChanged.%d") % (object ? object->id.getNum() : -1)),
+		"availableCreaturesChanged",
+		std::move(input),
+		"available_creatures_changed");
 }
 
 void AIGateway::heroMoved(const TryMoveHero & details, bool verbose)
@@ -608,6 +618,15 @@ void AIGateway::heroMoved(const TryMoveHero & details, bool verbose)
 void AIGateway::heroInGarrisonChange(const CGTownInstance * town)
 {
 	LOG_TRACE(logAi);
+	JsonNode input = emptyInput();
+	if(town)
+		input["town"] = objectReferenceSnapshot(town);
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		boost::str(boost::format("heroInGarrisonChange.%d") % (town ? town->id.getNum() : -1)),
+		"heroInGarrisonChange",
+		std::move(input),
+		"hero_in_garrison_change");
 }
 
 void AIGateway::centerView(int3 pos, int focusTime)
@@ -798,11 +817,33 @@ void AIGateway::heroVisit(const CGHeroInstance * visitor, const CGObjectInstance
 void AIGateway::availableArtifactsChanged(const CGBlackMarket * bm)
 {
 	LOG_TRACE(logAi);
+	JsonNode input = emptyInput();
+	input["hasBlackMarket"].Bool() = bm != nullptr;
+	const auto * object = dynamic_cast<const CGObjectInstance *>(bm);
+	if(object)
+		input["blackMarket"] = objectReferenceSnapshot(object);
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		boost::str(boost::format("availableArtifactsChanged.%d") % (object ? object->id.getNum() : -1)),
+		"availableArtifactsChanged",
+		std::move(input),
+		"available_artifacts_changed");
 }
 
 void AIGateway::heroVisitsTown(const CGHeroInstance * hero, const CGTownInstance * town)
 {
 	LOG_TRACE(logAi);
+	JsonNode input = emptyInput();
+	if(hero)
+		input["hero"] = heroReferenceSnapshot(hero);
+	if(town)
+		input["town"] = objectReferenceSnapshot(town);
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		boost::str(boost::format("heroVisitsTown.%d.%d") % (hero ? hero->id.getNum() : -1) % (town ? town->id.getNum() : -1)),
+		"heroVisitsTown",
+		std::move(input),
+		"hero_visits_town");
 }
 
 void AIGateway::tileHidden(const FowTilesType & pos)
@@ -872,11 +913,37 @@ void AIGateway::heroExchangeStarted(ObjectInstanceID hero1, ObjectInstanceID her
 void AIGateway::heroExperienceChanged(const CGHeroInstance * hero, si64 val)
 {
 	LOG_TRACE_PARAMS(logAi, "val '%i'", val);
+	JsonNode input = emptyInput();
+	input["value"].Integer() = static_cast<int64_t>(val);
+	if(hero)
+		input["hero"] = heroReferenceSnapshot(hero);
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		boost::str(boost::format("heroExperienceChanged.%d.%d") % (hero ? hero->id.getNum() : -1) % val),
+		"heroExperienceChanged",
+		std::move(input),
+		"hero_experience_changed");
 }
 
 void AIGateway::heroPrimarySkillChanged(const CGHeroInstance * hero, PrimarySkill which, si64 val)
 {
 	LOG_TRACE_PARAMS(logAi, "which '%i', val '%i'", which.getNum() % val);
+	JsonNode input = emptyInput();
+	input["skill"].Integer() = which.getNum();
+	input["value"].Integer() = static_cast<int64_t>(val);
+	if(hero)
+		input["hero"] = heroReferenceSnapshot(hero);
+	const auto id = boost::str(
+		boost::format("heroPrimarySkillChanged.%d.%d.%d")
+		% (hero ? hero->id.getNum() : -1)
+		% which.getNum()
+		% val);
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		id,
+		"heroPrimarySkillChanged",
+		std::move(input),
+		"hero_primary_skill_changed");
 }
 
 void AIGateway::showRecruitmentDialog(const CGDwelling * dwelling, const CArmedInstance * dst, int level, QueryID queryID)
@@ -893,11 +960,29 @@ void AIGateway::showRecruitmentDialog(const CGDwelling * dwelling, const CArmedI
 void AIGateway::heroMovePointsChanged(const CGHeroInstance * hero)
 {
 	LOG_TRACE(logAi);
+	JsonNode input = emptyInput();
+	if(hero)
+		input["hero"] = heroReferenceSnapshot(hero);
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		boost::str(boost::format("heroMovePointsChanged.%d") % (hero ? hero->id.getNum() : -1)),
+		"heroMovePointsChanged",
+		std::move(input),
+		"hero_move_points_changed");
 }
 
 void AIGateway::garrisonsChanged(ObjectInstanceID id1, ObjectInstanceID id2)
 {
 	LOG_TRACE(logAi);
+	JsonNode input = emptyInput();
+	input["id1"].Integer() = id1.getNum();
+	input["id2"].Integer() = id2.getNum();
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		boost::str(boost::format("garrisonsChanged.%d.%d") % id1.getNum() % id2.getNum()),
+		"garrisonsChanged",
+		std::move(input),
+		"garrisons_changed");
 }
 
 void AIGateway::newObject(const CGObjectInstance * obj)
@@ -955,6 +1040,14 @@ void AIGateway::showHillFortWindow(const CGObjectInstance * object, const CGHero
 void AIGateway::playerBonusChanged(const Bonus & bonus, bool gain)
 {
 	LOG_TRACE_PARAMS(logAi, "gain '%i'", gain);
+	JsonNode input = emptyInput();
+	input["gain"].Bool() = gain;
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		boost::str(boost::format("playerBonusChanged.%d") % gain),
+		"playerBonusChanged",
+		std::move(input),
+		"player_bonus_changed");
 }
 
 void AIGateway::heroCreated(const CGHeroInstance * h)
@@ -966,6 +1059,16 @@ void AIGateway::heroCreated(const CGHeroInstance * h)
 void AIGateway::advmapSpellCast(const CGHeroInstance * caster, SpellID spellID)
 {
 	LOG_TRACE_PARAMS(logAi, "spellID '%i", spellID);
+	JsonNode input = emptyInput();
+	input["spell"].Integer() = spellID.getNum();
+	if(caster)
+		input["caster"] = heroReferenceSnapshot(caster);
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		boost::str(boost::format("advmapSpellCast.%d.%d") % (caster ? caster->id.getNum() : -1) % spellID.getNum()),
+		"advmapSpellCast",
+		std::move(input),
+		"advmap_spell_cast");
 }
 
 void AIGateway::showInfoDialog(EInfoWindowMode type, const std::string & text, const std::vector<Component> & components, int soundID)
@@ -1005,6 +1108,12 @@ void AIGateway::requestRealized(PackageApplied * pa)
 void AIGateway::receivedResource()
 {
 	LOG_TRACE(logAi);
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		"receivedResource",
+		"receivedResource",
+		emptyInput(),
+		"received_resource");
 }
 
 void AIGateway::showUniversityWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID)
@@ -1022,11 +1131,31 @@ void AIGateway::showUniversityWindow(const IMarket * market, const CGHeroInstanc
 void AIGateway::heroManaPointsChanged(const CGHeroInstance * hero)
 {
 	LOG_TRACE(logAi);
+	JsonNode input = emptyInput();
+	if(hero)
+		input["hero"] = heroReferenceSnapshot(hero);
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		boost::str(boost::format("heroManaPointsChanged.%d") % (hero ? hero->id.getNum() : -1)),
+		"heroManaPointsChanged",
+		std::move(input),
+		"hero_mana_points_changed");
 }
 
 void AIGateway::heroSecondarySkillChanged(const CGHeroInstance * hero, int which, int val)
 {
 	LOG_TRACE_PARAMS(logAi, "which '%d', val '%d'", which % val);
+	JsonNode input = emptyInput();
+	input["skill"].Integer() = which;
+	input["value"].Integer() = val;
+	if(hero)
+		input["hero"] = heroReferenceSnapshot(hero);
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		boost::str(boost::format("heroSecondarySkillChanged.%d.%d.%d") % (hero ? hero->id.getNum() : -1) % which % val),
+		"heroSecondarySkillChanged",
+		std::move(input),
+		"hero_secondary_skill_changed");
 }
 
 void AIGateway::battleResultsApplied()
@@ -1079,11 +1208,32 @@ void AIGateway::objectPropertyChanged(const SetObjectProperty * sop)
 void AIGateway::buildChanged(const CGTownInstance * town, BuildingID buildingID, int what)
 {
 	LOG_TRACE_PARAMS(logAi, "what '%i'", what);
+	JsonNode input = emptyInput();
+	input["building"].Integer() = buildingID.getNum();
+	input["what"].Integer() = what;
+	if(town)
+		input["town"] = objectReferenceSnapshot(town);
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		boost::str(boost::format("buildChanged.%d.%d.%d") % (town ? town->id.getNum() : -1) % buildingID.getNum() % what),
+		"buildChanged",
+		std::move(input),
+		"build_changed");
 }
 
 void AIGateway::heroBonusChanged(const CGHeroInstance * hero, const Bonus & bonus, bool gain)
 {
 	LOG_TRACE_PARAMS(logAi, "gain '%i'", gain);
+	JsonNode input = emptyInput();
+	input["gain"].Bool() = gain;
+	if(hero)
+		input["hero"] = heroReferenceSnapshot(hero);
+	recordStatusNativeTrace(
+		nativeTrace.get(),
+		boost::str(boost::format("heroBonusChanged.%d.%d") % (hero ? hero->id.getNum() : -1) % gain),
+		"heroBonusChanged",
+		std::move(input),
+		"hero_bonus_changed");
 }
 
 void AIGateway::showMarketWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID)
