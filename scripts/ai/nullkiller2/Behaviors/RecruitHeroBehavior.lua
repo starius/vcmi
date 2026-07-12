@@ -111,10 +111,16 @@ end
 local function freeGold(aiNk)
 	if aiNk and type(aiNk.getFreeResources) == "function" then
 		local resources = aiNk:getFreeResources()
-		return resources[6] or resources[7] or 0
+		if resources[0] == nil and resources[7] ~= nil then
+			return resources[7] or 0
+		end
+		return resources[6] or 0
 	end
 	local freeResources = aiNk and aiNk.freeResources or {}
-	return freeResources[6] or freeResources[7] or aiNk and aiNk.freeGold or 0
+	if freeResources[0] == nil and freeResources[7] ~= nil then
+		return freeResources[7] or 0
+	end
+	return freeResources[6] or aiNk and aiNk.freeGold or 0
 end
 
 local function isGoldPressureOverMax(aiNk)

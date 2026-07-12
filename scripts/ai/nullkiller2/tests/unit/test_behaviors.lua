@@ -54,6 +54,40 @@ assert(bestChoice.hero == strongHero)
 assert(bestChoice.town == town)
 assert(bestChoice.defensiveEmergency == true)
 
+local vectorGoldRecruitTasks = RecruitHeroBehavior.new():decompose({
+	townsInfo = {
+		{
+			id = 22,
+			name = "VectorGoldTown",
+			factionID = 1,
+			townLevel = 1,
+			canRecruitHero = true,
+			availableHeroes = {
+				{
+					id = 23,
+					name = "VectorGoldHero",
+					armyCost = 100,
+					totalStrength = 1000,
+					evaluateHeroScore = 10,
+					factionID = 1
+				}
+			}
+		}
+	},
+	heroesInfo = {
+		{ id = 24, name = "ExistingHero" }
+	},
+	freeResources = { [1] = 0, [2] = 0, [3] = 0, [4] = 0, [5] = 0, [6] = 0, [7] = 30001 },
+	heroManager = {},
+	dangerHitMap = {},
+	objectClusterizer = {
+		getNearbyObjects = function()
+			return {}
+		end
+	}
+})
+assert(#vectorGoldRecruitTasks == 1)
+
 local aiNk = {
 	townsInfo = {
 		{
