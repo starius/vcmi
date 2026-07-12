@@ -218,10 +218,12 @@ assert(recruitment[1].level == 0)
 assert(recruitment[1].creature.id == 402)
 assert(recruitment[1].count == 4)
 
-local function movementArtifact(id, movementBonus)
+local function movementArtifact(id, movementBonus, options)
+	options = options or {}
 	return {
 		id = id,
-		possibleSlots = { 0 },
+		possibleSlots = options.possibleSlots or { 0 },
+		deniedSlots = options.deniedSlots,
 		exportedBonuses = movementBonus and {
 			{
 				type = "MOVEMENT",
@@ -278,3 +280,34 @@ assert(swapJournal[1].sourceSlot == 19)
 assert(swapJournal[1].destinationHero == swapHero)
 assert(swapJournal[1].destinationSlot == 0)
 assert(swapHero.artifactsWorn[1].artifact.id == 603)
+
+local fallbackHero = {
+	id = 503,
+	artifactsWorn = {
+		{
+			slot = 0,
+			artifact = movementArtifact(604, 1, {
+				possibleSlots = {},
+				deniedSlots = { [1] = true }
+			})
+		}
+	}
+}
+local fallbackOtherHero = {
+	id = 504,
+	artifactsWorn = {
+		{ slot = 1, artifact = movementArtifact(605, 50) }
+	}
+}
+local fallbackJournal, fallbackGateway = artifactJournal()
+assert(GatewayPolicy.pickBestArtifacts(fallbackGateway, fallbackHero, fallbackOtherHero) == 2)
+assert(#fallbackJournal == 2)
+assert(fallbackJournal[1].sourceHero == fallbackHero)
+assert(fallbackJournal[1].sourceSlot == 0)
+assert(fallbackJournal[1].destinationHero == fallbackOtherHero)
+assert(fallbackJournal[1].destinationSlot == 19)
+assert(fallbackJournal[2].sourceHero == fallbackOtherHero)
+assert(fallbackJournal[2].sourceSlot == 1)
+assert(fallbackJournal[2].destinationHero == fallbackHero)
+assert(fallbackJournal[2].destinationSlot == 0)
+assert(fallbackHero.artifactsWorn[1].artifact.id == 605)

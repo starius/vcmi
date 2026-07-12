@@ -611,6 +611,17 @@ local function swapArtifacts(aiGw, sourceHero, sourceSlot, destinationHero, dest
 	applyArtifactSwap(sourceHero, sourceSlot, destinationHero, destinationSlot)
 end
 
+local function moveBetterArtifactToSlot(aiGw, location, target, slot, otherArtifact)
+	if artifactCanBePutAt(otherArtifact, location.hero, location.slot) then
+		swapArtifacts(aiGw, location.hero, location.slot, target, slot)
+		return 1
+	end
+
+	swapArtifacts(aiGw, target, slot, location.hero, BACKPACK_START)
+	swapArtifacts(aiGw, location.hero, location.slot, target, slot)
+	return 2
+end
+
 local function equipArtifactsForTarget(aiGw, hero, otherHero, giveStuffToFirstHero)
 	local target = (giveStuffToFirstHero or not otherHero) and hero or otherHero
 	local swapped = {}
@@ -648,9 +659,8 @@ local function equipArtifactsForTarget(aiGw, hero, otherHero, giveStuffToFirstHe
 							local right = artifactInstanceID(otherArtifact)
 							local swapKey = tostring(math.min(left or 0, right or 0)) .. ":" .. tostring(math.max(left or 0, right or 0))
 							if not swapped[swapKey] then
-								swapArtifacts(aiGw, location.hero, location.slot, target, slot)
+								commandCount = commandCount + moveBetterArtifactToSlot(aiGw, location, target, slot, otherArtifact)
 								swapped[swapKey] = true
-								commandCount = commandCount + 1
 								changeMade = true
 							end
 							break

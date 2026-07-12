@@ -923,7 +923,7 @@
         "getArtifactBonusRelevance",
         "getArtifactScoreForHero"
       ],
-      "notes": "Hero-specific artifact relevance and equipped-artifact score formulas are Lua-owned against hero slot, stack bonus, spellbook, and artifact bonus snapshots. GatewayPolicy now has first-pass artifact equip/swap sequencing against hero artifact snapshots; broader AIUtility helper coverage, richer artifact snapshots, and combined-artifact fallback moves remain pending."
+      "notes": "Hero-specific artifact relevance and equipped-artifact score formulas are Lua-owned against hero slot, stack bonus, spellbook, and artifact bonus snapshots. GatewayPolicy now has first-pass artifact equip/swap sequencing against hero artifact snapshots, including displaced-artifact backpack fallback when a direct swap is illegal; broader AIUtility helper coverage, richer artifact snapshots, and full combined-artifact legality data remain pending."
     },
     {
       "cpp": "AI/Nullkiller2/Helpers/ExplorationHelper.cpp",
@@ -996,7 +996,7 @@
         "AIGateway::recruitCreatures",
         "AIGateway::pickBestArtifacts"
       ],
-      "notes": "Dialog choice, teleport selection/probing, garrison-use, map-object selection, retreat, hero-exchange direction, upgrade choice, dwelling recruitment, army-transfer, and first-pass artifact equip/swap policies are Lua-owned against snapshots. Target-object state is wired through the host for map-object selection answers; richer live artifact snapshots, combined-artifact fallback moves, remaining callback wiring, and validator breadth remain pending."
+      "notes": "Dialog choice, teleport selection/probing, garrison-use, map-object selection, retreat, hero-exchange direction, upgrade choice, dwelling recruitment, army-transfer, and first-pass artifact equip/swap policies are Lua-owned against snapshots. Artifact replacement includes the displaced-artifact backpack fallback when a direct swap is illegal. Target-object state is wired through the host for map-object selection answers; richer live artifact snapshots, full combined-artifact legality data, remaining callback wiring, and validator breadth remain pending."
     },
     {
       "cpp": null,
