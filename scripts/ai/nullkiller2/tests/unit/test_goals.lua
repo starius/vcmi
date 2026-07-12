@@ -6,12 +6,14 @@ local BuyArmy = require("Goals.BuyArmy")
 local CaptureObject = require("Goals.CaptureObject")
 local DigAtTile = require("Goals.DigAtTile")
 local DismissHero = require("Goals.DismissHero")
+local ExchangeSwapTownHeroes = require("Goals.ExchangeSwapTownHeroes")
 local ExecuteHeroChain = require("Goals.ExecuteHeroChain")
 local ExploreNeighbourTile = require("Goals.ExploreNeighbourTile")
 local Goals = require("Goals.Goals")
 local Invalid = require("Goals.Invalid")
 local RecruitHero = require("Goals.RecruitHero")
 local SaveResources = require("Goals.SaveResources")
+local State = require("Engine.State")
 local StayAtTown = require("Goals.StayAtTown")
 local Trade = require("Goals.Trade")
 
@@ -229,6 +231,66 @@ assert(upgradeOnlyResult.upgradeSuccessful == true)
 assert(upgraded.army == upgradeOnlyTown.upperArmy)
 assert(upgraded.slot == 4)
 assert(upgraded.creature.id == 303)
+
+local exchangeTown = {
+	id = 330,
+	name = "Exchange Town",
+	visitablePos = { x = 7, y = 8, z = 0 },
+	visitingHero = {
+		id = 331,
+		name = "Visitor",
+		upgradeSlots = {
+			{
+				slot = 2,
+				stack = { count = 3, aiValue = 5 },
+				upgradeInfo = {
+					availableUpgrades = {
+						{ id = 332, aiValue = 9, cost = { gold = 10 } }
+					}
+				}
+			}
+		}
+	},
+	upperArmy = { id = 333, stacksCount = 0 },
+	upgradeSlots = {
+		{
+			slot = 1,
+			stack = { count = 5, aiValue = 10 },
+			upgradeInfo = {
+				availableUpgrades = {
+					{ id = 334, aiValue = 20, cost = { gold = 10 } }
+				}
+			}
+		}
+	}
+}
+local targetGarrison = { id = 335, name = "Defender" }
+local exchangeLog = {}
+ExchangeSwapTownHeroes.new(exchangeTown, targetGarrison, State.HeroLockedReason.DEFENCE):accept({
+	freeResources = { gold = 1000 },
+	swapGarrisonHero = function(_, townArg)
+		table.insert(exchangeLog, "swap:" .. townArg.id)
+	end,
+	upgradeCreature = function(_, army, slot, creature)
+		table.insert(exchangeLog, "upgrade:" .. army.id .. ":" .. slot .. ":" .. creature.id)
+	end,
+	executeHeroChain = function(_, path, objid)
+		table.insert(exchangeLog, "move:" .. path.targetHero.id .. ":" .. objid .. ":" .. path.targetTile.x)
+	end,
+	lockHero = function(_, hero, reason)
+		table.insert(exchangeLog, "lock:" .. hero.id .. ":" .. reason)
+	end,
+	unlockHero = function(_, hero)
+		table.insert(exchangeLog, "unlock:" .. hero.id)
+	end
+})
+assert(exchangeLog[1] == "swap:330")
+assert(exchangeLog[2] == "upgrade:330:1:334")
+assert(exchangeLog[3] == "move:335:330:7")
+assert(exchangeLog[4] == "swap:330")
+assert(exchangeLog[5] == "lock:335:" .. State.HeroLockedReason.DEFENCE)
+assert(exchangeLog[6] == "unlock:331")
+assert(exchangeLog[7] == "upgrade:331:2:332")
 
 assert(Goals.Invalid == Invalid)
 assert(Goals.BuildThis == BuildThis)

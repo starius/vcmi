@@ -2,6 +2,7 @@
 
 local AbstractGoal = require("Goals.AbstractGoal")
 local CGoal = require("Goals.CGoal")
+local GatewayPolicy = require("Actions.GatewayPolicy")
 local State = require("Engine.State")
 
 local ExchangeSwapTownHeroes = CGoal.derive(
@@ -57,6 +58,42 @@ local function upperArmy(town)
 		return town:getUpperArmy()
 	end
 	return town.upperArmy or town
+end
+
+local function resources(aiGw)
+	if aiGw and type(aiGw.getFreeResources) == "function" then
+		return aiGw:getFreeResources()
+	end
+	return aiGw and (aiGw.freeResources or aiGw.resources) or {}
+end
+
+local function upgradeSlots(army)
+	if not army then
+		return {}
+	end
+	if type(army.getUpgradeSlots) == "function" then
+		return army:getUpgradeSlots()
+	end
+	return army.upgradeSlots or {}
+end
+
+local function makePossibleUpgrades(aiGw, army)
+	local upgraded = false
+	for _, entry in ipairs(upgradeSlots(army)) do
+		local stack = entry.stack or entry
+		local slot = entry.slot or stack.slot
+		local upgradeInfo = entry.upgradeInfo or entry
+		local upgrade = GatewayPolicy.chooseUpgrade(upgradeInfo, stack, resources(aiGw))
+		if upgrade then
+			if aiGw and type(aiGw.upgradeCreature) == "function" then
+				aiGw:upgradeCreature(army, slot, upgrade.creature)
+				upgraded = true
+			else
+				error("No creature upgrade command target.", 2)
+			end
+		end
+	end
+	return upgraded
 end
 
 local function stacks(army)
@@ -142,6 +179,8 @@ function ExchangeSwapTownHeroes:accept(aiGw)
 		end
 
 		aiGw:swapGarrisonHero(self.town)
+		makePossibleUpgrades(aiGw, currentGarrisonHero)
+		makePossibleUpgrades(aiGw, self.town)
 		if type(aiGw.unlockHero) == "function" then
 			aiGw:unlockHero(currentGarrisonHero)
 		end
@@ -154,6 +193,8 @@ function ExchangeSwapTownHeroes:accept(aiGw)
 	if visitingHero(self.town) and not sameObject(visitingHero(self.town), targetGarrisonHero) then
 		aiGw:swapGarrisonHero(self.town)
 	end
+
+	makePossibleUpgrades(aiGw, self.town)
 
 	local targetTile = visitablePos(self.town)
 	if targetTile and type(aiGw.executeHeroChain) == "function" then
@@ -185,6 +226,7 @@ function ExchangeSwapTownHeroes:accept(aiGw)
 
 	if visitingHero(self.town) and not sameObject(visitingHero(self.town), targetGarrisonHero) and type(aiGw.unlockHero) == "function" then
 		aiGw:unlockHero(visitingHero(self.town))
+		makePossibleUpgrades(aiGw, visitingHero(self.town))
 	end
 
 	return {
