@@ -11,6 +11,10 @@ local host = {
 local adapter = HostCommands.new(host)
 local lockedHeroes = {}
 local targetObject = nil
+local activeHero = nil
+local activeTile = nil
+local pathfinderInvalidated = false
+local objectClusterizerReset = false
 adapter.nullkiller = {
 	lockHero = function(_, hero, reason)
 		lockedHeroes[hero.id] = reason
@@ -20,7 +24,19 @@ adapter.nullkiller = {
 	end,
 	setTargetObject = function(_, objid)
 		targetObject = objid
-	end
+	end,
+	setActive = function(_, hero, tile)
+		activeHero = hero.id
+		activeTile = tile
+	end,
+	invalidatePathfinderData = function()
+		pathfinderInvalidated = true
+	end,
+	objectClusterizer = {
+		reset = function()
+			objectClusterizerReset = true
+		end
+	}
 }
 
 local recruit = adapter:recruitHero({ id = 11 }, { id = 22 })
@@ -36,6 +52,9 @@ adapter:lockHero({ id = 95 }, 3)
 assert(lockedHeroes[95] == 3)
 adapter:unlockHero({ id = 95 })
 adapter:setTargetObject({ id = 96 })
+adapter:setActive({ id = 97 }, { x = 9, y = 8, z = 0 })
+adapter:invalidatePathfinderData()
+adapter:resetObjectClusterizer()
 adapter:endTurn()
 
 local journal = adapter:getJournal()
@@ -66,6 +85,10 @@ assert(journal[6].payload.slot == 5)
 assert(journal[7].name == "endTurn")
 assert(lockedHeroes[95] == nil)
 assert(targetObject == 96)
+assert(activeHero == 97)
+assert(activeTile.x == 9)
+assert(pathfinderInvalidated == true)
+assert(objectClusterizerReset == true)
 
 assert(#called == 7)
 assert(called[1].name == "recruitHero")

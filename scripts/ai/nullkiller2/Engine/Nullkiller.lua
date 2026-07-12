@@ -253,6 +253,10 @@ local function buildAiState(input, host, settings, state)
 		return self.targetObject
 	end
 
+	function aiNk:invalidatePathfinderData()
+		self.pathfinderInvalidated = true
+	end
+
 	host.nullkiller = aiNk
 	return aiNk
 end

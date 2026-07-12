@@ -437,7 +437,7 @@
       "symbols": [
         "Goals::ExecuteHeroChain"
       ],
-      "notes": "Constructor state, equality, exchange count, affected-object policy, and command intent are ported."
+      "notes": "Constructor state, equality, exchange count, affected-object policy, active/target state setup, object-cluster reset, and command intent are ported."
     },
     {
       "cpp": "AI/Nullkiller2/Goals/ExecuteHeroChain.cpp",
@@ -452,7 +452,7 @@
         "Goals::ExecuteHeroChain::toString",
         "Goals::ExecuteHeroChain::moveHeroToTile"
       ],
-      "notes": "Path execution currently stops at a Lua host command boundary; stale-path recovery, special actions, siege formation, and step-by-step movement are pending Lua ports."
+      "notes": "Path execution sets active hero/tile, target object, resets object clusters, and fail-closes blocked special actions with hero lock/pathfinder invalidation before the host movement boundary. Stale-path recovery, special action execution, siege formation, and step-by-step movement remain pending."
     },
     {
       "cpp": "AI/Nullkiller2/Markers/UnlockCluster.h",

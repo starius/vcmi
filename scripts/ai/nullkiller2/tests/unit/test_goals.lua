@@ -417,6 +417,67 @@ local chainIntent = chain:accept({})
 assert(chainIntent.action == "executeHeroChain")
 assert(chainIntent.hero == chainHero)
 assert(chainIntent.objid == 952)
+local chainLog = {}
+chain:accept({
+	setActive = function(_, hero, tile)
+		table.insert(chainLog, "active:" .. hero.id .. ":" .. tile.x)
+	end,
+	setTargetObject = function(_, objid)
+		table.insert(chainLog, "target:" .. objid)
+	end,
+	resetObjectClusterizer = function()
+		table.insert(chainLog, "reset")
+	end,
+	executeHeroChain = function(_, path, objid)
+		table.insert(chainLog, "execute:" .. path.targetHero.id .. ":" .. objid)
+	end
+})
+assert(chainLog[1] == "active:950:8")
+assert(chainLog[2] == "target:952")
+assert(chainLog[3] == "reset")
+assert(chainLog[4] == "execute:950:952")
+local blockedChain = ExecuteHeroChain.new({
+	targetHero = chainHero,
+	tile = { x = 10, y = 11, z = 0 },
+	nodes = {
+		{
+			targetHero = helperHero,
+			coord = { x = 10, y = 11, z = 0 },
+			specialAction = { name = "Dimension Door" },
+			actionIsBlocked = true
+		}
+	}
+})
+local blockedLog = {}
+local okBlocked, blockedError = pcall(function()
+	blockedChain:accept({
+		setActive = function()
+			table.insert(blockedLog, "active")
+		end,
+		setTargetObject = function()
+			table.insert(blockedLog, "target")
+		end,
+		resetObjectClusterizer = function()
+			table.insert(blockedLog, "reset")
+		end,
+		lockHero = function(_, hero, reason)
+			table.insert(blockedLog, "lock:" .. hero.id .. ":" .. reason)
+		end,
+		invalidatePathfinderData = function()
+			table.insert(blockedLog, "invalidate")
+		end,
+		executeHeroChain = function()
+			error("should not execute blocked path")
+		end
+	})
+end)
+assert(okBlocked == false)
+assert(string.find(blockedError, "Path is nondeterministic.", 1, true) ~= nil)
+assert(blockedLog[1] == "active")
+assert(blockedLog[2] == "target")
+assert(blockedLog[3] == "reset")
+assert(blockedLog[4] == "lock:951:3")
+assert(blockedLog[5] == "invalidate")
 
 assert(Goals.CaptureObject == CaptureObject)
 assert(Goals.ExecuteHeroChain == ExecuteHeroChain)

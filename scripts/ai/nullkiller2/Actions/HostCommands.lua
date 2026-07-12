@@ -171,6 +171,40 @@ function HostCommands:setTargetObject(object)
 	}
 end
 
+function HostCommands:setActive(hero, tile)
+	if self.nullkiller and type(self.nullkiller.setActive) == "function" then
+		self.nullkiller:setActive(hero, tile)
+	end
+	return {
+		ok = true,
+		state = "setActive",
+		hero = objectID(hero),
+		tile = tile
+	}
+end
+
+function HostCommands:invalidatePathfinderData()
+	if self.nullkiller and type(self.nullkiller.invalidatePathfinderData) == "function" then
+		self.nullkiller:invalidatePathfinderData()
+	elseif self.nullkiller then
+		self.nullkiller.pathfinderInvalidated = true
+	end
+	return {
+		ok = true,
+		state = "invalidatePathfinderData"
+	}
+end
+
+function HostCommands:resetObjectClusterizer()
+	if self.nullkiller and self.nullkiller.objectClusterizer and type(self.nullkiller.objectClusterizer.reset) == "function" then
+		self.nullkiller.objectClusterizer:reset()
+	end
+	return {
+		ok = true,
+		state = "resetObjectClusterizer"
+	}
+end
+
 function HostCommands:executeHeroChain(path, objid)
 	local tile = nil
 	if path then
