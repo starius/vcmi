@@ -758,7 +758,7 @@ local function buildThisContext(context, task, aiNk)
 			context:addNonCriticalStrategicalValue((0.5 + 0.1 * (buildingInfo.creatureLevel or 0)) / prerequisitesCount)
 			context.armyReward = context.armyReward + (buildingInfo.armyStrength or 0) * 1.5
 		else
-			local potentialUpgradeValue = buildingInfo.potentialUpgradeValue or buildingInfo.upgradeArmyReward or 0
+			local potentialUpgradeValue = context.evaluator:getUpgradeArmyReward(task.town, buildingInfo)
 			context:addNonCriticalStrategicalValue(potentialUpgradeValue / 10000.0 / prerequisitesCount)
 			if buildingInfo.isDwelling then
 				context.armyReward = context.armyReward + (buildingInfo.armyStrength or 0) - (buildingInfo.baseCreatureGrowthPower or 0)

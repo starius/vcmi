@@ -39,6 +39,37 @@ local army = {
 assert(RewardEvaluator.getArmyCost(army) == 880)
 assert(evaluator:getArmyCost(army) == 880)
 assert(almostEquals(evaluator:getManaRecoveryArmyReward({ magicStrength = 2, mana = 25, manaLimit = 100 }), 10000))
+assert(RewardEvaluator.getArtifactBonusScoreImpl({ type = "MOVEMENT", subtype = "heroMovementLand", val = 100 }) == 2000)
+assert(RewardEvaluator.getArtifactBonusScoreImpl({ type = "GENERATE_RESOURCE", subtype = "mercury", val = 2 }) == 10000)
+assert(RewardEvaluator.getArtifactBonusScore({ type = "STACKS_SPEED", val = 1, propagator = "BATTLE_WIDE" }) == 0)
+assert(RewardEvaluator.getArtifactBonusScore({
+	type = "STACKS_SPEED",
+	val = 1,
+	propagator = { type = "BATTLE_WIDE" },
+	limiter = true
+}) == -8000)
+assert(RewardEvaluator.getPotentialArtifactScore({
+	price = 5000,
+	bonuses = {
+		{ type = "PRIMARY_SKILL", val = 2 },
+		{ type = "MOVEMENT", subtype = "heroMovementLand", val = 100 },
+		{ type = "GENERATE_RESOURCE", subtype = 1, val = 2 }
+	},
+	parts = {
+		{
+			bonuses = {
+				{ type = "NO_WALL_PENALTY" }
+			}
+		}
+	}
+}) == 19000)
+assert(RewardEvaluator.getPotentialArtifactScore({
+	price = 10000,
+	bonuses = {
+		{ type = "SURRENDER_DISCOUNT", val = 1 }
+	}
+}) == 2000)
+assert(RewardEvaluator.getPotentialArtifactScore({ ID = "SPELL_SCROLL" }) == 1500)
 
 local hero = { owner = 1, tempOwner = 1 }
 local dwelling = {
@@ -55,6 +86,43 @@ assert(evaluator:getArmyGrowth(dwelling, hero) == 660)
 assert(evaluator:getGoldCost(dwelling, hero) == 500)
 assert(evaluator:getGoldCost({ ID = "SCHOOL_OF_MAGIC" }, hero) == 1000)
 assert(evaluator:getGoldCost({ ID = "MARKET", allowsResourceSkill = true }, hero) == 2000)
+assert(evaluator:getArmyReward({
+	ID = "ARTIFACT",
+	artifact = {
+		price = 0,
+		bonuses = {
+			{ type = "STACK_HEALTH", val = 2 }
+		}
+	}
+}, hero) == 10000)
+assert(evaluator:getArmyReward({ ID = "SPELL_SCROLL" }, hero) == 1500)
+
+local upgradeEvaluator = RewardEvaluator.new({
+	totalCreaturesAvailableByCreature = {
+		[11] = { count = 7, power = 700 }
+	},
+	builtBuildingsByFaction = {
+		castle = {}
+	}
+})
+assert(upgradeEvaluator:getUpgradeArmyReward({ faction = "castle" }, {
+	id = 12,
+	baseCreatureID = 11,
+	creature = { aiValue = 180 }
+}) == 560)
+assert(RewardEvaluator.new({
+	totalCreaturesAvailableByCreature = {
+		[11] = { count = 7, power = 700 }
+	},
+	builtBuildingsByFaction = {
+		castle = { [12] = true }
+	}
+}):getUpgradeArmyReward({ faction = "castle" }, {
+	id = 12,
+	baseCreatureID = 11,
+	creature = { aiValue = 180 }
+}) == 0)
+assert(evaluator:getUpgradeArmyReward({}, { potentialUpgradeValue = 1234 }) == 1234)
 
 assert(RewardEvaluator.getGoldReward({ ID = "RESOURCE", resourceID = 6 }, hero, aiNk) == 600)
 assert(evaluator:getGoldReward({ ID = "RESOURCE", resourceID = 6 }, hero) == 600)

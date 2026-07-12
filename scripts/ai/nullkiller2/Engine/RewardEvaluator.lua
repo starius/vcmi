@@ -12,6 +12,23 @@ local CASTLE = 3
 local HERO_ROLE_SCOUT = 0
 local HERO_ROLE_MAIN = 1
 
+local RESOURCE_PRICES = {
+	[0] = 250,
+	[1] = 500,
+	[2] = 250,
+	[3] = 500,
+	[4] = 500,
+	[5] = 500,
+	[6] = 1,
+	wood = 250,
+	mercury = 500,
+	ore = 250,
+	sulfur = 500,
+	crystal = 500,
+	gems = 500,
+	gold = 1
+}
+
 local CREATURE_GENERATORS = {
 	CREATURE_GENERATOR1 = true,
 	CREATURE_GENERATOR2 = true,
@@ -39,6 +56,9 @@ end
 local function resourceID(value)
 	if value == "gold" or value == "GOLD" then
 		return GOLD
+	end
+	if type(value) == "string" and value:sub(1, 9) == "resource." then
+		return value:sub(10)
 	end
 	return value
 end
@@ -240,6 +260,83 @@ local function marketValue(cost)
 	return RewardEvaluator.getResourcesGoldReward(cost)
 end
 
+local function numericValue(value)
+	if type(value) == "number" then
+		return value
+	end
+	if type(value) == "table" then
+		return value.num or value.id or value.value or value[1] or 0
+	end
+	return 0
+end
+
+local function subtypeValue(value)
+	if type(value) == "table" then
+		return value.type or value.name or value.id or value.num or value[1]
+	end
+	return value
+end
+
+local function bonusType(bonus)
+	return bonus and (bonus.type or bonus.bonusType)
+end
+
+local function bonusSubtype(bonus)
+	return subtypeValue(bonus and (bonus.subtype or bonus.subType or bonus.subtypeID))
+end
+
+local function bonusValue(bonus)
+	return bonus and (bonus.val or bonus.value or bonus.amount) or 0
+end
+
+local function isSubtype(value, ...)
+	local subtype = subtypeValue(value)
+	for _, candidate in ipairs({ ... }) do
+		if subtype == candidate then
+			return true
+		end
+	end
+	return false
+end
+
+local function resourcePrice(resType)
+	resType = subtypeValue(resType)
+	if RESOURCE_PRICES[resType] ~= nil then
+		return RESOURCE_PRICES[resType]
+	end
+	return RESOURCE_PRICES[resourceID(resType)] or 0
+end
+
+local function propagatorType(propagator)
+	if type(propagator) == "table" then
+		return propagator.type or propagator.propagatorType or propagator[1]
+	end
+	return propagator
+end
+
+local function isBattleWideBonus(bonus)
+	return bonus and (bonus.propagatorType == "BATTLE_WIDE"
+		or bonus.propagatorType == 1
+		or propagatorType(bonus.propagator) == "BATTLE_WIDE"
+		or propagatorType(bonus.propagator) == 1)
+end
+
+local function hasLimiter(bonus)
+	return bonus and ((bonus.limiter ~= nil and bonus.limiter ~= false) or bonus.limiters ~= nil)
+end
+
+local function exportedBonuses(artifact)
+	return call(artifact, "getExportedBonusList")
+		or artifact and (artifact.exportedBonusList or artifact.exportedBonuses or artifact.bonuses)
+		or {}
+end
+
+local function constituentArtifacts(artifact)
+	return call(artifact, "getConstituents")
+		or artifact and (artifact.constituents or artifact.parts)
+		or {}
+end
+
 local function getDwellingArmyValue(aiNk, dwelling, checkGold)
 	local score = 0
 	local resources = getFreeResources(aiNk)
@@ -348,12 +445,113 @@ local function enemyHeroStrategicalValue(target)
 	return math.min(1.5, objectValue * 0.9 + (1.5 - (1.5 / (1 + level))))
 end
 
-local function artifactArmyValue(artifact)
+function RewardEvaluator.getArtifactBonusScoreImpl(bonus)
+	local value = bonusValue(bonus)
+	local type = bonusType(bonus)
+	local subtype = bonusSubtype(bonus)
+
+	if type == "MOVEMENT" then
+		if isSubtype(subtype, "heroMovementLand", "HERO_MOVEMENT_LAND", "LAND", 0) then
+			return value * 20
+		end
+		if isSubtype(subtype, "heroMovementSea", "HERO_MOVEMENT_SEA", "SEA", 1) then
+			return value * 10
+		end
+		return 0
+	elseif type == "STACKS_SPEED" then
+		return value * 8000
+	elseif type == "MORALE" then
+		return value * 1500
+	elseif type == "LUCK" then
+		return value * 1000
+	elseif type == "PRIMARY_SKILL" then
+		return value * 1000
+	elseif type == "SURRENDER_DISCOUNT" then
+		return 0
+	elseif type == "WATER_WALKING" then
+		return 5000
+	elseif type == "FREE_SHIP_BOARDING" then
+		return 10000
+	elseif type == "WHIRLPOOL_PROTECTION" then
+		return 5000
+	elseif type == "FLYING_MOVEMENT" then
+		return 20000
+	elseif type == "UNDEAD_RAISE_PERCENTAGE" then
+		return value * 400
+	elseif type == "GENERATE_RESOURCE" then
+		return value * resourcePrice(subtype) * 10
+	elseif type == "SPELL_DURATION" then
+		return value * 200
+	elseif type == "MAGIC_RESISTANCE" then
+		return value * 400
+	elseif type == "PERCENTAGE_DAMAGE_BOOST" then
+		if isSubtype(subtype, "damageTypeRanged", "DAMAGE_TYPE_RANGED", "RANGED", 1) then
+			return value * 200
+		end
+		if isSubtype(subtype, "damageTypeMelee", "DAMAGE_TYPE_MELEE", "MELEE", 0) then
+			return value * 500
+		end
+		return 0
+	elseif type == "CREATURE_GROWTH" then
+		return (1 + numericValue(subtype)) * value * 400
+	elseif type == "MANA_PERCENTAGE_REGENERATION" then
+		return value * 150
+	elseif type == "MANA_REGENERATION" then
+		return value * 500
+	elseif type == "SPELLS_OF_SCHOOL" then
+		return 20000
+	elseif type == "SPELLS_OF_LEVEL" then
+		return numericValue(subtype) * 6000
+	elseif type == "SPELL_DAMAGE" then
+		return value * 120
+	elseif type == "SIGHT_RADIUS" then
+		return value * 1000
+	elseif type == "LEARN_BATTLE_SPELL_CHANCE" or type == "LEARN_BATTLE_SPELL_CHANCE_PRE_BATTLE" then
+		return 0
+	elseif type == "STACK_HEALTH" then
+		return value * 5000
+	elseif type == "NO_DISTANCE_PENALTY" then
+		return 10000
+	elseif type == "NO_WALL_PENALTY" then
+		return 5000
+	end
+
+	return 0
+end
+
+function RewardEvaluator.getArtifactBonusScore(bonus)
+	if isBattleWideBonus(bonus) then
+		if hasLimiter(bonus) then
+			return -RewardEvaluator.getArtifactBonusScoreImpl(bonus)
+		end
+		return 0
+	end
+	return RewardEvaluator.getArtifactBonusScoreImpl(bonus)
+end
+
+function RewardEvaluator.getPotentialArtifactScore(artifact)
 	if not artifact then
 		return 0
 	end
 	if artifact.ID == "SPELL_SCROLL" or artifact.id == "SPELL_SCROLL" or artifact.spellScroll then
 		return 1500
+	end
+
+	local totalScore = 0
+	local sawBonus = false
+	for _, bonus in ipairs(exportedBonuses(artifact)) do
+		sawBonus = true
+		totalScore = totalScore + RewardEvaluator.getArtifactBonusScore(bonus)
+	end
+	for _, part in ipairs(constituentArtifacts(artifact)) do
+		for _, bonus in ipairs(exportedBonuses(part)) do
+			sawBonus = true
+			totalScore = totalScore + RewardEvaluator.getArtifactBonusScore(bonus)
+		end
+	end
+
+	if sawBonus or artifact.price then
+		return math.max((artifact.price or 0) / 5, totalScore)
 	end
 	return artifact.potentialScore or artifact.armyValue or artifact.score or 0
 end
@@ -392,7 +590,7 @@ end
 local function rewardArtifactsValue(reward)
 	local value = 0
 	for _, artifact in ipairs(reward.grantedArtifacts or reward.artifacts or {}) do
-		value = value + artifactArmyValue(artifact)
+		value = value + RewardEvaluator.getPotentialArtifactScore(artifact)
 	end
 	for _ in ipairs(reward.grantedScrolls or reward.scrolls or {}) do
 		value = value + 1500
@@ -500,6 +698,69 @@ function RewardEvaluator.townArmyGrowth(selfOrTown, maybeTown)
 	return result
 end
 
+local function townFaction(town)
+	return call(town, "getFactionID") or town and (town.factionID or town.faction)
+end
+
+local function isBuiltForFaction(aiNk, town, buildingID)
+	local faction = townFaction(town)
+	local buildAnalyzer = aiNk and aiNk.buildAnalyzer
+	local built = call(buildAnalyzer, "isBuilt", faction, buildingID)
+	if built ~= nil then
+		return built
+	end
+	built = aiNk and aiNk.builtBuildingsByFaction and aiNk.builtBuildingsByFaction[faction]
+	if built ~= nil then
+		return built[buildingID] == true
+	end
+	return false
+end
+
+local function totalCreaturesAvailable(aiNk, creatureID)
+	local result = call(aiNk and aiNk.armyManager, "getTotalCreaturesAvailable", creatureID)
+		or aiNk and aiNk.totalCreaturesAvailableByCreature and aiNk.totalCreaturesAvailableByCreature[creatureID]
+		or {}
+	return {
+		count = result.count or result[1] or 0,
+		power = result.power or result.armyPower or result[2] or 0
+	}
+end
+
+local function evaluateStackPower(aiNk, creature, count)
+	local value = call(aiNk and aiNk.armyManager, "evaluateStackPower", creature, count)
+	if value ~= nil then
+		return value
+	end
+	return creatureAIValue(creature) * (count or 0)
+end
+
+function RewardEvaluator.getUpgradeArmyReward(selfOrTown, maybeTown, maybeBuildingInfo, maybeAiNk)
+	local town = selfOrTown
+	local buildingInfo = maybeTown or {}
+	local aiNk = maybeBuildingInfo
+	if selfOrTown and selfOrTown.aiNk ~= nil then
+		town = maybeTown
+		buildingInfo = maybeBuildingInfo or {}
+		aiNk = maybeAiNk or selfOrTown.aiNk
+	end
+
+	if buildingInfo.alreadyBuiltForFaction or isBuiltForFaction(aiNk, town, buildingInfo.id) then
+		return 0
+	end
+
+	local creaturesToUpgrade = totalCreaturesAvailable(aiNk, buildingInfo.baseCreatureID)
+	local upgradedCreature = buildingInfo.creature or buildingInfo.upgradedCreature or buildingInfo.creatureID or {
+		aiValue = buildingInfo.creatureAIValue or buildingInfo.upgradedCreatureAIValue or buildingInfo.upgradedCreaturePower
+	}
+	local upgradedPower = buildingInfo.upgradedPower
+		or evaluateStackPower(aiNk, upgradedCreature, creaturesToUpgrade.count)
+
+	if creaturesToUpgrade.count > 0 or upgradedPower > 0 then
+		return upgradedPower - creaturesToUpgrade.power
+	end
+	return buildingInfo.potentialUpgradeValue or buildingInfo.upgradeArmyReward or 0
+end
+
 function RewardEvaluator.getArmyReward(selfOrTarget, maybeTarget, maybeHero, maybeArmy, maybeCheckGold, maybeAiNk)
 	local target, hero, army, checkGold, aiNk = resolveTargetHeroArmyCheck(
 		selfOrTarget,
@@ -520,7 +781,7 @@ function RewardEvaluator.getArmyReward(selfOrTarget, maybeTarget, maybeHero, may
 	elseif id == "SPELL_SCROLL" then
 		return 1500
 	elseif id == "ARTIFACT" then
-		return artifactArmyValue(target.artifact or target)
+		return RewardEvaluator.getPotentialArtifactScore(target.artifact or target)
 	elseif id == "HERO" then
 		return isEnemies(relationToHero(target, hero, aiNk)) and 0.5 * (target.armyStrength or target.totalStrength or 0) or 0
 	elseif id == "PANDORAS_BOX" then

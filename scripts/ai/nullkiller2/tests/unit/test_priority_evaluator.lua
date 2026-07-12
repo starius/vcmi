@@ -191,6 +191,34 @@ assert(almostEquals(buildContext.strategicalValue, 0.35))
 assert(buildContext.armyReward == 4500)
 assert(buildContext.movementCostByRole[PriorityEvaluator.HeroRole.MAIN] == 2)
 
+local upgradeBuildContext = PriorityEvaluator.buildEvaluationContext(BuildThis.new({
+	id = 21,
+	name = "Upgraded dwelling",
+	prerequisitesCount = 2,
+	dailyIncome = {},
+	buildCost = {},
+	buildCostWithPrerequisites = {},
+	creatureID = 13,
+	baseCreatureID = 12,
+	creature = { aiValue = 200 },
+	potentialUpgradeValue = 99999,
+	isDwelling = true,
+	armyStrength = 1600,
+	baseCreatureGrowthPower = 700
+}, {
+	town = buildTown,
+	armyStrength = 1000
+}), {
+	totalCreaturesAvailableByCreature = {
+		[12] = { count = 5, power = 500 }
+	},
+	townsInfo = {
+		buildTown
+	}
+})
+assert(almostEquals(upgradeBuildContext.strategicalValue, 0.025))
+assert(upgradeBuildContext.armyReward == 2700)
+
 local missingBuildContext = PriorityEvaluator.buildEvaluationContext(BuildThis.new({
 	id = 14,
 	name = "Marketplace",
