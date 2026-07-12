@@ -1,6 +1,7 @@
 local AbstractGoal = require("Goals.AbstractGoal")
 local BuildingBehavior = require("Behaviors.BuildingBehavior")
 local BuyArmyBehavior = require("Behaviors.BuyArmyBehavior")
+local CaptureObjectsBehavior = require("Behaviors.CaptureObjectsBehavior")
 local EscapeBehavior = require("Behaviors.EscapeBehavior")
 local ExchangeSwapTownHeroes = require("Goals.ExchangeSwapTownHeroes")
 local PriorityEvaluator = require("Engine.PriorityEvaluator")
@@ -491,3 +492,90 @@ local escapeTasks = EscapeBehavior.new():decompose({
 assert(#escapeTasks == 1)
 assert(escapeTasks[1].goalType == AbstractGoal.EGoals.EXECUTE_HERO_CHAIN)
 assert(escapeTasks[1].chainPath == escapePathFast)
+
+local captureHero = {
+	id = 501,
+	name = "Collector",
+	owner = 1,
+	role = PriorityEvaluator.HeroRole.MAIN,
+	heroStrength = 1,
+	armyStrength = 1000
+}
+local captureObject = {
+	id = 502,
+	ID = "MINE",
+	typeName = "Mine",
+	visitablePos = { x = 3, y = 3, z = 0 }
+}
+local capturePathFast = {
+	targetHero = captureHero,
+	tile = captureObject.visitablePos,
+	nodes = {},
+	turn = 0,
+	exchangeCount = 0,
+	totalDanger = 0,
+	heroArmy = { armyStrength = 1000 },
+	movementCost = 2
+}
+local capturePathSlow = {
+	targetHero = captureHero,
+	tile = captureObject.visitablePos,
+	nodes = {},
+	turn = 0,
+	exchangeCount = 0,
+	totalDanger = 0,
+	heroArmy = { armyStrength = 1000 },
+	movementCost = 4
+}
+local visitGoals = CaptureObjectsBehavior.getVisitGoals(
+	{ capturePathFast, capturePathSlow },
+	{ playerID = 1, settings = { safeAttackRatio = 1.1 } },
+	captureObject)
+assert(#visitGoals == 2)
+assert(visitGoals[1].goalType == AbstractGoal.EGoals.EXECUTE_HERO_CHAIN)
+assert(visitGoals[1].closestWayRatio == 1)
+assert(visitGoals[2].closestWayRatio == 0.5)
+
+local blockedSubGoal = BuildingBehavior.new()
+local blockedGoals = CaptureObjectsBehavior.getVisitGoals(
+	{
+		{
+			targetHero = captureHero,
+			tile = captureObject.visitablePos,
+			nodes = {},
+			turn = 0,
+			exchangeCount = 0,
+			totalDanger = 0,
+			firstBlockedAction = {
+				decompose = function()
+					return blockedSubGoal
+				end
+			}
+		}
+	},
+	{ playerID = 1 },
+	captureObject)
+assert(#blockedGoals == 1)
+assert(blockedGoals[1].goalType == AbstractGoal.EGoals.COMPOSITION)
+local blockedSequence = blockedGoals[1]:decompose({})
+assert(blockedSequence[1].goalType == AbstractGoal.EGoals.EXECUTE_HERO_CHAIN)
+assert(blockedSequence[2] == blockedSubGoal)
+
+local captureBehavior = CaptureObjectsBehavior.new():ofType("MINE")
+local captureTasks = captureBehavior:decompose({
+	playerID = 1,
+	settings = { safeAttackRatio = 1.1 },
+	visitableObjects = {
+		captureObject,
+		{ id = 503, ID = "BOAT", visitablePos = { x = 0, y = 0, z = 0 }, paths = { capturePathFast } }
+	},
+	pathfinder = {
+		calculatePathInfo = function(_, paths, tile)
+			assert(tile == captureObject.visitablePos)
+			paths[1] = capturePathFast
+		end
+	}
+})
+assert(#captureTasks == 1)
+assert(captureTasks[1].goalType == AbstractGoal.EGoals.EXECUTE_HERO_CHAIN)
+assert(CaptureObjectsBehavior.new():equals(CaptureObjectsBehavior.new()) == false)

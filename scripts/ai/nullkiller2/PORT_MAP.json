@@ -634,6 +634,32 @@
       "notes": "Immediate-threat detection and best escape-path selection are Lua-owned; full tile path enumeration is supplied as snapshot/helper input."
     },
     {
+      "cpp": "AI/Nullkiller2/Behaviors/CaptureObjectsBehavior.h",
+      "lua": "scripts/ai/nullkiller2/Behaviors/CaptureObjectsBehavior.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::CaptureObjectsBehavior",
+        "Goals::CaptureObjectsBehavior::ofType",
+        "Goals::CaptureObjectsBehavior::getVisitGoals"
+      ],
+      "notes": "Constructor modes, filters, equality quirk, and public visit-goal helper are ported."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Behaviors/CaptureObjectsBehavior.cpp",
+      "lua": "scripts/ai/nullkiller2/Behaviors/CaptureObjectsBehavior.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "vectorEquals",
+        "Goals::CaptureObjectsBehavior::toString",
+        "Goals::CaptureObjectsBehavior::operator==",
+        "Goals::CaptureObjectsBehavior::getVisitGoals",
+        "Goals::CaptureObjectsBehavior::decomposeObjects",
+        "Goals::CaptureObjectsBehavior::decompose",
+        "Goals::CaptureObjectsBehavior::objectMatchesFilter"
+      ],
+      "notes": "Object filtering, should-visit decisions, safe path selection, blocked-action composition, and closest-way ratio are Lua-owned against path/object snapshots."
+    },
+    {
       "cpp": "AI/Nullkiller2/Engine/ResourceTrader.h",
       "lua": "scripts/ai/nullkiller2/Engine/ResourceTrader.lua",
       "status": "ported",
