@@ -241,15 +241,12 @@ std::string actorForPlayer(PlayerColor player)
 	return player.isValidPlayer() ? "player/" + player.toString() : "world";
 }
 
-std::string resource(GameResID id)
+std::string resourceKey(GameResID id)
 {
 	if(id.getNum() < 0)
-		return yamlString("core:none");
+		return yamlKey("none");
 
-	std::string identifier = GameResID::encode(id.getNum());
-	if(identifier.find(':') == std::string::npos)
-		identifier = "core:" + identifier;
-	return yamlString(identifier);
+	return yamlKey(GameResID::encode(id.getNum()));
 }
 
 std::string creature(CreatureID id)
@@ -721,23 +718,15 @@ std::string packetTypeName(CPack & pack)
 	return name;
 }
 
-std::string resources(const ResourceSet & values)
+std::string resources(const ResourceSet & values, bool includeZeroes = false)
 {
 	std::vector<std::string> entries;
 	for(size_t i = 0; i < values.size(); ++i)
 	{
-		if(values[i] == 0)
+		if(!includeZeroes && values[i] == 0)
 			continue;
-		entries.push_back("{ resource: " + resource(GameResID(static_cast<int>(i))) + ", amount: " + std::to_string(values[i]) + " }");
+		entries.push_back("{ " + resourceKey(GameResID(static_cast<int>(i))) + ": " + std::to_string(values[i]) + " }");
 	}
-	return flowList(entries);
-}
-
-std::string resourceValues(const ResourceSet & values)
-{
-	std::vector<std::string> entries;
-	for(size_t i = 0; i < values.size(); ++i)
-		entries.push_back("{ resource: " + resource(GameResID(static_cast<int>(i))) + ", amount: " + std::to_string(values[i]) + " }");
 	return flowList(entries);
 }
 
@@ -763,7 +752,7 @@ std::string connectionList(const std::set<PlayerConnectionID> & values)
 
 std::string handicap(const Handicap & value)
 {
-	return "{ resources: " + resourceValues(value.startBonus) +
+	return "{ resources: " + resources(value.startBonus) +
 		", incomePercent: " + std::to_string(value.percentIncome) +
 		", growthPercent: " + std::to_string(value.percentGrowth) + " }";
 }
@@ -1843,7 +1832,7 @@ public:
 	{
 		line = "resources: { player: " + color(pack.player) +
 			", mode: " + mode(pack.mode) +
-			", values: " + resourceValues(pack.res) + " }";
+			", values: " + resources(pack.res, pack.mode == ChangeValueMode::ABSOLUTE) + " }";
 	}
 
 	void visitSetPrimarySkill(SetPrimarySkill & pack) override

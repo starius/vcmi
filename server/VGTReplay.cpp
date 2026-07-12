@@ -279,7 +279,7 @@ FactionID decodeFaction(const std::string & value)
 
 GameResID decodeResource(const std::string & value)
 {
-	if(value == "core:none")
+	if(value == "core:none" || value == "none")
 		return GameResID::NONE;
 	return GameResID(GameResID::decode(value));
 }
@@ -1235,9 +1235,27 @@ ResourceSet decodeResources(const JsonNode & values)
 	ResourceSet result;
 	for(const auto & entry : values.Vector())
 	{
-		const auto resource = decodeResource(requireString(entry, "resource"));
-		if(resource != GameResID::NONE)
-			result[resource] = static_cast<TResource>(requireInteger(entry, "amount"));
+		if(!entry.isStruct())
+			throw std::runtime_error("VGT replay resource entry is not a mapping");
+
+		if(hasField(entry, "resource"))
+		{
+			const auto resource = decodeResource(requireString(entry, "resource"));
+			if(resource != GameResID::NONE)
+				result[resource] = static_cast<TResource>(requireInteger(entry, "amount"));
+			continue;
+		}
+
+		for(const auto & compactEntry : entry.Struct())
+		{
+			const auto resource = decodeResource(compactEntry.first);
+			if(resource != GameResID::NONE)
+			{
+				if(!compactEntry.second.isNumber())
+					throw std::runtime_error("VGT replay compact resource amount is not a number: " + compactEntry.first);
+				result[resource] = static_cast<TResource>(compactEntry.second.Integer());
+			}
+		}
 	}
 	return result;
 }
