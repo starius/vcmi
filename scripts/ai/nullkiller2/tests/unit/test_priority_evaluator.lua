@@ -48,6 +48,9 @@ local aiNk = {
 	}
 }
 
+local evalContext = PriorityEvaluator.EvaluationContext.new(aiNk)
+assert(evalContext.evaluator:getNowResourceRequirementStrength(6) == 0)
+
 local buildingScore = PriorityEvaluator.evaluate(EvalGoal.new({
 	strategicalValue = 1,
 	armyReward = 100,

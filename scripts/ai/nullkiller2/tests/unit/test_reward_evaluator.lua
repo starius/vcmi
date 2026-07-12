@@ -16,6 +16,11 @@ assert(RewardEvaluator.getNowResourceRequirementStrength(aiNk, 1) == 0)
 assert(RewardEvaluator.getTotalResourceRequirementStrength(aiNk, 1) == 1.0)
 assert(almostEquals(RewardEvaluator.getCombinedResourceRequirementStrength(aiNk, { [0] = 1, [1] = 1, [6] = 1 }), 0.9))
 
+local evaluator = RewardEvaluator.new(aiNk)
+assert(evaluator:getNowResourceRequirementStrength(0) == 0.8)
+assert(evaluator:getTotalResourceRequirementStrength(1) == 1.0)
+assert(almostEquals(evaluator:getCombinedResourceRequirementStrength({ [0] = 1, [1] = 1, [6] = 1 }), 0.9))
+
 local army = {
 	slots = {
 		{ count = 10, marketValue = 60 },
@@ -23,9 +28,11 @@ local army = {
 	}
 }
 assert(RewardEvaluator.getArmyCost(army) == 880)
+assert(evaluator:getArmyCost(army) == 880)
 
 local hero = { owner = 1, tempOwner = 1 }
 assert(RewardEvaluator.getGoldReward({ ID = "RESOURCE", resourceID = 6 }, hero, aiNk) == 600)
+assert(evaluator:getGoldReward({ ID = "RESOURCE", resourceID = 6 }, hero) == 600)
 assert(RewardEvaluator.getGoldReward({ ID = "RESOURCE", resourceID = 0 }, hero, aiNk) == 100)
 assert(RewardEvaluator.getGoldReward({ ID = "TREASURE_CHEST" }, hero, aiNk) == 1500)
 assert(RewardEvaluator.getGoldReward({ ID = "WATER_WHEEL" }, hero, aiNk) == 1000)

@@ -2,6 +2,7 @@
 -- EvaluationContext defaults, and task scoring formulas.
 
 local AbstractGoal = require("Goals.AbstractGoal")
+local RewardEvaluator = require("Engine.RewardEvaluator")
 
 local PriorityEvaluator = {}
 
@@ -135,7 +136,8 @@ function PriorityEvaluator.EvaluationContext.new(_aiNk)
 		isHero = false,
 		isEnemy = false,
 		explorePriority = 0,
-		powerRatio = 0
+		powerRatio = 0,
+		evaluator = RewardEvaluator.new(_aiNk)
 	}, PriorityEvaluator.EvaluationContext)
 end
 

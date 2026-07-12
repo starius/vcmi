@@ -1,10 +1,21 @@
 -- Mirrors AI/Nullkiller2/Engine/PriorityEvaluator.{h,cpp}: RewardEvaluator helpers.
 
 local RewardEvaluator = {}
+RewardEvaluator.__index = RewardEvaluator
 
 local GOLD = 6
 local HERO_GOLD_COST = 2500
 local MINIMUM_STRATEGICAL_VALUE_NON_TOWN = 0.3
+
+function RewardEvaluator.new(aiNk)
+	return setmetatable({
+		aiNk = aiNk
+	}, RewardEvaluator)
+end
+
+local function aiContext(value)
+	return value and value.aiNk or value
+end
 
 local function call(object, name, ...)
 	if object and type(object[name]) == "function" then
@@ -145,7 +156,8 @@ function RewardEvaluator.getResourcesGoldReward(resources)
 	return result
 end
 
-function RewardEvaluator.getNowResourceRequirementStrength(aiNk, resType)
+function RewardEvaluator.getNowResourceRequirementStrength(selfOrAiNk, resType)
+	local aiNk = aiContext(selfOrAiNk)
 	local requiredResources = missingResourcesNow(aiNk)
 	local income = dailyIncome(aiNk)
 
@@ -158,7 +170,8 @@ function RewardEvaluator.getNowResourceRequirementStrength(aiNk, resType)
 	return 0.8
 end
 
-function RewardEvaluator.getTotalResourceRequirementStrength(aiNk, resType)
+function RewardEvaluator.getTotalResourceRequirementStrength(selfOrAiNk, resType)
+	local aiNk = aiContext(selfOrAiNk)
 	local requiredResources = missingResourcesInTotal(aiNk)
 	local income = dailyIncome(aiNk)
 
@@ -171,7 +184,8 @@ function RewardEvaluator.getTotalResourceRequirementStrength(aiNk, resType)
 	return 0.8
 end
 
-function RewardEvaluator.getCombinedResourceRequirementStrength(aiNk, resources)
+function RewardEvaluator.getCombinedResourceRequirementStrength(selfOrAiNk, resources)
+	local aiNk = aiContext(selfOrAiNk)
 	local sum = 0.0
 	for resType = 0, GOLD do
 		if resourceValue(resources, resType) > 0 then
@@ -183,7 +197,8 @@ function RewardEvaluator.getCombinedResourceRequirementStrength(aiNk, resources)
 	return sum
 end
 
-function RewardEvaluator.getArmyCost(army)
+function RewardEvaluator.getArmyCost(selfOrArmy, maybeArmy)
+	local army = maybeArmy or selfOrArmy
 	local value = 0
 	for _, stack in pairs(stacks(army)) do
 		value = value + stackMarketValue(stack) * stackCount(stack)
@@ -191,7 +206,16 @@ function RewardEvaluator.getArmyCost(army)
 	return value
 end
 
-function RewardEvaluator.getGoldReward(target, hero, aiNk)
+function RewardEvaluator.getGoldReward(selfOrTarget, maybeTarget, maybeHero, maybeAiNk)
+	local target = selfOrTarget
+	local hero = maybeTarget
+	local aiNk = maybeHero
+	if selfOrTarget and selfOrTarget.aiNk ~= nil then
+		target = maybeTarget
+		hero = maybeHero
+		aiNk = maybeAiNk or selfOrTarget.aiNk
+	end
+
 	if not target then
 		return 0
 	end
