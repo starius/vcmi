@@ -250,6 +250,42 @@ local function subtractCost(resources, cost, count)
 	return result
 end
 
+local function costDifference(upgradedCreature, initialCreature, count)
+	local result = {}
+	local upgradedCost = resourceCost(upgradedCreature)
+	local initialCost = resourceCost(initialCreature)
+	for resourceID = 0, 6 do
+		local amount = (resourceAmount(upgradedCost, resourceID) - resourceAmount(initialCost, resourceID)) * count
+		if amount ~= 0 then
+			result[resourceID] = amount
+		end
+	end
+	return result
+end
+
+local function addCost(lhs, rhs)
+	local result = {}
+	for key, value in pairs(lhs or {}) do
+		result[key] = value
+	end
+	for resourceID = 0, 6 do
+		local amount = resourceAmount(result, resourceID) + resourceAmount(rhs, resourceID)
+		if amount ~= 0 then
+			result[resourceID] = amount
+		end
+	end
+	return result
+end
+
+local function canAfford(resources, cost)
+	for resourceID = 0, 6 do
+		if resourceAmount(resources, resourceID) < resourceAmount(cost, resourceID) then
+			return false
+		end
+	end
+	return true
+end
+
 local function stackMarketValue(stack)
 	if type(stack) ~= "table" then
 		return 0
@@ -591,6 +627,78 @@ local function creatureGrowth(dwelling, entry)
 	return type(entry.creature) == "table" and (entry.creature.growth or 0) or 0
 end
 
+local function objectType(object)
+	return object and (object.ID or object.objectType or object.type or object.typeName)
+end
+
+local function isHillFort(upgrader)
+	local kind = objectType(upgrader)
+	return kind == "HILL_FORT" or kind == "Hill Fort" or upgrader and upgrader.isHillFort == true
+end
+
+local function creatureUpgrades(creature)
+	if type(creature) ~= "table" then
+		return {}
+	end
+	return creature.upgrades or creature.availableUpgrades or creature.possibleUpgrades or {}
+end
+
+local function bestUpgrade(upgrades)
+	local best = nil
+	for _, upgrade in ipairs(upgrades or {}) do
+		if not best or creatureAIValue(upgrade) > creatureAIValue(best) then
+			best = upgrade
+		end
+	end
+	return best
+end
+
+local function dwellingHasCreature(dwelling, creature)
+	local id = creatureID(creature)
+	for _, entry in ipairs(dwelling and dwelling.availableToBuy or {}) do
+		if creatureID(entry.creature or entry.creID or entry) == id then
+			return true
+		end
+	end
+	for _, entry in ipairs(dwelling and dwelling.creatures or {}) do
+		local creatures = entry.creatures or entry.ids or entry[2] or {}
+		for _, candidate in ipairs(creatures) do
+			if creatureID(candidate) == id then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+local function stackUpgradeInfo(initialCreature, upgradedCreature, count, free)
+	local cost = free and {} or costDifference(upgradedCreature, initialCreature, count)
+	return {
+		initialCreature = initialCreature,
+		initialCreatureID = creatureID(initialCreature),
+		upgradedCreature = upgradedCreature,
+		upgradedCreatureID = creatureID(upgradedCreature),
+		count = count,
+		cost = cost,
+		upgradeValue = (creatureAIValue(upgradedCreature) - creatureAIValue(initialCreature)) * count
+	}
+end
+
+local function convertToSlots(army)
+	local result = {}
+	for _, stack in pairs(armySlots(army)) do
+		local creature = stackCreature(stack)
+		local count = stackCount(stack)
+		table.insert(result, {
+			creature = creature,
+			creatureID = creatureID(creature),
+			count = count,
+			power = ArmyManager.evaluateStackPower(creature, count)
+		})
+	end
+	return result
+end
+
 function ArmyManager.evaluateStackPower(creature, count)
 	return creatureAIValue(creature) * (count or 0)
 end
@@ -636,6 +744,107 @@ function ArmyManager.getTotalCreaturesAvailable(creature)
 		count = 0,
 		power = 0
 	}
+end
+
+function ArmyManager.getHillFortUpgrades(army)
+	local upgrades = {}
+	for _, stack in pairs(armySlots(army)) do
+		local initial = stackCreature(stack)
+		local upgraded = bestUpgrade(creatureUpgrades(initial))
+		if upgraded then
+			table.insert(upgrades, stackUpgradeInfo(initial, upgraded, stackCount(stack), creatureLevel(initial) == 1))
+		end
+	end
+	return upgrades
+end
+
+function ArmyManager.getDwellingUpgrades(army, dwelling)
+	local upgrades = {}
+	for _, stack in pairs(armySlots(army)) do
+		local initial = stackCreature(stack)
+		local available = {}
+		for _, upgrade in ipairs(creatureUpgrades(initial)) do
+			if dwellingHasCreature(dwelling, upgrade) then
+				table.insert(available, upgrade)
+			end
+		end
+
+		local upgraded = bestUpgrade(available)
+		if upgraded then
+			table.insert(upgrades, stackUpgradeInfo(initial, upgraded, stackCount(stack), false))
+		end
+	end
+	return upgrades
+end
+
+function ArmyManager.getPossibleUpgrades(army, upgrader)
+	if isHillFort(upgrader) then
+		return ArmyManager.getHillFortUpgrades(army)
+	end
+	if upgrader and (upgrader.availableToBuy or upgrader.creatures or upgrader.isDwelling) then
+		return ArmyManager.getDwellingUpgrades(army, upgrader)
+	end
+	return {}
+end
+
+function ArmyManager.calculateCreaturesUpgrade(army, upgrader, availableResources)
+	if not upgrader then
+		return {
+			resultingArmy = {},
+			upgradeValue = 0,
+			upgradeCost = {}
+		}
+	end
+
+	local upgrades = {}
+	for _, upgrade in ipairs(ArmyManager.getPossibleUpgrades(army, upgrader)) do
+		if canAfford(availableResources or {}, upgrade.cost) then
+			table.insert(upgrades, upgrade)
+		end
+	end
+
+	if #upgrades == 0 then
+		return {
+			resultingArmy = {},
+			upgradeValue = 0,
+			upgradeCost = {}
+		}
+	end
+
+	table.sort(upgrades, function(left, right)
+		return left.upgradeValue > right.upgradeValue
+	end)
+
+	local resourcesLeft = availableResources or {}
+	local result = {
+		resultingArmy = convertToSlots(army),
+		upgradeValue = 0,
+		upgradeCost = {}
+	}
+
+	for _, upgrade in ipairs(upgrades) do
+		if canAfford(resourcesLeft, upgrade.cost) then
+			local upgradedArmy = {
+				creature = upgrade.upgradedCreature,
+				creatureID = upgrade.upgradedCreatureID,
+				count = upgrade.count,
+				power = ArmyManager.evaluateStackPower(upgrade.upgradedCreature, upgrade.count)
+			}
+
+			for index, slot in ipairs(result.resultingArmy) do
+				if slot.count == upgradedArmy.count and creatureID(slot.creature) == upgrade.initialCreatureID then
+					result.resultingArmy[index] = upgradedArmy
+					break
+				end
+			end
+
+			resourcesLeft = subtractCost(resourcesLeft, upgrade.cost, 1)
+			result.upgradeCost = addCost(result.upgradeCost, upgrade.cost)
+			result.upgradeValue = result.upgradeValue + upgrade.upgradeValue
+		end
+	end
+
+	return result
 end
 
 function ArmyManager.getArmyAvailableToBuy(targetArmy, dwelling, availableResources, turn, context)

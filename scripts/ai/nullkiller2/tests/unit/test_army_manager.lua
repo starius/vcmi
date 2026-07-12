@@ -194,3 +194,42 @@ local missingCreature = ArmyManager.getTotalCreaturesAvailable({ id = 9999 })
 assert(missingCreature.creatureID == 9999)
 assert(missingCreature.count == 0)
 assert(missingCreature.power == 0)
+
+local halberdier = { id = 21, factionID = 1, level = 1, aiValue = 20, fullRecruitCost = { [7] = 100 } }
+local basicPikeman = { id = 20, factionID = 1, level = 1, aiValue = 10, fullRecruitCost = { [7] = 60 }, upgrades = { halberdier } }
+local marksman = { id = 23, factionID = 1, level = 2, aiValue = 50, fullRecruitCost = { [7] = 150 } }
+local basicArcher = { id = 22, factionID = 1, level = 2, aiValue = 30, fullRecruitCost = { [7] = 100 }, upgrades = { marksman } }
+local upgradeArmy = {
+	slots = {
+		{ creature = basicPikeman, count = 10 },
+		{ creature = basicArcher, count = 5 }
+	}
+}
+
+local hillFortUpgrade = ArmyManager.calculateCreaturesUpgrade(upgradeArmy, { ID = "HILL_FORT" }, { [7] = 200 })
+assert(hillFortUpgrade.upgradeValue == 100)
+assert((hillFortUpgrade.upgradeCost[6] or 0) == 0)
+assert(hillFortUpgrade.resultingArmy[1].creature == halberdier)
+assert(hillFortUpgrade.resultingArmy[1].power == 200)
+assert(hillFortUpgrade.resultingArmy[2].creature == basicArcher)
+
+local dwellingUpgrade = ArmyManager.calculateCreaturesUpgrade(upgradeArmy, {
+	isDwelling = true,
+	availableToBuy = {
+		{ creature = marksman, count = 0 }
+	}
+}, { [7] = 300 })
+assert(dwellingUpgrade.upgradeValue == 100)
+assert(dwellingUpgrade.upgradeCost[6] == 250)
+assert(dwellingUpgrade.resultingArmy[1].creature == basicPikeman)
+assert(dwellingUpgrade.resultingArmy[2].creature == marksman)
+assert(dwellingUpgrade.resultingArmy[2].power == 250)
+
+local unaffordableUpgrade = ArmyManager.calculateCreaturesUpgrade(upgradeArmy, {
+	isDwelling = true,
+	availableToBuy = {
+		{ creature = marksman, count = 0 }
+	}
+}, { [7] = 200 })
+assert(unaffordableUpgrade.upgradeValue == 0)
+assert(#unaffordableUpgrade.resultingArmy == 0)
