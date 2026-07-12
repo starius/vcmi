@@ -38,6 +38,7 @@ class CLuaNullkiller2AI final : public CAdventureAI
 	bool executeCommand(const LuaCommand & command);
 	LuaRunInput makeRunInput() const;
 	void updateMemory(const LuaTurnResult & result);
+	void runEventCallback(const std::string & functionName, JsonNode snapshot);
 	void runQueryCallback(const std::string & functionName, QueryID queryID);
 
 public:
@@ -54,6 +55,9 @@ public:
 	void showGarrisonDialog(const CArmedInstance * up, const CGHeroInstance * down, bool removableUnits, QueryID queryID, const MetaString & customTitle) override;
 	void showRecruitmentDialog(const CGDwelling * dwelling, const CArmedInstance * dst, int level, QueryID queryID) override;
 	void heroExchangeStarted(ObjectInstanceID hero1, ObjectInstanceID hero2, QueryID query) override;
+	void heroVisit(const CGHeroInstance * visitor, const CGObjectInstance * visitedObj, bool start) override;
+	void newObject(const CGObjectInstance * obj) override;
+	void objectRemoved(const CGObjectInstance * obj, const PlayerColor & initiator) override;
 	void showTeleportDialog(const CGHeroInstance * hero, TeleportChannelID channel, TTeleportExitsList exits, bool impassable, QueryID askID) override;
 	void showMapObjectSelectDialog(QueryID askID, const Component & icon, const MetaString & title, const MetaString & description, const std::vector<ObjectInstanceID> & objects) override;
 	std::optional<BattleAction> makeSurrenderRetreatDecision(const BattleID & battleID, const BattleStateInfoForRetreat & battleState) override;

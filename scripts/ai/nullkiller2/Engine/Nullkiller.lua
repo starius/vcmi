@@ -270,6 +270,18 @@ local function memoryRoot(input)
 	return result
 end
 
+local function eventMemory(input)
+	local root = memoryRoot(input or {})
+	return root, AIMemory.new(root.aiMemory)
+end
+
+local function eventResult(memory, status)
+	return {
+		status = status or "event",
+		memory = memory
+	}
+end
+
 local function buildAiState(input, host, settings, state)
 	input = ensureSnapshotIndexes(input)
 	local aiNk = {}
@@ -910,6 +922,40 @@ end
 
 function Nullkiller.commanderGotLevel(ai, input)
 	return answerQuery(ai, input)
+end
+
+function Nullkiller.heroVisit(ai, input)
+	input = input or {}
+	local root, memory = eventMemory(input)
+	if input.start and input.visitedObj then
+		memory:markObjectVisited(input.visitedObj)
+		root.objectClusterizer = root.objectClusterizer or {}
+		root.objectClusterizer.invalidatedObjects = root.objectClusterizer.invalidatedObjects or {}
+		root.objectClusterizer.invalidatedObjects[tostring(objectID(input.visitedObj))] = true
+	end
+	return eventResult(root, "hero_visit")
+end
+
+function Nullkiller.newObject(ai, input)
+	input = input or {}
+	local root, memory = eventMemory(input)
+	root.pathfinderInvalidated = true
+	if input.object and input.object.visitable ~= false then
+		memory:addVisitableObject(input.object)
+	end
+	return eventResult(root, "new_object")
+end
+
+function Nullkiller.objectRemoved(ai, input)
+	input = input or {}
+	local root, memory = eventMemory(input)
+	if input.object then
+		memory:removeFromMemory(input.object)
+		root.objectClusterizer = root.objectClusterizer or {}
+		root.objectClusterizer.removedObjects = root.objectClusterizer.removedObjects or {}
+		root.objectClusterizer.removedObjects[tostring(objectID(input.object))] = true
+	end
+	return eventResult(root, "object_removed")
 end
 
 function Nullkiller.heroGotLevel(ai, input)

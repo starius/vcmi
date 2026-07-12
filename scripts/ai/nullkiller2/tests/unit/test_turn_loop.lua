@@ -442,6 +442,48 @@ assert(levelResult.commandJournal[1].name == "answerQuery")
 assert(levelResult.commandJournal[1].payload.query == 920)
 assert(levelResult.commandJournal[1].payload.selection == 0)
 
+local eventMemory = {
+	version = 2,
+	aiMemory = {
+		visitableObjs = {},
+		alreadyVisited = {}
+	}
+}
+local newObjectResult = Script.newObject(makeAI().ai, {
+	memory = eventMemory,
+	object = {
+		id = 940,
+		visitable = true
+	}
+})
+assert(newObjectResult.status == "new_object")
+assert(newObjectResult.memory == eventMemory)
+assert(eventMemory.pathfinderInvalidated == true)
+assert(eventMemory.aiMemory.visitableObjs["940"] == true)
+
+local heroVisitResult = Script.heroVisit(makeAI().ai, {
+	memory = eventMemory,
+	start = true,
+	visitedObj = {
+		id = 940,
+		ID = "RESOURCE"
+	}
+})
+assert(heroVisitResult.status == "hero_visit")
+assert(eventMemory.aiMemory.alreadyVisited["940"] == true)
+assert(eventMemory.objectClusterizer.invalidatedObjects["940"] == true)
+
+local objectRemovedResult = Script.objectRemoved(makeAI().ai, {
+	memory = eventMemory,
+	object = {
+		id = 940
+	}
+})
+assert(objectRemovedResult.status == "object_removed")
+assert(eventMemory.aiMemory.visitableObjs["940"] == nil)
+assert(eventMemory.aiMemory.alreadyVisited["940"] == nil)
+assert(eventMemory.objectClusterizer.removedObjects["940"] == true)
+
 local recruitmentRun = makeAI()
 local recruitmentDialogResult = Script.showRecruitmentDialog(recruitmentRun.ai, {
 	queryID = 930,

@@ -41,6 +41,18 @@ function Script.commanderGotLevel(ai, input)
 	return Nullkiller.commanderGotLevel(ai, input or {})
 end
 
+function Script.heroVisit(ai, input)
+	return Nullkiller.heroVisit(ai, input or {})
+end
+
+function Script.newObject(ai, input)
+	return Nullkiller.newObject(ai, input or {})
+end
+
+function Script.objectRemoved(ai, input)
+	return Nullkiller.objectRemoved(ai, input or {})
+end
+
 function Script.heroGotLevel(ai, input)
 	return Nullkiller.heroGotLevel(ai, input or {})
 end

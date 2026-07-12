@@ -23,6 +23,7 @@
 #include "../../lib/entities/artifact/CArtifactInstance.h"
 #include "../../lib/mapObjects/CGDwelling.h"
 #include "../../lib/mapObjects/CGHeroInstance.h"
+#include "../../lib/mapObjects/CGObjectInstance.h"
 #include "../../lib/mapObjects/CGTownInstance.h"
 #include "../../lib/mapObjects/army/CStackInstance.h"
 #include "../../lib/mapObjects/IObjectInterface.h"
@@ -50,6 +51,28 @@ JsonNode tileSnapshot(const int3 & tile)
 	result["x"].Integer() = tile.x;
 	result["y"].Integer() = tile.y;
 	result["z"].Integer() = tile.z;
+	return result;
+}
+
+JsonNode objectSnapshot(const CGObjectInstance * object)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	if(!object)
+		return result;
+
+	result["id"].Integer() = object->id.getNum();
+	result["objectID"].Integer() = object->id.getNum();
+	result["typeID"].Integer() = object->ID.getNum();
+	result["subID"].Integer() = object->subID.getNum();
+	result["ID"].String() = object->getTypeName();
+	result["type"].String() = object->getTypeName();
+	result["name"].String() = object->getObjectName();
+	result["owner"].Integer() = object->tempOwner.getNum();
+	result["visitable"].Bool() = object->isVisitable();
+	if(object->isVisitable())
+		result["visitablePos"] = tileSnapshot(object->visitablePos());
+	result["anchorPos"] = tileSnapshot(object->anchorPos());
 	return result;
 }
 
@@ -474,6 +497,19 @@ void CLuaNullkiller2AI::updateMemory(const LuaTurnResult & result)
 		memory = result.memory;
 }
 
+void CLuaNullkiller2AI::runEventCallback(const std::string & functionName, JsonNode snapshot)
+{
+	LuaNullkiller2Runner runner;
+	LuaRunInput input = makeRunInput();
+	input.snapshot = std::move(snapshot);
+
+	const LuaTurnResult result = runner.runFunction(functionName, [](){}, input);
+	updateMemory(result);
+
+	if(!result.ok)
+		logAi->error("LuaNullkiller2 %s failed: %s", functionName, result.error);
+}
+
 void CLuaNullkiller2AI::runQueryCallback(const std::string & functionName, QueryID queryID)
 {
 	LuaNullkiller2Runner runner;
@@ -874,6 +910,42 @@ void CLuaNullkiller2AI::heroGotLevel(const CGHeroInstance * hero, PrimarySkill p
 void CLuaNullkiller2AI::commanderGotLevel(const CCommanderInstance * commander, std::vector<ui32> skills, QueryID queryID)
 {
 	runQueryCallback("commanderGotLevel", queryID);
+}
+
+void CLuaNullkiller2AI::heroVisit(const CGHeroInstance * visitor, const CGObjectInstance * visitedObj, bool start)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["start"].Bool() = start;
+	if(visitor)
+		snapshot["visitor"] = heroSnapshot(visitor);
+	if(visitedObj)
+		snapshot["visitedObj"] = objectSnapshot(visitedObj);
+
+	runEventCallback("heroVisit", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::newObject(const CGObjectInstance * obj)
+{
+	pathfinderInvalidated = true;
+
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	if(obj)
+		snapshot["object"] = objectSnapshot(obj);
+
+	runEventCallback("newObject", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::objectRemoved(const CGObjectInstance * obj, const PlayerColor & initiator)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["initiator"].Integer() = initiator.getNum();
+	if(obj)
+		snapshot["object"] = objectSnapshot(obj);
+
+	runEventCallback("objectRemoved", std::move(snapshot));
 }
 
 void CLuaNullkiller2AI::showTavernWindow(const CGObjectInstance * object, const CGHeroInstance * visitor, QueryID queryID)

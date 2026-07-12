@@ -1039,11 +1039,14 @@
         "AIGateway::showMapObjectSelectDialog",
         "AIGateway::makeSurrenderRetreatDecision",
         "AIGateway::heroExchangeStarted",
+        "AIGateway::heroVisit",
+        "AIGateway::newObject",
+        "AIGateway::objectRemoved",
         "AIGateway::makePossibleUpgrades",
         "AIGateway::recruitCreatures",
         "AIGateway::pickBestArtifacts"
       ],
-      "notes": "Dialog choice, teleport selection/probing, garrison-use, map-object selection, retreat, hero-exchange direction, upgrade choice, dwelling recruitment, army-transfer, and first-pass artifact equip/swap policies are Lua-owned against snapshots. Artifact replacement uses exported hero artifact snapshots, per-holder canBePutAt tables, and the displaced-artifact backpack fallback when a direct swap is illegal. The commanderGotLevel, heroGotLevel, heroExchangeStarted, showBlockingDialog, showGarrisonDialog, showRecruitmentDialog, showTeleportDialog, showTavernWindow, showMarketWindow, showUniversityWindow, and showMapObjectSelectDialog callbacks are wired through Lua entry points and answer pending queries through HostCommands.answerQuery. makeSurrenderRetreatDecision is wired through a Lua return decision converted to BattleAction at the host boundary. Hero role-map snapshots for exact level-up main/scout parity, teleport destination/probing memory, danger-aware blocking-dialog parity, cross-hero artifact legality breadth, full combined-artifact legality data, remaining callback wiring, and validator breadth remain pending."
+      "notes": "Dialog choice, teleport selection/probing, garrison-use, map-object selection, retreat, hero-exchange direction, visit/object memory events, upgrade choice, dwelling recruitment, army-transfer, and first-pass artifact equip/swap policies are Lua-owned against snapshots. Artifact replacement uses exported hero artifact snapshots, per-holder canBePutAt tables, and the displaced-artifact backpack fallback when a direct swap is illegal. The commanderGotLevel, heroGotLevel, heroExchangeStarted, heroVisit, newObject, objectRemoved, showBlockingDialog, showGarrisonDialog, showRecruitmentDialog, showTeleportDialog, showTavernWindow, showMarketWindow, showUniversityWindow, and showMapObjectSelectDialog callbacks are wired through Lua entry points. Query callbacks answer pending queries through HostCommands.answerQuery. makeSurrenderRetreatDecision is wired through a Lua return decision converted to BattleAction at the host boundary. Hero role-map snapshots for exact level-up main/scout parity, teleport destination/probing memory, danger-aware blocking-dialog parity, cross-hero artifact legality breadth, full combined-artifact legality data, remaining callback wiring, and validator breadth remain pending."
     },
     {
       "cpp": null,
@@ -1064,7 +1067,10 @@
         "Script.commanderGotLevel",
         "Script.heroGotLevel",
         "Script.heroExchangeStarted",
+        "Script.heroVisit",
         "Script.makeSurrenderRetreatDecision",
+        "Script.newObject",
+        "Script.objectRemoved",
         "Script.showBlockingDialog",
         "Script.showGarrisonDialog",
         "Script.showMarketWindow",
