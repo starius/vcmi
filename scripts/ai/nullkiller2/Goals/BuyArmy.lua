@@ -77,6 +77,18 @@ local function upperArmy(town)
 	return call(town, "getUpperArmy") or town and (town.upperArmy or town.garrisonHero or town)
 end
 
+local function visitingHero(town)
+	return call(town, "getVisitingHero") or town and town.visitingHero
+end
+
+local function garrisonHero(town)
+	return call(town, "getGarrisonHero") or town and town.garrisonHero
+end
+
+local function visitablePos(town)
+	return call(town, "visitablePos") or town and (town.visitablePos or town.tile)
+end
+
 local function resources(aiGw)
 	if aiGw and type(aiGw.getFreeResources) == "function" then
 		return aiGw:getFreeResources()
@@ -260,6 +272,15 @@ function BuyArmy:accept(aiGw)
 
 	if valueBought == 0 then
 		error("No creatures to buy.", 2)
+	end
+
+	local hero = visitingHero(self.town)
+	if hero and not garrisonHero(self.town) then
+		if aiGw and type(aiGw.moveHeroToTile) == "function" then
+			aiGw:moveHeroToTile(visitablePos(self.town), hero)
+		else
+			error("No hero movement command target.", 2)
+		end
 	end
 
 	return {

@@ -279,7 +279,7 @@
         "Goals::BuyArmy::toString",
         "Goals::BuyArmy::accept"
       ],
-      "notes": "Lua accept emits granular upgrade/recruit/dismiss creature commands from town purchase, upgrade-info, and upper-army stack snapshots. Post-recruit visiting-hero movement remains pending."
+      "notes": "Lua accept emits granular upgrade/recruit/dismiss creature commands from town purchase, upgrade-info, and upper-army stack snapshots, and requests post-recruit visiting-hero movement when the town has no garrison hero."
     },
     {
       "cpp": "AI/Nullkiller2/Goals/CaptureObject.h",

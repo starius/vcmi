@@ -123,6 +123,33 @@ assert(buyArmyJournal[1].creature.id == 106)
 assert(buyArmyJournal[1].count == 5)
 assert(buyArmyJournal[1].level == 1)
 
+local movementTown = {
+	id = 130,
+	name = "Movement Town",
+	visitablePos = { x = 4, y = 5, z = 0 },
+	visitingHero = { id = 131, name = "Visitor" },
+	upperArmy = { id = 132, stacksCount = 0, armySize = 7 },
+	availableToBuy = {
+		{
+			creature = { id = 133, aiValue = 100, factionID = 1, fullRecruitCost = { [7] = 100 } },
+			count = 1,
+			level = 0
+		}
+	}
+}
+local movedHero = nil
+local movedTile = nil
+BuyArmy.new(movementTown, 100):accept({
+	freeResources = { [7] = 1000 },
+	recruitCreatures = function() end,
+	moveHeroToTile = function(_, tile, hero)
+		movedTile = tile
+		movedHero = hero
+	end
+})
+assert(movedHero == movementTown.visitingHero)
+assert(movedTile == movementTown.visitablePos)
+
 local fullTown = {
 	id = 201,
 	name = "Full Town",
