@@ -325,6 +325,8 @@ int replayVGTJson(const VGTReplayOptions & options)
 	const JsonNode documents = readJsonFile(options.inputJson);
 	if(!documents.isVector() || documents.Vector().empty())
 		throw std::runtime_error("VGT replay JSON must contain transcript documents");
+	if(documents.Vector().size() != 1)
+		throw std::runtime_error("VGT event replay is not implemented yet; pass only the header document for initialization replay");
 
 	const JsonNode & header = documents.Vector().front();
 	setReplaySeed(header);

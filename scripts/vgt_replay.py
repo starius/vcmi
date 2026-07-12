@@ -168,6 +168,8 @@ def command_replay(args: argparse.Namespace) -> int:
         validate_map_hash(transcript_header["map"], args.resource_root)
     if args.strict:
         fail_on_unmodelled(documents)
+    if len(documents) > 1 and not args.header_only:
+        raise VGTError("event replay is not implemented yet; use --header-only to rebuild only the initialized state")
 
     temporary_path: Path | None = None
     json_path = args.normalized_json
@@ -177,7 +179,8 @@ def command_replay(args: argparse.Namespace) -> int:
         handle.close()
         json_path = temporary_path
 
-    write_normalized_json(documents, json_path)
+    replay_documents = [transcript_header] if args.header_only else documents
+    write_normalized_json(replay_documents, json_path)
     engine_binary = args.engine_binary
     if not engine_binary.is_absolute():
         engine_binary = (Path.cwd() / engine_binary).resolve()
@@ -215,6 +218,7 @@ def build_parser() -> argparse.ArgumentParser:
     replay.add_argument("--normalized-json", type=Path, help="keep the normalized JSON passed to the engine")
     replay.add_argument("--engine-binary", type=Path, required=True, help="path to the VCMI executable with VGT replay support")
     replay.add_argument("--output-save", type=Path, required=True, help="save file to write after replay")
+    replay.add_argument("--header-only", action="store_true", help="rebuild only the initialized state from the transcript header")
     replay.set_defaults(func=command_replay)
     return parser
 
