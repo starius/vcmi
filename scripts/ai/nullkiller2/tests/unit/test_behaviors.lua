@@ -4,7 +4,11 @@ local BuyArmyBehavior = require("Behaviors.BuyArmyBehavior")
 local CaptureObjectsBehavior = require("Behaviors.CaptureObjectsBehavior")
 local ClusterBehavior = require("Behaviors.ClusterBehavior")
 local EscapeBehavior = require("Behaviors.EscapeBehavior")
+local ExplorationBehavior = require("Behaviors.ExplorationBehavior")
 local ExchangeSwapTownHeroes = require("Goals.ExchangeSwapTownHeroes")
+local CaptureObject = require("Goals.CaptureObject")
+local ExplorationHelper = require("Helpers.ExplorationHelper")
+local ExplorationPoint = require("Markers.ExplorationPoint")
 local PriorityEvaluator = require("Engine.PriorityEvaluator")
 local RecruitHeroBehavior = require("Behaviors.RecruitHeroBehavior")
 local State = require("Engine.State")
@@ -644,3 +648,87 @@ local clusterSequence = clusterTasks[1]:decompose({})
 assert(clusterSequence[1].goalType == AbstractGoal.EGoals.UNLOCK_CLUSTER)
 assert(clusterSequence[2].goalType == AbstractGoal.EGoals.EXECUTE_HERO_CHAIN)
 assert(clusterSequence[2].tile == clusterBlocker.visitablePos)
+
+local explorationPoint = ExplorationPoint.new({ x = 7, y = 8, z = 0 }, 9)
+assert(explorationPoint:equals(ExplorationPoint.new({ x = 7, y = 8, z = 0 }, 9)) == false)
+assert(explorationPoint:toString() == "Explore (7 8 0) for 9 tiles")
+
+local dimensionDoorEvaluation = ExplorationHelper.evaluateDimensionDoorExplorationCandidate({
+	visible = true,
+	tilesDiscovered = 3,
+	continuationTilesDiscovered = 2,
+	chainTilesDiscovered = 1,
+	strategicScore = 1,
+	reachableWithoutDimensionDoor = false,
+	dimensionDoorTriggersGuards = true,
+	guardedLandingDanger = 0,
+	guardedLandingSafe = true,
+	movementPointsRemaining = 600,
+	movementPointsLimit = 1200,
+	movementPointsTaken = 300,
+	currentBestValue = 0
+})
+assert(dimensionDoorEvaluation.accepted == true)
+assert(dimensionDoorEvaluation.value == 156)
+assert(dimensionDoorEvaluation.tilesDiscovered == 4)
+assert(ExplorationHelper.evaluateDimensionDoorExplorationCandidate({
+	tilesDiscovered = 1,
+	reachableWithoutDimensionDoor = true
+}).accepted == false)
+
+local explorationObject = {
+	id = 701,
+	ID = "MINE",
+	typeName = "Mine",
+	visitablePos = { x = 3, y = 4, z = 0 }
+}
+local explorationHero = {
+	id = 702,
+	name = "Scout",
+	explorationHelper = {
+		scanSector = {
+			[1] = {
+				bestGoal = CaptureObject.new(explorationObject),
+				bestTile = { x = 3, y = 4, z = 0 },
+				bestTilesDiscovered = 5
+			}
+		}
+	}
+}
+local boatObject = {
+	id = 703,
+	ID = "BOAT",
+	typeName = "Boat",
+	available = true,
+	hiddenTilesDiscovered = 6,
+	visitablePos = { x = 5, y = 5, z = 0 }
+}
+local explorationTasks = ExplorationBehavior.new():decompose({
+	visitableObjects = { boatObject },
+	heroesInfo = { explorationHero }
+})
+assert(#explorationTasks == 2)
+local boatSequence = explorationTasks[1]:decompose({})
+assert(boatSequence[1].goalType == AbstractGoal.EGoals.EXPLORATION_POINT)
+assert(boatSequence[1].value == 6)
+assert(boatSequence[2].goalType == AbstractGoal.EGoals.CAPTURE_OBJECT)
+local scanSequence = explorationTasks[2]:decompose({})
+assert(scanSequence[1].goalType == AbstractGoal.EGoals.EXPLORATION_POINT)
+assert(scanSequence[2].goalType == AbstractGoal.EGoals.CAPTURE_OBJECT)
+assert(scanSequence[3].goalType == AbstractGoal.EGoals.EXPLORE_NEIGHBOUR_TILE)
+
+local neighbourHero = {
+	id = 704,
+	name = "Walker",
+	neighbourExplorationCandidates = {
+		{ tile = { x = 8, y = 8, z = 0 }, sameDay = true, accessible = true, safe = true, tilesDiscovered = 4, movementCost = 1 }
+	}
+}
+local neighbourTasks = ExplorationBehavior.new():decompose({
+	heroesInfo = { neighbourHero },
+	scanDepth = State.ScanDepth.ALL_FULL
+})
+assert(#neighbourTasks == 1)
+local neighbourSequence = neighbourTasks[1]:decompose({})
+assert(neighbourSequence[1].goalType == AbstractGoal.EGoals.EXPLORATION_POINT)
+assert(neighbourSequence[2].goalType == AbstractGoal.EGoals.EXPLORE_NEIGHBOUR_TILE)
