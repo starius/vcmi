@@ -874,6 +874,16 @@
       "notes": "Dimension Door evaluator and composition policy are ported. Full tile scanning is represented by Lua/host exploration helper snapshots."
     },
     {
+      "cpp": "AI/Nullkiller2/AIUtility.cpp",
+      "lua": "scripts/ai/nullkiller2/Helpers/AIUtility.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "getArtifactBonusRelevance",
+        "getArtifactScoreForHero"
+      ],
+      "notes": "Hero-specific artifact relevance and equipped-artifact score formulas are Lua-owned against hero slot, stack bonus, spellbook, and artifact bonus snapshots. Broader AIUtility helper coverage and artifact move sequencing remain pending."
+    },
+    {
       "cpp": "AI/Nullkiller2/Helpers/ExplorationHelper.cpp",
       "lua": "scripts/ai/nullkiller2/Helpers/ExplorationHelper.lua",
       "status": "scaffolded",
