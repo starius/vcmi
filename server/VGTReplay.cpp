@@ -1145,7 +1145,8 @@ void applyGameSettingsOverrides(CGameHandler & gameHandler, const JsonNode & hea
 	if(iter == settingsNode.Struct().end())
 		return;
 
-	gameHandler.gs->getMap().updateGameSettingsOverrides(iter->second);
+	if(gameHandler.gs->getMap().getGameSettingsOverrides().toCompactString() != iter->second.toCompactString())
+		throw std::runtime_error("VGT replay game settings overrides do not match loaded map");
 }
 
 void replayPack(CGameHandler & gameHandler, CPackForServer & pack, PlayerColor player)
