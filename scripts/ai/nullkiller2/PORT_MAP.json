@@ -83,12 +83,113 @@
     {
       "cpp": "AI/Nullkiller2/Goals/AbstractGoal.h",
       "lua": "scripts/ai/nullkiller2/Goals/AbstractGoal.lua",
-      "status": "pending_lua_port",
+      "status": "ported",
       "symbols": [
         "Goals::AbstractGoal",
         "Goals::ITask",
         "Goals::EGoals"
+      ],
+      "notes": "Default fields, enum values, setter chaining, task conversion guard, helper exceptions, and base string formatting are mirrored. Engine-backed translated names are represented by host-snapshot fields until richer C++ input snapshots exist."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/AbstractGoal.cpp",
+      "lua": "scripts/ai/nullkiller2/Goals/AbstractGoal.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::sptr",
+        "Goals::taskptr",
+        "AbstractGoal::toString",
+        "Goals::TSubgoal::operator=="
+      ],
+      "notes": "String output for generic goals is mirrored using deterministic Lua-side IDs and names from input snapshots."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/CGoal.h",
+      "lua": "scripts/ai/nullkiller2/Goals/CGoal.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::CGoal<T>",
+        "Goals::ElementarGoal<T>",
+        "ElementarGoal::setpriority",
+        "ElementarGoal::getAffectedObjects"
+      ],
+      "notes": "Lua derives concrete goal classes from mirrored CGoal and ElementarGoal base tables."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/Goals.h",
+      "lua": "scripts/ai/nullkiller2/Goals/Goals.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals aggregate include"
+      ],
+      "notes": "Currently aggregates the ported initial goal subset."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/Invalid.h",
+      "lua": "scripts/ai/nullkiller2/Goals/Invalid.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::Invalid"
       ]
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/Trade.h",
+      "lua": "scripts/ai/nullkiller2/Goals/Trade.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::Trade::Trade",
+        "Goals::Trade::operator=="
+      ]
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/Trade.cpp",
+      "lua": "scripts/ai/nullkiller2/Goals/Trade.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::Trade::operator=="
+      ]
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/BuildThis.h",
+      "lua": "scripts/ai/nullkiller2/Goals/BuildThis.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::BuildThis"
+      ],
+      "notes": "Constructor, equality, and string policy are ported. Action execution still needs the Lua command/journal host path before full accept parity."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/BuildThis.cpp",
+      "lua": "scripts/ai/nullkiller2/Goals/BuildThis.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::BuildThis::BuildThis",
+        "Goals::BuildThis::operator==",
+        "Goals::BuildThis::toString",
+        "Goals::BuildThis::accept"
+      ],
+      "notes": "Action execution is intentionally a host command call and must be completed with validated command snapshots."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/BuyArmy.h",
+      "lua": "scripts/ai/nullkiller2/Goals/BuyArmy.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::BuyArmy",
+        "Goals::BuyArmy::needsFreeSlotToRecruit"
+      ],
+      "notes": "Constructor, equality, string policy, and free-slot helper are ported. Purchase loop and stack dismissal policy remain pending."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/BuyArmy.cpp",
+      "lua": "scripts/ai/nullkiller2/Goals/BuyArmy.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::BuyArmy::operator==",
+        "Goals::BuyArmy::toString",
+        "Goals::BuyArmy::accept"
+      ],
+      "notes": "Full accept parity depends on Lua snapshots for army value, recruit costs, slots, and host command execution."
     },
     {
       "cpp": "AI/Nullkiller2/Engine/ResourceTrader.cpp",
