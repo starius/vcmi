@@ -51,6 +51,136 @@ JsonNode objectIDsSnapshot(const std::vector<ObjectInstanceID> & objects)
 	return result;
 }
 
+std::string componentTypeName(ComponentType type)
+{
+	switch(type)
+	{
+	case ComponentType::NONE:
+		return "NONE";
+	case ComponentType::PRIM_SKILL:
+		return "PRIM_SKILL";
+	case ComponentType::SEC_SKILL:
+		return "SEC_SKILL";
+	case ComponentType::RESOURCE:
+		return "RESOURCE";
+	case ComponentType::RESOURCE_PER_DAY:
+		return "RESOURCE_PER_DAY";
+	case ComponentType::CREATURE:
+		return "CREATURE";
+	case ComponentType::ARTIFACT:
+		return "ARTIFACT";
+	case ComponentType::SPELL_SCROLL:
+		return "SPELL_SCROLL";
+	case ComponentType::MANA:
+		return "MANA";
+	case ComponentType::EXPERIENCE:
+		return "EXPERIENCE";
+	case ComponentType::LEVEL:
+		return "LEVEL";
+	case ComponentType::SPELL:
+		return "SPELL";
+	case ComponentType::MORALE:
+		return "MORALE";
+	case ComponentType::LUCK:
+		return "LUCK";
+	case ComponentType::BUILDING:
+		return "BUILDING";
+	case ComponentType::HERO_PORTRAIT:
+		return "HERO_PORTRAIT";
+	case ComponentType::FLAG:
+		return "FLAG";
+	}
+	return "UNKNOWN";
+}
+
+std::string objectTypeName(Obj type)
+{
+	switch(type)
+	{
+	case Obj::ARTIFACT:
+		return "ARTIFACT";
+	case Obj::BORDERGUARD:
+		return "BORDERGUARD";
+	case Obj::QUEST_GUARD:
+		return "QUEST_GUARD";
+	case Obj::RESOURCE:
+		return "RESOURCE";
+	default:
+		return "";
+	}
+}
+
+JsonNode tileSnapshot(const int3 & tile)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	result["x"].Integer() = tile.x;
+	result["y"].Integer() = tile.y;
+	result["z"].Integer() = tile.z;
+	result["valid"].Bool() = tile.isValid();
+	return result;
+}
+
+JsonNode componentSnapshot(const Component & component)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	result["type"].String() = componentTypeName(component.type);
+	result["typeID"].Integer() = static_cast<int>(component.type);
+	if(component.subType.hasValue())
+		result["subType"].Integer() = component.subType.getNum();
+	if(component.value)
+		result["value"].Integer() = *component.value;
+	return result;
+}
+
+JsonNode componentsSnapshot(const std::vector<Component> & components)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_VECTOR);
+	for(const auto & component : components)
+		result.Vector().push_back(componentSnapshot(component));
+	return result;
+}
+
+JsonNode blockingHeroSnapshot(const HeroPtr & heroPtr, std::optional<HeroRole> role = std::nullopt)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	result["verified"].Bool() = heroPtr.isVerified(false);
+	if(!heroPtr.isVerified(false))
+		return result;
+
+	const auto * hero = heroPtr.get();
+	result["id"].Integer() = hero->id.getNum();
+	result["totalStrength"].Integer() = static_cast<int64_t>(hero->getTotalStrength());
+	if(role)
+		result["role"].Integer() = static_cast<int>(*role);
+	return result;
+}
+
+JsonNode blockingObjectSnapshot(const CGObjectInstance * object, int64_t danger)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	result["id"].Integer() = object->id.getNum();
+	result["typeID"].Integer() = static_cast<int>(object->ID);
+	const std::string typeName = objectTypeName(object->ID);
+	if(!typeName.empty())
+		result["ID"].String() = typeName;
+	result["danger"].Integer() = danger;
+	return result;
+}
+
+JsonNode blockingObjectsSnapshot(const std::vector<const CGObjectInstance *> & objects, const std::unique_ptr<FuzzyHelper> & dangerEvaluator)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_VECTOR);
+	for(const auto * object : objects)
+		result.Vector().push_back(blockingObjectSnapshot(object, dangerEvaluator->evaluateDanger(object)));
+	return result;
+}
+
 JsonNode answerQueryCommandJournal(QueryID queryID, int selection)
 {
 	JsonNode result;
@@ -78,6 +208,37 @@ JsonNode mapObjectSelectInput(QueryID queryID, int selection, const std::vector<
 }
 
 JsonNode mapObjectSelectNativeOutput(QueryID queryID, int selection)
+{
+	JsonNode output;
+	output.setType(JsonNode::JsonType::DATA_STRUCT);
+	output["status"].String() = "answered";
+	output["selection"].Integer() = selection;
+	output["commandJournal"] = answerQueryCommandJournal(queryID, selection);
+	return output;
+}
+
+JsonNode blockingDialogInput(
+	QueryID queryID,
+	const std::string & text,
+	const std::vector<Component> & components,
+	int soundID,
+	bool selection,
+	bool cancel,
+	bool safeToAutoaccept)
+{
+	JsonNode input;
+	input.setType(JsonNode::JsonType::DATA_STRUCT);
+	input["queryID"].Integer() = queryID.getNum();
+	input["text"].String() = text;
+	input["soundID"].Integer() = soundID;
+	input["selection"].Bool() = selection;
+	input["cancel"].Bool() = cancel;
+	input["safeToAutoaccept"].Bool() = safeToAutoaccept;
+	input["components"] = componentsSnapshot(components);
+	return input;
+}
+
+JsonNode blockingDialogNativeOutput(QueryID queryID, int selection)
 {
 	JsonNode output;
 	output.setType(JsonNode::JsonType::DATA_STRUCT);
@@ -692,11 +853,16 @@ void AIGateway::showBlockingDialog(const std::string & text, const std::vector<C
 
 	if(!selection && cancel)
 	{
-		executeActionAsync("showBlockingDialog", [this, heroPtr, target, askID]()
+		executeActionAsync("showBlockingDialog", [this, heroPtr, target, askID, text, components, soundID, selection, cancel, safeToAutoaccept]()
 		{
 			//yes&no -> always answer yes, we are a brave AI :)
 			bool answer = true;
 			auto objects = cc->getVisitableObjs(target);
+			JsonNode traceInput = blockingDialogInput(askID, text, components, soundID, selection, cancel, safeToAutoaccept);
+			traceInput["target"] = tileSnapshot(target);
+			traceInput["targetObject"].Integer() = nullkiller->getTargetObject().getNum();
+			traceInput["settings"].setType(JsonNode::JsonType::DATA_STRUCT);
+			traceInput["settings"]["safeAttackRatio"].Float() = nullkiller->settings->getSafeAttackRatio();
 
 			if(heroPtr.isVerified() && target.isValid() && !objects.empty())
 			{
@@ -705,6 +871,9 @@ void AIGateway::showBlockingDialog(const std::string & text, const std::vector<C
 				auto goalObjectID = nullkiller->getTargetObject();
 				auto danger = nullkiller->dangerEvaluator->evaluateDanger(target, heroPtr.get());
 				auto ratio = static_cast<float>(danger) / heroPtr->getTotalStrength();
+				traceInput["hero"] = blockingHeroSnapshot(heroPtr);
+				traceInput["objects"] = blockingObjectsSnapshot(objects, nullkiller->dangerEvaluator);
+				traceInput["danger"].Integer() = static_cast<int64_t>(danger);
 
 				answer = true;
 
@@ -734,32 +903,61 @@ void AIGateway::showBlockingDialog(const std::string & text, const std::vector<C
 				}
 			}
 
-			answerQuery(askID, answer ? 1 : 0);
+			const int answerSelection = answer ? 1 : 0;
+			if(nativeTrace)
+			{
+				nativeTrace->recordDecision(
+					boost::str(boost::format("showBlockingDialog.%d") % askID.getNum()),
+					"showBlockingDialog",
+					std::move(traceInput),
+					blockingDialogNativeOutput(askID, answerSelection),
+					{ "status", "selection", "commandJournal" });
+			}
+			answerQuery(askID, answerSelection);
 		});
 
 		return;
 	}
 
-	executeActionAsync("showBlockingDialog", [this, selection, components, heroPtr, askID]()
+	executeActionAsync("showBlockingDialog", [this, selection, components, heroPtr, askID, text, soundID, cancel, safeToAutoaccept]()
 	{
 		int sel = 0;
+		JsonNode traceInput = blockingDialogInput(askID, text, components, soundID, selection, cancel, safeToAutoaccept);
 
 		if(selection) // select the last component; they are indexed in range [1, size]
 			sel = components.size();
 		{
 				std::unique_lock mxLock(nullkiller->aiStateMutex);
+				std::optional<HeroRole> role;
+				bool goldPressureOverMax = false;
+				if(heroPtr.isVerified())
+				{
+					role = nullkiller->heroManager->getHeroRoleOrDefault(heroPtr);
+					goldPressureOverMax = nullkiller->buildAnalyzer->isGoldPressureOverMax();
+					traceInput["hero"] = blockingHeroSnapshot(heroPtr, role);
+					traceInput["goldPressureOverMax"].Bool() = goldPressureOverMax;
+				}
+				const bool preferResourceReward = role && (*role != HeroRole::MAIN || goldPressureOverMax);
 
 				// TODO: Find better way to understand it is Chest of Treasures
 				if(heroPtr.isVerified()
 					&& components.size() == 2
 					&& components.front().type == ComponentType::RESOURCE
-					&& (nullkiller->heroManager->getHeroRoleOrDefault(heroPtr) != HeroRole::MAIN
-						|| nullkiller->buildAnalyzer->isGoldPressureOverMax()))
+					&& preferResourceReward)
 				{
 					sel = 1;
 				}
 		}
 
+		if(nativeTrace)
+		{
+			nativeTrace->recordDecision(
+				boost::str(boost::format("showBlockingDialog.%d") % askID.getNum()),
+				"showBlockingDialog",
+				std::move(traceInput),
+				blockingDialogNativeOutput(askID, sel),
+				{ "status", "selection", "commandJournal" });
+		}
 		answerQuery(askID, sel);
 	});
 }

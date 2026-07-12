@@ -1,0 +1,75 @@
+{
+  "schema": "LuaNullkiller2.nativeDecisionTrace.v1",
+  "source": "Nullkiller2",
+  "compareMode": "exact",
+  "decisions": [
+    {
+      "id": "yes-no-default",
+      "function": "showBlockingDialog",
+      "compare": [
+        "status",
+        "selection",
+        "commandJournal"
+      ],
+      "input": {
+        "queryID": 905,
+        "selection": false,
+        "cancel": true
+      },
+      "native": {
+        "status": "answered",
+        "selection": 1,
+        "commandJournal": [
+          {
+            "name": "answerQuery",
+            "payload": {
+              "query": 905,
+              "selection": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "selection-resource-scout",
+      "function": "showBlockingDialog",
+      "compare": [
+        "status",
+        "selection",
+        "commandJournal"
+      ],
+      "input": {
+        "queryID": 906,
+        "selection": true,
+        "cancel": false,
+        "goldPressureOverMax": false,
+        "hero": {
+          "id": 70,
+          "verified": true,
+          "role": 0
+        },
+        "components": [
+          {
+            "type": "RESOURCE"
+          },
+          {
+            "type": "EXPERIENCE"
+          }
+        ]
+      },
+      "native": {
+        "status": "answered",
+        "selection": 1,
+        "commandJournal": [
+          {
+            "name": "answerQuery",
+            "payload": {
+              "query": 906,
+              "selection": 1
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

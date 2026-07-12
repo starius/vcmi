@@ -166,7 +166,7 @@ end
 local function topVisitedObject(objects, hero)
 	local first = objects[1]
 	if first and objectID(first) == objectID(hero) then
-		return objects[2]
+		return objects[2] or first
 	end
 	return first
 end
