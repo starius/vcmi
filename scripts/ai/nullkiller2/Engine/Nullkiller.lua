@@ -1048,6 +1048,12 @@ function Nullkiller.tileRevealed(ai, input)
 			memory:addVisitableObject(object)
 		end
 	end
+	local settings = loadSettings(input)
+	local revealedTiles = input.tiles or {}
+	if settings:isUpdateHitmapOnTileReveal() and #revealedTiles > 0 then
+		root.dangerHitMap = root.dangerHitMap or {}
+		root.dangerHitMap.resetTileOwners = true
+	end
 	return eventResult(root, "tile_revealed")
 end
 

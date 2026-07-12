@@ -525,12 +525,40 @@ assert(eventMemory.aiMemory.visitableObjs["942"] == nil)
 
 local tileRevealedResult = Script.tileRevealed(makeAI().ai, {
 	memory = eventMemory,
+	tiles = {
+		{ x = 4, y = 5, z = 0 }
+	},
 	objects = {
 		{ id = 943, visitable = true }
 	}
 })
 assert(tileRevealedResult.status == "tile_revealed")
 assert(eventMemory.aiMemory.visitableObjs["943"] == true)
+assert(not (eventMemory.dangerHitMap and eventMemory.dangerHitMap.resetTileOwners))
+
+local tileRevealResetMemory = {
+	aiMemory = {
+		visitableObjs = {},
+		alreadyVisited = {}
+	}
+}
+local tileRevealResetResult = Script.tileRevealed(makeAI().ai, {
+	memory = tileRevealResetMemory,
+	settings = {
+		values = {
+			updateHitmapOnTileReveal = true
+		}
+	},
+	tiles = {
+		{ x = 6, y = 7, z = 0 }
+	},
+	objects = {
+		{ id = 944, visitable = true }
+	}
+})
+assert(tileRevealResetResult.status == "tile_revealed")
+assert(tileRevealResetMemory.aiMemory.visitableObjs["944"] == true)
+assert(tileRevealResetMemory.dangerHitMap.resetTileOwners == true)
 
 local tileHiddenResult = Script.tileHidden(makeAI().ai, {
 	memory = eventMemory,
