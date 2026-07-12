@@ -71,6 +71,13 @@ def fixture_paths(explicit: list[Path]) -> list[Path]:
     return sorted(REPLAY_ROOT.glob("*.json"))
 
 
+def display_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
 def replay_script(function_name: str, input_value: Any) -> str:
     return f"""
 local Script = require("main")
@@ -241,6 +248,31 @@ def write_discrepancy(path: Path, expected: Any, actual: Any, errors: list[str])
     (DISCREPANCY_ROOT / f"{stem}.summary.txt").write_text("\n".join(errors) + "\n\n" + diff + "\n", encoding="utf-8")
 
 
+def has_expected_failure_marker(fixture: dict[str, Any]) -> bool:
+    return any(key in fixture for key in ("expectedFailure", "expectFailure", "xfail"))
+
+
+def expected_failure_reason(fixture: dict[str, Any]) -> str | None:
+    for key in ("expectedFailure", "expectFailure", "xfail"):
+        if key not in fixture:
+            continue
+        marker = fixture[key]
+        if marker is False or marker is None:
+            return None
+        if marker is True:
+            return "expected failure"
+        if isinstance(marker, str):
+            return marker
+        if isinstance(marker, dict):
+            for reason_key in ("reason", "todo", "issue"):
+                reason = marker.get(reason_key)
+                if isinstance(reason, str) and reason:
+                    return reason
+            return "expected failure"
+        return str(marker)
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("fixtures", nargs="*", type=Path)
@@ -255,9 +287,14 @@ def main() -> int:
     failures = 0
     for path in fixture_paths(args.fixtures):
         fixture = json.loads(path.read_text(encoding="utf-8"))
-        print(f"[replay] {path.relative_to(REPO_ROOT)}")
+        expected_failure = expected_failure_reason(fixture)
+        label = display_path(path)
+        print(f"[replay] {label}")
         actual, error = run_fixture(lua, path)
         if actual is None:
+            if expected_failure:
+                print(f"[expected-failure] {label}: {expected_failure}", file=sys.stderr)
+                continue
             print(error, file=sys.stderr)
             failures += 1
             continue
@@ -266,6 +303,15 @@ def main() -> int:
         if errors:
             write_discrepancy(path, expected, actual, errors)
             print("\n".join(errors), file=sys.stderr)
+            if expected_failure:
+                print(f"[expected-failure] {label}: {expected_failure}", file=sys.stderr)
+                continue
+            failures += 1
+        elif expected_failure:
+            print(
+                f"{label}: expected failure passed; remove the marker",
+                file=sys.stderr,
+            )
             failures += 1
 
     return 1 if failures else 0

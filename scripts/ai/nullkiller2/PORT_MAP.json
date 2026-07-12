@@ -1128,9 +1128,10 @@
       "symbols": [
         "Lua decision replay fixtures",
         "normalized expected-subset comparator",
-        "discrepancy artifact writer"
+        "discrepancy artifact writer",
+        "expected-failure markers"
       ],
-      "notes": "JSON replay fixtures under tests/fixtures/replay exercise Lua entry points without a full game and compare normalized status, command journals, trace, and memory, including runDay hero-chain special-action command journals. Failures write actual JSON plus a first-difference summary under tests/fixtures/discrepancies. Native trace comparison is scaffolded separately; broad native trace export and lockstep comparison remain pending."
+      "notes": "JSON replay fixtures under tests/fixtures/replay exercise Lua entry points without a full game and compare normalized status, command journals, trace, and memory, including runDay hero-chain special-action command journals. Failures write actual JSON plus a first-difference summary under tests/fixtures/discrepancies. Replay and native-trace fixtures support expectedFailure/expectFailure/xfail markers for known missing-host-data gaps; mismatches with a marker are non-fatal, while unexpected passes fail so stale markers get removed. Native trace comparison is scaffolded separately; broad native trace export and lockstep comparison remain pending."
     },
     {
       "cpp": "AI/Nullkiller2/Engine/NativeTrace.cpp",

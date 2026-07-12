@@ -13,9 +13,12 @@ from typing import Any
 from replay_lua_decisions import (
     DISCREPANCY_ROOT,
     REPO_ROOT,
+    display_path,
     find_lua_interpreter,
     run_decision,
     assert_subset,
+    expected_failure_reason,
+    has_expected_failure_marker,
 )
 
 
@@ -145,6 +148,14 @@ def write_trace_discrepancy(path: Path, decision_id: str, native: Any, actual: A
     (DISCREPANCY_ROOT / f"{stem}.summary.txt").write_text("\n".join(errors) + "\n\n" + diff + "\n", encoding="utf-8")
 
 
+def decision_expected_failure(document: Any, decision: dict[str, Any]) -> str | None:
+    if has_expected_failure_marker(decision):
+        return expected_failure_reason(decision)
+    if isinstance(document, dict):
+        return expected_failure_reason(document)
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("traces", nargs="*", type=Path)
@@ -168,7 +179,9 @@ def main() -> int:
 
         for index, decision in enumerate(trace_decisions(document)):
             decision_id = str(decision.get("id") or f"decision-{index + 1}")
-            print(f"[native-trace] {path.relative_to(REPO_ROOT)}#{decision_id}")
+            expected_failure = decision_expected_failure(document, decision)
+            label = display_path(path)
+            print(f"[native-trace] {label}#{decision_id}")
             function_name = decision.get("function")
             if not isinstance(function_name, str):
                 print(f"{path}#{decision_id}: function must be a string", file=sys.stderr)
@@ -176,6 +189,12 @@ def main() -> int:
                 continue
             actual, error = run_decision(lua, function_name, decision.get("input", {}))
             if actual is None:
+                if expected_failure:
+                    print(
+                        f"[expected-failure] {label}#{decision_id}: {expected_failure}",
+                        file=sys.stderr,
+                    )
+                    continue
                 print(error, file=sys.stderr)
                 failures += 1
                 continue
@@ -191,6 +210,18 @@ def main() -> int:
             if errors:
                 write_trace_discrepancy(path, decision_id, native_output(decision), actual, errors)
                 print("\n".join(errors), file=sys.stderr)
+                if expected_failure:
+                    print(
+                        f"[expected-failure] {label}#{decision_id}: {expected_failure}",
+                        file=sys.stderr,
+                    )
+                    continue
+                failures += 1
+            elif expected_failure:
+                print(
+                    f"{label}#{decision_id}: expected failure passed; remove the marker",
+                    file=sys.stderr,
+                )
                 failures += 1
 
     return 1 if failures else 0

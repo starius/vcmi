@@ -337,6 +337,9 @@ The differential harness should produce three artifacts:
 
 The parity target is exact selected-behavior parity. If exact parity is blocked by missing host data or a neutral
 helper gap, the discrepancy fixture stays in the corpus with an expected-failure marker and a linked TODO.
+Replay and native-trace fixtures accept `expectedFailure`, `expectFailure`, or `xfail` markers as `true`, a reason
+string, or an object with `reason`, `todo`, or `issue`. Expected failures still write discrepancy artifacts when
+they drift, but the runners fail if an expected-failure fixture unexpectedly passes.
 
 ## Implementation Phases
 
