@@ -133,8 +133,9 @@ The branch now has the initial standalone AI and parity infrastructure in place:
 
 - `ENABLE_LUA_NULLKILLER2_AI`, the `AI/LuaNullkiller2` target, and `AIFactory` registration are present.
 - `CLuaNullkiller2AI` derives directly from `CAdventureAI`, loads the Lua runner, passes visible turn and callback
-  snapshots plus persistent Lua memory, stores returned Lua memory for later calls, and executes checked host
-  commands without linking to or instantiating native `Nullkiller2`.
+  snapshots plus persistent Lua memory, stores returned Lua memory for later calls, exports visible visitable map
+  objects as `nearbyObjects`/`visitableObjects`, and executes checked host commands without linking to or
+  instantiating native `Nullkiller2`.
 - The Lua runner loads `scripts/ai/nullkiller2/main.lua`, exposes settings, trace, command, and snapshot input,
   supports named entry points such as `runDay`, `commanderGotLevel`, `heroGotLevel`, `heroExchangeStarted`,
   `showBlockingDialog`, `showGarrisonDialog`, `showRecruitmentDialog`, `showTeleportDialog`, `showTavernWindow`,
@@ -201,7 +202,8 @@ visited-town recruitment helper with duplicate-stack merging and resource-capped
 
 Major parity gaps remain:
 
-- visible snapshots are still too thin for full analyzer, object, path, threat, query, and broader ArmyManager parity
+- visible snapshots are still too thin for full analyzer, path, threat, query, and broader ArmyManager parity; the
+  host now exports visible visitable objects, but route/path records and rich object rewards remain incomplete
 - hero fighting-strength ranking still needs full bonus-derived speciality snapshots for exact main/scout ordering
 - `ExecuteHeroChain` replays path nodes in native backward order, executes the first set of Lua-owned special-action
   descriptors, applies object-graph shortcutting, rejects stale zero-turn live path snapshots, and recovers stale
@@ -467,7 +469,7 @@ Commit messages must stay focused on the code change and must not mention the re
 
 ## Immediate Next Steps
 
-1. Expand the snapshot contract for heroes, towns, objects, paths, threats, queries, and army stacks until behavior
+1. Expand the snapshot contract for paths, threats, queries, rich object rewards, and army stacks until behavior
    fixtures no longer need hand-written placeholder fields.
 2. Complete `ExecuteHeroChain` parity: visit/attack selection and live host validation.
 3. Extend garrison, hero exchange, artifact sequencing, and checked host validators with richer edge-case coverage.

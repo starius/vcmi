@@ -217,6 +217,21 @@ JsonNode visibleRememberedObjectsSnapshot(const JsonNode & memory, const std::sh
 	return result;
 }
 
+JsonNode visibleVisitableObjectsSnapshot(const std::shared_ptr<CCallback> & callback)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_VECTOR);
+	std::set<ObjectInstanceID> seenObjects;
+
+	for(const auto * object : callback->getAllVisitableObjs())
+	{
+		if(object && seenObjects.insert(object->id).second)
+			result.Vector().push_back(objectSnapshot(object));
+	}
+
+	return result;
+}
+
 std::string componentTypeName(ComponentType type)
 {
 	switch(type)
@@ -673,6 +688,10 @@ JsonNode makeSnapshot(const std::shared_ptr<CCallback> & callback)
 	result["heroesInfo"].setType(JsonNode::JsonType::DATA_VECTOR);
 	for(const auto * hero : callback->getHeroesInfo())
 		result["heroesInfo"].Vector().push_back(heroSnapshot(hero, callback));
+
+	const JsonNode visibleObjects = visibleVisitableObjectsSnapshot(callback);
+	result["visitableObjects"] = visibleObjects;
+	result["nearbyObjects"] = visibleObjects;
 
 	return result;
 }
