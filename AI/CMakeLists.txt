@@ -21,3 +21,7 @@ add_subdirectory(EmptyAI)
 if(ENABLE_NULLKILLER2_AI)
 	add_subdirectory(Nullkiller2)
 endif()
+
+if(ENABLE_LUA_NULLKILLER2_AI)
+	add_subdirectory(LuaNullkiller2)
+endif()

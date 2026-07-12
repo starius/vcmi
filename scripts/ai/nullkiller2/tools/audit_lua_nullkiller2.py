@@ -34,7 +34,7 @@ FORBIDDEN_SCRIPT_PATTERNS = [
 FORBIDDEN_CPP_PATTERNS = [
     re.compile(pattern)
     for pattern in [
-        r"#\s*include\s+[<\"].*Nullkiller2",
+        r"#\s*include\s+[<\"].*(?:AI/Nullkiller2|[/\\]Nullkiller2[/\\]|\.\./Nullkiller2)",
         r"\bNK2AI::",
         r"\bAIGateway\b",
         r"target_link_libraries\s*\([^)]*\bNullkiller2\b",

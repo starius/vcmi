@@ -606,12 +606,12 @@
 			"properties" : {
 				"adventureAlliedAI" : {
 					"type" : "string",
-					"enum" : [ "EmptyAI", "Nullkiller2" ],
+					"enum" : [ "EmptyAI", "Nullkiller2", "LuaNullkiller2" ],
 					"default" : "Nullkiller2"
 				},
 				"adventureEnemyAI" : {
 					"type" : "string",
-					"enum" : [ "EmptyAI", "Nullkiller2" ],
+					"enum" : [ "EmptyAI", "Nullkiller2", "LuaNullkiller2" ],
 					"default" : "Nullkiller2"
 				},
 				"combatEnemyAI" : {
