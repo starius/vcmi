@@ -11,6 +11,8 @@
 
 #include "CLuaNullkiller2AI.h"
 
+#include "LuaNullkiller2Runner.h"
+
 #include "../../lib/battle/BattleAction.h"
 #include "../../lib/callback/CCallback.h"
 
@@ -39,7 +41,18 @@ void CLuaNullkiller2AI::answerQuery(QueryID queryID, int selection) const
 void CLuaNullkiller2AI::yourTurn(QueryID queryID)
 {
 	answerQuery(queryID);
-	cc->endTurn();
+
+	LuaNullkiller2Runner runner;
+	const LuaTurnResult result = runner.runDay([this]()
+	{
+		cc->endTurn();
+	});
+
+	if(!result.ok)
+		logAi->error("LuaNullkiller2 runDay failed: %s", result.error);
+
+	if(!result.requestedEndTurn)
+		cc->endTurn();
 }
 
 void CLuaNullkiller2AI::heroGotLevel(const CGHeroInstance * hero, PrimarySkill pskill, std::vector<SecondarySkill> & skills, QueryID queryID)
