@@ -116,18 +116,22 @@
         "EvaluationContext",
         "PriorityEvaluator::PriorityTier"
       ],
-      "notes": "Priority tiers only; evaluation formulas remain pending."
+      "notes": "Priority tiers, HeroRole, EvaluationContext defaults, non-critical strategical value clamp, and formula helpers are ported. RewardEvaluator object inspection remains pending."
     },
     {
       "cpp": "AI/Nullkiller2/Engine/PriorityEvaluator.cpp",
       "lua": "scripts/ai/nullkiller2/Engine/PriorityEvaluator.lua",
-      "status": "pending_lua_port",
+      "status": "scaffolded",
       "symbols": [
         "PriorityEvaluator::evaluate",
         "PriorityEvaluator::buildEvaluationContext",
+        "PriorityEvaluator::evaluateMovement",
+        "PriorityEvaluator::evaluateArmyLossRatio",
+        "PriorityEvaluator::evaluateSkillReward",
+        "PriorityEvaluator::evaluateConquestValue",
         "RewardEvaluator"
       ],
-      "notes": "Full scoring formulas must be ported before behavior parity."
+      "notes": "Priority-tier scoring formulas are ported against Lua EvaluationContext snapshots. Native object-specific context builders and RewardEvaluator routines remain pending."
     },
     {
       "cpp": "AI/Nullkiller2/Goals/AbstractGoal.h",
