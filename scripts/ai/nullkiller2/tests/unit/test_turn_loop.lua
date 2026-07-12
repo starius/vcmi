@@ -157,3 +157,88 @@ assert(artifactResult.commandJournal[6].payload.srcSlot == 19)
 assert(artifactResult.commandJournal[6].payload.dstHero == 30)
 assert(artifactResult.commandJournal[6].payload.dstSlot == 0)
 assert(artifactResult.commandJournal[7].name == "endTurn")
+
+local function movementArtifact(id, movementBonus)
+	return {
+		id = id,
+		instanceID = id,
+		possibleSlots = { 0 },
+		artifactType = {
+			ID = "artifact-" .. tostring(id),
+			exportedBonuses = {
+				{
+					type = "MOVEMENT",
+					subtype = "heroMovementLand",
+					val = movementBonus
+				}
+			},
+			constituents = {}
+		}
+	}
+end
+
+local exchangeRun = makeAI()
+local firstExchangeHero = {
+	id = 40,
+	owner = 1,
+	tempOwner = 1,
+	stacksCount = 0,
+	armySize = 7,
+	slots = {},
+	artifactsInBackpack = {
+		{ slot = 19, artifact = movementArtifact(801, 50) }
+	}
+}
+local secondExchangeHero = {
+	id = 41,
+	owner = 1,
+	tempOwner = 1,
+	stacksCount = 0,
+	armySize = 7,
+	slots = {},
+	artifactsWorn = {},
+	artifactsInBackpack = {}
+}
+local exchangeResult = Script.heroExchangeStarted(exchangeRun.ai, {
+	firstHero = firstExchangeHero,
+	secondHero = secondExchangeHero,
+	activeHeroID = 40,
+	queryID = 900
+})
+assert(exchangeRun.ended() == false)
+assert(exchangeResult.status == "answered")
+assert(#exchangeResult.commandJournal == 2)
+assert(exchangeResult.commandJournal[1].name == "swapArtifacts")
+assert(exchangeResult.commandJournal[1].payload.srcHero == 40)
+assert(exchangeResult.commandJournal[1].payload.srcSlot == 19)
+assert(exchangeResult.commandJournal[1].payload.dstHero == 41)
+assert(exchangeResult.commandJournal[1].payload.dstSlot == 0)
+assert(exchangeResult.commandJournal[2].name == "answerQuery")
+assert(exchangeResult.commandJournal[2].payload.query == 900)
+assert(exchangeResult.commandJournal[2].payload.selection == 0)
+
+local allyVisitRun = makeAI()
+local allyVisitResult = Script.heroExchangeStarted(allyVisitRun.ai, {
+	firstHero = {
+		id = 42,
+		owner = 1,
+		tempOwner = 1,
+		artifactsInBackpack = {
+			{ slot = 19, artifact = movementArtifact(802, 50) }
+		}
+	},
+	secondHero = {
+		id = 43,
+		owner = 2,
+		tempOwner = 2,
+		artifactsWorn = {},
+		artifactsInBackpack = {}
+	},
+	activeHeroID = 42,
+	queryID = 901
+})
+assert(allyVisitRun.ended() == false)
+assert(allyVisitResult.status == "answered")
+assert(#allyVisitResult.commandJournal == 1)
+assert(allyVisitResult.commandJournal[1].name == "answerQuery")
+assert(allyVisitResult.commandJournal[1].payload.query == 901)

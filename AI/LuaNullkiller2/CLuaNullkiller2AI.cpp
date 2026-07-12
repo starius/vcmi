@@ -357,6 +357,19 @@ bool CLuaNullkiller2AI::executeCommand(const LuaCommand & command)
 	if(command.name == "lockResources")
 		return true;
 
+	if(command.name == "endTurn")
+		return true;
+
+	if(command.name == "answerQuery")
+	{
+		const auto queryID = commandInteger(command, "query");
+		if(!queryID)
+			return false;
+
+		answerQuery(QueryID(*queryID), commandInteger(command, "selection").value_or(0));
+		return true;
+	}
+
 	if(command.name == "recruitHero")
 	{
 		const auto townID = commandInteger(command, "town");
@@ -610,6 +623,43 @@ void CLuaNullkiller2AI::yourTurn(QueryID queryID)
 
 	if(!result.requestedEndTurn)
 		cc->endTurn();
+}
+
+void CLuaNullkiller2AI::heroExchangeStarted(ObjectInstanceID hero1, ObjectInstanceID hero2, QueryID query)
+{
+	const auto * firstHero = cc->getHero(hero1);
+	const auto * secondHero = cc->getHero(hero2);
+	if(!firstHero || !secondHero)
+	{
+		answerQuery(query);
+		return;
+	}
+
+	LuaNullkiller2Runner runner;
+	LuaRunInput input;
+	input.difficultyLevel = cc->getStartInfo()->difficulty;
+	input.snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	input.snapshot["firstHero"] = heroSnapshot(firstHero);
+	input.snapshot["secondHero"] = heroSnapshot(secondHero);
+	input.snapshot["activeHeroID"].Integer() = activeHeroID;
+	input.snapshot["queryID"].Integer() = query.getNum();
+
+	bool queryAnswered = false;
+	input.commandHandler = [this, &queryAnswered](const LuaCommand & command)
+	{
+		const bool executed = executeCommand(command);
+		if(executed && command.name == "answerQuery")
+			queryAnswered = true;
+		return executed;
+	};
+
+	const LuaTurnResult result = runner.runFunction("heroExchangeStarted", [](){}, input);
+
+	if(!result.ok)
+		logAi->error("LuaNullkiller2 heroExchangeStarted failed: %s", result.error);
+
+	if(!queryAnswered)
+		answerQuery(query);
 }
 
 void CLuaNullkiller2AI::heroGotLevel(const CGHeroInstance * hero, PrimarySkill pskill, std::vector<SecondarySkill> & skills, QueryID queryID)

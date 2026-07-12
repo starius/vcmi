@@ -8,6 +8,7 @@ local DeepDecomposer = require("Engine.DeepDecomposer")
 local DefenceBehavior = require("Behaviors.DefenceBehavior")
 local EscapeBehavior = require("Behaviors.EscapeBehavior")
 local ExplorationBehavior = require("Behaviors.ExplorationBehavior")
+local ExchangeSwapTownHeroes = require("Goals.ExchangeSwapTownHeroes")
 local GatherArmyBehavior = require("Behaviors.GatherArmyBehavior")
 local GatewayPolicy = require("Actions.GatewayPolicy")
 local HostCommands = require("Actions.HostCommands")
@@ -37,6 +38,19 @@ local function objectID(value)
 		return value.id or value.objectID or value.objectId or value.num or value[1]
 	end
 	return value
+end
+
+local function ownerID(value)
+	if type(value) ~= "table" then
+		return nil
+	end
+	return objectID(value.tempOwner or value.owner)
+end
+
+local function sameOwner(left, right)
+	local leftOwner = ownerID(left)
+	local rightOwner = ownerID(right)
+	return leftOwner ~= nil and rightOwner ~= nil and leftOwner == rightOwner
 end
 
 local function trace(ai, event, data)
@@ -693,6 +707,42 @@ function Nullkiller.makeTurn(ai, input)
 		trace = {
 			implemented = "turn_loop"
 		}
+	}
+end
+
+function Nullkiller.heroExchangeStarted(ai, input)
+	input = input or {}
+	local host = HostCommands.new(ai)
+	local firstHero = input.firstHero or input.hero1
+	local secondHero = input.secondHero or input.hero2
+	local activeHeroIDValue = input.activeHeroID or input.activeHero or objectID(input.activeHeroObject)
+
+	if firstHero and secondHero and sameOwner(firstHero, secondHero) then
+		local destination = firstHero
+		local source = secondHero
+		if activeHeroIDValue ~= nil and objectID(firstHero) == activeHeroIDValue then
+			destination = secondHero
+			source = firstHero
+		end
+
+		ExchangeSwapTownHeroes.moveCreaturesToHero(host, {
+			id = objectID(source),
+			owner = source.owner,
+			tempOwner = source.tempOwner,
+			upperArmy = source,
+			bestArmy = input.bestArmy,
+			settings = input.settings and input.settings.values or input.settings
+		}, destination)
+		GatewayPolicy.pickBestArtifacts(host, destination, source)
+	end
+
+	if input.queryID ~= nil and type(host.answerQuery) == "function" then
+		host:answerQuery(input.queryID, 0)
+	end
+
+	return {
+		status = "answered",
+		commandJournal = host:getJournal()
 	}
 end
 

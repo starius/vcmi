@@ -132,10 +132,11 @@ The Lua package should mirror `Nullkiller2` concepts using data records rather t
 The branch now has the initial standalone AI and parity infrastructure in place:
 
 - `ENABLE_LUA_NULLKILLER2_AI`, the `AI/LuaNullkiller2` target, and `AIFactory` registration are present.
-- `CLuaNullkiller2AI` derives directly from `CAdventureAI`, loads the Lua runner, passes a visible snapshot, and
-  executes checked host commands without linking to or instantiating native `Nullkiller2`.
-- The Lua runner loads `scripts/ai/nullkiller2/main.lua`, exposes settings, trace, command, and snapshot input, and
-  records a command journal that is usable by differential tests.
+- `CLuaNullkiller2AI` derives directly from `CAdventureAI`, loads the Lua runner, passes visible turn and callback
+  snapshots, and executes checked host commands without linking to or instantiating native `Nullkiller2`.
+- The Lua runner loads `scripts/ai/nullkiller2/main.lua`, exposes settings, trace, command, and snapshot input,
+  supports named entry points such as `runDay` and `heroExchangeStarted`, and records a command journal that is
+  usable by differential tests.
 - Lua normalizes vector snapshots into `heroesByID` and `objectsByID` lookup tables before turn planning, so C++
   snapshots do not need duplicate indexed maps for task presence checks.
 - `scripts/ai/nullkiller2/PORT_MAP.json` tracks mirrored C++ files and symbols, with audit coverage for forbidden
@@ -148,7 +149,7 @@ formula scaffolding, deterministic `RewardEvaluator` resource, reward, growth, c
 hero-specific `AIUtility` artifact scoring, resource trading, goal records, marker records, priority-pass behaviors,
 regular behavior decomposition, and command emission for recruit hero, build, build boat, dismiss hero, swap garrison
 hero, recruit creatures, upgrade creatures, merge stacks, cross-army merge/swap, split stack, dismiss creatures,
-cast spell, artifact swaps, granular hero movement, resource locks, and end turn. `ExchangeSwapTownHeroes`
+cast spell, artifact swaps, granular hero movement, resource locks, answer query, and end turn. `ExchangeSwapTownHeroes`
 extraction now mirrors the `buildArmyIn` order through upgrades, recruitment, first-slot army correction, and
 Lua-owned transfer command sequencing from snapshots. `Analyzers/ArmyManager.lua` now owns sorted-slot
 consolidation, faction/morale best-army filtering, scout-unit choice, scout last-stack retention, dwelling purchase
@@ -157,7 +158,9 @@ aggregation, and hill-fort/dwelling upgrade calculation; the transfer sequencer 
 commands when a source army must keep one stack. The turn loop now invokes `GatewayPolicy.pickBestArtifacts` after
 successful regular passes, and that policy owns first-pass artifact equip/swap sequencing from exported hero
 artifact snapshots for empty legal equipment slots, higher-scoring replacement artifacts, and the displaced-artifact
-backpack fallback when a direct swap is illegal.
+backpack fallback when a direct swap is illegal. The `heroExchangeStarted` callback is wired through Lua, chooses
+the same transfer direction as native `AIGateway`, emits Lua-owned army/artifact exchange commands, and answers the
+pending query through the same host command journal.
 
 Major parity gaps remain:
 
@@ -167,8 +170,8 @@ Major parity gaps remain:
 - cross-hero artifact legality breadth, full combined-artifact legality data, full Rewardable inspection, and richer
   live object inspection remain incomplete outside the deterministic scoring helpers and first-pass artifact
   equip/swap sequencing
-- garrison, hero exchange, artifact, and remaining army-transfer edge cases need complete Lua-owned sequencing plus
-  host validators
+- garrison, artifact, and remaining hero-exchange and army-transfer edge cases need complete Lua-owned sequencing
+  plus host validators
 - differential tests currently cover command journals and end-turn smoke; they do not yet compare real native
   `Nullkiller2` traces against Lua traces at each decision point
 

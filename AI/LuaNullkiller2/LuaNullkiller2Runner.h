@@ -45,6 +45,7 @@ struct LuaRunInput
 class LuaNullkiller2Runner
 {
 public:
+	LuaTurnResult runFunction(const std::string & functionName, const std::function<void()> & endTurn, const LuaRunInput & input = LuaRunInput());
 	LuaTurnResult runDay(const std::function<void()> & endTurn, const LuaRunInput & input = LuaRunInput());
 };
 

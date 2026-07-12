@@ -996,7 +996,7 @@
         "AIGateway::recruitCreatures",
         "AIGateway::pickBestArtifacts"
       ],
-      "notes": "Dialog choice, teleport selection/probing, garrison-use, map-object selection, retreat, hero-exchange direction, upgrade choice, dwelling recruitment, army-transfer, and first-pass artifact equip/swap policies are Lua-owned against snapshots. Artifact replacement uses exported hero artifact snapshots, per-holder canBePutAt tables, and the displaced-artifact backpack fallback when a direct swap is illegal. Target-object state is wired through the host for map-object selection answers; cross-hero artifact legality breadth, full combined-artifact legality data, remaining callback wiring, and validator breadth remain pending."
+      "notes": "Dialog choice, teleport selection/probing, garrison-use, map-object selection, retreat, hero-exchange direction, upgrade choice, dwelling recruitment, army-transfer, and first-pass artifact equip/swap policies are Lua-owned against snapshots. Artifact replacement uses exported hero artifact snapshots, per-holder canBePutAt tables, and the displaced-artifact backpack fallback when a direct swap is illegal. The heroExchangeStarted callback is wired through the Lua entry point and answers its pending query through HostCommands.answerQuery. Target-object state is wired through the host for map-object selection answers; cross-hero artifact legality breadth, full combined-artifact legality data, remaining callback wiring, and validator breadth remain pending."
     },
     {
       "cpp": null,
@@ -1013,9 +1013,10 @@
       "lua": "scripts/ai/nullkiller2/main.lua",
       "status": "scaffolded",
       "symbols": [
-        "Script.runDay"
+        "Script.runDay",
+        "Script.heroExchangeStarted"
       ],
-      "notes": "Lua entry point for the future host."
+      "notes": "Lua entry points used by the host runner for day turns and narrow callback policies."
     }
   ],
   "sourceFileGroups": [

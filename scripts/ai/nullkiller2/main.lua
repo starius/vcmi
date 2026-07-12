@@ -9,4 +9,8 @@ function Script.runDay(ai, input)
 	return Nullkiller.makeTurn(ai, input or {})
 end
 
+function Script.heroExchangeStarted(ai, input)
+	return Nullkiller.heroExchangeStarted(ai, input or {})
+end
+
 return Script

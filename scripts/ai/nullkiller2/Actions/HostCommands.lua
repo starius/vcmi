@@ -173,6 +173,13 @@ function HostCommands:endTurn()
 	return result
 end
 
+function HostCommands:answerQuery(query, selection)
+	return self:command("answerQuery", {
+		query = query,
+		selection = selection or 0
+	})
+end
+
 function HostCommands:buildBuilding(town, bid)
 	return self:command("buildBuilding", {
 		town = objectID(town),

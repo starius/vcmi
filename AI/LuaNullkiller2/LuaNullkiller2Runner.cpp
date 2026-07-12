@@ -69,7 +69,7 @@ LuaCommand readCommand(lua_State * state, const std::string & commandName, int p
 
 	if(lua_istable(state, payloadIndex))
 	{
-		static constexpr std::array<const char *, 22> INTEGER_FIELDS =
+		static constexpr std::array<const char *, 24> INTEGER_FIELDS =
 		{
 			"town",
 			"hero",
@@ -92,7 +92,9 @@ LuaCommand readCommand(lua_State * state, const std::string & commandName, int p
 			"srcHero",
 			"srcSlot",
 			"dstHero",
-			"dstSlot"
+			"dstSlot",
+			"query",
+			"selection"
 		};
 
 		for(const char * field : INTEGER_FIELDS)
@@ -388,7 +390,7 @@ LuaTurnResult makeError(std::string error, bool requestedEndTurn)
 
 }
 
-LuaTurnResult LuaNullkiller2Runner::runDay(const std::function<void()> & endTurn, const LuaRunInput & input)
+LuaTurnResult LuaNullkiller2Runner::runFunction(const std::string & functionName, const std::function<void()> & endTurn, const LuaRunInput & input)
 {
 	lua_State * state = luaL_newstate();
 	if(!state)
@@ -414,9 +416,9 @@ LuaTurnResult LuaNullkiller2Runner::runDay(const std::function<void()> & endTurn
 	if(!lua_istable(state, -1))
 		return makeError("main script did not return a table", context.requestedEndTurn);
 
-	lua_getfield(state, -1, "runDay");
+	lua_getfield(state, -1, functionName.c_str());
 	if(!lua_isfunction(state, -1))
-		return makeError("main script does not define runDay", context.requestedEndTurn);
+		return makeError("main script does not define " + functionName, context.requestedEndTurn);
 
 	pushAiFacade(state, context);
 	pushInput(state, input);
@@ -425,7 +427,7 @@ LuaTurnResult LuaNullkiller2Runner::runDay(const std::function<void()> & endTurn
 		return makeError(toStringRaw(state, -1), context.requestedEndTurn);
 
 	if(!lua_istable(state, -1))
-		return makeError("runDay did not return a table", context.requestedEndTurn);
+		return makeError(functionName + " did not return a table", context.requestedEndTurn);
 
 	LuaTurnResult result;
 	result.ok = true;
@@ -439,6 +441,11 @@ LuaTurnResult LuaNullkiller2Runner::runDay(const std::function<void()> & endTurn
 	lua_pop(state, 1);
 
 	return result;
+}
+
+LuaTurnResult LuaNullkiller2Runner::runDay(const std::function<void()> & endTurn, const LuaRunInput & input)
+{
+	return runFunction("runDay", endTurn, input);
 }
 
 }

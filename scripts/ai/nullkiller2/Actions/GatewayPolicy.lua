@@ -583,14 +583,20 @@ local function setArtifactAt(hero, slot, artifact)
 end
 
 local function removeArtifactAt(hero, slot)
-	for _, entries in ipairs({ hero and (hero.artifactsWorn or hero.wornArtifacts), hero and (hero.artifactsInBackpack or hero.backpackArtifacts) }) do
+	local function removeFrom(entries)
 		for index, entry in pairs(entries or {}) do
 			if artifactSlot(entry, index) == slot then
 				entries[index] = nil
-				return
+				return true
 			end
 		end
+		return false
 	end
+
+	if removeFrom(hero and (hero.artifactsWorn or hero.wornArtifacts)) then
+		return
+	end
+	removeFrom(hero and (hero.artifactsInBackpack or hero.backpackArtifacts))
 end
 
 local function applyArtifactSwap(sourceHero, sourceSlot, destinationHero, destinationSlot)

@@ -762,4 +762,6 @@ function ExchangeSwapTownHeroes:accept(aiGw)
 	}
 end
 
+ExchangeSwapTownHeroes.moveCreaturesToHero = moveCreaturesToHero
+
 return ExchangeSwapTownHeroes
