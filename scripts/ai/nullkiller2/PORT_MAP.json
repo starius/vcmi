@@ -894,12 +894,19 @@
     },
     {
       "cpp": "AI/Nullkiller2/AIGateway.cpp",
-      "lua": "scripts/ai/nullkiller2/Actions/AIGatewayPolicy.lua",
-      "status": "pending_lua_port",
+      "lua": "scripts/ai/nullkiller2/Actions/GatewayPolicy.lua",
+      "status": "scaffolded",
       "symbols": [
-        "AIGateway policy routines"
+        "AIGateway::showBlockingDialog",
+        "AIGateway::showTeleportDialog",
+        "AIGateway::showGarrisonDialog",
+        "AIGateway::showMapObjectSelectDialog",
+        "AIGateway::makeSurrenderRetreatDecision",
+        "AIGateway::heroExchangeStarted",
+        "AIGateway::makePossibleUpgrades",
+        "AIGateway::recruitCreatures"
       ],
-      "notes": "Lua must own policy; future C++ host may only execute exact checked player actions."
+      "notes": "Dialog choice, teleport selection/probing, garrison-use, map-object selection, retreat, hero-exchange direction, upgrade choice, and dwelling recruitment policies are Lua-owned against snapshots. C++ callback wiring and full army-transfer sequencing remain pending."
     },
     {
       "cpp": null,
