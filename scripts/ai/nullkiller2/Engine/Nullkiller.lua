@@ -1,5 +1,6 @@
 -- Mirrors AI/Nullkiller2/Engine/Nullkiller.cpp: Nullkiller::makeTurn.
 
+local HostCommands = require("Actions.HostCommands")
 local Settings = require("Engine.Settings")
 local State = require("Engine.State")
 
@@ -55,18 +56,19 @@ function Nullkiller.updateStateAndExecutePriorityPass(ai, state, settings, passI
 end
 
 function Nullkiller.makeTurn(ai, input)
+	local host = HostCommands.new(ai)
 	local settings = loadSettings(input or {})
 	local state = State.new()
 
 	State.resetState(state)
-	trace(ai, "Nullkiller.makeTurn.start", {
+	trace(host, "Nullkiller.makeTurn.start", {
 		maxPass = settings.maxPass,
 		maxPriorityPass = settings.maxPriorityPass
 	})
 
-	local actionResult = endTurn(ai)
+	local actionResult = endTurn(host)
 
-	trace(ai, "Nullkiller.makeTurn.end", {
+	trace(host, "Nullkiller.makeTurn.end", {
 		status = "end_turn",
 		actionResult = actionResult
 	})
@@ -75,6 +77,7 @@ function Nullkiller.makeTurn(ai, input)
 		status = "end_turn",
 		intent = "lua-nullkiller2 skeleton ended turn without native fallback",
 		memory = input.memory or {},
+		commandJournal = host:getJournal(),
 		trace = {
 			implemented = "turn_loop_skeleton"
 		}

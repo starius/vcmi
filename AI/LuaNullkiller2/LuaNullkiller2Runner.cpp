@@ -34,6 +34,7 @@ struct RunContext
 {
 	const std::function<void()> * endTurn = nullptr;
 	bool requestedEndTurn = false;
+	std::vector<std::string> commands;
 };
 
 std::string toStringRaw(lua_State * state, int index)
@@ -126,6 +127,37 @@ int luaTrace(lua_State * state)
 	return 0;
 }
 
+int luaCommand(lua_State * state)
+{
+	auto * context = static_cast<RunContext *>(lua_touserdata(state, lua_upvalueindex(1)));
+	if(!context)
+	{
+		lua_pushstring(state, "command: missing run context");
+		return lua_error(state);
+	}
+
+	const char * command = lua_tostring(state, 2);
+	if(!command)
+		command = lua_tostring(state, 1);
+	if(!command)
+	{
+		lua_pushstring(state, "command: name must be a string");
+		return lua_error(state);
+	}
+
+	context->commands.emplace_back(command);
+	logAi->debug("LuaNullkiller2 command: %s", command);
+
+	lua_newtable(state);
+	lua_pushboolean(state, true);
+	lua_setfield(state, -2, "ok");
+	lua_pushboolean(state, true);
+	lua_setfield(state, -2, "queued");
+	lua_pushinteger(state, static_cast<lua_Integer>(context->commands.size()));
+	lua_setfield(state, -2, "commandIndex");
+	return 1;
+}
+
 void openSafeLibraries(lua_State * state)
 {
 	static constexpr luaL_Reg STD_LIBS[] =
@@ -157,6 +189,10 @@ void pushAiFacade(lua_State * state, RunContext & context)
 
 	lua_pushcfunction(state, luaTrace);
 	lua_setfield(state, -2, "trace");
+
+	lua_pushlightuserdata(state, &context);
+	lua_pushcclosure(state, luaCommand, 1);
+	lua_setfield(state, -2, "command");
 }
 
 void pushInput(lua_State * state)
@@ -222,6 +258,7 @@ LuaTurnResult LuaNullkiller2Runner::runDay(const std::function<void()> & endTurn
 	LuaTurnResult result;
 	result.ok = true;
 	result.requestedEndTurn = context.requestedEndTurn;
+	result.commandCount = static_cast<int>(context.commands.size());
 
 	lua_getfield(state, -1, "status");
 	if(lua_isstring(state, -1))

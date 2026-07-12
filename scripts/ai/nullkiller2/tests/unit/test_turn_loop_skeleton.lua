@@ -28,6 +28,8 @@ local result = Script.runDay(ai, {
 assert(ended == true)
 assert(result.status == "end_turn")
 assert(result.memory.version == 1)
+assert(#result.commandJournal == 1)
+assert(result.commandJournal[1].name == "endTurn")
 assert(#events == 2)
 assert(events[1].event == "Nullkiller.makeTurn.start")
 assert(events[1].data.maxPass == 3)

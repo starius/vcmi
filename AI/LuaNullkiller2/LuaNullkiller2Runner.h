@@ -19,6 +19,7 @@ struct LuaTurnResult
 {
 	bool ok = false;
 	bool requestedEndTurn = false;
+	int commandCount = 0;
 	std::string status;
 	std::string error;
 };

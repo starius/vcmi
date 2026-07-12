@@ -325,6 +325,16 @@
     },
     {
       "cpp": null,
+      "lua": "scripts/ai/nullkiller2/Actions/HostCommands.lua",
+      "status": "host_action_executor",
+      "symbols": [
+        "HostCommands",
+        "HostCommands::command journal"
+      ],
+      "notes": "Lua-side command boundary and journal used by goal accept methods and differential tests. C++ host execution is command-by-command and must not delegate to native policy."
+    },
+    {
+      "cpp": null,
       "lua": "scripts/ai/nullkiller2/main.lua",
       "status": "scaffolded",
       "symbols": [
