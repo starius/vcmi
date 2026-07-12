@@ -421,3 +421,23 @@ for index, functionName in ipairs({
 	assert(simpleQueryResult.commandJournal[1].payload.query == 910 + index)
 	assert(simpleQueryResult.commandJournal[1].payload.selection == 0)
 end
+
+local levelRun = makeAI()
+local levelResult = Script.heroGotLevel(levelRun.ai, {
+	queryID = 920,
+	hero = {
+		level = 12,
+		role = 1,
+		secSkills = {}
+	},
+	skills = {
+		7,
+		2
+	}
+})
+assert(levelResult.status == "answered")
+assert(levelResult.selection == 0)
+assert(#levelResult.commandJournal == 1)
+assert(levelResult.commandJournal[1].name == "answerQuery")
+assert(levelResult.commandJournal[1].payload.query == 920)
+assert(levelResult.commandJournal[1].payload.selection == 0)

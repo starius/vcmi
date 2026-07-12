@@ -37,6 +37,10 @@ function Script.commanderGotLevel(ai, input)
 	return Nullkiller.commanderGotLevel(ai, input or {})
 end
 
+function Script.heroGotLevel(ai, input)
+	return Nullkiller.heroGotLevel(ai, input or {})
+end
+
 function Script.showTavernWindow(ai, input)
 	return Nullkiller.showTavernWindow(ai, input or {})
 end

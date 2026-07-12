@@ -234,9 +234,19 @@ JsonNode heroSnapshot(const CGHeroInstance * hero)
 	result["name"].String() = hero->getNameTranslated();
 	result["owner"].Integer() = hero->tempOwner.getNum();
 	result["factionID"].Integer() = hero->getFactionID().getNum();
+	result["level"].Integer() = hero->level;
 	result["totalStrength"].Integer() = static_cast<int64_t>(hero->getTotalStrength());
 	result["armyStrength"].Integer() = static_cast<int64_t>(hero->getArmyStrength());
 	result["armyCost"].Integer() = static_cast<int64_t>(hero->getArmyCost());
+	result["secSkills"].setType(JsonNode::JsonType::DATA_VECTOR);
+	for(const auto & skill : hero->secSkills)
+	{
+		JsonNode entry;
+		entry.setType(JsonNode::JsonType::DATA_STRUCT);
+		entry["skill"].Integer() = skill.first.getNum();
+		entry["level"].Integer() = skill.second;
+		result["secSkills"].Vector().push_back(entry);
+	}
 	addArmySnapshotFields(result, hero);
 	result["movementPointsRemaining"].Integer() = hero->movementPointsRemaining();
 	result["garrisoned"].Bool() = hero->isGarrisoned();
@@ -772,7 +782,39 @@ void CLuaNullkiller2AI::heroExchangeStarted(ObjectInstanceID hero1, ObjectInstan
 
 void CLuaNullkiller2AI::heroGotLevel(const CGHeroInstance * hero, PrimarySkill pskill, std::vector<SecondarySkill> & skills, QueryID queryID)
 {
-	answerQuery(queryID);
+	if(!hero)
+	{
+		answerQuery(queryID);
+		return;
+	}
+
+	LuaNullkiller2Runner runner;
+	LuaRunInput input;
+	input.difficultyLevel = cc->getStartInfo()->difficulty;
+	input.snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	input.snapshot["queryID"].Integer() = queryID.getNum();
+	input.snapshot["hero"] = heroSnapshot(hero);
+	input.snapshot["primarySkill"].Integer() = pskill.getNum();
+	input.snapshot["skills"].setType(JsonNode::JsonType::DATA_VECTOR);
+	for(const auto & skill : skills)
+		input.snapshot["skills"].Vector().push_back(JsonNode(static_cast<int64_t>(skill.getNum())));
+
+	bool queryAnswered = false;
+	input.commandHandler = [this, &queryAnswered](const LuaCommand & command)
+	{
+		const bool executed = executeCommand(command);
+		if(executed && command.name == "answerQuery")
+			queryAnswered = true;
+		return executed;
+	};
+
+	const LuaTurnResult result = runner.runFunction("heroGotLevel", [](){}, input);
+
+	if(!result.ok)
+		logAi->error("LuaNullkiller2 heroGotLevel failed: %s", result.error);
+
+	if(!queryAnswered)
+		answerQuery(queryID);
 }
 
 void CLuaNullkiller2AI::commanderGotLevel(const CCommanderInstance * commander, std::vector<ui32> skills, QueryID queryID)

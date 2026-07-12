@@ -11,6 +11,7 @@ local ExplorationBehavior = require("Behaviors.ExplorationBehavior")
 local ExchangeSwapTownHeroes = require("Goals.ExchangeSwapTownHeroes")
 local GatherArmyBehavior = require("Behaviors.GatherArmyBehavior")
 local GatewayPolicy = require("Actions.GatewayPolicy")
+local HeroManager = require("Analyzers.HeroManager")
 local HostCommands = require("Actions.HostCommands")
 local PriorityEvaluator = require("Engine.PriorityEvaluator")
 local RecruitHero = require("Goals.RecruitHero")
@@ -877,6 +878,15 @@ end
 
 function Nullkiller.commanderGotLevel(ai, input)
 	return answerQuery(ai, input)
+end
+
+function Nullkiller.heroGotLevel(ai, input)
+	input = input or {}
+	local selection = HeroManager.selectBestSkillIndex(input.hero, input.skills or input.secondarySkills or {})
+	return answerQuery(ai, {
+		queryID = input.queryID,
+		selection = selection
+	})
 end
 
 function Nullkiller.showTavernWindow(ai, input)

@@ -135,10 +135,10 @@ The branch now has the initial standalone AI and parity infrastructure in place:
 - `CLuaNullkiller2AI` derives directly from `CAdventureAI`, loads the Lua runner, passes visible turn and callback
   snapshots, and executes checked host commands without linking to or instantiating native `Nullkiller2`.
 - The Lua runner loads `scripts/ai/nullkiller2/main.lua`, exposes settings, trace, command, and snapshot input,
-  supports named entry points such as `runDay`, `commanderGotLevel`, `heroExchangeStarted`, `showBlockingDialog`,
-  `showGarrisonDialog`, `showTeleportDialog`, `showTavernWindow`, `showMarketWindow`, `showUniversityWindow`, and
-  `showMapObjectSelectDialog`, records a command journal that is usable by differential tests, and returns small
-  decision fields for non-command callbacks such as
+  supports named entry points such as `runDay`, `commanderGotLevel`, `heroGotLevel`, `heroExchangeStarted`,
+  `showBlockingDialog`, `showGarrisonDialog`, `showTeleportDialog`, `showTavernWindow`, `showMarketWindow`,
+  `showUniversityWindow`, and `showMapObjectSelectDialog`, records a command journal that is usable by differential
+  tests, and returns small decision fields for non-command callbacks such as
   surrender/retreat.
 - Lua normalizes vector snapshots into `heroesByID` and `objectsByID` lookup tables before turn planning, so C++
   snapshots do not need duplicate indexed maps for task presence checks.
@@ -171,10 +171,13 @@ only at the host boundary. Blocking dialogs route component snapshots through Lu
 yes/no parity still needs richer object and danger snapshots. Teleport dialogs route exit snapshots through Lua
 selection policy; destination/probing memory parity is still thinner than native `AIGateway`. Fixed-answer
 commander, tavern, market, and university queries are represented as Lua entry points that emit `answerQuery(0)`.
+Hero level-up secondary-skill choice uses a Lua port of the native `HeroManager` score maps and rules; exact
+main/scout parity still needs a mirrored hero role map in snapshots.
 
 Major parity gaps remain:
 
 - visible snapshots are still too thin for full analyzer, object, path, threat, query, and broader ArmyManager parity
+- hero role assignment snapshots are still missing for exact main/scout level-up skill parity
 - `ExecuteHeroChain` replays path nodes in native backward order and rejects stale zero-turn live path snapshots, but
   Dimension Door stale recovery, special actions, object-graph shortcutting, and siege formation are still incomplete
 - cross-hero artifact legality breadth, full combined-artifact legality data, full Rewardable inspection, and richer
