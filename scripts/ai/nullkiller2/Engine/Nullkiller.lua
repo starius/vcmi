@@ -821,4 +821,26 @@ function Nullkiller.makeSurrenderRetreatDecision(ai, input)
 	}
 end
 
+function Nullkiller.showBlockingDialog(ai, input)
+	input = input or {}
+	local host = HostCommands.new(ai)
+	local selection = 0
+
+	if input.selection == false and input.cancel == true then
+		selection = GatewayPolicy.chooseBlockingDialogAnswer(input)
+	else
+		selection = GatewayPolicy.chooseBlockingDialogSelection(input)
+	end
+
+	if input.queryID ~= nil and type(host.answerQuery) == "function" then
+		host:answerQuery(input.queryID, selection)
+	end
+
+	return {
+		status = "answered",
+		selection = selection,
+		commandJournal = host:getJournal()
+	}
+end
+
 return Nullkiller

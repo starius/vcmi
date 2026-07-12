@@ -354,3 +354,34 @@ local patrolRetreatResult = Script.makeSurrenderRetreatDecision(makeAI().ai, {
 	}
 })
 assert(patrolRetreatResult.status == "none")
+
+local blockingAnswerRun = makeAI()
+local blockingAnswerResult = Script.showBlockingDialog(blockingAnswerRun.ai, {
+	queryID = 905,
+	selection = false,
+	cancel = true
+})
+assert(blockingAnswerResult.status == "answered")
+assert(blockingAnswerResult.selection == 1)
+assert(#blockingAnswerResult.commandJournal == 1)
+assert(blockingAnswerResult.commandJournal[1].name == "answerQuery")
+assert(blockingAnswerResult.commandJournal[1].payload.query == 905)
+assert(blockingAnswerResult.commandJournal[1].payload.selection == 1)
+
+local blockingSelectionRun = makeAI()
+local blockingSelectionResult = Script.showBlockingDialog(blockingSelectionRun.ai, {
+	queryID = 906,
+	selection = true,
+	cancel = false,
+	hero = { id = 70, verified = true },
+	components = {
+		{ type = "RESOURCE" },
+		{ type = "EXPERIENCE" }
+	}
+})
+assert(blockingSelectionResult.status == "answered")
+assert(blockingSelectionResult.selection == 1)
+assert(#blockingSelectionResult.commandJournal == 1)
+assert(blockingSelectionResult.commandJournal[1].name == "answerQuery")
+assert(blockingSelectionResult.commandJournal[1].payload.query == 906)
+assert(blockingSelectionResult.commandJournal[1].payload.selection == 1)

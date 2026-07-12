@@ -25,4 +25,8 @@ function Script.makeSurrenderRetreatDecision(ai, input)
 	return Nullkiller.makeSurrenderRetreatDecision(ai, input or {})
 end
 
+function Script.showBlockingDialog(ai, input)
+	return Nullkiller.showBlockingDialog(ai, input or {})
+end
+
 return Script

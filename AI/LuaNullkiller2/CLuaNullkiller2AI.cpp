@@ -26,6 +26,7 @@
 #include "../../lib/mapObjects/army/CStackInstance.h"
 #include "../../lib/mapObjects/IObjectInterface.h"
 #include "../../lib/networkPacks/ArtifactLocation.h"
+#include "../../lib/networkPacks/Component.h"
 
 namespace LuaNullkiller2AI
 {
@@ -48,6 +49,70 @@ JsonNode tileSnapshot(const int3 & tile)
 	result["x"].Integer() = tile.x;
 	result["y"].Integer() = tile.y;
 	result["z"].Integer() = tile.z;
+	return result;
+}
+
+std::string componentTypeName(ComponentType type)
+{
+	switch(type)
+	{
+	case ComponentType::NONE:
+		return "NONE";
+	case ComponentType::PRIM_SKILL:
+		return "PRIM_SKILL";
+	case ComponentType::SEC_SKILL:
+		return "SEC_SKILL";
+	case ComponentType::RESOURCE:
+		return "RESOURCE";
+	case ComponentType::RESOURCE_PER_DAY:
+		return "RESOURCE_PER_DAY";
+	case ComponentType::CREATURE:
+		return "CREATURE";
+	case ComponentType::ARTIFACT:
+		return "ARTIFACT";
+	case ComponentType::SPELL_SCROLL:
+		return "SPELL_SCROLL";
+	case ComponentType::MANA:
+		return "MANA";
+	case ComponentType::EXPERIENCE:
+		return "EXPERIENCE";
+	case ComponentType::LEVEL:
+		return "LEVEL";
+	case ComponentType::SPELL:
+		return "SPELL";
+	case ComponentType::MORALE:
+		return "MORALE";
+	case ComponentType::LUCK:
+		return "LUCK";
+	case ComponentType::BUILDING:
+		return "BUILDING";
+	case ComponentType::HERO_PORTRAIT:
+		return "HERO_PORTRAIT";
+	case ComponentType::FLAG:
+		return "FLAG";
+	}
+	return "UNKNOWN";
+}
+
+JsonNode componentSnapshot(const Component & component)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	result["type"].String() = componentTypeName(component.type);
+	result["typeID"].Integer() = static_cast<int>(component.type);
+	if(component.subType.hasValue())
+		result["subType"].Integer() = component.subType.getNum();
+	if(component.value)
+		result["value"].Integer() = *component.value;
+	return result;
+}
+
+JsonNode componentsSnapshot(const std::vector<Component> & components)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_VECTOR);
+	for(const auto & component : components)
+		result.Vector().push_back(componentSnapshot(component));
 	return result;
 }
 
@@ -675,7 +740,40 @@ void CLuaNullkiller2AI::commanderGotLevel(const CCommanderInstance * commander, 
 
 void CLuaNullkiller2AI::showBlockingDialog(const std::string & text, const std::vector<Component> & components, QueryID askID, const int soundID, bool selection, bool cancel, bool safeToAutoaccept)
 {
-	answerQuery(askID);
+	LuaNullkiller2Runner runner;
+	LuaRunInput input;
+	input.difficultyLevel = cc->getStartInfo()->difficulty;
+	input.snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	input.snapshot["queryID"].Integer() = askID.getNum();
+	input.snapshot["selection"].Bool() = selection;
+	input.snapshot["cancel"].Bool() = cancel;
+	input.snapshot["safeToAutoaccept"].Bool() = safeToAutoaccept;
+	input.snapshot["components"] = componentsSnapshot(components);
+	input.snapshot["goalObjectID"].Integer() = targetObjectID;
+	if(targetX >= 0 && targetY >= 0 && targetZ >= 0)
+		input.snapshot["target"] = tileSnapshot(int3(targetX, targetY, targetZ));
+	if(activeHeroID >= 0)
+	{
+		if(const auto * activeHero = cc->getHero(ObjectInstanceID(activeHeroID)))
+			input.snapshot["hero"] = heroSnapshot(activeHero);
+	}
+
+	bool queryAnswered = false;
+	input.commandHandler = [this, &queryAnswered](const LuaCommand & command)
+	{
+		const bool executed = executeCommand(command);
+		if(executed && command.name == "answerQuery")
+			queryAnswered = true;
+		return executed;
+	};
+
+	const LuaTurnResult result = runner.runFunction("showBlockingDialog", [](){}, input);
+
+	if(!result.ok)
+		logAi->error("LuaNullkiller2 showBlockingDialog failed: %s", result.error);
+
+	if(!queryAnswered)
+		answerQuery(askID);
 }
 
 void CLuaNullkiller2AI::showGarrisonDialog(const CArmedInstance * up, const CGHeroInstance * down, bool removableUnits, QueryID queryID, const MetaString & customTitle)
