@@ -197,6 +197,37 @@ JsonNode answerQueryCommandJournal(QueryID queryID, int selection)
 	return result;
 }
 
+JsonNode answerQueryInput(QueryID queryID)
+{
+	JsonNode input;
+	input.setType(JsonNode::JsonType::DATA_STRUCT);
+	input["queryID"].Integer() = queryID.getNum();
+	return input;
+}
+
+JsonNode answerQueryNativeOutput(QueryID queryID, int selection)
+{
+	JsonNode output;
+	output.setType(JsonNode::JsonType::DATA_STRUCT);
+	output["status"].String() = "answered";
+	output["selection"].Integer() = selection;
+	output["commandJournal"] = answerQueryCommandJournal(queryID, selection);
+	return output;
+}
+
+void recordAnswerQueryNativeTrace(NativeTrace * nativeTrace, const std::string & functionName, QueryID queryID, int selection)
+{
+	if(!nativeTrace)
+		return;
+
+	nativeTrace->recordDecision(
+		functionName + "." + std::to_string(queryID.getNum()),
+		functionName,
+		answerQueryInput(queryID),
+		answerQueryNativeOutput(queryID, selection),
+		{ "status", "selection", "commandJournal" });
+}
+
 JsonNode mapObjectSelectInput(QueryID queryID, int selection, const std::vector<ObjectInstanceID> & objects)
 {
 	JsonNode input;
@@ -209,12 +240,7 @@ JsonNode mapObjectSelectInput(QueryID queryID, int selection, const std::vector<
 
 JsonNode mapObjectSelectNativeOutput(QueryID queryID, int selection)
 {
-	JsonNode output;
-	output.setType(JsonNode::JsonType::DATA_STRUCT);
-	output["status"].String() = "answered";
-	output["selection"].Integer() = selection;
-	output["commandJournal"] = answerQueryCommandJournal(queryID, selection);
-	return output;
+	return answerQueryNativeOutput(queryID, selection);
 }
 
 JsonNode blockingDialogInput(
@@ -240,12 +266,7 @@ JsonNode blockingDialogInput(
 
 JsonNode blockingDialogNativeOutput(QueryID queryID, int selection)
 {
-	JsonNode output;
-	output.setType(JsonNode::JsonType::DATA_STRUCT);
-	output["status"].String() = "answered";
-	output["selection"].Integer() = selection;
-	output["commandJournal"] = answerQueryCommandJournal(queryID, selection);
-	return output;
+	return answerQueryNativeOutput(queryID, selection);
 }
 
 JsonNode surrenderRetreatInput(const BattleStateInfoForRetreat & battleState, size_t townsCount, const Settings & settings)
@@ -383,7 +404,11 @@ void AIGateway::showTavernWindow(const CGObjectInstance * object, const CGHeroIn
 {
 	LOG_TRACE(logAi);
 	status.addQuery(queryID, "TavernWindow");
-	executeActionAsync("showTavernWindow", [this, queryID](){ answerQuery(queryID, 0); });
+	executeActionAsync("showTavernWindow", [this, queryID]()
+	{
+		recordAnswerQueryNativeTrace(nativeTrace.get(), "showTavernWindow", queryID, 0);
+		answerQuery(queryID, 0);
+	});
 }
 
 void AIGateway::showThievesGuildWindow(const CGObjectInstance * obj)
@@ -658,7 +683,11 @@ void AIGateway::showUniversityWindow(const IMarket * market, const CGHeroInstanc
 	LOG_TRACE(logAi);
 
 	status.addQuery(queryID, "UniversityWindow");
-	executeActionAsync("showUniversityWindow", [this, queryID](){ answerQuery(queryID, 0); });
+	executeActionAsync("showUniversityWindow", [this, queryID]()
+	{
+		recordAnswerQueryNativeTrace(nativeTrace.get(), "showUniversityWindow", queryID, 0);
+		answerQuery(queryID, 0);
+	});
 }
 
 void AIGateway::heroManaPointsChanged(const CGHeroInstance * hero)
@@ -732,7 +761,11 @@ void AIGateway::showMarketWindow(const IMarket * market, const CGHeroInstance * 
 {
 	LOG_TRACE(logAi);
 	status.addQuery(queryID, "MarketWindow");
-	executeActionAsync("showMarketWindow", [this, queryID](){ answerQuery(queryID, 0); });
+	executeActionAsync("showMarketWindow", [this, queryID]()
+	{
+		recordAnswerQueryNativeTrace(nativeTrace.get(), "showMarketWindow", queryID, 0);
+		answerQuery(queryID, 0);
+	});
 }
 
 void AIGateway::showWorldViewEx(const std::vector<ObjectPosInfo> & objectPositions, bool showTerrain)
@@ -839,7 +872,11 @@ void AIGateway::commanderGotLevel(const CCommanderInstance * commander, std::vec
 {
 	LOG_TRACE_PARAMS(logAi, "queryID '%i'", queryID);
 	status.addQuery(queryID, boost::str(boost::format("Commander %s of %s got level %d") % commander->name % commander->getArmy()->nodeName() % (int)commander->level));
-	executeActionAsync("commanderGotLevel", [this, queryID](){ answerQuery(queryID, 0); });
+	executeActionAsync("commanderGotLevel", [this, queryID]()
+	{
+		recordAnswerQueryNativeTrace(nativeTrace.get(), "commanderGotLevel", queryID, 0);
+		answerQuery(queryID, 0);
+	});
 }
 
 void AIGateway::showBlockingDialog(const std::string & text, const std::vector<Component> & components, QueryID askID, const int soundID, bool selection, bool cancel, bool safeToAutoaccept)

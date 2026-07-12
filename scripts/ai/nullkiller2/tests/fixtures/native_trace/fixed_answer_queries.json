@@ -1,0 +1,92 @@
+{
+  "schema": "LuaNullkiller2.nativeDecisionTrace.v1",
+  "source": "Nullkiller2",
+  "compareMode": "exact",
+  "compare": [
+    "status",
+    "selection",
+    "commandJournal"
+  ],
+  "decisions": [
+    {
+      "id": "commander-level",
+      "function": "commanderGotLevel",
+      "input": {
+        "queryID": 901
+      },
+      "native": {
+        "status": "answered",
+        "selection": 0,
+        "commandJournal": [
+          {
+            "name": "answerQuery",
+            "payload": {
+              "query": 901,
+              "selection": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "tavern-window",
+      "function": "showTavernWindow",
+      "input": {
+        "queryID": 902
+      },
+      "native": {
+        "status": "answered",
+        "selection": 0,
+        "commandJournal": [
+          {
+            "name": "answerQuery",
+            "payload": {
+              "query": 902,
+              "selection": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "market-window",
+      "function": "showMarketWindow",
+      "input": {
+        "queryID": 903
+      },
+      "native": {
+        "status": "answered",
+        "selection": 0,
+        "commandJournal": [
+          {
+            "name": "answerQuery",
+            "payload": {
+              "query": 903,
+              "selection": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "university-window",
+      "function": "showUniversityWindow",
+      "input": {
+        "queryID": 904
+      },
+      "native": {
+        "status": "answered",
+        "selection": 0,
+        "commandJournal": [
+          {
+            "name": "answerQuery",
+            "payload": {
+              "query": 904,
+              "selection": 0
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
