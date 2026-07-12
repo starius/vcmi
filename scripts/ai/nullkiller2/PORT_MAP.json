@@ -100,11 +100,11 @@
     {
       "cpp": "AI/Nullkiller2/Engine/Settings.h",
       "lua": "scripts/ai/nullkiller2/Engine/Settings.lua",
-      "status": "scaffolded",
+      "status": "ported",
       "symbols": [
         "Settings"
       ],
-      "notes": "Getter parity is pending; Lua currently exposes fields directly."
+      "notes": "Settings fields and all C++ getter names are mirrored while preserving direct table access for snapshot input."
     },
     {
       "cpp": "AI/Nullkiller2/Engine/PriorityEvaluator.h",

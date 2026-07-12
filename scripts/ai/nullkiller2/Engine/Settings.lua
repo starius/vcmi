@@ -1,6 +1,7 @@
 -- Mirrors AI/Nullkiller2/Engine/Settings.{h,cpp}: Settings.
 
 local Settings = {}
+Settings.__index = Settings
 
 Settings.DEFAULTS = {
 	maxRoamingHeroes = 8,
@@ -59,7 +60,7 @@ function Settings.withDefaults(values)
 	for key, value in pairs(values or {}) do
 		result[key] = value
 	end
-	return result
+	return setmetatable(result, Settings)
 end
 
 function Settings.fromDifficultyConfig(root, difficultyName)
@@ -76,6 +77,82 @@ function Settings.fromDifficultyConfig(root, difficultyName)
 
 	result.difficultyName = difficultyName
 	return result
+end
+
+function Settings:getMaxPass()
+	return self.maxPass
+end
+
+function Settings:getMaxPriorityPass()
+	return self.maxPriorityPass
+end
+
+function Settings:getMaxGoldPressure()
+	return self.maxGoldPressure
+end
+
+function Settings:getRetreatThresholdRelative()
+	return self.retreatThresholdRelative
+end
+
+function Settings:getRetreatThresholdAbsolute()
+	return self.retreatThresholdAbsolute
+end
+
+function Settings:getSafeAttackRatio()
+	return self.safeAttackRatio
+end
+
+function Settings:getMaxArmyLossTarget()
+	return self.maxArmyLossTarget
+end
+
+function Settings:getMaxRoamingHeroes()
+	return self.maxRoamingHeroes
+end
+
+function Settings:getMaxRoamingHeroesPerTown()
+	return self.maxRoamingHeroesPerTown
+end
+
+function Settings:getMainHeroTurnDistanceLimit()
+	return self.mainHeroTurnDistanceLimit
+end
+
+function Settings:getScoutHeroTurnDistanceLimit()
+	return self.scoutHeroTurnDistanceLimit
+end
+
+function Settings:getThreatTurnDistanceLimit()
+	return self.threatTurnDistanceLimit
+end
+
+function Settings:getPathfinderBucketsCount()
+	return self.pathfinderBucketsCount
+end
+
+function Settings:getPathfinderBucketSize()
+	return self.pathfinderBucketSize
+end
+
+function Settings:isObjectGraphAllowed()
+	return self.allowObjectGraph
+end
+
+function Settings:isGarrisonTroopsUsageAllowed()
+	return self.useTroopsFromGarrisons
+end
+
+function Settings:isOneWayMonolithUsageAllowed()
+	return self.useOneWayMonoliths
+end
+
+function Settings:isUpdateHitmapOnTileReveal()
+	return self.updateHitmapOnTileReveal
+end
+
+function Settings:isOpenMap()
+	return self.openMap
 end
 
 return Settings
