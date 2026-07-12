@@ -2726,6 +2726,71 @@ void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & docu
 	}
 }
 
+void rebuildTurnOrderStateFromTranscript(CGameHandler & gameHandler, const JsonNode & documents)
+{
+	std::set<PlayerColor> awaiting;
+	std::set<PlayerColor> acting;
+	std::set<PlayerColor> acted;
+
+	for(const auto & [player, state] : gameHandler.gameState().players)
+		awaiting.insert(player);
+
+	auto removePlayer = [&](PlayerColor player)
+	{
+		awaiting.erase(player);
+		acting.erase(player);
+		acted.erase(player);
+	};
+
+	for(size_t documentIndex = 1; documentIndex < documents.Vector().size(); ++documentIndex)
+	{
+		const JsonNode & document = documents.Vector()[documentIndex];
+		const JsonNode * records = nullptr;
+		if(const auto actionsIter = document.Struct().find("actions"); actionsIter != document.Struct().end())
+			records = &actionsIter->second;
+		if(!records)
+		{
+			if(const auto eventsIter = document.Struct().find("events"); eventsIter != document.Struct().end())
+				records = &eventsIter->second;
+		}
+		if(!records || !records->isVector())
+			continue;
+
+		for(const auto & record : records->Vector())
+		{
+			if(!record.isStruct() || record.Struct().size() != 1)
+				continue;
+
+			const auto & entry = *record.Struct().begin();
+			if(entry.first == "playerEnd")
+			{
+				removePlayer(decodePlayerColor(requireString(entry.second, "player")));
+				continue;
+			}
+			if(entry.first == "turnStart")
+			{
+				const auto player = decodePlayerColor(requireString(entry.second, "player"));
+				if(!awaiting.count(player) && acted.count(player) && acting.empty())
+				{
+					awaiting = acted;
+					acted.clear();
+				}
+				awaiting.erase(player);
+				acting.insert(player);
+				continue;
+			}
+			if(entry.first == "turnEnd")
+			{
+				const auto player = decodePlayerColor(requireString(entry.second, "player"));
+				acting.erase(player);
+				acted.insert(player);
+			}
+		}
+	}
+
+	gameHandler.turnOrder->replaceStateForReplay(awaiting, acting, acted);
+}
+
 void writeGameStateSave(const CGameHandler & gameHandler, const std::string & path)
 {
 	if(path.empty())
@@ -3028,6 +3093,14 @@ void writeFullSaveHandlerSummary(const std::string & inputSave, std::ostream & o
 	output << "handler.heroPool=" << serializedValueFingerprint(*gameHandler.heroPool) << "\n";
 	output << "handler.playerMessages=" << serializedValueFingerprint(*gameHandler.playerMessages) << "\n";
 	output << "handler.turnOrder=" << serializedValueFingerprint(*gameHandler.turnOrder) << "\n";
+	for(PlayerColor player(0); player < PlayerColor::PLAYER_LIMIT; ++player)
+	{
+		output << "handler.turnOrder.player." << player.toString()
+			<< " awaiting=" << (gameHandler.turnOrder->isPlayerWaitingForTurn(player) ? "true" : "false")
+			<< " acting=" << (gameHandler.turnOrder->isPlayerMakingTurn(player) ? "true" : "false")
+			<< " acted=" << (gameHandler.turnOrder->hasPlayerActedThisDay(player) ? "true" : "false")
+			<< "\n";
+	}
 	output << "handler.turnTimer=" << serializedValueFingerprint(*gameHandler.turnTimerHandler) << "\n";
 	output << "handler.statistics=" << serializedValueFingerprint(*gameHandler.statistics) << "\n";
 }
@@ -3113,6 +3186,7 @@ int replayVGTJson(const VGTReplayOptions & options)
 	applyGameSettingsOverrides(gameHandler, header);
 	synthesizeDisabledTimerGameplayStart(gameHandler);
 	replayTranscriptDocuments(gameHandler, documents);
+	rebuildTurnOrderStateFromTranscript(gameHandler, documents);
 	gameHandler.saveToFile(options.outputSave);
 	writeGameStateSave(gameHandler, options.outputGameStateSave);
 	return 0;
