@@ -89,6 +89,22 @@
       "notes": "State and enum shell only."
     },
     {
+      "cpp": "AI/Nullkiller2/Engine/AIMemory.cpp",
+      "lua": "scripts/ai/nullkiller2/Engine/AIMemory.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "AIMemory::addVisitableObject",
+        "AIMemory::markObjectVisited",
+        "AIMemory::markObjectUnvisited",
+        "AIMemory::removeFromMemory",
+        "AIMemory::removeInvisibleOrDeletedObjects",
+        "AIMemory::visitableIdsToObjsVector",
+        "AIMemory::visitableIdsToObjsSet",
+        "AIMemory::wasVisited"
+      ],
+      "notes": "Lua owns the persistent object-id sets and callback resolution helpers. Teleport-channel and subterranean-gate memory are placeholders until event snapshots carry enough teleport metadata."
+    },
+    {
       "cpp": "AI/Nullkiller2/Engine/Settings.cpp",
       "lua": "scripts/ai/nullkiller2/Engine/Settings.lua",
       "status": "scaffolded",

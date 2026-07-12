@@ -4,6 +4,7 @@ local BuildingBehavior = require("Behaviors.BuildingBehavior")
 local BuyArmyBehavior = require("Behaviors.BuyArmyBehavior")
 local CaptureObjectsBehavior = require("Behaviors.CaptureObjectsBehavior")
 local ClusterBehavior = require("Behaviors.ClusterBehavior")
+local AIMemory = require("Engine.AIMemory")
 local DeepDecomposer = require("Engine.DeepDecomposer")
 local DefenceBehavior = require("Behaviors.DefenceBehavior")
 local EscapeBehavior = require("Behaviors.EscapeBehavior")
@@ -263,6 +264,12 @@ local function makeEvaluator(aiNk)
 	}
 end
 
+local function memoryRoot(input)
+	local result = input.memory or {}
+	result.aiMemory = result.aiMemory or {}
+	return result
+end
+
 local function buildAiState(input, host, settings, state)
 	input = ensureSnapshotIndexes(input)
 	local aiNk = {}
@@ -272,6 +279,8 @@ local function buildAiState(input, host, settings, state)
 
 	aiNk.host = host
 	aiNk.settings = settings
+	aiNk.luaMemory = memoryRoot(input)
+	aiNk.memory = AIMemory.new(aiNk.luaMemory.aiMemory)
 	aiNk.cc = makeCallbackFacade(input or {})
 	aiNk.lockedHeroes = state.lockedHeroes
 	aiNk.lockedResources = state.lockedResources
@@ -684,7 +693,7 @@ function Nullkiller.makeTurn(ai, input)
 						return {
 							status = "end_turn",
 							intent = "lua-nullkiller2 stopped after task failure",
-							memory = input.memory or {},
+							memory = aiNk.luaMemory,
 							commandJournal = host:getJournal(),
 							executedTasks = executedTasks,
 							priorityTier = priorityTier,
@@ -715,7 +724,7 @@ function Nullkiller.makeTurn(ai, input)
 	return {
 		status = "end_turn",
 		intent = "lua-nullkiller2 turn loop completed without native fallback",
-		memory = input.memory or {},
+		memory = aiNk.luaMemory,
 		commandJournal = host:getJournal(),
 		executedTasks = executedTasks,
 		trace = {
