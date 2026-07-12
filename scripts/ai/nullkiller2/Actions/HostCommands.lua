@@ -70,6 +70,41 @@ local function nodeCoord(path, node)
 	return node and (node.coord or node.targetTile or node.tile) or targetTile(path)
 end
 
+local function pathInfo(adapter, hero, coord, node)
+	if node then
+		local value = node.livePathInfo or node.pathInfo or node.livePath
+		if value ~= nil then
+			return value
+		end
+	end
+	if adapter.host and type(adapter.host.getPathInfo) == "function" then
+		return adapter.host:getPathInfo(hero, coord)
+	end
+	return nil
+end
+
+local function pathInfoTurns(value)
+	if type(value) ~= "table" then
+		return nil
+	end
+	return value.turns or value.turn
+end
+
+local function pathInfoAccessible(value)
+	if type(value) ~= "table" then
+		return nil
+	end
+	return value.accessible or value.accessibility
+end
+
+local function inaccessibleForZeroTurn(value)
+	local accessible = pathInfoAccessible(value)
+	return accessible == "NOT_SET"
+		or accessible == "BLOCKED"
+		or accessible == "FLYABLE"
+		or accessible == false
+end
+
 local function copyTile(tile)
 	if not tile then
 		return nil
@@ -360,6 +395,17 @@ local function executePathNode(adapter, path, node, blockedIndexes, cxxIndex)
 			lockBlockedHero(adapter, blockedIndexes, hero, node.parentIndex)
 			adapter:invalidatePathfinderData()
 			error("Path special actions are not implemented by Lua Nullkiller2 yet.", 3)
+		end
+
+		if (node.turns or node.turn or 0) == 0 and not tileEquals(coord, visitablePos(hero)) then
+			local livePathInfo = pathInfo(adapter, hero, coord, node)
+			if livePathInfo and (inaccessibleForZeroTurn(livePathInfo) or pathInfoTurns(livePathInfo) ~= nil and pathInfoTurns(livePathInfo) ~= 0) then
+				return {
+					ok = false,
+					stale = true,
+					error = "stale zero-turn hero chain node"
+				}
+			end
 		end
 
 		if not tileEquals(coord, visitablePos(hero)) then

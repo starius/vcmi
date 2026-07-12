@@ -156,8 +156,8 @@ commands when a source army must keep one stack.
 Major parity gaps remain:
 
 - visible snapshots are still too thin for full analyzer, object, path, threat, query, and broader ArmyManager parity
-- `ExecuteHeroChain` replays path nodes in native backward order, but stale-path recovery, special actions,
-  object-graph shortcutting, and siege formation are still incomplete
+- `ExecuteHeroChain` replays path nodes in native backward order and rejects stale zero-turn live path snapshots, but
+  Dimension Door stale recovery, special actions, object-graph shortcutting, and siege formation are still incomplete
 - artifact equipment sequencing, full Rewardable inspection, and richer live object inspection remain incomplete
   outside the deterministic scoring helpers
 - garrison, hero exchange, artifact, and remaining army-transfer edge cases need complete Lua-owned sequencing plus
@@ -412,7 +412,7 @@ Commit messages must stay focused on the code change and must not mention the re
 
 1. Expand the snapshot contract for heroes, towns, objects, paths, threats, queries, and army stacks until behavior
    fixtures no longer need hand-written placeholder fields.
-2. Complete `ExecuteHeroChain` parity: stale-path recovery, special actions, siege formation, visit/attack
+2. Complete `ExecuteHeroChain` parity: Dimension Door stale recovery, special actions, siege formation, visit/attack
    selection, and object-graph shortcutting.
 3. Finish `ExchangeSwapTownHeroes`, garrison, remaining ArmyManager upgrade/total-army methods, and artifact command
    sequencing with Lua-owned policy and checked host validators.

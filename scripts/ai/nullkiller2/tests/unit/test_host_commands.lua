@@ -151,3 +151,27 @@ assert(chainCalled[3].payload.hero == 102)
 assert(chainCalled[3].payload.x == 2)
 assert(chainCalled[4].name == "moveHeroToTile")
 assert(chainCalled[4].payload.hero == 102)
+
+local staleCalled = {}
+local staleAdapter = HostCommands.new({
+	command = function(_, name, payload)
+		table.insert(staleCalled, { name = name, payload = payload })
+		return { ok = true, executed = true }
+	end
+})
+local staleResult = staleAdapter:executeHeroChain({
+	targetHero = { id = 111, movementPointsRemaining = 1000, visitablePos = { x = 0, y = 0, z = 0 } },
+	nodes = {
+		{
+			targetHero = { id = 111, movementPointsRemaining = 1000, visitablePos = { x = 0, y = 0, z = 0 } },
+			coord = { x = 4, y = 4, z = 0 },
+			turns = 0,
+			pathInfo = { turns = 1, accessible = "ACCESSIBLE" }
+		}
+	}
+}, 112)
+assert(staleResult.ok == false)
+assert(staleResult.stale == true)
+assert(#staleCalled == 1)
+assert(staleCalled[1].name == "setActive")
+assert(staleCalled[1].payload.hero == 111)

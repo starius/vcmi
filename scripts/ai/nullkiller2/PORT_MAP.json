@@ -489,7 +489,7 @@
         "Goals::ExecuteHeroChain::toString",
         "Goals::ExecuteHeroChain::moveHeroToTile"
       ],
-      "notes": "Path execution sets active hero/tile, target object, resets object clusters, replays path nodes in native backward order through a granular moveHeroToTile host boundary, and fail-closes special actions with hero lock/pathfinder invalidation. Stale-path recovery, special action execution, siege formation, and object-graph shortcutting remain pending."
+      "notes": "Path execution sets active hero/tile, target object, resets object clusters, replays path nodes in native backward order through a granular moveHeroToTile host boundary, fail-closes special actions with hero lock/pathfinder invalidation, and rejects stale zero-turn live path snapshots before movement. Dimension Door recovery, special action execution, siege formation, and object-graph shortcutting remain pending."
     },
     {
       "cpp": "AI/Nullkiller2/Markers/UnlockCluster.h",
