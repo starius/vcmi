@@ -79,6 +79,49 @@ assert(BuyArmy.needsFreeSlotToRecruit({ stacksCount = 7, armySize = 7, slotsByCr
 assert(BuyArmy.needsFreeSlotToRecruit({ stacksCount = 7, armySize = 7, slotsByCreature = { [3] = 1 } }, 3) == false)
 assert(BuyArmy.needsFreeSlotToRecruit({ stacksCount = 6, armySize = 7, slotsByCreature = {} }, 3) == false)
 
+town.factionID = 1
+town.upperArmy = {
+	id = 104,
+	stacksCount = 0,
+	armySize = 7,
+	slotsByCreature = {}
+}
+town.availableToBuy = {
+	{
+		creature = { id = 105, aiValue = 10, factionID = 1, fullRecruitCost = { [7] = 50 } },
+		count = 10,
+		level = 0
+	},
+	{
+		creature = { id = 106, aiValue = 100, factionID = 1, fullRecruitCost = { [7] = 200 } },
+		count = 10,
+		level = 1
+	}
+}
+local buyArmyJournal = {}
+local buyArmyResult = BuyArmy.new(town, 80):accept({
+	freeResources = { [7] = 1000 },
+	getFreeResources = function(self)
+		return self.freeResources
+	end,
+	recruitCreatures = function(_, sourceTown, destination, creature, count, level)
+		table.insert(buyArmyJournal, {
+			town = sourceTown,
+			destination = destination,
+			creature = creature,
+			count = count,
+			level = level
+		})
+	end
+})
+assert(buyArmyResult.valueBought == 500)
+assert(#buyArmyJournal == 1)
+assert(buyArmyJournal[1].town == town)
+assert(buyArmyJournal[1].destination == town.upperArmy)
+assert(buyArmyJournal[1].creature.id == 106)
+assert(buyArmyJournal[1].count == 5)
+assert(buyArmyJournal[1].level == 1)
+
 assert(Goals.Invalid == Invalid)
 assert(Goals.BuildThis == BuildThis)
 

@@ -15,6 +15,7 @@
 
 #include "../../lib/battle/BattleAction.h"
 #include "../../lib/callback/CCallback.h"
+#include "../../lib/CCreatureHandler.h"
 #include "../../lib/GameConstants.h"
 #include "../../lib/StartInfo.h"
 #include "../../lib/mapObjects/CGHeroInstance.h"
@@ -70,7 +71,25 @@ JsonNode resourcesSnapshot(const TResources & resources)
 	JsonNode result;
 	result.setType(JsonNode::JsonType::DATA_VECTOR);
 	for(int resourceID = 0; resourceID < GameConstants::RESOURCE_QUANTITY; ++resourceID)
-		result.Vector().push_back(JsonNode(resources[GameResID(resourceID)]));
+		result.Vector().push_back(JsonNode(static_cast<int64_t>(resources[GameResID(resourceID)])));
+	return result;
+}
+
+JsonNode purchasableCreatureSnapshot(CreatureID creatureID, int count, int level)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	const auto * creature = creatureID.toCreature();
+
+	result["count"].Integer() = count;
+	result["level"].Integer() = level;
+	result["creature"].setType(JsonNode::JsonType::DATA_STRUCT);
+	result["creature"]["id"].Integer() = creatureID.getNum();
+	result["creature"]["aiValue"].Integer() = creature ? creature->getAIValue() : 0;
+	result["creature"]["factionID"].Integer() = creature ? creature->getFactionID().getNum() : -1;
+	if(creature)
+		result["creature"]["fullRecruitCost"] = resourcesSnapshot(creature->getFullRecruitCost());
+
 	return result;
 }
 
@@ -103,6 +122,14 @@ JsonNode townSnapshot(const CGTownInstance * town, const std::shared_ptr<CCallba
 	result["availableHeroes"].setType(JsonNode::JsonType::DATA_VECTOR);
 	for(const auto * hero : availableHeroes)
 		result["availableHeroes"].Vector().push_back(heroSnapshot(hero));
+
+	result["availableToBuy"].setType(JsonNode::JsonType::DATA_VECTOR);
+	for(size_t level = 0; level < town->creatures.size(); ++level)
+	{
+		const auto & entry = town->creatures[level];
+		if(entry.first > 0 && !entry.second.empty())
+			result["availableToBuy"].Vector().push_back(purchasableCreatureSnapshot(entry.second.back(), entry.first, static_cast<int>(level)));
+	}
 
 	result["threats"].setType(JsonNode::JsonType::DATA_VECTOR);
 	return result;
@@ -215,6 +242,35 @@ bool CLuaNullkiller2AI::executeCommand(const LuaCommand & command) const
 
 		cc->swapGarrisonHero(town);
 		return true;
+	}
+
+	if(command.name == "recruitCreatures")
+	{
+		const auto townID = commandInteger(command, "town");
+		const auto destinationID = commandInteger(command, "dst");
+		const auto creatureID = commandInteger(command, "creature");
+		const auto count = commandInteger(command, "count");
+		if(!townID || !destinationID || !creatureID || !count)
+			return false;
+
+		const auto * dwelling = dynamic_cast<const CGDwelling *>(cc->getObj(ObjectInstanceID(*townID), false));
+		const auto * destination = dynamic_cast<const CArmedInstance *>(cc->getObj(ObjectInstanceID(*destinationID), false));
+		if(!dwelling || !destination)
+			return false;
+
+		cc->recruitCreatures(dwelling, destination, CreatureID(*creatureID), *count, commandInteger(command, "level").value_or(-1));
+		return true;
+	}
+
+	if(command.name == "dismissCreature")
+	{
+		const auto armyID = commandInteger(command, "army");
+		const auto slotID = commandInteger(command, "slot");
+		if(!armyID || !slotID)
+			return false;
+
+		const auto * army = dynamic_cast<const CArmedInstance *>(cc->getObj(ObjectInstanceID(*armyID), false));
+		return army && cc->dismissCreature(army, SlotID(*slotID));
 	}
 
 	if(command.name == "castSpell")

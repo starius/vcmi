@@ -69,10 +69,13 @@ LuaCommand readCommand(lua_State * state, const std::string & commandName, int p
 
 	if(lua_istable(state, payloadIndex))
 	{
-		static constexpr std::array<const char *, 11> INTEGER_FIELDS =
+		static constexpr std::array<const char *, 15> INTEGER_FIELDS =
 		{
 			"town",
 			"hero",
+			"dst",
+			"army",
+			"slot",
 			"bid",
 			"shipyard",
 			"spell",
@@ -81,7 +84,8 @@ LuaCommand readCommand(lua_State * state, const std::string & commandName, int p
 			"z",
 			"objid",
 			"creature",
-			"count"
+			"count",
+			"level"
 		};
 
 		for(const char * field : INTEGER_FIELDS)

@@ -104,6 +104,23 @@ function HostCommands:recruitHero(town, hero)
 	})
 end
 
+function HostCommands:recruitCreatures(town, destination, creature, count, level)
+	return self:command("recruitCreatures", {
+		town = objectID(town),
+		dst = objectID(destination),
+		creature = objectID(creature),
+		count = count,
+		level = level
+	})
+end
+
+function HostCommands:dismissCreature(army, slot)
+	return self:command("dismissCreature", {
+		army = objectID(army),
+		slot = slot
+	})
+end
+
 function HostCommands:castSpell(hero, spell, tile)
 	return self:command("castSpell", {
 		hero = objectID(hero),
