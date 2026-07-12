@@ -77,6 +77,7 @@ void Rewardable::VisitInfo::serializeJson(JsonSerializeFormat & handler)
 	handler.serializeStruct("limiter", limiter);
 	handler.serializeStruct("reward", reward);
 	handler.serializeStruct("message", message);
+	handler.serializeStruct("description", description);
 	handler.serializeInt("visitType", visitType);
 }
 
@@ -104,6 +105,9 @@ void Rewardable::Variables::serializeJson(JsonSerializeFormat & handler)
 void Rewardable::Configuration::serializeJson(JsonSerializeFormat & handler)
 {
 	handler.serializeStruct("onSelect", onSelect);
+	handler.serializeStruct("description", description);
+	handler.serializeStruct("notVisitedTooltip", notVisitedTooltip);
+	handler.serializeStruct("visitedTooltip", visitedTooltip);
 	handler.enterArray("info").serializeStruct(info);
 	handler.serializeEnum("selectMode", selectMode, std::vector<std::string>{SelectModeString.begin(), SelectModeString.end()});
 	handler.serializeEnum("visitMode", visitMode, std::vector<std::string>{VisitModeString.begin(), VisitModeString.end()});
@@ -114,4 +118,6 @@ void Rewardable::Configuration::serializeJson(JsonSerializeFormat & handler)
 	handler.serializeBool("coastVisitable", coastVisitable);
 	handler.serializeInt("infoWindowType", infoWindowType);
 	variables.serializeJson(handler);
+	handler.serializeStruct("visitLimiter", visitLimiter);
+	handler.serializeString("guardsLayout", guardsLayout);
 }

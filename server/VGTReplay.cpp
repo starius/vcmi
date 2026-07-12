@@ -16,21 +16,27 @@
 #include "../lib/CConfigHandler.h"
 #include "../lib/LoadProgress.h"
 #include "../lib/StartInfo.h"
+#include "../lib/campaign/CampaignState.h"
 #include "../lib/constants/StringConstants.h"
 #include "../lib/entities/artifact/CArtifactInstance.h"
 #include "../lib/entities/artifact/CArtifactSet.h"
 #include "../lib/gameState/CGameState.h"
 #include "../lib/json/JsonBonus.h"
 #include "../lib/json/JsonNode.h"
+#include "../lib/mapping/CMapHeader.h"
 #include "../lib/mapping/CMap.h"
 #include "../lib/mapObjects/CGObjectInstance.h"
+#include "../lib/mapObjects/CGCreature.h"
 #include "../lib/mapObjects/CGHeroInstance.h"
+#include "../lib/mapObjects/CGTownInstance.h"
+#include "../lib/mapObjects/ObjectTemplate.h"
 #include "../lib/mapObjects/army/CArmedInstance.h"
 #include "../lib/networkPacks/PacksForClient.h"
 #include "../lib/networkPacks/PacksForClientBattle.h"
 #include "../lib/networkPacks/PacksForServer.h"
 #include "../lib/networkPacks/SetRewardableConfiguration.h"
 #include "../lib/rmg/CMapGenOptions.h"
+#include "../lib/serializer/CLoadFile.h"
 #include "../lib/serializer/CSaveFile.h"
 #include "../lib/serializer/JsonDeserializer.h"
 
@@ -214,11 +220,22 @@ PlayerColor decodePlayerColor(const std::string & value)
 
 PlayerColor decodeColor(const std::string & value)
 {
+	if(value == "invalid")
+		return PlayerColor::CANNOT_DETERMINE;
 	if(value == "neutral")
 		return PlayerColor::NEUTRAL;
 	if(value == "spectator")
 		return PlayerColor::SPECTATOR;
 	return decodePlayerColor(value);
+}
+
+MapObjectID decodeMapObject(const std::string & value)
+{
+	std::string identifier = value;
+	const std::string corePrefix = "core:";
+	if(identifier.starts_with(corePrefix))
+		identifier.erase(0, corePrefix.size());
+	return MapObjectID(MapObjectID::decode(identifier));
 }
 
 HeroTypeID decodeHeroType(const std::string & value)
@@ -278,6 +295,25 @@ CreatureID decodeCreature(const std::string & value)
 	if(value == "core:none")
 		return CreatureID::NONE;
 	return CreatureID(CreatureID::decode(value));
+}
+
+CGCreature::Character decodeCreatureCharacter(const std::string & value)
+{
+	if(value == "compliant") return CGCreature::Character::COMPLIANT;
+	if(value == "friendly") return CGCreature::Character::FRIENDLY;
+	if(value == "aggressive") return CGCreature::Character::AGGRESSIVE;
+	if(value == "hostile") return CGCreature::Character::HOSTILE;
+	if(value == "savage") return CGCreature::Character::SAVAGE;
+	if(value == "custom") return CGCreature::Character::CUSTOM;
+	throw std::runtime_error("Unsupported VGT creature character: " + value);
+}
+
+CGCreature::UpgradedStackPresence decodeUpgradedStackPresence(const std::string & value)
+{
+	if(value == "random") return CGCreature::UpgradedStackPresence::RANDOM;
+	if(value == "never") return CGCreature::UpgradedStackPresence::NEVER;
+	if(value == "always") return CGCreature::UpgradedStackPresence::ALWAYS;
+	throw std::runtime_error("Unsupported VGT upgraded stack presence: " + value);
 }
 
 ArtifactID decodeArtifact(const std::string & value)
@@ -881,6 +917,43 @@ std::string armySummary(const CCreatureSet & army)
 	return "[" + boost::algorithm::join(entries, ", ") + "]";
 }
 
+std::string objectDebugSummary(const CGameState & gameState, ObjectInstanceID objectID)
+{
+	const auto * object = gameState.getMap().getObject(objectID);
+	if(!object)
+		return "missing";
+
+	std::vector<std::string> parts;
+	parts.push_back("id=" + std::to_string(objectID.getNum()));
+	parts.push_back("type=" + MapObjectID::encode(object->ID.getNum()));
+	parts.push_back("subtype=" + std::to_string(object->subID.getNum()));
+	parts.push_back("owner=" + object->tempOwner.toString());
+	parts.push_back("name=" + object->instanceName);
+	parts.push_back("pos=" + object->visitablePos().toString());
+
+	if(const auto * hero = dynamic_cast<const CGHeroInstance *>(object))
+	{
+		parts.push_back("hero=" + HeroTypeID::encode(hero->getHeroTypeID().getNum()));
+		parts.push_back("artifacts=" + artifactSetSummary(*hero));
+	}
+	if(const auto * army = dynamic_cast<const CArmedInstance *>(object))
+		parts.push_back("stacks=" + armySummary(*army));
+
+	return "{" + boost::algorithm::join(parts, ", ") + "}";
+}
+
+std::string ownedHeroesSummary(const CGameState & gameState, PlayerColor player)
+{
+	std::vector<std::string> entries;
+	for(const auto & object : gameState.getMap().getObjects())
+	{
+		const auto * hero = dynamic_cast<const CGHeroInstance *>(object);
+		if(hero && hero->tempOwner == player)
+			entries.push_back(objectDebugSummary(gameState, hero->id));
+	}
+	return "[" + boost::algorithm::join(entries, ", ") + "]";
+}
+
 void validateArmyHasStack(CGameHandler & gameHandler, ObjectInstanceID armyID, SlotID slot, const std::string & context)
 {
 	const auto * army = gameHandler.gs->getArmyInstance(armyID);
@@ -890,7 +963,8 @@ void validateArmyHasStack(CGameHandler & gameHandler, ObjectInstanceID armyID, S
 		throw std::runtime_error("VGT replay army move source slot is empty: " + context +
 			", army=" + std::to_string(armyID.getNum()) +
 			", slot=" + std::to_string(slot.getNum()) +
-			", stacks=" + armySummary(*army));
+			", object=" + objectDebugSummary(gameHandler.gameState(), armyID) +
+			", ownedHeroes=" + ownedHeroesSummary(gameHandler.gameState(), army->getOwner()));
 }
 
 BulkMoveArtifacts decodeBulkArtifactMove(CGameHandler & gameHandler, const JsonNode & node)
@@ -1344,6 +1418,27 @@ std::map<PlayerColor, PlayerSettings> decodePlayerSettingsMap(const JsonNode & n
 	return result;
 }
 
+std::map<PlayerColor, PlayerSettings> decodeGeneratedMapInitializationPlayerSettings(const JsonNode & players, const JsonNode * initialPlayers)
+{
+	auto result = decodePlayerSettingsMap(players);
+	if(!initialPlayers)
+		return result;
+
+	const auto initial = decodePlayerSettingsMap(*initialPlayers);
+	for(const auto & [color, settings] : initial)
+	{
+		auto iter = result.find(color);
+		if(iter == result.end())
+			continue;
+
+		iter->second.hero = settings.hero;
+		iter->second.heroPortrait = settings.heroPortrait;
+		iter->second.heroNameTextId = settings.heroNameTextId;
+		iter->second.bonus = settings.bonus;
+	}
+	return result;
+}
+
 CMapGenOptions::CPlayerSettings decodeRandomMapPlayerSettings(const JsonNode & node, PlayerColor color)
 {
 	CMapGenOptions::CPlayerSettings result;
@@ -1417,7 +1512,7 @@ StartInfo decodeStartInfo(const JsonNode & header)
 	const auto & settingsNode = requireField(header, "settings");
 	const auto & players = requireField(header, "players");
 	const auto initialPlayersIter = header.Struct().find("initialPlayers");
-	const auto & playersForInitialization = isGeneratedMapFile(map) || initialPlayersIter == header.Struct().end() ? players : initialPlayersIter->second;
+	const auto generatedMapFile = isGeneratedMapFile(map);
 
 	result.mode = decodeStartMode(requireString(settingsNode, "start"));
 	result.startTime = static_cast<time_t>(requireInteger(settingsNode, "startTime"));
@@ -1427,8 +1522,11 @@ StartInfo decodeStartInfo(const JsonNode & header)
 	result.simturnsInfo = decodeSimturns(requireField(settingsNode, "simturns"));
 	result.turnTimerInfo = decodeTimer(requireField(settingsNode, "timer"));
 	result.extraOptionsInfo = decodeExtraOptions(requireField(settingsNode, "extraOptions"));
-	result.playerInfos = decodePlayerSettingsMap(playersForInitialization);
-	if(isGeneratedMapFile(map))
+	if(generatedMapFile)
+		result.playerInfos = decodeGeneratedMapInitializationPlayerSettings(players, initialPlayersIter == header.Struct().end() ? nullptr : &initialPlayersIter->second);
+	else
+		result.playerInfos = decodePlayerSettingsMap(initialPlayersIter == header.Struct().end() ? players : initialPlayersIter->second);
+	if(generatedMapFile)
 		result.mapGenOptions = decodeRandomMapGenerator(requireField(map, "generator"));
 	return result;
 }
@@ -1472,6 +1570,8 @@ void applyMapEngineState(CGameHandler & gameHandler, const JsonNode & header)
 		{
 			if(const auto * initialPlayers = findField(header, "initialPlayers"))
 				initialStartInfo->playerInfos = decodePlayerSettingsMap(*initialPlayers);
+			initialStartInfo->fileURI.clear();
+			initialStartInfo->mapname.clear();
 		}
 	}
 
@@ -1511,6 +1611,199 @@ void applyEffectPack(CGameHandler & gameHandler, CPackForClient & pack)
 	if(!gameHandler.gs)
 		throw std::runtime_error("VGT replay cannot apply effects before game state initialization");
 	gameHandler.gs->apply(pack);
+}
+
+ObjectInstanceID resolveInitialHeroState(const CGameState & gameState, const JsonNode & node)
+{
+	if(const auto * id = findField(node, "id"); id && id->isString())
+	{
+		try
+		{
+			return resolveObjectAlias(gameState, id->String());
+		}
+		catch(const std::exception &)
+		{
+		}
+	}
+
+	const auto owner = decodeColor(requireString(node, "owner"));
+	const auto heroType = decodeHeroType(requireString(node, "type"));
+	const auto position = decodePosition(requireField(node, "position"));
+
+	for(const auto * object : gameState.getMap().getObjects())
+	{
+		const auto * hero = dynamic_cast<const CGHeroInstance *>(object);
+		if(!hero)
+			continue;
+		if(hero->tempOwner != owner)
+			continue;
+		if(hero->getHeroTypeID() != heroType)
+			continue;
+		if(hero->visitablePos() != position)
+			continue;
+		return hero->id;
+	}
+
+	throw std::runtime_error("Unable to resolve VGT initial hero state: " + node.toCompactString());
+}
+
+void applyInitialHeroArmyState(CGameHandler & gameHandler, const JsonNode & node)
+{
+	const auto heroID = resolveInitialHeroState(gameHandler.gameState(), node);
+	auto * army = gameHandler.gs->getArmyInstance(heroID);
+	if(!army)
+		throw std::runtime_error("VGT initial hero state references non-army object: " + std::to_string(heroID.getNum()));
+
+	if(const auto * experienceNode = findField(node, "experience"))
+	{
+		SetHeroExperience pack;
+		pack.id = heroID;
+		pack.mode = ChangeValueMode::ABSOLUTE;
+		pack.val = experienceNode->Integer();
+		applyEffectPack(gameHandler, pack);
+	}
+	if(const auto * manaNode = findField(node, "mana"))
+	{
+		SetMana pack;
+		pack.hid = heroID;
+		pack.mode = ChangeValueMode::ABSOLUTE;
+		pack.val = static_cast<si32>(manaNode->Integer());
+		applyEffectPack(gameHandler, pack);
+	}
+	if(const auto * movementNode = findField(node, "movement"))
+	{
+		SetMovePoints pack;
+		pack.hid = heroID;
+		pack.val = static_cast<si32>(movementNode->Integer());
+		applyEffectPack(gameHandler, pack);
+	}
+
+	if(const auto * artifactsNode = findField(node, "artifacts"))
+	{
+		if(!artifactsNode->isVector())
+			throw std::runtime_error("VGT initial hero artifacts must be a list");
+		auto * hero = gameHandler.gs->getHero(heroID);
+		if(!hero)
+			throw std::runtime_error("VGT initial hero artifacts reference missing hero: " + std::to_string(heroID.getNum()));
+
+		for(const auto & artifactNode : artifactsNode->Vector())
+		{
+			const auto position = decodeArtifactPosition(requireField(artifactNode, "position"));
+			const auto artifactType = decodeArtifact(requireString(artifactNode, "artifact"));
+			const auto spellID = decodeSpell(requireString(artifactNode, "spell"));
+			const bool locked = findField(artifactNode, "locked") && findField(artifactNode, "locked")->Bool();
+
+			const auto * currentArtifact = hero->getArt(position, false);
+			if(currentArtifact && currentArtifact->getTypeId() == artifactType && currentArtifact->getScrollSpellID() == spellID)
+			{
+				hero->artifactsWorn.find(position)->second.locked = locked;
+				continue;
+			}
+			if(currentArtifact)
+				gameHandler.gs->getMap().removeArtifactInstance(*hero, position);
+
+			auto * artifactInstance = gameHandler.gs->getMap().createArtifact(artifactType, spellID);
+			gameHandler.gs->getMap().putArtifactInstance(*hero, artifactInstance->getId(), position);
+			hero->artifactsWorn.find(position)->second.locked = locked;
+		}
+	}
+
+	const CSimpleArmy desiredArmy = decodeSimpleArmy(requireField(node, "army"));
+	std::set<int> desiredSlots;
+	for(const auto & [slotID, stack] : desiredArmy.army)
+	{
+		desiredSlots.insert(slotID.getNum());
+		const auto desiredCreature = stack.first;
+		const auto desiredCount = stack.second;
+
+		if(!army->hasStackAtSlot(slotID))
+		{
+			InsertNewStack pack;
+			pack.army = heroID;
+			pack.slot = slotID;
+			pack.type = desiredCreature;
+			pack.count = desiredCount;
+			applyEffectPack(gameHandler, pack);
+			continue;
+		}
+
+		const auto * current = army->getStackPtr(slotID);
+		if(current->getCreatureID() != desiredCreature)
+		{
+			SetStackType pack;
+			pack.army = heroID;
+			pack.slot = slotID;
+			pack.type = desiredCreature;
+			applyEffectPack(gameHandler, pack);
+		}
+		if(current->getCount() != desiredCount)
+		{
+			ChangeStackCount pack;
+			pack.army = heroID;
+			pack.slot = slotID;
+			pack.mode = ChangeValueMode::ABSOLUTE;
+			pack.count = desiredCount;
+			applyEffectPack(gameHandler, pack);
+		}
+	}
+
+	std::vector<SlotID> slotsToErase;
+	for(const auto & [slotID, stack] : army->Slots())
+	{
+		if(stack && !vstd::contains(desiredSlots, slotID.getNum()))
+			slotsToErase.push_back(slotID);
+	}
+	for(const auto & slotID : slotsToErase)
+	{
+		EraseStack pack;
+		pack.army = heroID;
+		pack.slot = slotID;
+		applyEffectPack(gameHandler, pack);
+	}
+}
+
+void applyInitialState(CGameHandler & gameHandler, const JsonNode & header)
+{
+	const auto * initialStateNode = findField(header, "initialState");
+	if(!initialStateNode)
+		return;
+
+	const auto * heroesNode = findField(*initialStateNode, "heroes");
+	if(!heroesNode)
+		return;
+	if(!heroesNode->isVector())
+		throw std::runtime_error("VGT initialState.heroes must be a list");
+
+	for(const auto & heroNode : heroesNode->Vector())
+		applyInitialHeroArmyState(gameHandler, heroNode);
+}
+
+void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, const JsonNode & node)
+{
+	auto creature = std::dynamic_pointer_cast<CGCreature>(object);
+	if(!creature)
+		throw std::runtime_error("VGT creatureState provided for non-creature object");
+
+	if(const auto * character = findField(node, "character"))
+		creature->initialCharacter = decodeCreatureCharacter(character->String());
+	if(const auto * aggression = findField(node, "aggression"))
+		creature->agression = static_cast<int8_t>(aggression->Integer());
+	if(const auto * temppower = findField(node, "temppower"))
+		creature->temppower = temppower->Integer();
+	if(const auto * stacksCount = findField(node, "stacksCount"))
+		creature->stacksCount = stacksCount->Integer();
+	if(const auto * upgradedStackPresence = findField(node, "upgradedStackPresence"))
+		creature->upgradedStackPresence = decodeUpgradedStackPresence(upgradedStackPresence->String());
+	if(const auto * joiningPercentage = findField(node, "joiningPercentage"))
+		creature->joiningPercentage = static_cast<int8_t>(joiningPercentage->Integer());
+	if(const auto * joinOnlyForMoney = findField(node, "joinOnlyForMoney"))
+		creature->joinOnlyForMoney = joinOnlyForMoney->Bool();
+	if(const auto * refusedJoining = findField(node, "refusedJoining"))
+		creature->refusedJoining = refusedJoining->Bool();
+	if(const auto * neverFlees = findField(node, "neverFlees"))
+		creature->neverFlees = neverFlees->Bool();
+	if(const auto * noGrowing = findField(node, "noGrowing"))
+		creature->notGrowingTeam = noGrowing->Bool();
 }
 
 [[maybe_unused]] void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
@@ -2011,6 +2304,40 @@ void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, con
 		return;
 	}
 
+	if(kind == "newObject")
+	{
+		const auto objectType = decodeMapObject(requireString(node, "type"));
+		const auto objectSubtype = MapObjectSubID(static_cast<si32>(requireInteger(node, "subtype")));
+		const auto position = decodePosition(requireField(node, "position"));
+		auto object = gameHandler.createNewObject(position, objectType, objectSubtype);
+		object->tempOwner = decodeColor(requireString(node, "owner"));
+		if(const auto * name = findField(node, "name"); name && name->isString())
+			object->instanceName = name->String();
+		if(const auto * blockVisit = findField(node, "blockVisit"))
+			object->blockVisit = blockVisit->Bool();
+		if(const auto * removable = findField(node, "removable"))
+			object->removable = removable->Bool();
+
+		if(const auto * armyNode = findField(node, "army"))
+		{
+			const auto army = decodeSimpleArmy(*armyNode);
+			auto armed = std::dynamic_pointer_cast<CArmedInstance>(object);
+			if(!armed)
+				throw std::runtime_error("VGT newObject army provided for non-army object");
+			armed->clearSlots();
+			for(const auto & [slotID, stack] : army.army)
+				armed->setCreature(slotID, stack.first, stack.second);
+		}
+		if(const auto * creatureState = findField(node, "creatureState"))
+			applyCreatureObjectState(object, *creatureState);
+
+		NewObject pack;
+		pack.newObject = object;
+		pack.initiator = decodeColor(requireString(node, "initiator"));
+		applyEffectPack(gameHandler, pack);
+		return;
+	}
+
 	if(kind == "move")
 	{
 		TryMoveHero pack;
@@ -2097,6 +2424,15 @@ void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, con
 		pack.primskill = decodePrimarySkill(requireString(node, "primary"));
 		pack.skills = decodeSecondarySkillList(requireField(node, "choices"));
 		pack.queryID = decodeQuery(requireString(node, "query"));
+		applyEffectPack(gameHandler, pack);
+		return;
+	}
+
+	if(kind == "quest")
+	{
+		AddQuest pack;
+		pack.player = decodePlayerColor(requireString(node, "player"));
+		pack.quest = QuestInfo(resolveObjectAlias(gameHandler.gameState(), requireString(node, "object")));
 		applyEffectPack(gameHandler, pack);
 		return;
 	}
@@ -2219,6 +2555,229 @@ void writeGameStateSave(const CGameHandler & gameHandler, const std::string & pa
 	gameHandler.gameState().saveGame(save);
 	save.write(targetPath);
 }
+
+std::string startingBonusSummary(PlayerStartingBonus bonus)
+{
+	switch(bonus)
+	{
+	case PlayerStartingBonus::RANDOM:
+		return "random";
+	case PlayerStartingBonus::ARTIFACT:
+		return "artifact";
+	case PlayerStartingBonus::GOLD:
+		return "gold";
+	case PlayerStartingBonus::RESOURCE:
+		return "resource";
+	}
+	return "unknown";
+}
+
+std::string randomMapPlayerTypeSummary(EPlayerType type)
+{
+	switch(type)
+	{
+	case EPlayerType::HUMAN:
+		return "human";
+	case EPlayerType::AI:
+		return "ai";
+	case EPlayerType::COMP_ONLY:
+		return "computerOnly";
+	}
+	return "unknown";
+}
+
+void writePlayerSettingsSummary(std::ostream & output, const std::string & prefix, const PlayerSettings & player)
+{
+	output << prefix << player.color.toString()
+		<< " faction=" << (player.castle == FactionID::RANDOM ? "random" : FactionID::encode(player.castle.getNum()))
+		<< " hero=" << (player.hero == HeroTypeID::RANDOM ? "random" : HeroTypeID::encode(player.hero.getNum()))
+		<< " bonus=" << startingBonusSummary(player.bonus)
+		<< " name=" << player.name
+		<< " compOnly=" << (player.compOnly ? "true" : "false")
+		<< " connections=" << player.connectedPlayerIDs.size()
+		<< "\n";
+}
+
+void writeMapGenSummary(std::ostream & output, const std::string & label, const CMapGenOptions * options)
+{
+	output << label << "=" << (options ? "present" : "none") << "\n";
+	if(!options)
+		return;
+
+	output << label << ".size=" << options->getWidth() << "x" << options->getHeight() << "x" << options->getLevels()
+		<< " humanOrComputer=" << static_cast<int>(options->getHumanOrCpuPlayerCount())
+		<< " teams=" << static_cast<int>(options->getTeamCount())
+		<< " computerOnly=" << static_cast<int>(options->getCompOnlyPlayerCount())
+		<< " computerOnlyTeams=" << static_cast<int>(options->getCompOnlyTeamCount())
+		<< " water=" << static_cast<int>(options->getWaterContent())
+		<< " monsters=" << static_cast<int>(options->getMonsterStrength())
+		<< " template=" << (options->getMapTemplate() ? options->getMapTemplate()->getId() : "")
+		<< " roads=";
+	for(const auto roadId : { RoadId::DIRT_ROAD, RoadId::GRAVEL_ROAD, RoadId::COBBLESTONE_ROAD })
+	{
+		if(options->isRoadEnabled(roadId))
+			output << RoadId::encode(roadId.getNum()) << ",";
+	}
+	output << "\n";
+
+	for(const auto & [color, player] : options->getPlayersSettings())
+	{
+		output << label << ".player." << color.toString()
+			<< " type=" << randomMapPlayerTypeSummary(player.getPlayerType())
+			<< " faction=" << (player.getStartingTown() == FactionID::RANDOM ? "random" : FactionID::encode(player.getStartingTown().getNum()))
+			<< " hero=" << (player.getStartingHero() == HeroTypeID::RANDOM ? "random" : HeroTypeID::encode(player.getStartingHero().getNum()))
+			<< " team=" << player.getTeam().getNum()
+			<< "\n";
+	}
+}
+
+void writeStartInfoSummary(std::ostream & output, const std::string & label, const StartInfo * startInfo)
+{
+	output << label << "=" << (startInfo ? "present" : "none") << "\n";
+	if(!startInfo)
+		return;
+
+	output << label << ".mode=" << static_cast<int>(startInfo->mode)
+		<< " difficulty=" << static_cast<int>(startInfo->difficulty)
+		<< " startTime=" << static_cast<int64_t>(startInfo->startTime)
+		<< " fileURI=" << startInfo->fileURI
+		<< " mapname=" << startInfo->mapname
+		<< "\n";
+	for(const auto & [color, player] : startInfo->playerInfos)
+		writePlayerSettingsSummary(output, label + ".player.", player);
+	writeMapGenSummary(output, label + ".mapGen", startInfo->mapGenOptions.get());
+}
+
+void writeResourceSummary(std::ostream & output, const PlayerColor & player, const TResources & resources)
+{
+	output << "player." << player.toString() << ".resources=";
+	for(int index = 0; index < GameConstants::RESOURCE_QUANTITY; ++index)
+	{
+		if(index)
+			output << ",";
+		output << GameResID::encode(index) << ":" << resources[static_cast<size_t>(index)];
+	}
+	output << "\n";
+}
+
+void writeGameStateSummary(const CGameState & gameState, std::ostream & output)
+{
+	writeStartInfoSummary(output, "scenario", gameState.getStartInfo());
+	writeStartInfoSummary(output, "initial", gameState.getInitialStartInfo());
+	output << "day=" << gameState.getCalendar().getCurrentDay() << "\n";
+	output << "objectNameCounter=" << gameState.getMap().getUniqueInstanceNameCounter() << "\n";
+
+	for(const auto & [color, player] : gameState.players)
+		writeResourceSummary(output, color, player.resources);
+
+	for(const auto & heroID : gameState.getMap().getHeroesOnMap())
+	{
+		const auto * hero = gameState.getHero(heroID);
+		if(!hero)
+			continue;
+		output << "hero id=" << heroID.getNum()
+			<< " name=" << hero->instanceName
+			<< " type=" << HeroTypeID::encode(hero->getHeroTypeID().getNum())
+			<< " owner=" << hero->tempOwner.toString()
+			<< " pos=" << hero->visitablePos().toString()
+			<< " mana=" << hero->mana
+			<< " movement=" << hero->movementPointsRemaining()
+			<< " artifacts=" << artifactSetSummary(*hero)
+			<< " army=" << armySummary(*hero)
+			<< "\n";
+	}
+
+	for(const auto * town : gameState.getMap().getObjects<CGTownInstance>())
+	{
+		output << "town id=" << town->id.getNum()
+			<< " name=" << town->getNameTranslated()
+			<< " owner=" << town->tempOwner.toString()
+			<< " pos=" << town->visitablePos().toString()
+			<< " built=" << town->built
+			<< " destroyed=" << town->destroyed
+			<< " buildings=";
+		bool first = true;
+		for(const auto & building : town->getBuildings())
+		{
+			if(!first)
+				output << ",";
+			first = false;
+			output << BuildingID::encode(building.getNum());
+		}
+		output << "\n";
+	}
+
+	for(const auto * creature : gameState.getMap().getObjects<CGCreature>())
+	{
+		output << "creature id=" << creature->id.getNum()
+			<< " name=" << creature->instanceName
+			<< " type=" << CreatureID::encode(creature->getCreatureID().getNum())
+			<< " owner=" << creature->tempOwner.toString()
+			<< " pos=" << creature->visitablePos().toString()
+			<< " character=" << static_cast<int>(creature->initialCharacter)
+			<< " aggression=" << static_cast<int>(creature->agression)
+			<< " neverFlees=" << creature->neverFlees
+			<< " noGrowing=" << creature->notGrowingTeam
+			<< " temppower=" << creature->temppower
+			<< " stacksCount=" << creature->stacksCount
+			<< " upgradedStackPresence=" << static_cast<int>(creature->upgradedStackPresence)
+			<< " joiningPercentage=" << static_cast<int>(creature->joiningPercentage)
+			<< " joinOnlyForMoney=" << creature->joinOnlyForMoney
+			<< " refusedJoining=" << creature->refusedJoining
+			<< " formation=" << static_cast<int>(creature->formation)
+			<< " army=" << armySummary(*creature)
+			<< "\n";
+	}
+
+	for(const auto * object : gameState.getMap().getObjects())
+	{
+		if(!object)
+			continue;
+		output << "object id=" << object->id.getNum()
+			<< " name=" << object->instanceName
+			<< " type=" << MapObjectID::encode(object->ID.getNum())
+			<< " subtype=" << object->subID.getNum()
+			<< " owner=" << object->tempOwner.toString()
+			<< " pos=" << object->visitablePos().toString()
+			<< " blockVisit=" << object->blockVisit
+			<< " removable=" << object->removable
+			<< " appearance=" << (object->appearance ? object->appearance->stringID : "")
+			<< "\n";
+	}
+}
+}
+
+int dumpVGTGameStateSummary(const VGTGameStateSummaryOptions & options)
+{
+	CMapHeader savedHeader;
+	StartInfo savedStartInfo;
+	{
+		CLoadFile preambleLoadFile(options.inputSave, nullptr);
+		preambleLoadFile.load(savedHeader);
+		if(preambleLoadFile.hasFeature(ESerializationVersion::NO_RAW_POINTERS_IN_SERIALIZER))
+			preambleLoadFile.load(savedStartInfo);
+		else
+		{
+			auto legacyStartInfo = std::make_shared<StartInfo>();
+			preambleLoadFile.load(legacyStartInfo);
+			savedStartInfo = *legacyStartInfo;
+		}
+	}
+
+	CGameState gameState;
+	gameState.preInit(LIBRARY);
+	CLoadFile loadFile(options.inputSave, &gameState);
+	gameState.loadGame(loadFile);
+	gameState.preInit(LIBRARY);
+
+	std::ofstream output(options.outputSummary);
+	if(!output)
+		throw std::runtime_error("Unable to write VGT game state summary: " + options.outputSummary);
+	output << "preamble.mapName=" << savedHeader.name.toString() << "\n";
+	output << "preamble.mapDescription=" << savedHeader.description.toString() << "\n";
+	writeStartInfoSummary(output, "preamble.start", &savedStartInfo);
+	writeGameStateSummary(gameState, output);
+	return 0;
 }
 
 int replayVGTJson(const VGTReplayOptions & options)
@@ -2238,6 +2797,7 @@ int replayVGTJson(const VGTReplayOptions & options)
 	Load::ProgressAccumulator progress;
 	gameHandler.init(&startInfo, progress);
 	applyMapEngineState(gameHandler, header);
+	applyInitialState(gameHandler, header);
 	applyGameSettingsOverrides(gameHandler, header);
 	replayTranscriptDocuments(gameHandler, documents);
 	gameHandler.saveToFile(options.outputSave);

@@ -27,6 +27,9 @@
 #include "../lib/json/JsonNode.h"
 #include "../lib/mapping/CMap.h"
 #include "../lib/mapObjects/CGObjectInstance.h"
+#include "../lib/mapObjects/CGCreature.h"
+#include "../lib/mapObjects/CGHeroInstance.h"
+#include "../lib/mapObjects/army/CArmedInstance.h"
 #include "../lib/mapObjects/army/CSimpleArmy.h"
 #include "../lib/networkPacks/NetPackVisitor.h"
 #include "../lib/rmg/CMapGenOptions.h"
@@ -762,6 +765,96 @@ std::string simpleArmy(const CSimpleArmy & army)
 	return flowList(entries);
 }
 
+std::string armyState(const CCreatureSet & army)
+{
+	std::vector<std::string> entries;
+	for(const auto & [slotID, stack] : army.Slots())
+	{
+		if(!stack)
+			continue;
+		entries.push_back("{ slot: " + slot(slotID) +
+			", creature: " + creature(stack->getCreatureID()) +
+			", count: " + std::to_string(stack->getCount()) + " }");
+	}
+	return flowList(entries);
+}
+
+std::string creatureCharacter(CGCreature::Character character)
+{
+	switch(character)
+	{
+		case CGCreature::Character::COMPLIANT: return "compliant";
+		case CGCreature::Character::FRIENDLY: return "friendly";
+		case CGCreature::Character::AGGRESSIVE: return "aggressive";
+		case CGCreature::Character::HOSTILE: return "hostile";
+		case CGCreature::Character::SAVAGE: return "savage";
+		case CGCreature::Character::CUSTOM: return "custom";
+	}
+	return "unknown";
+}
+
+std::string upgradedStackPresence(CGCreature::UpgradedStackPresence value)
+{
+	switch(value)
+	{
+		case CGCreature::UpgradedStackPresence::RANDOM: return "random";
+		case CGCreature::UpgradedStackPresence::NEVER: return "never";
+		case CGCreature::UpgradedStackPresence::ALWAYS: return "always";
+	}
+	return "unknown";
+}
+
+std::string creatureState(const CGCreature & creature)
+{
+	return "{ character: " + creatureCharacter(creature.initialCharacter) +
+		", aggression: " + std::to_string(creature.agression) +
+		", temppower: " + std::to_string(creature.temppower) +
+		", stacksCount: " + std::to_string(creature.stacksCount) +
+		", upgradedStackPresence: " + upgradedStackPresence(creature.upgradedStackPresence) +
+		", joiningPercentage: " + std::to_string(creature.joiningPercentage) +
+		", joinOnlyForMoney: " + boolValue(creature.joinOnlyForMoney) +
+		", refusedJoining: " + boolValue(creature.refusedJoining) +
+		", neverFlees: " + boolValue(creature.neverFlees) +
+		", noGrowing: " + boolValue(creature.notGrowingTeam) + " }";
+}
+
+std::string initialHeroState(const CGameState & gameState, const CGHeroInstance & hero)
+{
+	std::vector<std::string> artifactEntries;
+	for(const auto & [position, slotInfo] : hero.artifactsWorn)
+	{
+		const auto * artifactInstance = slotInfo.getArt();
+		if(!artifactInstance)
+			continue;
+		artifactEntries.push_back("{ position: " + artifactPosition(position) +
+			", artifact: " + artifact(artifactInstance->getTypeId()) +
+			", spell: " + spell(artifactInstance->getScrollSpellID()) +
+			", instance: " + std::to_string(artifactInstance->getId().getNum()) +
+			", locked: " + boolValue(slotInfo.locked) + " }");
+	}
+
+	return "{ id: " + heroAlias(gameState, hero.id) +
+		", type: " + heroType(hero.getHeroTypeID()) +
+		", owner: " + color(hero.tempOwner) +
+		", position: " + pos(hero.visitablePos()) +
+		", experience: " + std::to_string(hero.exp) +
+		", mana: " + std::to_string(hero.mana) +
+		", movement: " + std::to_string(hero.movementPointsRemaining()) +
+		", artifacts: " + flowList(artifactEntries) +
+		", army: " + armyState(hero) + " }";
+}
+
+std::string initialState(const CGameState & gameState)
+{
+	std::vector<std::string> heroes;
+	for(const auto & heroID : gameState.getMap().getHeroesOnMap())
+	{
+		if(const auto * hero = gameState.getHero(heroID))
+			heroes.push_back(initialHeroState(gameState, *hero));
+	}
+	return "{ heroes: " + flowList(heroes) + " }";
+}
+
 std::string spellsList(const std::set<SpellID> & spells)
 {
 	std::vector<std::string> entries;
@@ -1393,6 +1486,12 @@ public:
 		line = "decision: { actor: " + actorForPlayer(pack.player) + ", kind: endTurn }";
 	}
 
+	void visitDismissHero(DismissHero & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: dismissHero, hero: " + heroAlias(gameState, pack.hid) + " }";
+	}
+
 	void visitMoveHero(MoveHero & pack) override
 	{
 		line = "decision: { actor: " + actorForPlayer(pack.player) +
@@ -1759,6 +1858,12 @@ public:
 			", boat: " + objectAlias(gameState, pack.boatId) + " }";
 	}
 
+	void visitAddQuest(AddQuest & pack) override
+	{
+		line = "quest: { player: " + color(pack.player) +
+			", object: " + objectAlias(gameState, pack.quest.obj) + " }";
+	}
+
 	void visitGiveBonus(GiveBonus & pack) override
 	{
 		line = "bonus: { targetKind: " + bonusTargetKind(pack.who) +
@@ -1776,11 +1881,19 @@ public:
 		}
 
 		line = "newObject: { id: object/id-" + std::to_string(object->id.getNum()) +
+			", name: " + yamlString(object->instanceName) +
 			", type: " + yamlString(MapObjectID::encode(object->ID.getNum())) +
 			", subtype: " + std::to_string(object->subID.getNum()) +
 			", owner: " + color(object->tempOwner) +
 			", position: " + pos(object->visitablePos()) +
-			", initiator: " + color(pack.initiator) + " }";
+			", blockVisit: " + boolValue(object->blockVisit) +
+			", removable: " + boolValue(object->removable) +
+			", initiator: " + color(pack.initiator);
+		if(const auto armed = std::dynamic_pointer_cast<CArmedInstance>(object))
+			line += ", army: " + armyState(*armed);
+		if(const auto creatureObject = std::dynamic_pointer_cast<CGCreature>(object))
+			line += ", creatureState: " + creatureState(*creatureObject);
+		line += " }";
 	}
 
 	void visitSetAvailableArtifacts(SetAvailableArtifacts & pack) override
@@ -2275,6 +2388,7 @@ void VGTRecorder::ensureHeader(const CGameState & gameState)
 		for(const auto & player : initialStartInfo->playerInfos)
 			output << "  " << color(player.first) << ": " << playerSettings(player.second) << "\n";
 	}
+	output << "initialState: " << initialState(gameState) << "\n";
 	headerWritten = true;
 	output.flush();
 }

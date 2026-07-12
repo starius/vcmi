@@ -73,6 +73,9 @@
 #include <vcmi/scripting/Service.h>
 #include <vstd/RNG.h>
 
+#include <fstream>
+#include <iterator>
+
 std::shared_mutex CGameState::mutex;
 
 const Services * GameStateEnvironment::services() const
@@ -363,6 +366,18 @@ void CGameState::initNewGame(const IMapService * mapService, vstd::RNG & randomG
 				mapService->saveMap(map, fullPath);
 				scenarioOps->fileURI = "Maps/RandomMaps/" + fileName;
 				scenarioOps->mapname = scenarioOps->fileURI;
+
+				std::ifstream savedMap(fullPath.string(), std::ios::binary);
+				if(!savedMap)
+					throw std::runtime_error("Unable to reopen saved random map");
+				const std::string savedMapData((std::istreambuf_iterator<char>(savedMap)), {});
+				map = mapService->loadMap(
+					reinterpret_cast<const uint8_t *>(savedMapData.data()),
+					static_cast<int>(savedMapData.size()),
+					scenarioOps->mapname,
+					"",
+					"",
+					this);
 
 				logGlobal->info("Random map has been saved to:");
 				logGlobal->info(fullPath.string());

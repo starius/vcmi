@@ -239,6 +239,8 @@ static void handleCommandOptions(int argc, const char * argv[], boost::program_o
 	("vgt-replay-json", boost::program_options::value<std::string>(), "Replay a normalized VGT transcript JSON file")
 	("vgt-replay-save", boost::program_options::value<std::string>(), "Write replayed state to this save file")
 	("vgt-replay-game-state-save", boost::program_options::value<std::string>(), "Write replayed game state only to this save file")
+	("vgt-dump-game-state-save", boost::program_options::value<std::string>(), "Write a VGT game state save summary for diagnostics")
+	("vgt-dump-output", boost::program_options::value<std::string>(), "Path for --vgt-dump-game-state-save output")
 	("port", boost::program_options::value<ui16>(), "port at which server will listen to connections from client")
 	("lobby", "start server in lobby mode in which server connects to a global lobby");
 
@@ -323,6 +325,21 @@ int main(int argc, const char * argv[])
 		logConfigurator.deconfigure();
 		delete LIBRARY;
 		return replayResult;
+	}
+
+	if(opts.count("vgt-dump-game-state-save"))
+	{
+		if(!opts.count("vgt-dump-output"))
+			throw std::runtime_error("--vgt-dump-output is required with --vgt-dump-game-state-save");
+
+		VGTGameStateSummaryOptions summaryOptions;
+		summaryOptions.inputSave = opts["vgt-dump-game-state-save"].as<std::string>();
+		summaryOptions.outputSummary = opts["vgt-dump-output"].as<std::string>();
+		const int summaryResult = dumpVGTGameStateSummary(summaryOptions);
+
+		logConfigurator.deconfigure();
+		delete LIBRARY;
+		return summaryResult;
 	}
 
 	if(!opts.count("dummy-run"))

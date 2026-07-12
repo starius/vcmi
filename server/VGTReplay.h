@@ -17,4 +17,11 @@ struct VGTReplayOptions
 	std::string outputGameStateSave;
 };
 
+struct VGTGameStateSummaryOptions
+{
+	std::string inputSave;
+	std::string outputSummary;
+};
+
 int replayVGTJson(const VGTReplayOptions & options);
+int dumpVGTGameStateSummary(const VGTGameStateSummaryOptions & options);
