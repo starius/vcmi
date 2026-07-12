@@ -13,6 +13,7 @@
 
 #include <mutex>
 #include <string>
+#include <vector>
 
 namespace NK2AI
 {
@@ -29,7 +30,12 @@ public:
 	NativeTrace();
 
 	bool enabled() const;
-	void recordDecision(const std::string & id, const std::string & functionName, JsonNode input, JsonNode nativeOutput);
+	void recordDecision(
+		const std::string & id,
+		const std::string & functionName,
+		JsonNode input,
+		JsonNode nativeOutput,
+		std::vector<std::string> compareFields = {});
 };
 
 }

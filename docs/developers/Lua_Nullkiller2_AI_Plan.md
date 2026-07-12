@@ -150,8 +150,9 @@ The branch now has the initial standalone AI and parity infrastructure in place:
   `scripts/ai/nullkiller2/tests/run_lua_tests.py`; replay coverage now includes a `runDay` hero-chain
   special-action command journal fixture. The same runner also exposes a `native-trace` preset that replays
   normalized native `Nullkiller2` decision records through Lua and compares selected output fields exactly by
-  default. Native `Nullkiller2` can write the first comparator-compatible decision records for
-  `showMapObjectSelectDialog` when `VCMI_NK2_NATIVE_TRACE` points at an output JSON file.
+  default. Native `Nullkiller2` can write comparator-compatible decision records for
+  `showMapObjectSelectDialog` and `makeSurrenderRetreatDecision` when `VCMI_NK2_NATIVE_TRACE` points at an output
+  JSON file.
 
 The current Lua policy surface includes the core day loop, settings, state locks, task plan execution, priority
 formula scaffolding, deterministic `RewardEvaluator` resource, reward, growth, cost, strategic, and conquest helpers,
@@ -297,8 +298,8 @@ status, command journals, trace, and memory, and writes actual JSON plus a first
 `LuaNullkiller2.nativeDecisionTrace.v1` shape, runs each native decision input through Lua, and compares fields such
 as `status`, `selection`, `intent`, `side`, `ended`, and `commandJournal`; exact comparison is the default, while
 `compareMode: "subset"` is reserved for reduced traces during triage. Native `Nullkiller2` trace capture is enabled
-by setting `VCMI_NK2_NATIVE_TRACE=/path/to/trace.json`; the current exporter writes map-object selection decisions
-and will be extended decision by decision.
+by setting `VCMI_NK2_NATIVE_TRACE=/path/to/trace.json`; the current exporter writes map-object selection and
+surrender/retreat decisions and will be extended decision by decision.
 
 ## Differential Testing
 
@@ -491,8 +492,8 @@ Commit messages must stay focused on the code change and must not mention the re
 3. Extend garrison, hero exchange, artifact sequencing, and checked host validators with richer edge-case coverage.
 4. Finish `RewardEvaluator` and object-specific priority context builders, then add fixture tests for raw context and
    final priority parity.
-5. Expand the native `Nullkiller2` trace exporter beyond map-object selection so discrepancies produce minimized
-   fixtures under `scripts/ai/nullkiller2/tests/fixtures/discrepancies/`.
+5. Expand the native `Nullkiller2` trace exporter beyond map-object selection and surrender/retreat decisions so
+   discrepancies produce minimized fixtures under `scripts/ai/nullkiller2/tests/fixtures/discrepancies/`.
 6. Add richer Lua policies for artifact assembly, shipyard, and battle preservation decisions where native currently
    does more than passive status/event forwarding.
 7. Strengthen the no-native-dependency gate by building `LuaNullkiller2` with native `Nullkiller2` disabled and

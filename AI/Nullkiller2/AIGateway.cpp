@@ -86,6 +86,50 @@ JsonNode mapObjectSelectNativeOutput(QueryID queryID, int selection)
 	output["commandJournal"] = answerQueryCommandJournal(queryID, selection);
 	return output;
 }
+
+JsonNode surrenderRetreatInput(const BattleStateInfoForRetreat & battleState, size_t townsCount, const Settings & settings)
+{
+	JsonNode input;
+	input.setType(JsonNode::JsonType::DATA_STRUCT);
+	input["townsCount"].Integer() = static_cast<int64_t>(townsCount);
+	input["settings"].setType(JsonNode::JsonType::DATA_STRUCT);
+	input["settings"]["values"].setType(JsonNode::JsonType::DATA_STRUCT);
+	input["settings"]["values"]["retreatThresholdAbsolute"].Float() = settings.getRetreatThresholdAbsolute();
+	input["settings"]["values"]["retreatThresholdRelative"].Float() = settings.getRetreatThresholdRelative();
+	input["battleState"].setType(JsonNode::JsonType::DATA_STRUCT);
+	input["battleState"]["ourStrength"].Integer() = static_cast<int64_t>(battleState.getOurStrength());
+	input["battleState"]["enemyStrength"].Integer() = static_cast<int64_t>(battleState.getEnemyStrength());
+	input["battleState"]["canFlee"].Bool() = battleState.canFlee;
+	input["battleState"]["canSurrender"].Bool() = battleState.canSurrender;
+	input["battleState"]["isLastTurnBeforeDie"].Bool() = battleState.isLastTurnBeforeDie;
+	input["battleState"]["ourSide"].Integer() = static_cast<int>(battleState.ourSide);
+
+	if(battleState.ourHero)
+	{
+		input["battleState"]["ourHero"].setType(JsonNode::JsonType::DATA_STRUCT);
+		input["battleState"]["ourHero"]["id"].Integer() = battleState.ourHero->id.getNum();
+		input["battleState"]["ourHero"]["patrol"].setType(JsonNode::JsonType::DATA_STRUCT);
+		input["battleState"]["ourHero"]["patrol"]["patrolling"].Bool() = battleState.ourHero->patrol.patrolling;
+	}
+
+	return input;
+}
+
+JsonNode surrenderRetreatNativeOutput(std::optional<int> retreatSide)
+{
+	JsonNode output;
+	output.setType(JsonNode::JsonType::DATA_STRUCT);
+	if(retreatSide)
+	{
+		output["status"].String() = "retreat";
+		output["side"].Integer() = *retreatSide;
+	}
+	else
+	{
+		output["status"].String() = "none";
+	}
+	return output;
+}
 }
 
 AIGateway::AIGateway()
@@ -539,9 +583,27 @@ void AIGateway::showWorldViewEx(const std::vector<ObjectPosInfo> & objectPositio
 std::optional<BattleAction> AIGateway::makeSurrenderRetreatDecision(const BattleID & battleID, const BattleStateInfoForRetreat & battleState)
 {
 	LOG_TRACE(logAi);
+	const auto townsCount = cc->getTownsInfo().size();
+	const auto traceDecision = [this, &battleID, &battleState, townsCount](std::optional<int> retreatSide)
+	{
+		if(nativeTrace)
+		{
+			const std::vector<std::string> compareFields = retreatSide
+				? std::vector<std::string>{ "status", "side" }
+				: std::vector<std::string>{ "status" };
+
+			nativeTrace->recordDecision(
+				boost::str(boost::format("makeSurrenderRetreatDecision.%d") % battleID.getNum()),
+				"makeSurrenderRetreatDecision",
+				surrenderRetreatInput(battleState, townsCount, *nullkiller->settings),
+				surrenderRetreatNativeOutput(retreatSide),
+				compareFields);
+		}
+	};
 
 	if(battleState.ourHero && battleState.ourHero->patrol.patrolling)
 	{
+		traceDecision(std::nullopt);
 		return std::nullopt;
 	}
 
@@ -549,11 +611,13 @@ std::optional<BattleAction> AIGateway::makeSurrenderRetreatDecision(const Battle
 	double fightRatio = ourStrength / (double)battleState.getEnemyStrength();
 
 	// if we have no towns - things are already bad, so retreat is not an option.
-	if(cc->getTownsInfo().size() && ourStrength < nullkiller->settings->getRetreatThresholdAbsolute() && fightRatio < nullkiller->settings->getRetreatThresholdRelative() && battleState.canFlee)
+	if(townsCount && ourStrength < nullkiller->settings->getRetreatThresholdAbsolute() && fightRatio < nullkiller->settings->getRetreatThresholdRelative() && battleState.canFlee)
 	{
+		traceDecision(static_cast<int>(battleState.ourSide));
 		return BattleAction::makeRetreat(battleState.ourSide);
 	}
 
+	traceDecision(std::nullopt);
 	return std::nullopt;
 }
 
@@ -774,7 +838,8 @@ void AIGateway::showMapObjectSelectDialog(QueryID askID, const Component & icon,
 				boost::str(boost::format("showMapObjectSelectDialog.%d") % askID.getNum()),
 				"showMapObjectSelectDialog",
 				mapObjectSelectInput(askID, selection, objects),
-				mapObjectSelectNativeOutput(askID, selection));
+				mapObjectSelectNativeOutput(askID, selection),
+				{ "status", "selection", "commandJournal" });
 		}
 		answerQuery(askID, selection);
 	});

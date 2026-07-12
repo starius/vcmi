@@ -24,6 +24,15 @@ void addCompareField(JsonNode & fields, const std::string & field)
 {
 	fields.Vector().push_back(JsonNode(field));
 }
+
+JsonNode compareFieldsSnapshot(const std::vector<std::string> & fields)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_VECTOR);
+	for(const auto & field : fields)
+		addCompareField(result, field);
+	return result;
+}
 }
 
 NativeTrace::NativeTrace()
@@ -52,7 +61,12 @@ bool NativeTrace::enabled() const
 	return !outputPath.empty();
 }
 
-void NativeTrace::recordDecision(const std::string & id, const std::string & functionName, JsonNode input, JsonNode nativeOutput)
+void NativeTrace::recordDecision(
+	const std::string & id,
+	const std::string & functionName,
+	JsonNode input,
+	JsonNode nativeOutput,
+	std::vector<std::string> compareFields)
 {
 	if(!enabled())
 		return;
@@ -63,6 +77,8 @@ void NativeTrace::recordDecision(const std::string & id, const std::string & fun
 	decision["function"].String() = functionName;
 	decision["input"] = std::move(input);
 	decision["native"] = std::move(nativeOutput);
+	if(!compareFields.empty())
+		decision["compare"] = compareFieldsSnapshot(compareFields);
 
 	std::lock_guard lock(mutex);
 	document["decisions"].Vector().push_back(std::move(decision));
