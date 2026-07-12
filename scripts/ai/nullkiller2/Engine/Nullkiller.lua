@@ -9,6 +9,7 @@ local DefenceBehavior = require("Behaviors.DefenceBehavior")
 local EscapeBehavior = require("Behaviors.EscapeBehavior")
 local ExplorationBehavior = require("Behaviors.ExplorationBehavior")
 local GatherArmyBehavior = require("Behaviors.GatherArmyBehavior")
+local GatewayPolicy = require("Actions.GatewayPolicy")
 local HostCommands = require("Actions.HostCommands")
 local PriorityEvaluator = require("Engine.PriorityEvaluator")
 local RecruitHero = require("Goals.RecruitHero")
@@ -420,6 +421,19 @@ local function reserveRequiredTownDefenders(aiNk)
 	end
 end
 
+local function pickBestArtifacts(aiNk, host)
+	local commandCount = 0
+	for _, hero in ipairs(heroesInfo(aiNk)) do
+		commandCount = commandCount + GatewayPolicy.pickBestArtifacts(host, hero)
+	end
+	if commandCount > 0 then
+		trace(host, "Nullkiller.pickBestArtifacts", {
+			commandCount = commandCount
+		})
+	end
+	return commandCount
+end
+
 local function runPriorityPass(aiNk, passIndex)
 	local evaluator = makeEvaluator(aiNk)
 	local results = {}
@@ -598,6 +612,8 @@ function Nullkiller.makeTurn(ai, input)
 		if not hasAnySuccess then
 			break
 		end
+
+		pickBestArtifacts(aiNk, host)
 	end
 
 	local actionResult = endTurn(host)

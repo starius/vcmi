@@ -152,9 +152,10 @@ Lua-owned transfer command sequencing from snapshots. `Analyzers/ArmyManager.lua
 consolidation, faction/morale best-army filtering, scout-unit choice, scout last-stack retention, dwelling purchase
 selection, reinforcement purchase value, reinforcement transfer value, stack-power evaluation, total-army
 aggregation, and hill-fort/dwelling upgrade calculation; the transfer sequencer emits the matching scout split
-commands when a source army must keep one stack. `GatewayPolicy.pickBestArtifacts` now owns first-pass artifact
-equip/swap sequencing from exported hero artifact snapshots for empty legal equipment slots, higher-scoring
-replacement artifacts, and the displaced-artifact backpack fallback when a direct swap is illegal.
+commands when a source army must keep one stack. The turn loop now invokes `GatewayPolicy.pickBestArtifacts` after
+successful regular passes, and that policy owns first-pass artifact equip/swap sequencing from exported hero
+artifact snapshots for empty legal equipment slots, higher-scoring replacement artifacts, and the displaced-artifact
+backpack fallback when a direct swap is illegal.
 
 Major parity gaps remain:
 
