@@ -34,6 +34,7 @@ class VGTRecorder final
 	bool headerWritten = false;
 	bool documentOpen = false;
 	bool exitAfterAppliedState = false;
+	bool continuationWritten = false;
 	std::optional<int> randomSeed;
 	std::optional<int> exitAfterTurnEnds;
 	int observedTurnEnds = 0;
@@ -47,6 +48,7 @@ class VGTRecorder final
 	void startTurnDocument(const CGameState & gameState, PlayerColor player);
 	void startWorldDocument(const CGameState & gameState, const std::string & phase);
 	void writeActionLine(const CGameState & gameState, const std::string & line);
+	void writeContinuationState(CGameHandler & gameHandler);
 	void writeBaselineSave(CGameHandler & gameHandler);
 
 public:

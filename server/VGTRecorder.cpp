@@ -10,6 +10,7 @@
 #include "VGTRecorder.h"
 
 #include "CGameHandler.h"
+#include "processors/HeroPoolProcessor.h"
 
 #include "../Version.h"
 #include "../lib/GameConstants.h"
@@ -20,9 +21,11 @@
 #include "../lib/battle/BattleAction.h"
 #include "../lib/bonuses/Bonus.h"
 #include "../lib/callback/Calendar.h"
+#include "../lib/callback/GameRandomizer.h"
 #include "../lib/constants/StringConstants.h"
 #include "../lib/filesystem/CInputStream.h"
 #include "../lib/filesystem/Filesystem.h"
+#include "../lib/gameState/GameStatistics.h"
 #include "../lib/gameState/CGameState.h"
 #include "../lib/json/JsonNode.h"
 #include "../lib/mapping/CMap.h"
@@ -2519,6 +2522,26 @@ void VGTRecorder::writeActionLine(const CGameState & gameState, const std::strin
 	output.flush();
 }
 
+void VGTRecorder::writeContinuationState(CGameHandler & gameHandler)
+{
+	if(continuationWritten || !enabled || !output)
+		return;
+
+	JsonNode continuation;
+	continuation["nextQuery"].String() = query(gameHandler.QID);
+	continuation["randomizer"] = gameHandler.randomizer->toVGTJson();
+	continuation["heroPool"] = gameHandler.heroPool->toVGTJson();
+	continuation["statistics"] = gameHandler.statistics->toVGTJson();
+
+	activeBattleBlock.reset();
+	documentOpen = false;
+	currentTurnPlayer.reset();
+	output << "---\n";
+	output << "continuation: " << jsonCompact(continuation) << "\n";
+	output.flush();
+	continuationWritten = true;
+}
+
 void VGTRecorder::writeBaselineSave(CGameHandler & gameHandler)
 {
 	if(!baselineSaveEnabled && !baselineGameStateSaveEnabled)
@@ -2611,6 +2634,8 @@ void VGTRecorder::recordAppliedState(CGameHandler & gameHandler)
 {
 	std::scoped_lock lock(outputMutex);
 	initializeFromEnvironment();
+	if(exitAfterAppliedState)
+		writeContinuationState(gameHandler);
 	writeBaselineSave(gameHandler);
 	if(exitAfterAppliedState)
 	{

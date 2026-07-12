@@ -14,6 +14,7 @@
 
 enum class EGameSettings;
 
+class JsonNode;
 class CGHeroInstance;
 
 class DLL_LINKAGE RandomizationBias
@@ -24,6 +25,8 @@ public:
 	/// Performs coin flip with specified success chance
 	/// Returns true with probability successChance percents, and false with probability totalWeight-successChance percents
 	bool roll(vstd::RNG & generator, int successChance, int totalWeight, int biasValue);
+	int32_t getAccumulatedBias() const;
+	void setAccumulatedBias(int32_t value);
 
 	template<typename Handler>
 	void serialize(Handler & h)
@@ -48,6 +51,8 @@ public:
 	/// Performs coin flip with specified success chance
 	/// Returns true with probability successChance percents, and false with probability 100-successChance percents
 	bool roll(int successChance, int totalWeight, int biasValue);
+	JsonNode toVGTJson() const;
+	void loadVGTJson(const JsonNode & node);
 
 	template<typename Handler>
 	void serialize(Handler & h)
@@ -123,6 +128,8 @@ public:
 
 	void setSeed(int newSeed);
 	int getDefaultSeed() const;
+	JsonNode toVGTJson() const;
+	void loadVGTJson(const JsonNode & node);
 
 	template<typename Handler>
 	void serialize(Handler & h)

@@ -64,6 +64,21 @@ void TurnTimerHandler::onEndTurn(PlayerColor player)
 	sendTimerUpdate(player);
 }
 
+void TurnTimerHandler::setBattleTimerForReplay(PlayerColor player)
+{
+	assert(player.isValidPlayer());
+	const auto * si = gameHandler.gameInfo().getStartInfo();
+	if(!si)
+		return;
+
+	auto & timer = timers[player];
+	timer.isBattle = true;
+	timer.isActive = si->turnTimerInfo.isBattleEnabled();
+	timer.battleTimer = si->turnTimerInfo.battleTimer;
+	timer.unitTimer = 0;
+	sendTimerUpdate(player);
+}
+
 void TurnTimerHandler::sendTimerUpdate(PlayerColor player)
 {
 	TurnTimeUpdate ttu;

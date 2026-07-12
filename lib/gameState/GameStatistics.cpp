@@ -22,10 +22,45 @@
 #include "../mapObjects/MiscObjects.h"
 #include "../mapping/CMap.h"
 #include "../entities/building/CBuilding.h"
+#include "../json/JsonNode.h"
 #include "../serializer/JsonDeserializer.h"
+#include "../serializer/JsonSerializer.h"
 #include "../serializer/JsonUpdater.h"
 #include "../entities/ResourceTypeHandler.h"
 
+namespace
+{
+std::string vgtExactFloat(float value)
+{
+	std::ostringstream stream;
+	stream << std::hexfloat << value;
+	return stream.str();
+}
+
+const JsonNode & vgtRequireField(const JsonNode & node, const char * field)
+{
+	if(!node.isStruct())
+		throw std::runtime_error(std::string("VGT statistics parent is not a mapping while reading: ") + field);
+
+	const auto iter = node.Struct().find(field);
+	if(iter == node.Struct().end() || iter->second.isNull())
+		throw std::runtime_error(std::string("Missing VGT statistics field: ") + field);
+	return iter->second;
+}
+
+float vgtParseExactFloat(const JsonNode & node, const char * field)
+{
+	const auto & child = vgtRequireField(node, field);
+	if(!child.isString())
+		throw std::runtime_error(std::string("VGT statistics exact float field is not a string: ") + field);
+
+	size_t parsed = 0;
+	float result = std::stof(child.String(), &parsed);
+	if(parsed != child.String().size())
+		throw std::runtime_error(std::string("Unable to parse VGT statistics exact float field: ") + field);
+	return result;
+}
+}
 
 void StatisticDataSet::add(StatisticDataSetEntry entry)
 {
@@ -180,6 +215,71 @@ void StatisticDataSet::serializeJson(JsonSerializeFormat & handler)
 		auto eventsHandler = handler.enterStruct("accumulatedValues");
 		for(auto & val : accumulatedValues)
 			eventsHandler->serializeStruct(GameConstants::PLAYER_COLOR_NAMES[val.first], val.second);
+	}
+}
+
+JsonNode StatisticDataSet::toVGTJson() const
+{
+	JsonNode result;
+	JsonSerializer handler(nullptr, result);
+	const_cast<StatisticDataSet *>(this)->serializeJson(handler);
+
+	JsonNode exactFloats;
+	exactFloats.Vector();
+	for(const auto & entry : data)
+	{
+		JsonNode exactEntry;
+		exactEntry["mapExploredRatio"].String() = vgtExactFloat(entry.mapExploredRatio);
+		exactEntry["obeliskVisitedRatio"].String() = vgtExactFloat(entry.obeliskVisitedRatio);
+		exactEntry["townBuiltRatio"].String() = vgtExactFloat(entry.townBuiltRatio);
+		exactFloats.Vector().push_back(exactEntry);
+	}
+	result["exactFloats"] = exactFloats;
+	return result;
+}
+
+void StatisticDataSet::loadVGTJson(const JsonNode & node)
+{
+	data.clear();
+	accumulatedValues.clear();
+
+	JsonDeserializer handler(nullptr, node);
+	serializeJson(handler);
+
+	if(!node.isStruct())
+		throw std::runtime_error("VGT statistics state must be a mapping");
+
+	const auto accumulatedIter = node.Struct().find("accumulatedValues");
+	if(accumulatedIter == node.Struct().end() || accumulatedIter->second.isNull())
+		return;
+
+	const auto & accumulatedNode = accumulatedIter->second;
+	if(!accumulatedNode.isStruct())
+		throw std::runtime_error("VGT statistics accumulatedValues field must be a mapping");
+
+	for(const auto & entry : accumulatedNode.Struct())
+	{
+		PlayerAccumulatedValueStorage value{};
+		JsonDeserializer valueHandler(nullptr, entry.second);
+		value.serializeJson(valueHandler);
+		accumulatedValues[PlayerColor(PlayerColor::decode(entry.first))] = value;
+	}
+
+	const auto exactFloatsIter = node.Struct().find("exactFloats");
+	if(exactFloatsIter == node.Struct().end() || exactFloatsIter->second.isNull())
+		return;
+
+	const auto & exactFloats = exactFloatsIter->second;
+	if(!exactFloats.isVector())
+		throw std::runtime_error("VGT statistics exactFloats field must be a list");
+	if(exactFloats.Vector().size() != data.size())
+		throw std::runtime_error("VGT statistics exactFloats size does not match data size");
+
+	for(size_t index = 0; index < data.size(); ++index)
+	{
+		data[index].mapExploredRatio = vgtParseExactFloat(exactFloats.Vector()[index], "mapExploredRatio");
+		data[index].obeliskVisitedRatio = vgtParseExactFloat(exactFloats.Vector()[index], "obeliskVisitedRatio");
+		data[index].townBuiltRatio = vgtParseExactFloat(exactFloats.Vector()[index], "townBuiltRatio");
 	}
 }
 

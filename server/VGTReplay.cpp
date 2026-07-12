@@ -28,6 +28,7 @@
 #include "../lib/entities/artifact/CArtifactInstance.h"
 #include "../lib/entities/artifact/CArtifactSet.h"
 #include "../lib/gameState/CGameState.h"
+#include "../lib/gameState/GameStatistics.h"
 #include "../lib/json/JsonBonus.h"
 #include "../lib/json/JsonNode.h"
 #include "../lib/mapping/CMapHeader.h"
@@ -2099,6 +2100,39 @@ void applyBattleEffect(CGameHandler & gameHandler, const JsonNode & node, const 
 	}
 }
 
+bool shouldSynthesizeDisabledTimerState(CGameHandler & gameHandler);
+
+std::set<PlayerColor> collectBattleDecisionPlayers(const JsonNode & events)
+{
+	std::set<PlayerColor> result;
+	for(const JsonNode & record : events.Vector())
+	{
+		if(!record.isStruct() || record.Struct().size() != 1)
+			continue;
+
+		const auto & entry = *record.Struct().begin();
+		if(entry.first != "decision")
+			continue;
+
+		const std::string actor = requireString(entry.second, "actor");
+		if(actor.starts_with("player/"))
+			result.insert(playerFromActor(actor));
+	}
+	return result;
+}
+
+void synthesizeDisabledTimerBattleStart(CGameHandler & gameHandler, const std::set<PlayerColor> & players)
+{
+	if(!shouldSynthesizeDisabledTimerState(gameHandler))
+		return;
+
+	for(const auto & player : players)
+	{
+		if(gameHandler.gs->getPlayerState(player))
+			gameHandler.turnTimerHandler->setBattleTimerForReplay(player);
+	}
+}
+
 void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node)
 {
 	const std::string battleID = requireString(node, "id");
@@ -2106,12 +2140,16 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node)
 	if(!events.isVector())
 		throw std::runtime_error("VGT battle block events field is not a list");
 
+	const auto battlePlayers = collectBattleDecisionPlayers(events);
+
 	for(const JsonNode & record : events.Vector())
 	{
 		if(!record.isStruct())
 			throw std::runtime_error("VGT battle block event is not a mapping");
 		if(hasField(record, "event"))
 		{
+			if(requireString(record, "event") == "start")
+				synthesizeDisabledTimerBattleStart(gameHandler, battlePlayers);
 			applyBattleEffect(gameHandler, record, battleID);
 			continue;
 		}
@@ -2698,6 +2736,9 @@ void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & docu
 	for(size_t documentIndex = 1; documentIndex < documents.Vector().size(); ++documentIndex)
 	{
 		const JsonNode & document = documents.Vector()[documentIndex];
+		if(hasField(document, "continuation"))
+			continue;
+
 		const JsonNode * records = nullptr;
 		const auto actionsIter = document.Struct().find("actions");
 		if(actionsIter != document.Struct().end())
@@ -2745,6 +2786,9 @@ void rebuildTurnOrderStateFromTranscript(CGameHandler & gameHandler, const JsonN
 	for(size_t documentIndex = 1; documentIndex < documents.Vector().size(); ++documentIndex)
 	{
 		const JsonNode & document = documents.Vector()[documentIndex];
+		if(hasField(document, "continuation"))
+			continue;
+
 		const JsonNode * records = nullptr;
 		if(const auto actionsIter = document.Struct().find("actions"); actionsIter != document.Struct().end())
 			records = &actionsIter->second;
@@ -2841,6 +2885,9 @@ void rebuildNextQueryIDFromTranscript(CGameHandler & gameHandler, const JsonNode
 	for(size_t documentIndex = 1; documentIndex < documents.Vector().size(); ++documentIndex)
 	{
 		const JsonNode & document = documents.Vector()[documentIndex];
+		if(hasField(document, "continuation"))
+			continue;
+
 		const JsonNode * records = nullptr;
 		if(const auto actionsIter = document.Struct().find("actions"); actionsIter != document.Struct().end())
 			records = &actionsIter->second;
@@ -2862,6 +2909,32 @@ void rebuildNextQueryIDFromTranscript(CGameHandler & gameHandler, const JsonNode
 		}
 	}
 	gameHandler.QID = QueryID(1 + queryObjectsCreated);
+}
+
+void applyContinuationState(CGameHandler & gameHandler, const JsonNode & documents)
+{
+	const JsonNode * continuation = nullptr;
+	for(size_t documentIndex = 1; documentIndex < documents.Vector().size(); ++documentIndex)
+	{
+		const JsonNode & document = documents.Vector()[documentIndex];
+		if(const JsonNode * node = findField(document, "continuation"))
+			continuation = node;
+	}
+
+	if(!continuation)
+		return;
+
+	gameHandler.randomizer->loadVGTJson(requireField(*continuation, "randomizer"));
+	gameHandler.heroPool->loadVGTJson(requireField(*continuation, "heroPool"));
+	if(const JsonNode * nextQuery = findField(*continuation, "nextQuery"))
+	{
+		if(!nextQuery->isString())
+			throw std::runtime_error("VGT continuation nextQuery field is not a string");
+		gameHandler.QID = decodeQuery(nextQuery->String());
+	}
+
+	gameHandler.statistics = std::make_unique<StatisticDataSet>();
+	gameHandler.statistics->loadVGTJson(requireField(*continuation, "statistics"));
 }
 
 void writeGameStateSave(const CGameHandler & gameHandler, const std::string & path)
@@ -3261,6 +3334,7 @@ int replayVGTJson(const VGTReplayOptions & options)
 	replayTranscriptDocuments(gameHandler, documents);
 	rebuildTurnOrderStateFromTranscript(gameHandler, documents);
 	rebuildNextQueryIDFromTranscript(gameHandler, documents);
+	applyContinuationState(gameHandler, documents);
 	gameHandler.saveToFile(options.outputSave);
 	writeGameStateSave(gameHandler, options.outputGameStateSave);
 	return 0;

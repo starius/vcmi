@@ -35,6 +35,19 @@ int CRandomGenerator::getSeed() const
 	return currentSeed;
 }
 
+std::string CRandomGenerator::getSerializedState() const
+{
+	std::ostringstream stream;
+	stream << rand;
+	return stream.str();
+}
+
+void CRandomGenerator::setSerializedState(const std::string & state)
+{
+	std::istringstream stream(state);
+	stream >> rand;
+}
+
 void CRandomGenerator::resetSeed()
 {
 	logRng->trace("CRandomGenerator::resetSeed");

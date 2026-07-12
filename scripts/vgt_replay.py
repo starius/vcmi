@@ -40,6 +40,8 @@ def load_documents(path: Path) -> list[dict[str, Any]]:
 
 def iter_records(documents: list[dict[str, Any]]):
     for document_index, document in enumerate(documents[1:], start=1):
+        if "continuation" in document:
+            continue
         records = document.get("actions", document.get("events"))
         if records is None:
             raise VGTError(f"document {document_index} has neither actions nor events")
@@ -127,6 +129,9 @@ def validate_map_hash(map_info: dict[str, Any], roots: list[Path]) -> Path:
 
 def summarize(documents: list[dict[str, Any]]) -> collections.Counter[str]:
     counter: collections.Counter[str] = collections.Counter()
+    for document in documents[1:]:
+        if "continuation" in document:
+            counter["continuation"] += 1
     for _, _, record in iter_records(documents):
         key = next(iter(record))
         value = record[key]

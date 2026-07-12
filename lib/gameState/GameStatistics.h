@@ -16,6 +16,7 @@ class PlayerState;
 class CGameState;
 class CGHeroInstance;
 class CGMine;
+class JsonNode;
 struct TeamState;
 
 struct DLL_LINKAGE StatisticDataSetEntry
@@ -107,6 +108,8 @@ public:
 	std::string writeCsv() const;
 
 	void serializeJson(JsonSerializeFormat & handler);
+	JsonNode toVGTJson() const;
+	void loadVGTJson(const JsonNode & node);
 
 	struct PlayerAccumulatedValueStorage // holds some actual values needed for stats
 	{
