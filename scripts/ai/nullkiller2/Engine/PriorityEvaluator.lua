@@ -150,8 +150,25 @@ local function pathDanger(path)
 	return call(path, "getTotalDanger") or path and (path.totalDanger or path.danger) or 0
 end
 
+local function pathTurn(path)
+	return call(path, "turn") or path and (path.turn or path.turns) or 0
+end
+
 local function mageGuildLevel(town)
 	return call(town, "mageGuildLevel") or town and (town.mageGuildLevel or town.mageGuild or 0) or 0
+end
+
+local function fortLevel(town)
+	return call(town, "fortLevel") or town and (town.fortLevel or town.fortLevelValue) or 0
+end
+
+local function visitablePos(object)
+	return call(object, "visitablePos") or object and (object.visitablePos or object.tile)
+end
+
+local function dailyGoldIncome(town)
+	local income = call(town, "dailyIncome") or town and town.dailyIncome or {}
+	return resourceValue(income, 6)
 end
 
 local function townFaction(town)
@@ -170,6 +187,13 @@ local function tableSize(value)
 	return result
 end
 
+local function developmentInfoCount(aiNk)
+	local info = call(aiNk and aiNk.buildAnalyzer, "getDevelopmentInfo")
+		or aiNk and (aiNk.developmentInfos or aiNk.developmentInfo)
+		or {}
+	return #info
+end
+
 local function magesGuildLevelFromBuilding(id)
 	id = numericID(id)
 	if id ~= nil and id >= 0 and id <= 4 then
@@ -184,6 +208,15 @@ end
 
 local function addMovementByRole(context, role, movementCost)
 	context.movementCostByRole[role] = (context.movementCostByRole[role] or 0) + movementCost
+end
+
+local function addTileDanger(context, tile, turn, ourStrength)
+	local enemyDanger = context.evaluator:getEnemyHeroDanger(tile, turn)
+	if enemyDanger and (enemyDanger.danger or 0) > 0 and (ourStrength or 0) > 0 then
+		local dangerRatio = enemyDanger.danger / ourStrength
+		context.enemyHeroDangerRatio = math.max(context.enemyHeroDangerRatio, dangerRatio)
+		context.threat = math.max(context.threat, enemyDanger.threat or enemyDanger.danger or 0)
+	end
 end
 
 PriorityEvaluator.EvaluationContext = {}
@@ -346,6 +379,50 @@ local function buildStayAtTownContext(context, task)
 	end
 end
 
+local function buildDefendTownContext(context, task, aiNk)
+	if task.goalType ~= AbstractGoal.EGoals.DEFEND_TOWN then
+		return
+	end
+
+	local town = task.town
+	local threat = call(task, "getThreat") or task.threat or {}
+	local taskTurn = call(task, "getTurn") or task.turn or 0
+	local threatTurn = threat.turn or 0
+	local strategicalValue = context.evaluator:getStrategicalValue(town)
+	local multiplier = 1
+
+	if threatTurn < taskTurn then
+		multiplier = multiplier / (1 + (taskTurn - threatTurn))
+	end
+	multiplier = multiplier / (1.0 + threatTurn / 5.0)
+
+	local counterAttack = call(task, "isCounterAttack") or task.counterattack
+	if taskTurn > 0 and counterAttack then
+		local ourSpeed = movementPointsLimit(task.hero)
+		local enemyHero = threat.hero or threat.heroPtr
+		local enemySpeed = movementPointsLimit(enemyHero)
+		if enemySpeed > ourSpeed then
+			multiplier = multiplier * 0.7
+		end
+	end
+
+	context.armyGrowth = context.armyGrowth + context.evaluator:townArmyGrowth(town) * multiplier
+	context.goldReward = context.goldReward + dailyGoldIncome(town) * 5 * multiplier
+
+	if developmentInfoCount(aiNk) == 1 then
+		context.strategicalValue = math.max(context.strategicalValue, 2.5 * multiplier * strategicalValue)
+	else
+		context:addNonCriticalStrategicalValue(1.7 * multiplier * strategicalValue)
+	end
+
+	context.defenseValue = fortLevel(town)
+	context.isDefend = true
+	context.threatTurns = threatTurn
+	context.danger = math.max(context.danger, threat.danger or 0)
+	context.threat = math.max(context.threat, threat.danger or 0)
+	addTileDanger(context, visitablePos(town), taskTurn, call(task, "getDefenceStrength") or task.defenceArmyStrength or 0)
+end
+
 local function buildExchangeSwapTownHeroesContext(context, task, aiNk)
 	if task.goalType ~= AbstractGoal.EGoals.EXCHANGE_SWAP_TOWN_HEROES then
 		return
@@ -378,6 +455,77 @@ local function buildDismissHeroContext(context, task, aiNk)
 	context.movementCost = context.movementCost + mpLeft
 	addMovementByRole(context, role, mpLeft)
 	context.goldCost = context.goldCost + RewardEvaluator.HERO_GOLD_COST + RewardEvaluator.getArmyCost(dismissedHero)
+end
+
+local function objectByID(aiNk, id)
+	return aiNk and aiNk.objectsByID and aiNk.objectsByID[id]
+		or call(aiNk and aiNk.cc, "getObj", id)
+end
+
+local function clusterObjects(cluster, aiNk)
+	local result = {}
+	local objects = cluster and cluster.objects or {}
+	if #objects > 0 then
+		for _, entry in ipairs(objects) do
+			local info = entry.info or entry
+			local id = entry.id or entry.objectID or entry.objid or info.id or info.objectID
+			table.insert(result, {
+				id = id,
+				target = entry.object or entry.target or info.object or info.target or objectByID(aiNk, id),
+				priority = info.priority or 0,
+				danger = info.danger or 0,
+				movementCost = info.movementCost or 0,
+				turn = info.turn or 0
+			})
+		end
+	else
+		for id, info in pairs(objects) do
+			table.insert(result, {
+				id = id,
+				target = info.object or info.target or objectByID(aiNk, id),
+				priority = info.priority or 0,
+				danger = info.danger or 0,
+				movementCost = info.movementCost or 0,
+				turn = info.turn or 0
+			})
+		end
+	end
+	table.sort(result, function(lhs, rhs)
+		return (lhs.priority or 0) > (rhs.priority or 0)
+	end)
+	return result
+end
+
+local function buildClusterContext(context, task, aiNk)
+	if task.goalType ~= AbstractGoal.EGoals.UNLOCK_CLUSTER then
+		return
+	end
+
+	local cluster = call(task, "getCluster") or task.cluster or {}
+	local hero = task.hero
+	local role = heroRole(aiNk, hero)
+	local boost = 1
+
+	for _, info in ipairs(clusterObjects(cluster, aiNk)) do
+		local target = info.target
+		local checkGold = (info.danger or 0) == 0
+		local army = hero
+
+		context.goldReward = context.goldReward + context.evaluator:getGoldReward(target, hero) / boost
+		context.armyReward = context.armyReward + context.evaluator:getArmyReward(target, hero, army, checkGold) / boost
+		context.skillReward = context.skillReward + context.evaluator:getSkillReward(target, hero, role) / boost
+		context:addNonCriticalStrategicalValue(context.evaluator:getStrategicalValue(target) / boost)
+		context.conquestValue = context.conquestValue + context.evaluator:getConquestValue(target)
+		context.goldCost = context.goldCost + context.evaluator:getGoldCost(target, hero, army) / boost
+		addMovementByRole(context, role, (info.movementCost or 0) / boost)
+		context.movementCost = context.movementCost + (info.movementCost or 0) / boost
+		context.turn = math.max(context.turn, (info.turn or 0) / boost)
+
+		boost = boost * 2
+		if boost > 8 then
+			break
+		end
+	end
 end
 
 local function sameTownBonus(task, aiNk)
@@ -472,8 +620,10 @@ local function buildContextForSubgoal(context, task, aiNk)
 	buildExplorePointContext(context, task)
 	buildAdventureSpellCastContext(context, task, aiNk)
 	buildStayAtTownContext(context, task)
+	buildDefendTownContext(context, task, aiNk)
 	buildExchangeSwapTownHeroesContext(context, task, aiNk)
 	buildDismissHeroContext(context, task, aiNk)
+	buildClusterContext(context, task, aiNk)
 	buildThisContext(context, task, aiNk)
 end
 

@@ -6,9 +6,11 @@ local CGoal = require("Goals.CGoal")
 local DismissHero = require("Goals.DismissHero")
 local ExchangeSwapTownHeroes = require("Goals.ExchangeSwapTownHeroes")
 local ExplorationPoint = require("Markers.ExplorationPoint")
+local DefendTown = require("Markers.DefendTown")
 local HeroExchange = require("Markers.HeroExchange")
 local PriorityEvaluator = require("Engine.PriorityEvaluator")
 local State = require("Engine.State")
+local UnlockCluster = require("Markers.UnlockCluster")
 local StayAtTown = require("Goals.StayAtTown")
 
 local EvalGoal = CGoal.derive("EvalGoal", AbstractGoal.EGoals.BUY_ARMY, { elementar = true })
@@ -208,6 +210,85 @@ assert(missingBuildContext.goldCost == 500)
 assert(almostEquals(missingBuildContext.strategicalValue, 0.2 / 3))
 assert(missingBuildContext.movementCostByRole[PriorityEvaluator.HeroRole.MAIN] == 6)
 assert(missingBuildContext.turn == 5)
+
+local defendTown = {
+	id = 801,
+	owner = 1,
+	ID = "TOWN",
+	fortLevel = 3,
+	hasFort = true,
+	dailyIncome = { [6] = 200 },
+	visitablePos = {
+		x = 4,
+		y = 5,
+		z = 0,
+		enemyHeroDanger = {
+			maximumDanger = { danger = 500, threat = 800, turn = 1 }
+		}
+	},
+	creatures = {
+		{ 1, { { aiValue = 100, growth = 4 } } }
+	}
+}
+local defendContext = PriorityEvaluator.buildEvaluationContext(DefendTown.new(
+	defendTown,
+	{ danger = 300, turn = 1 },
+	{
+		targetHero = { id = 802, movementPointsLimit = 1000 },
+		turn = 2,
+		heroStrength = 1000
+	},
+	false), {
+	playerID = 1,
+	developmentInfos = { { town = defendTown } }
+})
+assert(almostEquals(defendContext.armyGrowth, 400 / (2 * 1.2)))
+assert(almostEquals(defendContext.goldReward, 1000 / (2 * 1.2)))
+assert(defendContext.strategicalValue > 0)
+assert(defendContext.defenseValue == 3)
+assert(defendContext.isDefend == true)
+assert(defendContext.threatTurns == 1)
+assert(defendContext.danger == 300)
+assert(defendContext.threat == 800)
+assert(almostEquals(defendContext.enemyHeroDangerRatio, 0.5))
+
+local clusterHero = { id = 901, owner = 1, role = PriorityEvaluator.HeroRole.MAIN }
+local clusterGoal = UnlockCluster.new({
+	blocker = { id = 902, name = "Guard", visitablePos = { x = 1, y = 1, z = 0 } },
+	objects = {
+		{
+			id = 903,
+			priority = 10,
+			danger = 0,
+			movementCost = 2,
+			turn = 4,
+			object = { id = 903, ID = "RESOURCE", resourceID = 6 }
+		},
+		{
+			id = 904,
+			priority = 5,
+			danger = 100,
+			movementCost = 4,
+			turn = 6,
+			object = { id = 904, ID = "PANDORAS_BOX" }
+		}
+	}
+}, {
+	targetHero = clusterHero
+})
+local clusterContext = PriorityEvaluator.buildEvaluationContext(clusterGoal, {
+	playerID = 1,
+	missingResourcesNow = { [6] = 1 },
+	missingResourcesInTotal = { [6] = 1 },
+	dailyIncome = { [6] = 1 }
+})
+assert(clusterContext.goldReward == 600 + 2500 / 2)
+assert(clusterContext.armyReward == 5000 / 2)
+assert(clusterContext.skillReward == 2.5 / 2)
+assert(almostEquals(clusterContext.strategicalValue, 0.3))
+assert(clusterContext.movementCost == 4)
+assert(clusterContext.movementCostByRole[PriorityEvaluator.HeroRole.MAIN] == 4)
+assert(clusterContext.turn == 4)
 
 local buildingScore = PriorityEvaluator.evaluate(EvalGoal.new({
 	strategicalValue = 1,

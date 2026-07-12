@@ -134,12 +134,14 @@
         "ExplorePointEvaluator",
         "AdventureSpellCastEvaluator",
         "StayAtTownManaRecoveryEvaluator",
+        "DefendTownEvaluator",
+        "ClusterEvaluationContextBuilder",
         "ExchangeSwapTownHeroesContextBuilder",
         "DismissHeroContextBuilder",
         "BuildThisEvaluationContextBuilder",
         "RewardEvaluator"
       ],
-      "notes": "Priority-tier scoring formulas are ported against Lua EvaluationContext snapshots. Context builders are ported for hero exchange, army upgrade, exploration point, adventure spell movement, stay-at-town mana recovery, exchange/swap-town defence, dismiss hero, and deterministic build-structure fields. ExecuteHeroChain, defend-town, and cluster context builders remain pending."
+      "notes": "Priority-tier scoring formulas are ported against Lua EvaluationContext snapshots. Context builders are ported for hero exchange, army upgrade, exploration point, adventure spell movement, stay-at-town mana recovery, defend-town, cluster unlock, exchange/swap-town defence, dismiss hero, and deterministic build-structure fields. ExecuteHeroChain context building remains pending."
     },
     {
       "cpp": "AI/Nullkiller2/Engine/PriorityEvaluator.cpp",
@@ -161,7 +163,7 @@
         "RewardEvaluator::evaluateWitchHutSkillScore",
         "RewardEvaluator::getSkillReward"
       ],
-      "notes": "Deterministic resource pressure, army-cost, simple army reward/growth/cost, gold reward, strategic value, conquest value, town growth, mana recovery, witch-hut skill, and skill-reward helpers are ported with fixture coverage and object-style calls through EvaluationContext.evaluator. Full Rewardable inspection, artifact potential scoring, upgrade reward, and enemy danger remain pending."
+      "notes": "Deterministic resource pressure, army-cost, simple army reward/growth/cost, gold reward, strategic value, conquest value, town growth, mana recovery, witch-hut skill, skill-reward, and enemy-danger helpers are ported with fixture coverage and object-style calls through EvaluationContext.evaluator. Full Rewardable inspection, artifact potential scoring, and upgrade reward remain pending."
     },
     {
       "cpp": "AI/Nullkiller2/Goals/AbstractGoal.h",

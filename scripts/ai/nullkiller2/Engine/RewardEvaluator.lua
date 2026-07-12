@@ -60,6 +60,13 @@ local function resourceTable(resType, amount)
 	}
 end
 
+local function tileKey(tile)
+	if not tile then
+		return nil
+	end
+	return tostring(tile.x) .. "," .. tostring(tile.y) .. "," .. tostring(tile.z)
+end
+
 local function settings(aiNk)
 	return aiNk and aiNk.settings or {}
 end
@@ -796,6 +803,43 @@ function RewardEvaluator.getSkillReward(selfOrTarget, maybeTarget, maybeHero, ma
 	end
 
 	return totalValue
+end
+
+function RewardEvaluator.getEnemyHeroDanger(selfOrTile, maybeTile, maybeTurn, maybeAiNk)
+	local tile = selfOrTile
+	local turn = maybeTile or 0
+	local aiNk = maybeTurn
+	if selfOrTile and selfOrTile.aiNk ~= nil then
+		tile = maybeTile
+		turn = maybeTurn or 0
+		aiNk = maybeAiNk or selfOrTile.aiNk
+	end
+
+	local threatNode = call(aiNk and aiNk.dangerHitMap, "getTileThreat", tile)
+		or aiNk and aiNk.enemyHeroDangerByTile and aiNk.enemyHeroDangerByTile[tileKey(tile)]
+		or tile and tile.enemyHeroDanger
+		or {}
+	local maximumDanger = threatNode.maximumDanger or threatNode.maximum or threatNode
+	local fastestDanger = threatNode.fastestDanger or threatNode.fastest or {}
+
+	if (maximumDanger.danger or 0) == 0 then
+		return {
+			danger = 0,
+			threat = 0,
+			turn = math.huge
+		}
+	end
+	if (maximumDanger.turn or 0) <= turn then
+		return maximumDanger
+	end
+	if (fastestDanger.turn or math.huge) <= turn then
+		return fastestDanger
+	end
+	return {
+		danger = 0,
+		threat = 0,
+		turn = math.huge
+	}
 end
 
 RewardEvaluator.GOLD = GOLD
