@@ -36,8 +36,6 @@ for _, item in ipairs(events) do
 			item.event,
 			tostring(item.data.status),
 			tostring(item.data.actionResult and item.data.actionResult.ok)))
-	else
-		print("event=" .. item.event)
 	end
 end
 

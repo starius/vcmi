@@ -1,4 +1,4 @@
 event=Nullkiller.makeTurn.start maxPass=3 maxPriorityPass=2
 event=Nullkiller.makeTurn.end status=end_turn actionOk=true
 output.status=end_turn
-output.intent=lua-nullkiller2 skeleton ended turn without native fallback
+output.intent=lua-nullkiller2 turn loop completed without native fallback
