@@ -15,6 +15,7 @@
 class CGObjectInstance;
 class CGDwelling;
 class IMarket;
+class IShipyard;
 
 namespace LuaNullkiller2AI
 {
@@ -49,6 +50,10 @@ public:
 	void heroGotLevel(const CGHeroInstance * hero, PrimarySkill pskill, std::vector<SecondarySkill> & skills, QueryID queryID) override;
 	void commanderGotLevel(const CCommanderInstance * commander, std::vector<ui32> skills, QueryID queryID) override;
 	void showTavernWindow(const CGObjectInstance * object, const CGHeroInstance * visitor, QueryID queryID) override;
+	void showThievesGuildWindow(const CGObjectInstance * object) override;
+	void showShipyardDialog(const IShipyard * object) override;
+	void showHillFortWindow(const CGObjectInstance * object, const CGHeroInstance * visitor) override;
+	void showInfoDialog(EInfoWindowMode type, const std::string & text, const std::vector<Component> & components, int soundID) override;
 	void showMarketWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID) override;
 	void showUniversityWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID) override;
 	void showBlockingDialog(const std::string & text, const std::vector<Component> & components, QueryID askID, const int soundID, bool selection, bool cancel, bool safeToAutoaccept) override;

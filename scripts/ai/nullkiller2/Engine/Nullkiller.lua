@@ -1208,6 +1208,22 @@ function Nullkiller.showTavernWindow(ai, input)
 	return answerQuery(ai, input)
 end
 
+function Nullkiller.showThievesGuildWindow(ai, input)
+	return statusEvent(input, "show_thieves_guild_window")
+end
+
+function Nullkiller.showShipyardDialog(ai, input)
+	return statusEvent(input, "show_shipyard_dialog")
+end
+
+function Nullkiller.showHillFortWindow(ai, input)
+	return statusEvent(input, "show_hill_fort_window")
+end
+
+function Nullkiller.showInfoDialog(ai, input)
+	return statusEvent(input, "show_info_dialog")
+end
+
 function Nullkiller.showMarketWindow(ai, input)
 	return answerQuery(ai, input)
 end

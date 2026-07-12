@@ -179,8 +179,9 @@ native duplicate-stack merge-before-recruit case and full resource-vector afford
 callbacks now route through Lua and mutate persistent `AIMemory` object-id sets while the host keeps raw pathfinder
 invalidation as a non-policy state flag; object removal, owner changes, and setting-gated tile reveal updates also
 record the native hitmap/tile-owner reset markers in Lua memory. Lightweight native state callbacks for artifact
-movement, resource/creature availability, hero stat changes, garrisons, buildings, adventure spell casts, and request
-realization now route through Lua status-memory entry points. The `playerBlocked`, `heroCreated`, `battleStart`,
+movement, resource/creature availability, hero stat changes, garrisons, buildings, adventure spell casts, request
+realization, and passive UI windows now route through Lua status-memory entry points. The `playerBlocked`,
+`heroCreated`, `battleStart`,
 `battleEnd`, `battleResultsApplied`, and `battleEnded` event callbacks update Lua-owned status memory for
 battle/movement state while preserving host-side base battle notifications and raw pathfinder invalidation.
 Surrender/retreat
@@ -477,7 +478,7 @@ Commit messages must stay focused on the code change and must not mention the re
    final priority parity.
 5. Add a native `Nullkiller2` trace exporter and a Lua replay/snapshot comparator so discrepancies produce
    minimized fixtures under `scripts/ai/nullkiller2/tests/fixtures/discrepancies/`.
-6. Wire remaining query callbacks into Lua policy modules for artifact assembly, shipyard, and battle preservation
-   decisions.
+6. Add richer Lua policies for artifact assembly, shipyard, and battle preservation decisions where native currently
+   does more than passive status/event forwarding.
 7. Strengthen the no-native-dependency gate by building `LuaNullkiller2` with native `Nullkiller2` disabled and
    auditing C++ and Lua policy code for forbidden native-delegation strings.

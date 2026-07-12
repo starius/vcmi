@@ -510,7 +510,11 @@ for _, entry in ipairs({
 	{ "heroSecondarySkillChanged", "hero_secondary_skill_changed" },
 	{ "beforeObjectPropertyChanged", "before_object_property_changed" },
 	{ "buildChanged", "build_changed" },
-	{ "heroBonusChanged", "hero_bonus_changed" }
+	{ "heroBonusChanged", "hero_bonus_changed" },
+	{ "showThievesGuildWindow", "show_thieves_guild_window" },
+	{ "showShipyardDialog", "show_shipyard_dialog" },
+	{ "showHillFortWindow", "show_hill_fort_window" },
+	{ "showInfoDialog", "show_info_dialog" }
 }) do
 	local eventName, statusName = entry[1], entry[2]
 	local callbackMemory = {

@@ -1580,6 +1580,46 @@ void CLuaNullkiller2AI::showTavernWindow(const CGObjectInstance * object, const 
 	runQueryCallback("showTavernWindow", queryID);
 }
 
+void CLuaNullkiller2AI::showThievesGuildWindow(const CGObjectInstance * object)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	if(object)
+		snapshot["object"] = objectSnapshot(object);
+	runEventCallback("showThievesGuildWindow", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::showShipyardDialog(const IShipyard * object)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	if(const auto * mapObject = dynamic_cast<const CGObjectInstance *>(object))
+		snapshot["object"] = objectSnapshot(mapObject);
+	runEventCallback("showShipyardDialog", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::showHillFortWindow(const CGObjectInstance * object, const CGHeroInstance * visitor)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	if(object)
+		snapshot["object"] = objectSnapshot(object);
+	if(visitor)
+		snapshot["visitor"] = heroSnapshot(visitor, cc);
+	runEventCallback("showHillFortWindow", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::showInfoDialog(EInfoWindowMode type, const std::string & text, const std::vector<Component> & components, int soundID)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["type"].Integer() = static_cast<int>(type);
+	snapshot["text"].String() = text;
+	snapshot["soundID"].Integer() = soundID;
+	snapshot["components"] = componentsSnapshot(components);
+	runEventCallback("showInfoDialog", std::move(snapshot));
+}
+
 void CLuaNullkiller2AI::showMarketWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID)
 {
 	runQueryCallback("showMarketWindow", queryID);

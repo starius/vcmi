@@ -189,6 +189,22 @@ function Script.showTavernWindow(ai, input)
 	return Nullkiller.showTavernWindow(ai, input or {})
 end
 
+function Script.showThievesGuildWindow(ai, input)
+	return Nullkiller.showThievesGuildWindow(ai, input or {})
+end
+
+function Script.showShipyardDialog(ai, input)
+	return Nullkiller.showShipyardDialog(ai, input or {})
+end
+
+function Script.showHillFortWindow(ai, input)
+	return Nullkiller.showHillFortWindow(ai, input or {})
+end
+
+function Script.showInfoDialog(ai, input)
+	return Nullkiller.showInfoDialog(ai, input or {})
+end
+
 function Script.showMarketWindow(ai, input)
 	return Nullkiller.showMarketWindow(ai, input or {})
 end

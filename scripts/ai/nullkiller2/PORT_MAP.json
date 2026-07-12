@@ -1064,6 +1064,10 @@
         "AIGateway::showGarrisonDialog",
         "AIGateway::showRecruitmentDialog",
         "AIGateway::showMapObjectSelectDialog",
+        "AIGateway::showThievesGuildWindow",
+        "AIGateway::showShipyardDialog",
+        "AIGateway::showHillFortWindow",
+        "AIGateway::showInfoDialog",
         "AIGateway::makeSurrenderRetreatDecision",
         "AIGateway::availableArtifactsChanged",
         "AIGateway::availableCreaturesChanged",
@@ -1105,7 +1109,7 @@
         "AIGateway::recruitCreatures",
         "AIGateway::pickBestArtifacts"
       ],
-      "notes": "Dialog choice, teleport selection/probing, garrison-use, map-object selection, retreat, hero-exchange direction, battle/blocking/hero-created state events, move/reveal/hide/visit/object memory events, owner-change memory events, updateHitmapOnTileReveal tile-owner reset marking, lightweight artifact/resource/hero-stat/garrison/build/request state callbacks, upgrade choice, dwelling recruitment, army-transfer, level-up skill choice with Lua role-map update, and first-pass artifact equip/swap policies are Lua-owned against snapshots. Creature upgrade policy consumes callback-exported UpgradeInfo snapshots for town and hero armed instances; the C++ host supplies raw upgrade candidates/costs and only executes resulting upgradeCreature commands. Turn snapshots now include visible visitable object records for behavior inputs. Artifact replacement uses exported hero artifact snapshots, per-holder canBePutAt tables, and the displaced-artifact backpack fallback when a direct swap is illegal. The availableArtifactsChanged, availableCreaturesChanged, advmapSpellCast, artifactAssembled, artifactDisassembled, artifactMoved, artifactPut, artifactRemoved, battleEnd, battleEnded, battleResultsApplied, battleStart, beforeObjectPropertyChanged, buildChanged, commanderGotLevel, garrisonsChanged, heroBonusChanged, heroCreated, heroExperienceChanged, heroGotLevel, heroExchangeStarted, heroInGarrisonChange, heroManaPointsChanged, heroMoved, heroMovePointsChanged, heroPrimarySkillChanged, heroSecondarySkillChanged, heroVisit, heroVisitsTown, newObject, objectPropertyChanged, objectRemoved, playerBlocked, playerBonusChanged, receivedResource, requestRealized, tileHidden, tileRevealed, showBlockingDialog, showGarrisonDialog, showRecruitmentDialog, showTeleportDialog, showTavernWindow, showMarketWindow, showUniversityWindow, and showMapObjectSelectDialog callbacks are wired through Lua entry points. Query callbacks answer pending queries through HostCommands.answerQuery. makeSurrenderRetreatDecision is wired through a Lua return decision converted to BattleAction at the host boundary. Full hero speciality bonus snapshots, path/threat snapshots, teleport destination/probing memory, danger-aware blocking-dialog parity, cross-hero artifact legality breadth, full combined-artifact legality data, multi-step modded upgrade-chain differential breadth, remaining UI-only callback wiring, and validator breadth remain pending."
+      "notes": "Dialog choice, teleport selection/probing, garrison-use, map-object selection, retreat, hero-exchange direction, battle/blocking/hero-created state events, move/reveal/hide/visit/object memory events, owner-change memory events, updateHitmapOnTileReveal tile-owner reset marking, lightweight artifact/resource/hero-stat/garrison/build/request/UI-window state callbacks, upgrade choice, dwelling recruitment, army-transfer, level-up skill choice with Lua role-map update, and first-pass artifact equip/swap policies are Lua-owned against snapshots. Creature upgrade policy consumes callback-exported UpgradeInfo snapshots for town and hero armed instances; the C++ host supplies raw upgrade candidates/costs and only executes resulting upgradeCreature commands. Turn snapshots now include visible visitable object records for behavior inputs. Artifact replacement uses exported hero artifact snapshots, per-holder canBePutAt tables, and the displaced-artifact backpack fallback when a direct swap is illegal. The availableArtifactsChanged, availableCreaturesChanged, advmapSpellCast, artifactAssembled, artifactDisassembled, artifactMoved, artifactPut, artifactRemoved, battleEnd, battleEnded, battleResultsApplied, battleStart, beforeObjectPropertyChanged, buildChanged, commanderGotLevel, garrisonsChanged, heroBonusChanged, heroCreated, heroExperienceChanged, heroGotLevel, heroExchangeStarted, heroInGarrisonChange, heroManaPointsChanged, heroMoved, heroMovePointsChanged, heroPrimarySkillChanged, heroSecondarySkillChanged, heroVisit, heroVisitsTown, newObject, objectPropertyChanged, objectRemoved, playerBlocked, playerBonusChanged, receivedResource, requestRealized, tileHidden, tileRevealed, showBlockingDialog, showGarrisonDialog, showRecruitmentDialog, showTeleportDialog, showTavernWindow, showMarketWindow, showUniversityWindow, showMapObjectSelectDialog, showThievesGuildWindow, showShipyardDialog, showHillFortWindow, and showInfoDialog callbacks are wired through Lua entry points. Query callbacks answer pending queries through HostCommands.answerQuery. makeSurrenderRetreatDecision is wired through a Lua return decision converted to BattleAction at the host boundary. Full hero speciality bonus snapshots, path/threat snapshots, teleport destination/probing memory, danger-aware blocking-dialog parity, cross-hero artifact legality breadth, full combined-artifact legality data, multi-step modded upgrade-chain differential breadth, and validator breadth remain pending."
     },
     {
       "cpp": null,
@@ -1175,10 +1179,14 @@
         "Script.tileRevealed",
         "Script.showBlockingDialog",
         "Script.showGarrisonDialog",
+        "Script.showHillFortWindow",
+        "Script.showInfoDialog",
         "Script.showMarketWindow",
         "Script.showRecruitmentDialog",
+        "Script.showShipyardDialog",
         "Script.showTeleportDialog",
         "Script.showTavernWindow",
+        "Script.showThievesGuildWindow",
         "Script.showUniversityWindow",
         "Script.showMapObjectSelectDialog"
       ],
