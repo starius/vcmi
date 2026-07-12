@@ -651,6 +651,29 @@
       "notes": "ArmyManager and threat data are host/Lua snapshot inputs; task selection and city-hall gold-pressure guard are Lua-owned."
     },
     {
+      "cpp": "AI/Nullkiller2/Analyzers/ArmyManager.h",
+      "lua": "scripts/ai/nullkiller2/Analyzers/ArmyManager.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "SlotInfo",
+        "IArmyManager::getSortedSlots",
+        "IArmyManager::getBestArmy",
+        "IArmyManager::getBestUnitForScout"
+      ],
+      "notes": "Lua exposes the mirrored SlotInfo shape and the ArmyManager subset currently needed by army-transfer sequencing."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Analyzers/ArmyManager.cpp",
+      "lua": "scripts/ai/nullkiller2/Analyzers/ArmyManager.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "ArmyManager::getSortedSlots",
+        "ArmyManager::getBestArmy",
+        "ArmyManager::getBestUnitForScout"
+      ],
+      "notes": "Sorted-slot consolidation, faction/morale best-army filtering, scout-unit choice, and scout last-stack retention are Lua-owned against snapshot fields. Reinforcement buying, upgrade calculation, and total-army aggregation remain pending."
+    },
+    {
       "cpp": "AI/Nullkiller2/Behaviors/RecruitHeroBehavior.h",
       "lua": "scripts/ai/nullkiller2/Behaviors/RecruitHeroBehavior.lua",
       "status": "scaffolded",

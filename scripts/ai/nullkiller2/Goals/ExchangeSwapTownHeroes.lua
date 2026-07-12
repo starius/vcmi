@@ -1,6 +1,7 @@
 -- Mirrors AI/Nullkiller2/Goals/ExchangeSwapTownHeroes.{h,cpp}: ExchangeSwapTownHeroes.
 
 local AbstractGoal = require("Goals.AbstractGoal")
+local ArmyManager = require("Analyzers.ArmyManager")
 local CGoal = require("Goals.CGoal")
 local GatewayPolicy = require("Actions.GatewayPolicy")
 local State = require("Engine.State")
@@ -419,46 +420,15 @@ applyMergeOrSwap = function(source, destination, fromSlot, toSlot)
 	setStackAtSlot(destination, toSlot, sourceStack)
 end
 
-local function bestArmyFallback(destination, source)
-	local byCreature = {}
-	for _, army in ipairs({ destination, source }) do
-		for _, stack in pairs(armyStacksBySlot(army)) do
-			local id = creatureID(stack)
-			if id ~= nil then
-				local entry = byCreature[id]
-				if not entry then
-					entry = {
-						creature = stackCreature(stack),
-						creatureID = id,
-						count = 0,
-						power = 0
-					}
-					byCreature[id] = entry
-				end
-				entry.count = entry.count + stackCount(stack)
-				entry.power = entry.power + stackPower(stack)
-			end
-		end
-	end
-
-	local result = {}
-	for _, entry in pairs(byCreature) do
-		table.insert(result, entry)
-	end
-	table.sort(result, function(left, right)
-		if left.power ~= right.power then
-			return left.power > right.power
-		end
-		return (left.creatureID or 0) < (right.creatureID or 0)
-	end)
-	return result
-end
-
 local function bestArmyForTransfer(town, destination, source)
 	return (town and (town.moveCreaturesToHeroBestArmy or town.armyTransferBestArmy or town.bestArmy))
 		or (destination and destination.bestArmy)
 		or (source and source.bestArmy)
-		or bestArmyFallback(destination, source)
+		or ArmyManager.getBestArmy(destination, destination, source, {
+			armySize = armySize(destination),
+			settings = town and town.settings or destination and destination.settings or source and source.settings,
+			terrain = source and (source.terrain or source.armyTerrain) or town and town.terrain
+		})
 end
 
 local function bestArmyCreatureID(entry)

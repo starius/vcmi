@@ -316,8 +316,8 @@ local extractionTown = {
 		stacksCount = 7,
 		armySize = 7,
 		slots = {
-			{ slot = 2, creature = { id = 344 }, count = 1 },
-			{ slot = 3, creature = { id = 344 }, count = 1, duplicatingSlot = 2 }
+			{ slot = 2, creature = { id = 344, aiValue = 10 }, count = 1, power = 10 },
+			{ slot = 3, creature = { id = 344, aiValue = 10 }, count = 1, power = 10, duplicatingSlot = 2 }
 		}
 	},
 	upgradeSlots = {

@@ -148,18 +148,19 @@ regular behavior decomposition, and command emission for recruit hero, build, bu
 hero, recruit creatures, upgrade creatures, merge stacks, cross-army merge/swap, split stack, dismiss creatures,
 cast spell, granular hero movement, resource locks, and end turn. `ExchangeSwapTownHeroes` extraction now mirrors
 the `buildArmyIn` order through upgrades, recruitment, first-slot army correction, and Lua-owned transfer command
-sequencing from snapshots.
+sequencing from snapshots. `Analyzers/ArmyManager.lua` now owns sorted-slot consolidation, faction/morale best-army
+filtering, scout-unit choice, and scout last-stack retention for the transfer path.
 
 Major parity gaps remain:
 
-- visible snapshots are still too thin for full analyzer, object, path, threat, query, and ArmyManager parity
+- visible snapshots are still too thin for full analyzer, object, path, threat, query, and broader ArmyManager parity
 - `ExecuteHeroChain` replays path nodes in native backward order, but stale-path recovery, special actions,
   object-graph shortcutting, and siege formation are still incomplete
 - artifact equipment sequencing, full Rewardable inspection, and richer live object inspection remain incomplete
   outside the deterministic scoring helpers
 - garrison, hero exchange, artifact, and remaining army-transfer edge cases need complete Lua-owned sequencing plus
-  host validators; specifically, native `ArmyManager::getBestArmy` morale/scout selection and scout last-stack
-  split behavior still need direct Lua ports
+  host validators; specifically, scout last-stack split command sequencing and the remaining ArmyManager
+  reinforcement/upgrade methods still need direct Lua ports
 - differential tests currently cover command journals and end-turn smoke; they do not yet compare real native
   `Nullkiller2` traces against Lua traces at each decision point
 
@@ -411,8 +412,8 @@ Commit messages must stay focused on the code change and must not mention the re
    fixtures no longer need hand-written placeholder fields.
 2. Complete `ExecuteHeroChain` parity: stale-path recovery, special actions, siege formation, visit/attack
    selection, and object-graph shortcutting.
-3. Finish `ExchangeSwapTownHeroes`, garrison, ArmyManager best-army selection, scout last-stack split handling,
-   upgrade, and artifact command sequencing with Lua-owned policy and checked host validators.
+3. Finish `ExchangeSwapTownHeroes`, garrison, scout last-stack split handling, remaining ArmyManager
+   reinforcement/upgrade methods, and artifact command sequencing with Lua-owned policy and checked host validators.
 4. Finish `RewardEvaluator` and object-specific priority context builders, then add fixture tests for raw context and
    final priority parity.
 5. Add a native `Nullkiller2` trace exporter and a Lua replay/snapshot comparator so discrepancies produce
