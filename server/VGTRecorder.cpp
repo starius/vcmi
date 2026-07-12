@@ -15,6 +15,7 @@
 #include "../lib/ResourceSet.h"
 #include "../lib/StartInfo.h"
 #include "../lib/battle/BattleAction.h"
+#include "../lib/bonuses/Bonus.h"
 #include "../lib/callback/Calendar.h"
 #include "../lib/constants/StringConstants.h"
 #include "../lib/filesystem/CInputStream.h"
@@ -23,7 +24,9 @@
 #include "../lib/json/JsonNode.h"
 #include "../lib/mapping/CMap.h"
 #include "../lib/mapObjects/CGObjectInstance.h"
+#include "../lib/mapObjects/army/CSimpleArmy.h"
 #include "../lib/networkPacks/NetPackVisitor.h"
+#include "../lib/serializer/JsonSerializer.h"
 #include "../lib/texts/MetaString.h"
 
 #include <boost/algorithm/string.hpp>
@@ -34,6 +37,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <iomanip>
+#include <optional>
 #include <sstream>
 
 namespace
@@ -158,35 +162,35 @@ std::string resource(GameResID id)
 {
 	if(id.getNum() < 0)
 		return yamlString("core:none");
-	return yamlString("core:" + GameResID::encode(id.getNum()));
+	return yamlString(GameResID::encode(id.getNum()));
 }
 
 std::string creature(CreatureID id)
 {
 	if(id.getNum() < 0)
 		return yamlString("core:none");
-	return yamlString("core:" + CreatureID::encode(id.getNum()));
+	return yamlString(CreatureID::encode(id.getNum()));
 }
 
 std::string spell(SpellID id)
 {
 	if(id.getNum() < 0)
 		return yamlString("core:none");
-	return yamlString("core:" + SpellID::encode(id.getNum()));
+	return yamlString(SpellID::encode(id.getNum()));
 }
 
 std::string heroType(HeroTypeID id)
 {
 	if(id.getNum() < 0)
 		return yamlString("core:none");
-	return yamlString("core:" + HeroTypeID::encode(id.getNum()));
+	return yamlString(HeroTypeID::encode(id.getNum()));
 }
 
 std::string faction(FactionID id)
 {
 	if(id.getNum() < 0)
 		return yamlString("core:none");
-	return yamlString("core:" + FactionID::encode(id.getNum()));
+	return yamlString(FactionID::encode(id.getNum()));
 }
 
 std::string primarySkill(PrimarySkill id)
@@ -205,9 +209,43 @@ std::string secondarySkill(SecondarySkill id)
 
 std::string building(BuildingID id)
 {
+	if(id.getNum() < 0)
+		return "none";
 	if(id.getNum() >= 0 && id.getNum() < std::size(EBuildingType::names))
 		return yamlString("core:" + EBuildingType::names[id.getNum()]);
 	return yamlString("building:" + std::to_string(id.getNum()));
+}
+
+std::string artifact(ArtifactID id)
+{
+	if(id.getNum() < 0)
+		return yamlString("core:none");
+	return yamlString(ArtifactID::encode(id.getNum()));
+}
+
+std::string slot(SlotID id)
+{
+	return std::to_string(id.getNum());
+}
+
+std::string artifactPosition(ArtifactPosition id)
+{
+	return std::to_string(id.getNum());
+}
+
+std::string optionalSlot(const std::optional<SlotID> & id)
+{
+	if(!id)
+		return "null";
+	return slot(*id);
+}
+
+std::string artifactPositions(const std::vector<ArtifactPosition> & positions)
+{
+	std::vector<std::string> entries;
+	for(const auto & entry : positions)
+		entries.push_back(artifactPosition(entry));
+	return flowList(entries);
 }
 
 std::string mode(ChangeValueMode mode)
@@ -218,6 +256,113 @@ std::string mode(ChangeValueMode mode)
 		case ChangeValueMode::RELATIVE: return "relative";
 	}
 	return "unknown";
+}
+
+std::string arrangeMode(ui8 what)
+{
+	switch(what)
+	{
+		case 1: return "swap";
+		case 2: return "merge";
+		case 3: return "split";
+	}
+	return "unknown";
+}
+
+std::string tavernSlot(TavernHeroSlot value)
+{
+	switch(value)
+	{
+		case TavernHeroSlot::NONE: return "none";
+		case TavernHeroSlot::NATIVE: return "native";
+		case TavernHeroSlot::RANDOM: return "random";
+	}
+	return "unknown";
+}
+
+std::string tavernRole(TavernSlotRole value)
+{
+	switch(value)
+	{
+		case TavernSlotRole::NONE: return "none";
+		case TavernSlotRole::SINGLE_UNIT: return "singleUnit";
+		case TavernSlotRole::FULL_ARMY: return "fullArmy";
+		case TavernSlotRole::RETREATED: return "retreated";
+		case TavernSlotRole::SURRENDERED: return "surrendered";
+	}
+	return "unknown";
+}
+
+std::string marketMode(EMarketMode value)
+{
+	switch(value)
+	{
+		case EMarketMode::RESOURCE_RESOURCE: return "resource-resource";
+		case EMarketMode::RESOURCE_PLAYER: return "resource-player";
+		case EMarketMode::CREATURE_RESOURCE: return "creature-resource";
+		case EMarketMode::RESOURCE_ARTIFACT: return "resource-artifact";
+		case EMarketMode::ARTIFACT_RESOURCE: return "artifact-resource";
+		case EMarketMode::ARTIFACT_EXP: return "artifact-experience";
+		case EMarketMode::CREATURE_EXP: return "creature-experience";
+		case EMarketMode::CREATURE_UNDEAD: return "creature-undead";
+		case EMarketMode::RESOURCE_SKILL: return "resource-skill";
+		case EMarketMode::MARKET_AFTER_LAST_PLACEHOLDER: return "invalid";
+	}
+	return "unknown";
+}
+
+std::string openWindowMode(EOpenWindowMode value)
+{
+	switch(value)
+	{
+		case EOpenWindowMode::EXCHANGE_WINDOW: return "exchange";
+		case EOpenWindowMode::RECRUITMENT_FIRST: return "recruitmentFirst";
+		case EOpenWindowMode::RECRUITMENT_ALL: return "recruitmentAll";
+		case EOpenWindowMode::SHIPYARD_WINDOW: return "shipyard";
+		case EOpenWindowMode::THIEVES_GUILD: return "thievesGuild";
+		case EOpenWindowMode::UNIVERSITY_WINDOW: return "university";
+		case EOpenWindowMode::HILL_FORT_WINDOW: return "hillFort";
+		case EOpenWindowMode::MARKET_WINDOW: return "market";
+		case EOpenWindowMode::PUZZLE_MAP: return "puzzleMap";
+		case EOpenWindowMode::TAVERN_WINDOW: return "tavern";
+	}
+	return "unknown";
+}
+
+std::string gateState(EGateState value)
+{
+	switch(value)
+	{
+		case EGateState::NONE: return "none";
+		case EGateState::CLOSED: return "closed";
+		case EGateState::BLOCKED: return "blocked";
+		case EGateState::OPENED: return "opened";
+		case EGateState::DESTROYED: return "destroyed";
+	}
+	return "unknown";
+}
+
+std::string battleStackProperty(BattleSetStackProperty::BattleStackProperty value)
+{
+	switch(value)
+	{
+		case BattleSetStackProperty::CASTS: return "casts";
+		case BattleSetStackProperty::ENCHANTER_COUNTER: return "enchanterCounter";
+		case BattleSetStackProperty::UNBIND: return "unbind";
+		case BattleSetStackProperty::CLONED: return "cloned";
+		case BattleSetStackProperty::HAS_CLONE: return "hasClone";
+	}
+	return "unknown";
+}
+
+std::string marketSellItem(const TradeItemSell & value)
+{
+	return std::to_string(value.getNum());
+}
+
+std::string marketBuyItem(const TradeItemBuy & value)
+{
+	return std::to_string(value.getNum());
 }
 
 std::string visibility(ETileVisibility mode)
@@ -333,6 +478,61 @@ std::string resourceValues(const ResourceSet & values)
 	return flowList(entries);
 }
 
+std::string simpleArmy(const CSimpleArmy & army)
+{
+	std::vector<std::string> entries;
+	for(const auto & entry : army.army)
+	{
+		entries.push_back("{ slot: " + slot(entry.first) +
+			", creature: " + creature(entry.second.first) +
+			", count: " + std::to_string(entry.second.second) + " }");
+	}
+	return flowList(entries);
+}
+
+std::string spellsList(const std::set<SpellID> & spells)
+{
+	std::vector<std::string> entries;
+	for(const auto & entry : spells)
+		entries.push_back(spell(entry));
+	return flowList(entries);
+}
+
+std::string creaturesList(const std::vector<CreatureID> & creatures)
+{
+	std::vector<std::string> entries;
+	for(const auto & entry : creatures)
+		entries.push_back(creature(entry));
+	return flowList(entries);
+}
+
+std::string artifactsList(const std::vector<ArtifactID> & artifacts)
+{
+	std::vector<std::string> entries;
+	for(const auto & entry : artifacts)
+		entries.push_back(artifact(entry));
+	return flowList(entries);
+}
+
+std::string availableCreatures(const std::vector<std::pair<ui32, std::vector<CreatureID>>> & creatures)
+{
+	std::vector<std::string> entries;
+	for(const auto & entry : creatures)
+	{
+		entries.push_back("{ available: " + std::to_string(entry.first) +
+			", creatures: " + creaturesList(entry.second) + " }");
+	}
+	return flowList(entries);
+}
+
+std::string stackExperienceValues(const std::map<SlotID, si64> & values)
+{
+	std::vector<std::string> entries;
+	for(const auto & entry : values)
+		entries.push_back("{ slot: " + slot(entry.first) + ", amount: " + std::to_string(entry.second) + " }");
+	return flowList(entries);
+}
+
 std::string fowTiles(const FowTilesType & tiles)
 {
 	std::map<std::pair<int, int>, std::vector<int>> runsByLine;
@@ -384,6 +584,8 @@ std::string battleAction(const BattleAction & action)
 		", target: " + flowList(targets) + " }";
 }
 
+std::string battleUnitState(const UnitChanges & change);
+
 std::string battleUnitChanges(const std::vector<UnitChanges> & changes)
 {
 	std::vector<std::string> result;
@@ -400,9 +602,66 @@ std::string battleUnitChanges(const std::vector<UnitChanges> & changes)
 		result.push_back("{ stack: stack/" + std::to_string(change.id) +
 			", operation: " + operation +
 			", healthDelta: " + std::to_string(change.healthDelta) +
-			", data: " + change.data.toCompactString() + " }");
+			", state: " + battleUnitState(change) + " }");
 	}
 	return flowList(result);
+}
+
+std::string battleChangeOperation(BattleChanges::EOperation operation)
+{
+	switch(operation)
+	{
+		case BattleChanges::EOperation::ADD: return "add";
+		case BattleChanges::EOperation::UPDATE: return "update";
+		case BattleChanges::EOperation::REMOVE: return "remove";
+	}
+	return "unknown";
+}
+
+void appendJsonInteger(std::vector<std::string> & fields, const JsonNode & node, const std::string & key, const std::string & label)
+{
+	const auto & child = node[key];
+	if(!child.isNull() && child.isNumber())
+		fields.push_back(label + ": " + std::to_string(static_cast<si64>(child.Float())));
+}
+
+void appendJsonBool(std::vector<std::string> & fields, const JsonNode & node, const std::string & key, const std::string & label)
+{
+	const auto & child = node[key];
+	if(!child.isNull() && child.isBool())
+		fields.push_back(label + ": " + std::string(child.Bool() ? "true" : "false"));
+}
+
+std::string battleUnitState(const UnitChanges & change)
+{
+	std::vector<std::string> fields;
+	fields.push_back("operation: " + battleChangeOperation(change.operation));
+	if(change.healthDelta)
+		fields.push_back("healthDelta: " + std::to_string(change.healthDelta));
+
+	const JsonNode & state = change.data["state"];
+	if(!state.isNull() && state.isStruct())
+	{
+		appendJsonInteger(fields, state, "position", "position");
+		appendJsonBool(fields, state, "moved", "moved");
+		appendJsonBool(fields, state, "defending", "defending");
+		appendJsonBool(fields, state, "waiting", "waiting");
+		appendJsonBool(fields, state, "waitedThisTurn", "waitedThisTurn");
+
+		const JsonNode & health = state["health"];
+		if(!health.isNull() && health.isStruct())
+		{
+			std::vector<std::string> healthFields;
+			appendJsonInteger(healthFields, health, "fullUnits", "fullUnits");
+			appendJsonInteger(healthFields, health, "firstHPleft", "firstHPleft");
+			if(!healthFields.empty())
+				fields.push_back("health: { " + boost::algorithm::join(healthFields, ", ") + " }");
+		}
+	}
+
+	if(fields.empty())
+		return "{}";
+	return "{ " + boost::algorithm::join(fields, ", ") + " }";
 }
 
 std::string battleStackAttacked(const BattleStackAttacked & attack)
@@ -416,7 +675,7 @@ std::string battleStackAttacked(const BattleStackAttacked & attack)
 	if(attack.spellID != SpellID::NONE)
 		fields.push_back("spell: " + spell(attack.spellID));
 	if(!attack.newState.data.isNull())
-		fields.push_back("state: " + attack.newState.data.toCompactString());
+		fields.push_back("state: " + battleUnitState(attack.newState));
 	return "{ " + boost::algorithm::join(fields, ", ") + " }";
 }
 
@@ -426,6 +685,151 @@ std::string battleStackAttacks(const std::vector<BattleStackAttacked> & attacks)
 	for(const auto & attack : attacks)
 		result.push_back(battleStackAttacked(attack));
 	return flowList(result);
+}
+
+std::string artifactLocation(const CGameState & gameState, const ArtifactLocation & location)
+{
+	return "{ holder: " + objectAlias(gameState, location.artHolder) +
+		", creatureSlot: " + optionalSlot(location.creature) +
+		", slot: " + artifactPosition(location.slot) + " }";
+}
+
+std::string artifactMove(const MoveArtifactInfo & move)
+{
+	return "{ from: " + artifactPosition(move.srcPos) +
+		", to: " + artifactPosition(move.dstPos) +
+		", askAssemble: " + std::string(move.askAssemble ? "true" : "false") + " }";
+}
+
+std::string artifactMoves(const std::vector<MoveArtifactInfo> & moves)
+{
+	std::vector<std::string> entries;
+	for(const auto & move : moves)
+		entries.push_back(artifactMove(move));
+	return flowList(entries);
+}
+
+void writeJsonCompact(std::ostream & out, const JsonNode & node)
+{
+	switch(node.getType())
+	{
+		case JsonNode::JsonType::DATA_NULL:
+			out << "null";
+			break;
+		case JsonNode::JsonType::DATA_BOOL:
+			out << (node.Bool() ? "true" : "false");
+			break;
+		case JsonNode::JsonType::DATA_FLOAT:
+			out << node.Float();
+			break;
+		case JsonNode::JsonType::DATA_STRING:
+			out << yamlString(node.String());
+			break;
+		case JsonNode::JsonType::DATA_VECTOR:
+		{
+			out << "[";
+			bool first = true;
+			for(const auto & entry : node.Vector())
+			{
+				if(!first)
+					out << ", ";
+				first = false;
+				writeJsonCompact(out, entry);
+			}
+			out << "]";
+			break;
+		}
+		case JsonNode::JsonType::DATA_STRUCT:
+		{
+			out << "{";
+			bool first = true;
+			for(const auto & entry : node.Struct())
+			{
+				if(!first)
+					out << ", ";
+				first = false;
+				out << yamlString(entry.first) << ": ";
+				writeJsonCompact(out, entry.second);
+			}
+			out << "}";
+			break;
+		}
+		case JsonNode::JsonType::DATA_INTEGER:
+			out << node.Integer();
+			break;
+	}
+}
+
+std::string jsonCompact(const JsonNode & node)
+{
+	std::ostringstream out;
+	writeJsonCompact(out, node);
+	return out.str();
+}
+
+std::string rewardableConfiguration(Rewardable::Configuration & configuration)
+{
+	JsonNode node;
+	JsonSerializer handler(nullptr, node);
+	configuration.serializeJson(handler);
+	return jsonCompact(node);
+}
+
+std::string bonusValue(const Bonus & value)
+{
+	return jsonCompact(value.toJsonNode());
+}
+
+std::string bonusTargetKind(GiveBonus::ETarget value)
+{
+	switch(value)
+	{
+		case GiveBonus::ETarget::OBJECT: return "object";
+		case GiveBonus::ETarget::PLAYER: return "player";
+		case GiveBonus::ETarget::BATTLE: return "battle";
+		case GiveBonus::ETarget::HERO_COMMANDER: return "heroCommander";
+	}
+	return "unknown";
+}
+
+std::string bonusTarget(const CGameState & gameState, const GiveBonus & pack)
+{
+	switch(pack.who)
+	{
+		case GiveBonus::ETarget::OBJECT:
+			return objectAlias(gameState, pack.id.as<ObjectInstanceID>());
+		case GiveBonus::ETarget::PLAYER:
+			return color(pack.id.as<PlayerColor>());
+		case GiveBonus::ETarget::BATTLE:
+			return "battle/" + std::to_string(pack.id.as<BattleID>().getNum());
+		case GiveBonus::ETarget::HERO_COMMANDER:
+			return heroAlias(gameState, pack.id.as<ObjectInstanceID>()) + "/commander";
+	}
+	return "unknown";
+}
+
+std::string marketSellItems(const std::vector<TradeItemSell> & values)
+{
+	std::vector<std::string> entries;
+	for(const auto & value : values)
+		entries.push_back(marketSellItem(value));
+	return flowList(entries);
+}
+
+std::string marketBuyItems(const std::vector<TradeItemBuy> & values)
+{
+	std::vector<std::string> entries;
+	for(const auto & value : values)
+		entries.push_back(marketBuyItem(value));
+	return flowList(entries);
+}
+
+std::string tradeAmounts(const std::vector<ui32> & values)
+{
+	std::vector<std::string> entries;
+	for(const auto & value : values)
+		entries.push_back(std::to_string(value));
+	return flowList(entries);
 }
 
 std::string query(QueryID queryID)
@@ -533,7 +937,7 @@ std::string sha256(const uint8_t * data, size_t size)
 	return hexDigest(hash);
 }
 
-std::string mapHash(const StartInfo & startInfo)
+std::optional<std::string> mapHash(const StartInfo & startInfo)
 {
 	try
 	{
@@ -564,7 +968,7 @@ std::string mapHash(const StartInfo & startInfo)
 	{
 	}
 
-	return "unavailable";
+	return std::nullopt;
 }
 
 std::string startMode(EStartMode mode)
@@ -682,6 +1086,69 @@ public:
 			", position: " + pos(pack.pos) + " }";
 	}
 
+	void visitArrangeStacks(ArrangeStacks & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: arrangeStacks, mode: " + arrangeMode(pack.what) +
+			", from: { army: " + objectAlias(gameState, pack.id1) +
+			", slot: " + slot(pack.p1) + " }" +
+			", to: { army: " + objectAlias(gameState, pack.id2) +
+			", slot: " + slot(pack.p2) + " }" +
+			", count: " + std::to_string(pack.val) + " }";
+	}
+
+	void visitDisbandCreature(DisbandCreature & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: disbandCreature, army: " + objectAlias(gameState, pack.id) +
+			", slot: " + slot(pack.pos) + " }";
+	}
+
+	void visitUpgradeCreature(UpgradeCreature & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: upgradeCreature, army: " + objectAlias(gameState, pack.id) +
+			", slot: " + slot(pack.pos) +
+			", creature: " + creature(pack.cid) + " }";
+	}
+
+	void visitGarrisonHeroSwap(GarrisonHeroSwap & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: swapTownHeroes, town: " + objectAlias(gameState, pack.tid) + " }";
+	}
+
+	void visitExchangeArtifacts(ExchangeArtifacts & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: exchangeArtifacts, from: " + artifactLocation(gameState, pack.src) +
+			", to: " + artifactLocation(gameState, pack.dst) + " }";
+	}
+
+	void visitBuyArtifact(BuyArtifact & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: buyArtifact, hero: " + heroAlias(gameState, pack.hid) +
+			", artifact: " + artifact(pack.aid) + " }";
+	}
+
+	void visitTradeOnMarketplace(TradeOnMarketplace & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: trade, market: " + objectAlias(gameState, pack.marketId) +
+			", hero: " + objectAlias(gameState, pack.heroId) +
+			", mode: " + marketMode(pack.mode) +
+			", sell: " + marketSellItems(pack.r1) +
+			", buy: " + marketBuyItems(pack.r2) +
+			", amount: " + tradeAmounts(pack.val) + " }";
+	}
+
+	void visitBuildBoat(BuildBoat & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: buildBoat, object: " + objectAlias(gameState, pack.objid) + " }";
+	}
+
 	void visitSaveGame(SaveGame &) override
 	{
 		line.clear();
@@ -744,9 +1211,9 @@ public:
 		line.clear();
 	}
 
-	void visitPlayerBlocked(PlayerBlocked & pack) override
+	void visitPlayerBlocked(PlayerBlocked &) override
 	{
-		line = "playerBlocked: { player: " + color(pack.player) + " }";
+		line.clear();
 	}
 
 	void visitPlayerStartsTurn(PlayerStartsTurn & pack) override
@@ -781,12 +1248,32 @@ public:
 			", value: " + std::to_string(pack.val) + " }";
 	}
 
+	void visitGiveStackExperience(GiveStackExperience & pack) override
+	{
+		line = "stackExperience: { army: " + objectAlias(gameState, pack.id) +
+			", values: " + stackExperienceValues(pack.val) + " }";
+	}
+
 	void visitSetSecSkill(SetSecSkill & pack) override
 	{
 		line = "secondarySkill: { hero: " + heroAlias(gameState, pack.id) +
 			", skill: " + secondarySkill(pack.which) +
 			", mode: " + mode(pack.mode) +
 			", value: " + std::to_string(pack.val) + " }";
+	}
+
+	void visitHeroVisitCastle(HeroVisitCastle & pack) override
+	{
+		line = "townVisit: { town: " + objectAlias(gameState, pack.tid) +
+			", hero: " + heroAlias(gameState, pack.hid) +
+			", start: " + std::string(pack.start() ? "true" : "false") + " }";
+	}
+
+	void visitChangeSpells(ChangeSpells & pack) override
+	{
+		line = "spells: { hero: " + heroAlias(gameState, pack.hid) +
+			", mode: " + std::string(pack.learn ? "learn" : "forget") +
+			", spells: " + spellsList(pack.spells) + " }";
 	}
 
 	void visitSetMana(SetMana & pack) override
@@ -856,11 +1343,27 @@ public:
 			", destroyed: " + std::to_string(pack.destroyed) + " }";
 	}
 
+	void visitSetAvailableCreatures(SetAvailableCreatures & pack) override
+	{
+		line = "availableCreatures: { object: " + objectAlias(gameState, pack.tid) +
+			", levels: " + availableCreatures(pack.creatures) + " }";
+	}
+
 	void visitSetHeroesInTown(SetHeroesInTown & pack) override
 	{
 		line = "townHeroes: { town: " + objectAlias(gameState, pack.tid) +
 			", visiting: " + objectAlias(gameState, pack.visiting) +
 			", garrison: " + objectAlias(gameState, pack.garrison) + " }";
+	}
+
+	void visitSetAvailableHero(SetAvailableHero & pack) override
+	{
+		line = "availableHero: { player: " + color(pack.player) +
+			", slot: " + tavernSlot(pack.slotID) +
+			", role: " + tavernRole(pack.roleID) +
+			", hero: " + heroType(pack.hid) +
+			", army: " + simpleArmy(pack.army) +
+			", replenishMovement: " + std::string(pack.replenishPoints ? "true" : "false") + " }";
 	}
 
 	void visitHeroRecruited(HeroRecruited & pack) override
@@ -879,6 +1382,13 @@ public:
 			", boat: " + objectAlias(gameState, pack.boatId) + " }";
 	}
 
+	void visitGiveBonus(GiveBonus & pack) override
+	{
+		line = "bonus: { targetKind: " + bonusTargetKind(pack.who) +
+			", target: " + bonusTarget(gameState, pack) +
+			", value: " + bonusValue(pack.bonus) + " }";
+	}
+
 	void visitNewObject(NewObject & pack) override
 	{
 		const auto & object = pack.newObject;
@@ -894,6 +1404,34 @@ public:
 			", owner: " + color(object->tempOwner) +
 			", position: " + pos(object->visitablePos()) +
 			", initiator: " + color(pack.initiator) + " }";
+	}
+
+	void visitSetAvailableArtifacts(SetAvailableArtifacts & pack) override
+	{
+		line = "availableArtifacts: { object: " + objectAlias(gameState, pack.id) +
+			", artifacts: " + artifactsList(pack.arts) + " }";
+	}
+
+	void visitNewArtifact(NewArtifact & pack) override
+	{
+		line = "artifact: { create: { holder: " + objectAlias(gameState, pack.artHolder) +
+			", artifact: " + artifact(pack.artId) +
+			", spell: " + spell(pack.spellId) +
+			", position: " + artifactPosition(pack.pos) + " } }";
+	}
+
+	void visitPutArtifact(PutArtifact & pack) override
+	{
+		line = "artifact: { put: { artifactInstance: " + std::to_string(pack.id.getNum()) +
+			", to: " + artifactLocation(gameState, pack.al) +
+			", askAssemble: " + std::string(pack.askAssemble ? "true" : "false") + " } }";
+	}
+
+	void visitBulkEraseArtifacts(BulkEraseArtifacts & pack) override
+	{
+		line = "artifacts: { erase: { holder: " + objectAlias(gameState, pack.artHolder) +
+			", creatureSlot: " + optionalSlot(pack.creature) +
+			", positions: " + artifactPositions(pack.posPack) + " } }";
 	}
 
 	void visitChangeStackCount(ChangeStackCount & pack) override
@@ -916,6 +1454,42 @@ public:
 		line = "army: { owner: " + objectAlias(gameState, pack.army) +
 			", slot: " + std::to_string(pack.slot.getNum()) +
 			", erase: true }";
+	}
+
+	void visitSwapStacks(SwapStacks & pack) override
+	{
+		line = "army: { swap: { from: { owner: " + objectAlias(gameState, pack.srcArmy) +
+			", slot: " + slot(pack.srcSlot) +
+			" }, to: { owner: " + objectAlias(gameState, pack.dstArmy) +
+			", slot: " + slot(pack.dstSlot) + " } } }";
+	}
+
+	void visitInsertNewStack(InsertNewStack & pack) override
+	{
+		line = "army: { owner: " + objectAlias(gameState, pack.army) +
+			", slot: " + slot(pack.slot) +
+			", insert: { creature: " + creature(pack.type) +
+			", count: " + std::to_string(pack.count) + " } }";
+	}
+
+	void visitRebalanceStacks(RebalanceStacks & pack) override
+	{
+		line = "army: { move: { from: { owner: " + objectAlias(gameState, pack.srcArmy) +
+			", slot: " + slot(pack.srcSlot) +
+			" }, to: { owner: " + objectAlias(gameState, pack.dstArmy) +
+			", slot: " + slot(pack.dstSlot) +
+			" }, count: " + std::to_string(pack.count) + " } }";
+	}
+
+	void visitBulkMoveArtifacts(BulkMoveArtifacts & pack) override
+	{
+		line = "artifacts: { owner: " + color(pack.interfaceOwner) +
+			", from: " + objectAlias(gameState, pack.srcArtHolder) +
+			", to: " + objectAlias(gameState, pack.dstArtHolder) +
+			", fromCreatureSlot: " + optionalSlot(pack.srcCreature) +
+			", toCreatureSlot: " + optionalSlot(pack.dstCreature) +
+			", movesFromSource: " + artifactMoves(pack.artsPack0) +
+			", movesFromDestination: " + artifactMoves(pack.artsPack1) + " }";
 	}
 
 	void visitHeroVisit(HeroVisit & pack) override
@@ -948,6 +1522,13 @@ public:
 		line = "objectProperty: { object: " + objectAlias(gameState, pack.id) +
 			", property: " + std::to_string(static_cast<int>(pack.what)) +
 			", value: " + std::to_string(pack.identifier.getNum()) + " }";
+	}
+
+	void visitSetRewardableConfiguration(SetRewardableConfiguration & pack) override
+	{
+		line = "rewardable: { object: " + objectAlias(gameState, pack.objectID) +
+			", building: " + building(pack.buildingID) +
+			", configuration: " + rewardableConfiguration(pack.configuration) + " }";
 	}
 
 	void visitChangeObjectVisitors(ChangeObjectVisitors & pack) override
@@ -1010,6 +1591,22 @@ public:
 			", query: " + query(pack.queryID) + " }";
 	}
 
+	void visitBattleResultAccepted(BattleResultAccepted & pack) override
+	{
+		line = "battle: { id: battle/" + std::to_string(pack.battleID.getNum()) +
+			", event: resultAccepted, winner: " + battleSide(pack.winnerSide) + " }";
+	}
+
+	void visitBattleResultsApplied(BattleResultsApplied & pack) override
+	{
+		line = "battle: { id: battle/" + std::to_string(pack.battleID.getNum()) +
+			", event: resultsApplied, victor: " + color(pack.victor) +
+			", loser: " + color(pack.loser) +
+			", artifactMoves: " + std::to_string(pack.movingArtifacts.size()) +
+			", grownArtifacts: " + std::to_string(pack.growingArtifacts.size()) +
+			", dischargedArtifacts: " + std::to_string(pack.dischargingArtifacts.size()) + " }";
+	}
+
 	void visitBattleStackMoved(BattleStackMoved & pack) override
 	{
 		std::vector<std::string> tiles;
@@ -1058,6 +1655,54 @@ public:
 			", hero: " + std::string(pack.castByHero ? "true" : "false") + " }";
 	}
 
+	void visitSetStackEffect(SetStackEffect & pack) override
+	{
+		line = "battle: { id: battle/" + std::to_string(pack.battleID.getNum()) +
+			", event: stackEffects, add: " + std::to_string(pack.toAdd.size()) +
+			", update: " + std::to_string(pack.toUpdate.size()) +
+			", remove: " + std::to_string(pack.toRemove.size()) + " }";
+	}
+
+	void visitBattleObstaclesChanged(BattleObstaclesChanged & pack) override
+	{
+		line = "battle: { id: battle/" + std::to_string(pack.battleID.getNum()) +
+			", event: obstaclesChanged, changes: " + std::to_string(pack.changes.size()) + " }";
+	}
+
+	void visitCatapultAttack(CatapultAttack & pack) override
+	{
+		line = "battle: { id: battle/" + std::to_string(pack.battleID.getNum()) +
+			", event: catapult, part: " + std::to_string(static_cast<int>(pack.attackedPart)) +
+			", tile: " + std::to_string(pack.destinationTile) +
+			", damage: " + std::to_string(pack.damageDealt) +
+			", killedTowerShooter: " + std::to_string(pack.killedTowerShooter) +
+			", attacker: " + std::to_string(pack.attacker) + " }";
+	}
+
+	void visitBattleTriggerEffect(BattleTriggerEffect & pack) override
+	{
+		line = "battle: { id: battle/" + std::to_string(pack.battleID.getNum()) +
+			", event: triggerEffect, stack: stack/" + std::to_string(pack.stackID) +
+			", effect: " + std::to_string(static_cast<int>(pack.effect)) +
+			", value: " + std::to_string(pack.val) +
+			", info: " + std::to_string(pack.additionalInfo) + " }";
+	}
+
+	void visitBattleSetStackProperty(BattleSetStackProperty & pack) override
+	{
+		line = "battle: { id: battle/" + std::to_string(pack.battleID.getNum()) +
+			", event: stackProperty, stack: stack/" + std::to_string(pack.stackID) +
+			", property: " + battleStackProperty(pack.which) +
+			", value: " + std::to_string(pack.val) +
+			", absolute: " + std::string(pack.absolute ? "true" : "false") + " }";
+	}
+
+	void visitBattleUpdateGateState(BattleUpdateGateState & pack) override
+	{
+		line = "battle: { id: battle/" + std::to_string(pack.battleID.getNum()) +
+			", event: gate, state: " + gateState(pack.state) + " }";
+	}
+
 	void visitStacksInjured(StacksInjured & pack) override
 	{
 		line = "battle: { id: battle/" + std::to_string(pack.battleID.getNum()) +
@@ -1075,6 +1720,60 @@ public:
 	{
 		line = "adventureSpell: { caster: " + heroAlias(gameState, pack.casterID) +
 			", spell: " + spell(pack.spellID) + " }";
+	}
+
+	void visitBlockingDialog(BlockingDialog & pack) override
+	{
+		line = "query: { kind: blockingDialog, player: " + color(pack.player) +
+			", query: " + query(pack.queryID) +
+			", selection: " + std::string(pack.selection() ? "true" : "false") +
+			", cancel: " + std::string(pack.cancel() ? "true" : "false") +
+			", choices: " + std::to_string(pack.components.size()) + " }";
+	}
+
+	void visitExchangeDialog(ExchangeDialog & pack) override
+	{
+		line = "query: { kind: exchangeDialog, query: " + query(pack.queryID) +
+			", player: " + color(pack.player) +
+			", hero1: " + heroAlias(gameState, pack.hero1) +
+			", hero2: " + heroAlias(gameState, pack.hero2) + " }";
+	}
+
+	void visitOpenWindow(OpenWindow & pack) override
+	{
+		line = "query: { kind: openWindow, query: " + query(pack.queryID) +
+			", window: " + openWindowMode(pack.window) +
+			", object: " + objectAlias(gameState, pack.object) +
+			", visitor: " + heroAlias(gameState, pack.visitor) + " }";
+	}
+
+	void visitGarrisonDialog(GarrisonDialog & pack) override
+	{
+		line = "query: { kind: garrisonDialog, query: " + query(pack.queryID) +
+			", object: " + objectAlias(gameState, pack.objid) +
+			", hero: " + heroAlias(gameState, pack.hid) +
+			", removableUnits: " + std::string(pack.removableUnits ? "true" : "false");
+		const auto title = pack.customTitle.toString();
+		if(!title.empty())
+			line += ", title: " + yamlString(title);
+		line += " }";
+	}
+
+	void visitTeleportDialog(TeleportDialog & pack) override
+	{
+		std::string firstExit = "object/none";
+		if(!pack.exits.empty())
+			firstExit = objectAlias(gameState, pack.exits.front().first);
+		line = "query: { kind: teleportDialog, query: " + query(pack.queryID) +
+			", hero: " + heroAlias(gameState, pack.hero) +
+			", firstExit: " + firstExit +
+			", exits: " + std::to_string(pack.exits.size()) +
+			", impassable: " + std::string(pack.impassable ? "true" : "false") + " }";
+	}
+
+	void visitBattleLogMessage(BattleLogMessage &) override
+	{
+		line.clear();
 	}
 };
 }
@@ -1099,19 +1798,19 @@ void VGTRecorder::initializeFromEnvironment()
 	checkedEnvironment = true;
 
 	const char * path = std::getenv("VCMI_VGT_TEXT");
-	if(!path || std::string(path).empty())
-		return;
+	if(path && !std::string(path).empty())
+	{
+		outputPath = path;
+		const boost::filesystem::path transcriptPath(outputPath);
+		if(!transcriptPath.parent_path().empty())
+			boost::filesystem::create_directories(transcriptPath.parent_path());
 
-	outputPath = path;
-	const boost::filesystem::path transcriptPath(outputPath);
-	if(!transcriptPath.parent_path().empty())
-		boost::filesystem::create_directories(transcriptPath.parent_path());
-
-	output.open(outputPath, std::ios::out | std::ios::trunc);
-	if(output)
-		enabled = true;
-	else
-		logGlobal->error("Unable to open VGT transcript '%s'", outputPath);
+		output.open(outputPath, std::ios::out | std::ios::trunc);
+		if(output)
+			enabled = true;
+		else
+			logGlobal->error("Unable to open VGT transcript '%s'", outputPath);
+	}
 }
 
 void VGTRecorder::ensureHeader(const CGameState & gameState)
@@ -1120,33 +1819,41 @@ void VGTRecorder::ensureHeader(const CGameState & gameState)
 		return;
 
 	const auto * startInfo = gameState.getStartInfo();
+	if(!startInfo)
+	{
+		logGlobal->error("Unable to write VGT transcript '%s': missing game start information", outputPath);
+		enabled = false;
+		return;
+	}
+
+	const auto hash = mapHash(*startInfo);
+	if(!hash)
+	{
+		logGlobal->error("Unable to write VGT transcript '%s': unable to hash map '%s'", outputPath, startInfo->fileURI);
+		enabled = false;
+		return;
+	}
+
 	output << "vgt: 3\n";
 	output << "format: " << yamlString("VCMI readable event transcript") << "\n";
 	output << "engine: { version: " << yamlString(GameConstants::VCMI_VERSION) << " }\n";
-	if(startInfo)
+	output << "map:\n";
+	output << "  uri: " << yamlString(startInfo->fileURI) << "\n";
+	output << "  name: " << yamlString(startInfo->mapname) << "\n";
+	output << "  hash: { algorithm: sha256, value: " << yamlString(*hash) << " }\n";
+	output << "settings:\n";
+	output << "  start: " << startMode(startInfo->mode) << "\n";
+	output << "  difficulty: " << difficulty(startInfo->difficulty) << "\n";
+	output << "  timer: " << (startInfo->turnTimerInfo.isEnabled() ? "enabled" : "none") << "\n";
+	output << "players:\n";
+	for(const auto & player : startInfo->playerInfos)
 	{
-		output << "map:\n";
-		output << "  uri: " << yamlString(startInfo->fileURI) << "\n";
-		output << "  name: " << yamlString(startInfo->mapname) << "\n";
-		output << "  hash: { algorithm: sha256, value: " << yamlString(mapHash(*startInfo)) << " }\n";
-		output << "settings:\n";
-		output << "  start: " << startMode(startInfo->mode) << "\n";
-		output << "  difficulty: " << difficulty(startInfo->difficulty) << "\n";
-		output << "  timer: " << (startInfo->turnTimerInfo.isEnabled() ? "enabled" : "none") << "\n";
-		output << "players:\n";
-		for(const auto & player : startInfo->playerInfos)
-		{
-			output << "  " << color(player.first) << ": { controller: "
-				<< (player.second.isControlledByHuman() ? "human" : "ai")
-				<< ", faction: " << faction(player.second.castle)
-				<< ", hero: " << heroType(player.second.hero)
-				<< ", name: " << yamlString(player.second.name)
-				<< " }\n";
-		}
-	}
-	else
-	{
-		output << "map: { uri: " << yamlString("") << ", hash: { algorithm: sha256, value: " << yamlString("unavailable") << " } }\n";
+		output << "  " << color(player.first) << ": { controller: "
+			<< (player.second.isControlledByHuman() ? "human" : "ai")
+			<< ", faction: " << faction(player.second.castle)
+			<< ", hero: " << heroType(player.second.hero)
+			<< ", name: " << yamlString(player.second.name)
+			<< " }\n";
 	}
 	headerWritten = true;
 	output.flush();
@@ -1155,6 +1862,8 @@ void VGTRecorder::ensureHeader(const CGameState & gameState)
 void VGTRecorder::startTurnDocument(const CGameState & gameState, PlayerColor player)
 {
 	ensureHeader(gameState);
+	if(!enabled)
+		return;
 
 	const auto calendar = gameState.getCalendar();
 	output << "---\n";
@@ -1171,6 +1880,8 @@ void VGTRecorder::startTurnDocument(const CGameState & gameState, PlayerColor pl
 void VGTRecorder::startWorldDocument(const CGameState & gameState, const std::string & phase)
 {
 	ensureHeader(gameState);
+	if(!enabled)
+		return;
 
 	const auto calendar = gameState.getCalendar();
 	output << "---\n";
@@ -1190,6 +1901,8 @@ void VGTRecorder::writeActionLine(const CGameState & gameState, const std::strin
 		return;
 	if(!documentOpen)
 		startWorldDocument(gameState, "startup");
+	if(!enabled || !documentOpen)
+		return;
 	output << "  - " << line << "\n";
 	output.flush();
 }
@@ -1202,6 +1915,8 @@ void VGTRecorder::recordDecision(const CGameState & gameState, CPackForServer & 
 		return;
 
 	ensureHeader(gameState);
+	if(!enabled)
+		return;
 	DecisionRecorder recorder(gameState);
 	pack.visit(recorder);
 	writeActionLine(gameState, recorder.result());
@@ -1215,6 +1930,8 @@ void VGTRecorder::recordEffect(const CGameState & gameState, CPackForClient & pa
 		return;
 
 	ensureHeader(gameState);
+	if(!enabled)
+		return;
 
 	if(auto * start = dynamic_cast<PlayerStartsTurn *>(&pack))
 		startTurnDocument(gameState, start->player);
