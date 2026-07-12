@@ -168,8 +168,6 @@ def command_replay(args: argparse.Namespace) -> int:
         validate_map_hash(transcript_header["map"], args.resource_root)
     if args.strict:
         fail_on_unmodelled(documents)
-    if len(documents) > 1 and not args.header_only:
-        raise VGTError("event replay is not implemented yet; use --header-only to rebuild only the initialized state")
 
     temporary_path: Path | None = None
     json_path = args.normalized_json
