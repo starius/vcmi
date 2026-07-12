@@ -3,12 +3,14 @@ local BuildingBehavior = require("Behaviors.BuildingBehavior")
 local BuyArmyBehavior = require("Behaviors.BuyArmyBehavior")
 local CaptureObjectsBehavior = require("Behaviors.CaptureObjectsBehavior")
 local ClusterBehavior = require("Behaviors.ClusterBehavior")
+local DefenceBehavior = require("Behaviors.DefenceBehavior")
 local EscapeBehavior = require("Behaviors.EscapeBehavior")
 local ExplorationBehavior = require("Behaviors.ExplorationBehavior")
 local GatherArmyBehavior = require("Behaviors.GatherArmyBehavior")
 local ExchangeSwapTownHeroes = require("Goals.ExchangeSwapTownHeroes")
 local CaptureObject = require("Goals.CaptureObject")
 local ArmyUpgrade = require("Markers.ArmyUpgrade")
+local DefendTown = require("Markers.DefendTown")
 local ExplorationHelper = require("Helpers.ExplorationHelper")
 local ExplorationPoint = require("Markers.ExplorationPoint")
 local HeroExchange = require("Markers.HeroExchange")
@@ -836,3 +838,72 @@ assert(#upgradeTasks == 1)
 local upgradeSequence = upgradeTasks[1]:decompose({})
 assert(upgradeSequence[1].goalType == AbstractGoal.EGoals.ARMY_UPGRADE)
 assert(upgradeSequence[2].goalType == AbstractGoal.EGoals.EXECUTE_HERO_CHAIN)
+
+local defendTown = {
+	id = 1001,
+	name = "Town",
+	armyStrength = 500,
+	fortLevel = 2,
+	visitablePos = { x = 1, y = 1, z = 0 }
+}
+local defendHero = {
+	id = 1002,
+	name = "Defender",
+	owner = 1,
+	totalStrength = 2000,
+	armyStrength = 2000,
+	heroStrength = 2000,
+	canMergeWithTown = true
+}
+local defendThreat = {
+	danger = 1000,
+	turn = 0,
+	hero = { id = 1003 },
+	verified = true
+}
+assert(DefenceBehavior.estimateTownFortificationDefence(defendTown, true) == 4000)
+assert(DefenceBehavior.isTownDefenceSufficient(1000, defendThreat, 1.1) == true)
+assert(DefenceBehavior.shouldLockTownDefender(defendTown, defendHero, defendThreat, 1.1) == true)
+assert(DefenceBehavior.isHeroRequiredForTownDefence(defendTown, defendHero, { defendThreat }, 1.1) == true)
+local defendMarker = DefendTown.new(defendTown, defendThreat, defendHero)
+assert(defendMarker:equals(DefendTown.new(defendTown, defendThreat, defendHero)) == false)
+assert(defendMarker:toString() == "Defend town Town")
+
+local threatenedTown = {
+	id = 1004,
+	name = "Threatened",
+	armyStrength = 100,
+	fortLevel = 0,
+	visitablePos = { x = 5, y = 5, z = 0 },
+	threatNode = {
+		fastestDanger = defendThreat,
+		maximumDanger = defendThreat
+	},
+	threats = {}
+}
+local defencePath = {
+	targetHero = defendHero,
+	tile = threatenedTown.visitablePos,
+	nodes = {},
+	turn = 0,
+	exchangeCount = 0,
+	totalDanger = 0,
+	heroArmy = { armyStrength = 2000 },
+	heroStrength = 2000,
+	movementCost = 2
+}
+local defenceTasks = DefenceBehavior.new():decompose({
+	playerID = 1,
+	settings = { safeAttackRatio = 1.1 },
+	townsInfo = { threatenedTown },
+	pathfinder = {
+		getPathInfo = function()
+			return { defencePath }
+		end
+	}
+})
+assert(#defenceTasks == 1)
+local defenceSequence = defenceTasks[1]:decompose({})
+assert(defenceSequence[1].goalType == AbstractGoal.EGoals.DEFEND_TOWN)
+assert(defenceSequence[2].goalType == AbstractGoal.EGoals.EXECUTE_HERO_CHAIN)
+assert(defenceTasks[1].priority == DefenceBehavior.DEFENSIVE_EMERGENCY_PRIORITY)

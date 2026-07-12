@@ -529,6 +529,25 @@
       ]
     },
     {
+      "cpp": "AI/Nullkiller2/Markers/DefendTown.h",
+      "lua": "scripts/ai/nullkiller2/Markers/DefendTown.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::DefendTown"
+      ],
+      "notes": "Both constructors, getters, equality behavior, and string policy are ported."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Markers/DefendTown.cpp",
+      "lua": "scripts/ai/nullkiller2/Markers/DefendTown.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::DefendTown::DefendTown",
+        "Goals::DefendTown::operator==",
+        "Goals::DefendTown::toString"
+      ]
+    },
+    {
       "cpp": "AI/Nullkiller2/Goals/ExploreNeighbourTile.h",
       "lua": "scripts/ai/nullkiller2/Goals/ExploreNeighbourTile.lua",
       "status": "scaffolded",
@@ -753,6 +772,36 @@
         "Goals::GatherArmyBehavior::upgradeArmy"
       ],
       "notes": "Main-hero delivery filtering, reinforcement thresholds, garrison exchange composition, upgrade thresholds, and visit-goal composition are Lua-owned against path/army-manager snapshots."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Behaviors/DefenceBehavior.h",
+      "lua": "scripts/ai/nullkiller2/Behaviors/DefenceBehavior.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::DefenceBehavior"
+      ],
+      "notes": "Behavior identity and equality are ported."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Behaviors/DefenceBehavior.cpp",
+      "lua": "scripts/ai/nullkiller2/Behaviors/DefenceBehavior.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "estimateTownFortificationDefence",
+        "estimateTownDefence",
+        "isTownDefenceSufficient",
+        "shouldLockTownDefender",
+        "countTownThreatsCoveredByDefender",
+        "isHeroRequiredForTownDefence",
+        "shouldReserveTownDefender",
+        "isThreatUnderControl",
+        "handleCounterAttack",
+        "Goals::DefenceBehavior::toString",
+        "Goals::DefenceBehavior::decompose",
+        "Goals::DefenceBehavior::evaluateDefence",
+        "Goals::DefenceBehavior::evaluateRecruitingHero"
+      ],
+      "notes": "Town defence estimates, reserve/lock formulas, buy-army tasking, emergency defender movement, simplified recruit/counterattack hooks, and defensive priority assignment are Lua-owned against threat/path snapshots."
     },
     {
       "cpp": "AI/Nullkiller2/Behaviors/ClusterBehavior.h",
