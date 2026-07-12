@@ -15,6 +15,7 @@
 #include "ServerNetPackVisitors.h"
 #include "ServerSpellCastEnvironment.h"
 #include "TurnStartVisitScheduler.h"
+#include "VGTRecorder.h"
 #include "battles/BattleProcessor.h"
 #include "processors/HeroPoolProcessor.h"
 #include "processors/NewTurnProcessor.h"
@@ -482,6 +483,8 @@ void CGameHandler::handleClientDisconnection(GameConnectionID connectionID, cons
 
 void CGameHandler::handleReceivedPack(GameConnectionID connection, CPackForServer & pack)
 {
+	VGTRecorder::get().recordDecision(gameState(), pack);
+
 	//prepare struct informing that action was applied
 	auto sendPackageResponse = [&](bool successfullyApplied)
 	{

@@ -13,6 +13,7 @@
 #include "CGameHandler.h"
 #include "GlobalLobbyProcessor.h"
 #include "LobbyNetPackVisitors.h"
+#include "VGTRecorder.h"
 #include "processors/PlayerMessageProcessor.h"
 
 #include "../lib/CThreadHelper.h"
@@ -1219,6 +1220,7 @@ void CVCMIServer::applyPack(CPackForClient & pack)
 	logNetwork->trace("\tSending to all clients: %s", typeid(pack).name());
 	for (const auto & c : activeConnections)
 		c->sendPack(pack);
+	VGTRecorder::get().recordEffect(*gh->gs, pack);
 	gh->gs->apply(pack);
 	logNetwork->trace("\tApplied on gameState(): %s", typeid(pack).name());
 }

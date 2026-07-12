@@ -25,6 +25,7 @@ set(vcmiservercommon_SRCS
 		NetPacksLobbyServer.cpp
 		TurnTimerHandler.cpp
 		TurnStartVisitScheduler.cpp
+		VGTRecorder.cpp
 )
 
 set(vcmiservercommon_HEADERS
@@ -56,6 +57,7 @@ set(vcmiservercommon_HEADERS
 		ServerNetPackVisitors.h
 		TurnTimerHandler.h
 		TurnStartVisitScheduler.h
+		VGTRecorder.h
 )
 
 assign_source_group(${vcmiservercommon_SRCS} ${vcmiservercommon_HEADERS})
