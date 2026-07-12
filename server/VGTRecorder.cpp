@@ -359,13 +359,6 @@ std::string artifactPosition(ArtifactPosition id)
 	return std::to_string(id.getNum());
 }
 
-std::string optionalSlot(const std::optional<SlotID> & id)
-{
-	if(!id)
-		return "null";
-	return slot(*id);
-}
-
 std::string artifactPositions(const std::vector<ArtifactPosition> & positions)
 {
 	std::vector<std::string> entries;
@@ -919,11 +912,15 @@ std::string initialHeroState(const CGameState & gameState, const CGHeroInstance 
 		const auto * artifactInstance = slotInfo.getArt();
 		if(!artifactInstance)
 			continue;
-		artifactEntries.push_back("{ position: " + artifactPosition(position) +
-			", artifact: " + artifact(artifactInstance->getTypeId()) +
-			", spell: " + spell(artifactInstance->getScrollSpellID()) +
-			", instance: " + std::to_string(artifactInstance->getId().getNum()) +
-			", locked: " + boolValue(slotInfo.locked) + " }");
+		std::vector<std::string> fields;
+		fields.push_back("position: " + artifactPosition(position));
+		fields.push_back("artifact: " + artifact(artifactInstance->getTypeId()));
+		if(artifactInstance->getScrollSpellID() != SpellID::NONE)
+			fields.push_back("spell: " + spell(artifactInstance->getScrollSpellID()));
+		fields.push_back("instance: " + std::to_string(artifactInstance->getId().getNum()));
+		if(slotInfo.locked)
+			fields.push_back("locked: true");
+		artifactEntries.push_back("{ " + boost::algorithm::join(fields, ", ") + " }");
 	}
 
 	return "{ id: " + heroAlias(gameState, hero.id) +
@@ -1095,11 +1092,15 @@ std::string battleAction(const BattleAction & action)
 	for(const auto & target : action.target)
 		targets.push_back(battleTarget(target));
 
-	return "{ side: " + battleSide(action.side) +
-		", stack: stack/" + std::to_string(action.stackNumber) +
-		", action: " + actionType(action.actionType) +
-		", spell: " + spell(action.spell) +
-		", target: " + flowList(targets) + " }";
+	std::vector<std::string> fields;
+	fields.push_back("side: " + battleSide(action.side));
+	fields.push_back("stack: stack/" + std::to_string(action.stackNumber));
+	fields.push_back("action: " + actionType(action.actionType));
+	if(action.spell != SpellID::NONE)
+		fields.push_back("spell: " + spell(action.spell));
+	if(!targets.empty())
+		fields.push_back("target: " + flowList(targets));
+	return "{ " + boost::algorithm::join(fields, ", ") + " }";
 }
 
 std::string battleUnitState(const UnitChanges & change);
@@ -1207,16 +1208,22 @@ std::string battleStackAttacks(const std::vector<BattleStackAttacked> & attacks)
 
 std::string artifactLocation(const CGameState & gameState, const ArtifactLocation & location)
 {
-	return "{ holder: " + objectAlias(gameState, location.artHolder) +
-		", creatureSlot: " + optionalSlot(location.creature) +
-		", slot: " + artifactPosition(location.slot) + " }";
+	std::vector<std::string> fields;
+	fields.push_back("holder: " + objectAlias(gameState, location.artHolder));
+	if(location.creature)
+		fields.push_back("creatureSlot: " + slot(*location.creature));
+	fields.push_back("slot: " + artifactPosition(location.slot));
+	return "{ " + boost::algorithm::join(fields, ", ") + " }";
 }
 
 std::string artifactMove(const MoveArtifactInfo & move)
 {
-	return "{ from: " + artifactPosition(move.srcPos) +
-		", to: " + artifactPosition(move.dstPos) +
-		", askAssemble: " + std::string(move.askAssemble ? "true" : "false") + " }";
+	std::vector<std::string> fields;
+	fields.push_back("from: " + artifactPosition(move.srcPos));
+	fields.push_back("to: " + artifactPosition(move.dstPos));
+	if(move.askAssemble)
+		fields.push_back("askAssemble: true");
+	return "{ " + boost::algorithm::join(fields, ", ") + " }";
 }
 
 std::string artifactMoves(const std::vector<MoveArtifactInfo> & moves)
@@ -1229,13 +1236,17 @@ std::string artifactMoves(const std::vector<MoveArtifactInfo> & moves)
 
 std::string bulkArtifactMove(const CGameState & gameState, const BulkMoveArtifacts & pack)
 {
-	return "{ owner: " + color(pack.interfaceOwner) +
-		", from: " + objectAlias(gameState, pack.srcArtHolder) +
-		", to: " + objectAlias(gameState, pack.dstArtHolder) +
-		", fromCreatureSlot: " + optionalSlot(pack.srcCreature) +
-		", toCreatureSlot: " + optionalSlot(pack.dstCreature) +
-		", movesFromSource: " + artifactMoves(pack.artsPack0) +
-		", movesFromDestination: " + artifactMoves(pack.artsPack1) + " }";
+	std::vector<std::string> fields;
+	fields.push_back("owner: " + color(pack.interfaceOwner));
+	fields.push_back("from: " + objectAlias(gameState, pack.srcArtHolder));
+	fields.push_back("to: " + objectAlias(gameState, pack.dstArtHolder));
+	if(pack.srcCreature)
+		fields.push_back("fromCreatureSlot: " + slot(*pack.srcCreature));
+	if(pack.dstCreature)
+		fields.push_back("toCreatureSlot: " + slot(*pack.dstCreature));
+	fields.push_back("movesFromSource: " + artifactMoves(pack.artsPack0));
+	fields.push_back("movesFromDestination: " + artifactMoves(pack.artsPack1));
+	return "{ " + boost::algorithm::join(fields, ", ") + " }";
 }
 
 std::string bulkArtifactMoves(const CGameState & gameState, const std::vector<BulkMoveArtifacts> & moves)
@@ -2068,24 +2079,33 @@ public:
 
 	void visitNewArtifact(NewArtifact & pack) override
 	{
-		line = "artifact: { create: { holder: " + objectAlias(gameState, pack.artHolder) +
-			", artifact: " + artifact(pack.artId) +
-			", spell: " + spell(pack.spellId) +
-			", position: " + artifactPosition(pack.pos) + " } }";
+		std::vector<std::string> fields;
+		fields.push_back("holder: " + objectAlias(gameState, pack.artHolder));
+		fields.push_back("artifact: " + artifact(pack.artId));
+		if(pack.spellId != SpellID::NONE)
+			fields.push_back("spell: " + spell(pack.spellId));
+		fields.push_back("position: " + artifactPosition(pack.pos));
+		line = "artifact: { create: { " + boost::algorithm::join(fields, ", ") + " } }";
 	}
 
 	void visitPutArtifact(PutArtifact & pack) override
 	{
-		line = "artifact: { put: { artifactInstance: " + std::to_string(pack.id.getNum()) +
-			", to: " + artifactLocation(gameState, pack.al) +
-			", askAssemble: " + std::string(pack.askAssemble ? "true" : "false") + " } }";
+		std::vector<std::string> fields;
+		fields.push_back("artifactInstance: " + std::to_string(pack.id.getNum()));
+		fields.push_back("to: " + artifactLocation(gameState, pack.al));
+		if(pack.askAssemble)
+			fields.push_back("askAssemble: true");
+		line = "artifact: { put: { " + boost::algorithm::join(fields, ", ") + " } }";
 	}
 
 	void visitBulkEraseArtifacts(BulkEraseArtifacts & pack) override
 	{
-		line = "artifacts: { erase: { holder: " + objectAlias(gameState, pack.artHolder) +
-			", creatureSlot: " + optionalSlot(pack.creature) +
-			", positions: " + artifactPositions(pack.posPack) + " } }";
+		std::vector<std::string> fields;
+		fields.push_back("holder: " + objectAlias(gameState, pack.artHolder));
+		if(pack.creature)
+			fields.push_back("creatureSlot: " + slot(*pack.creature));
+		fields.push_back("positions: " + artifactPositions(pack.posPack));
+		line = "artifacts: { erase: { " + boost::algorithm::join(fields, ", ") + " } }";
 	}
 
 	void visitChangeStackCount(ChangeStackCount & pack) override
@@ -2271,11 +2291,15 @@ public:
 		std::vector<std::string> tiles;
 		for(const auto & tile : pack.tilesToMove)
 			tiles.push_back(std::to_string(tile.toInt()));
-		line = "battle: { id: battle/" + std::to_string(pack.battleID.getNum()) +
-			", event: move, stack: stack/" + std::to_string(pack.stack) +
-			", path: " + flowList(tiles) +
-			", distance: " + std::to_string(pack.distance) +
-			", teleporting: " + std::string(pack.teleporting ? "true" : "false") + " }";
+		std::vector<std::string> fields;
+		fields.push_back("id: battle/" + std::to_string(pack.battleID.getNum()));
+		fields.push_back("event: move");
+		fields.push_back("stack: stack/" + std::to_string(pack.stack));
+		fields.push_back("path: " + flowList(tiles));
+		fields.push_back("distance: " + std::to_string(pack.distance));
+		if(pack.teleporting)
+			fields.push_back("teleporting: true");
+		line = "battle: { " + boost::algorithm::join(fields, ", ") + " }";
 	}
 
 	void visitBattleUnitsChanged(BattleUnitsChanged & pack) override

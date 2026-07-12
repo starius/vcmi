@@ -931,10 +931,17 @@ std::vector<MoveArtifactInfo> decodeArtifactMoves(const JsonNode & node)
 	result.reserve(node.Vector().size());
 	for(const auto & entry : node.Vector())
 	{
+		bool askAssemble = false;
+		if(const auto * askAssembleNode = findField(entry, "askAssemble"))
+		{
+			if(!askAssembleNode->isBool())
+				throw std::runtime_error("VGT replay artifact move askAssemble must be boolean");
+			askAssemble = askAssembleNode->Bool();
+		}
 		result.emplace_back(
 			decodeArtifactPosition(requireField(entry, "from")),
 			decodeArtifactPosition(requireField(entry, "to")),
-			requireBool(entry, "askAssemble")
+			askAssemble
 		);
 	}
 	return result;
@@ -1245,29 +1252,37 @@ BattleResultAccepted::HeroBattleResults decodeBattleHeroResult(const CGameState 
 	result.side = decodeBattleSide(requireString(node, "side"));
 	result.stackNumber = static_cast<ui32>(decodeStackAlias(requireString(node, "stack")));
 	result.actionType = decodeActionType(requireString(node, "action"));
-	result.spell = decodeSpell(requireString(node, "spell"));
+	result.spell = SpellID::NONE;
+	if(const auto * spellNode = findField(node, "spell"))
+	{
+		if(!spellNode->isString())
+			throw std::runtime_error("VGT replay battle action spell must be a string");
+		result.spell = decodeSpell(spellNode->String());
+	}
 	result.target.clear();
 
-	const auto & targets = requireField(node, "target");
-	if(!targets.isVector())
-		throw std::runtime_error("VGT replay battle action target must be a list");
-
-	for(const auto & target : targets.Vector())
+	if(const auto * targets = findField(node, "target"))
 	{
-		BattleAction::DestinationInfo destination;
-		destination.unitValue = -1;
-		destination.hexValue = BattleHex();
-		if(target.isStruct())
-		{
-			const auto unitIter = target.Struct().find("unit");
-			if(unitIter != target.Struct().end() && unitIter->second.isString())
-				destination.unitValue = static_cast<int32_t>(decodeStackAlias(unitIter->second.String()));
+		if(!targets->isVector())
+			throw std::runtime_error("VGT replay battle action target must be a list");
 
-			const auto hexIter = target.Struct().find("hex");
-			if(hexIter != target.Struct().end() && hexIter->second.isNumber())
-				destination.hexValue = BattleHex(static_cast<si16>(hexIter->second.Integer()));
+		for(const auto & target : targets->Vector())
+		{
+			BattleAction::DestinationInfo destination;
+			destination.unitValue = -1;
+			destination.hexValue = BattleHex();
+			if(target.isStruct())
+			{
+				const auto unitIter = target.Struct().find("unit");
+				if(unitIter != target.Struct().end() && unitIter->second.isString())
+					destination.unitValue = static_cast<int32_t>(decodeStackAlias(unitIter->second.String()));
+
+				const auto hexIter = target.Struct().find("hex");
+				if(hexIter != target.Struct().end() && hexIter->second.isNumber())
+					destination.hexValue = BattleHex(static_cast<si16>(hexIter->second.Integer()));
+			}
+			result.target.push_back(destination);
 		}
-		result.target.push_back(destination);
 	}
 	return result;
 }
@@ -1850,7 +1865,13 @@ void applyInitialHeroArmyState(CGameHandler & gameHandler, const JsonNode & node
 		{
 			const auto position = decodeArtifactPosition(requireField(artifactNode, "position"));
 			const auto artifactType = decodeArtifact(requireString(artifactNode, "artifact"));
-			const auto spellID = decodeSpell(requireString(artifactNode, "spell"));
+			SpellID spellID = SpellID::NONE;
+			if(const auto * spellNode = findField(artifactNode, "spell"))
+			{
+				if(!spellNode->isString())
+					throw std::runtime_error("VGT initial artifact spell must be a string");
+				spellID = decodeSpell(spellNode->String());
+			}
 			const bool locked = findField(artifactNode, "locked") && findField(artifactNode, "locked")->Bool();
 
 			const auto * currentArtifact = hero->getArt(position, false);
@@ -2331,7 +2352,13 @@ void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, con
 			NewArtifact pack;
 			pack.artHolder = resolveObjectAlias(gameHandler.gameState(), requireString(*createNode, "holder"));
 			pack.artId = decodeArtifact(requireString(*createNode, "artifact"));
-			pack.spellId = decodeSpell(requireString(*createNode, "spell"));
+			pack.spellId = SpellID::NONE;
+			if(const auto * spellNode = findField(*createNode, "spell"))
+			{
+				if(!spellNode->isString())
+					throw std::runtime_error("VGT replay artifact spell must be a string");
+				pack.spellId = decodeSpell(spellNode->String());
+			}
 			pack.pos = decodeArtifactPosition(requireField(*createNode, "position"));
 			applyEffectPack(gameHandler, pack);
 			return;
@@ -2342,7 +2369,13 @@ void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, con
 			PutArtifact pack;
 			pack.id = ArtifactInstanceID(static_cast<int>(requireInteger(*putNode, "artifactInstance")));
 			pack.al = decodeArtifactLocation(gameHandler, requireField(*putNode, "to"));
-			pack.askAssemble = requireBool(*putNode, "askAssemble");
+			pack.askAssemble = false;
+			if(const auto * askAssembleNode = findField(*putNode, "askAssemble"))
+			{
+				if(!askAssembleNode->isBool())
+					throw std::runtime_error("VGT replay artifact put askAssemble must be boolean");
+				pack.askAssemble = askAssembleNode->Bool();
+			}
 			applyEffectPack(gameHandler, pack);
 			return;
 		}
