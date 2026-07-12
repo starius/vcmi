@@ -26,6 +26,7 @@ set(vcmiservercommon_SRCS
 		TurnTimerHandler.cpp
 		TurnStartVisitScheduler.cpp
 		VGTRecorder.cpp
+		VGTReplay.cpp
 )
 
 set(vcmiservercommon_HEADERS
@@ -58,6 +59,7 @@ set(vcmiservercommon_HEADERS
 		TurnTimerHandler.h
 		TurnStartVisitScheduler.h
 		VGTRecorder.h
+		VGTReplay.h
 )
 
 assign_source_group(${vcmiservercommon_SRCS} ${vcmiservercommon_HEADERS})

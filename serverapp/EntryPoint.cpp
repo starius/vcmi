@@ -12,6 +12,7 @@
 #include <vstd/DateUtils.h>
 
 #include "../server/CVCMIServer.h"
+#include "../server/VGTReplay.h"
 
 #include "../lib/CConsoleHandler.h"
 #include "../lib/logging/CBasicLogConfigurator.h"
@@ -235,6 +236,8 @@ static void handleCommandOptions(int argc, const char * argv[], boost::program_o
 	("dummy-run", "Shutdown immediately after loading was sucessful")
 	("translate-mod", boost::program_options::value<std::string>(), "Export translations for specified mod")
 	("export-lua-docs", boost::program_options::value<std::string>(), "Export Lua scripting API documentation to specified directory")
+	("vgt-replay-json", boost::program_options::value<std::string>(), "Replay a normalized VGT transcript JSON file")
+	("vgt-replay-save", boost::program_options::value<std::string>(), "Write replayed state to this save file")
 	("port", boost::program_options::value<ui16>(), "port at which server will listen to connections from client")
 	("lobby", "start server in lobby mode in which server connects to a global lobby");
 
@@ -303,6 +306,21 @@ int main(int argc, const char * argv[])
 	logConfigurator.configure();
 
 	LIBRARY->initializeLibrary();
+
+	if(opts.count("vgt-replay-json"))
+	{
+		if(!opts.count("vgt-replay-save"))
+			throw std::runtime_error("--vgt-replay-save is required with --vgt-replay-json");
+
+		VGTReplayOptions replayOptions;
+		replayOptions.inputJson = opts["vgt-replay-json"].as<std::string>();
+		replayOptions.outputSave = opts["vgt-replay-save"].as<std::string>();
+		const int replayResult = replayVGTJson(replayOptions);
+
+		logConfigurator.deconfigure();
+		delete LIBRARY;
+		return replayResult;
+	}
 
 	if(!opts.count("dummy-run"))
 	{

@@ -9,7 +9,9 @@ import collections
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 import sys
+import tempfile
 from typing import Any
 
 import yaml
@@ -153,6 +155,48 @@ def command_check(args: argparse.Namespace) -> int:
     return 0
 
 
+def write_normalized_json(documents: list[dict[str, Any]], path: Path) -> None:
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(documents, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+
+
+def command_replay(args: argparse.Namespace) -> int:
+    documents = load_documents(args.transcript)
+    transcript_header = header(documents)
+    if args.resource_root:
+        validate_map_hash(transcript_header["map"], args.resource_root)
+    if args.strict:
+        fail_on_unmodelled(documents)
+
+    temporary_path: Path | None = None
+    json_path = args.normalized_json
+    if json_path is None:
+        handle = tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False)
+        temporary_path = Path(handle.name)
+        handle.close()
+        json_path = temporary_path
+
+    write_normalized_json(documents, json_path)
+    engine_binary = args.engine_binary
+    if not engine_binary.is_absolute():
+        engine_binary = (Path.cwd() / engine_binary).resolve()
+
+    command = [
+        str(engine_binary),
+        "--vgt-replay-json",
+        str(json_path),
+        "--vgt-replay-save",
+        str(args.output_save),
+    ]
+    try:
+        completed = subprocess.run(command, check=False)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+    return completed.returncode
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Parse and validate a VCMI readable game transcript.")
     subcommands = parser.add_subparsers(dest="command", required=True)
@@ -163,6 +207,15 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--strict", action="store_true", help="fail if the transcript contains unmodelled records")
     check.add_argument("--normalized-json", type=Path, help="write parsed documents as normalized JSON")
     check.set_defaults(func=command_check)
+
+    replay = subcommands.add_parser("replay", help="rebuild game state from a transcript and write a save")
+    replay.add_argument("transcript", type=Path)
+    replay.add_argument("--resource-root", action="append", type=Path, default=[], help="root used to resolve map.uri")
+    replay.add_argument("--strict", action="store_true", help="fail if the transcript contains unmodelled records")
+    replay.add_argument("--normalized-json", type=Path, help="keep the normalized JSON passed to the engine")
+    replay.add_argument("--engine-binary", type=Path, required=True, help="path to the VCMI executable with VGT replay support")
+    replay.add_argument("--output-save", type=Path, required=True, help="save file to write after replay")
+    replay.set_defaults(func=command_replay)
     return parser
 
 
