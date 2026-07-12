@@ -14,6 +14,7 @@
 #include "LuaNullkiller2Runner.h"
 
 #include "../../lib/battle/BattleAction.h"
+#include "../../lib/battle/BattleStateInfoForRetreat.h"
 #include "../../lib/callback/CCallback.h"
 #include "../../lib/CCreatureHandler.h"
 #include "../../lib/GameConstants.h"
@@ -750,6 +751,42 @@ void CLuaNullkiller2AI::showMapObjectSelectDialog(QueryID askID, const Component
 
 std::optional<BattleAction> CLuaNullkiller2AI::makeSurrenderRetreatDecision(const BattleID & battleID, const BattleStateInfoForRetreat & battleState)
 {
+	LuaNullkiller2Runner runner;
+	LuaRunInput input;
+	input.difficultyLevel = cc->getStartInfo()->difficulty;
+	input.snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	input.snapshot["townsCount"].Integer() = static_cast<int64_t>(cc->getTownsInfo().size());
+	input.snapshot["battleState"].setType(JsonNode::JsonType::DATA_STRUCT);
+	input.snapshot["battleState"]["ourStrength"].Integer() = static_cast<int64_t>(battleState.getOurStrength());
+	input.snapshot["battleState"]["enemyStrength"].Integer() = static_cast<int64_t>(battleState.getEnemyStrength());
+	input.snapshot["battleState"]["canFlee"].Bool() = battleState.canFlee;
+	input.snapshot["battleState"]["canSurrender"].Bool() = battleState.canSurrender;
+	input.snapshot["battleState"]["isLastTurnBeforeDie"].Bool() = battleState.isLastTurnBeforeDie;
+	input.snapshot["battleState"]["ourSide"].Integer() = static_cast<int>(battleState.ourSide);
+	if(battleState.ourHero)
+	{
+		input.snapshot["battleState"]["ourHero"].setType(JsonNode::JsonType::DATA_STRUCT);
+		input.snapshot["battleState"]["ourHero"]["id"].Integer() = battleState.ourHero->id.getNum();
+		input.snapshot["battleState"]["ourHero"]["patrol"].setType(JsonNode::JsonType::DATA_STRUCT);
+		input.snapshot["battleState"]["ourHero"]["patrol"]["patrolling"].Bool() = battleState.ourHero->patrol.patrolling;
+	}
+
+	const LuaTurnResult result = runner.runFunction("makeSurrenderRetreatDecision", [](){}, input);
+	if(!result.ok)
+	{
+		logAi->error("LuaNullkiller2 makeSurrenderRetreatDecision failed: %s", result.error);
+		return std::nullopt;
+	}
+
+	if(result.status == "retreat")
+	{
+		const auto side = result.integers.find("side");
+		if(side != result.integers.end())
+			return BattleAction::makeRetreat(static_cast<BattleSide>(side->second));
+
+		logAi->error("LuaNullkiller2 makeSurrenderRetreatDecision returned retreat without side");
+	}
+
 	return std::nullopt;
 }
 

@@ -318,3 +318,39 @@ assert(restrictedGarrisonResult.moved == false)
 assert(#restrictedGarrisonResult.commandJournal == 1)
 assert(restrictedGarrisonResult.commandJournal[1].name == "answerQuery")
 assert(restrictedGarrisonResult.commandJournal[1].payload.query == 904)
+
+local retreatResult = Script.makeSurrenderRetreatDecision(makeAI().ai, {
+	townsCount = 1,
+	settings = {
+		values = {
+			retreatThresholdAbsolute = 5000,
+			retreatThresholdRelative = 0.5
+		}
+	},
+	battleState = {
+		ourStrength = 1000,
+		enemyStrength = 4000,
+		canFlee = true,
+		ourSide = 1
+	}
+})
+assert(retreatResult.status == "retreat")
+assert(retreatResult.side == 1)
+
+local patrolRetreatResult = Script.makeSurrenderRetreatDecision(makeAI().ai, {
+	townsCount = 1,
+	settings = {
+		values = {
+			retreatThresholdAbsolute = 5000,
+			retreatThresholdRelative = 0.5
+		}
+	},
+	battleState = {
+		ourHero = { patrol = { patrolling = true } },
+		ourStrength = 1000,
+		enemyStrength = 4000,
+		canFlee = true,
+		ourSide = 1
+	}
+})
+assert(patrolRetreatResult.status == "none")

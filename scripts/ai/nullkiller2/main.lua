@@ -21,4 +21,8 @@ function Script.showGarrisonDialog(ai, input)
 	return Nullkiller.showGarrisonDialog(ai, input or {})
 end
 
+function Script.makeSurrenderRetreatDecision(ai, input)
+	return Nullkiller.makeSurrenderRetreatDecision(ai, input or {})
+end
+
 return Script

@@ -388,6 +388,33 @@ LuaTurnResult makeError(std::string error, bool requestedEndTurn)
 	return result;
 }
 
+int absoluteIndex(lua_State * state, int index)
+{
+	if(index > 0 || index <= LUA_REGISTRYINDEX)
+		return index;
+	return lua_gettop(state) + index + 1;
+}
+
+void readIntegerResultFields(lua_State * state, LuaTurnResult & result, int tableIndex)
+{
+	static constexpr std::array<const char *, 4> INTEGER_FIELDS =
+	{
+		"selection",
+		"side",
+		"query",
+		"object"
+	};
+
+	tableIndex = absoluteIndex(state, tableIndex);
+	for(const char * field : INTEGER_FIELDS)
+	{
+		lua_getfield(state, tableIndex, field);
+		if(lua_isnumber(state, -1))
+			result.integers[field] = static_cast<int>(lua_tointeger(state, -1));
+		lua_pop(state, 1);
+	}
+}
+
 }
 
 LuaTurnResult LuaNullkiller2Runner::runFunction(const std::string & functionName, const std::function<void()> & endTurn, const LuaRunInput & input)
@@ -439,6 +466,8 @@ LuaTurnResult LuaNullkiller2Runner::runFunction(const std::string & functionName
 	if(lua_isstring(state, -1))
 		result.status = toStringRaw(state, -1);
 	lua_pop(state, 1);
+
+	readIntegerResultFields(state, result, -1);
 
 	return result;
 }

@@ -801,4 +801,24 @@ function Nullkiller.showGarrisonDialog(ai, input)
 	}
 end
 
+function Nullkiller.makeSurrenderRetreatDecision(ai, input)
+	input = input or {}
+	local decision = GatewayPolicy.makeSurrenderRetreatDecision({
+		townsCount = input.townsCount,
+		settings = input.settings and input.settings.values or input.settings,
+		battleState = input.battleState or input
+	})
+
+	if not decision then
+		return {
+			status = "none"
+		}
+	end
+
+	return {
+		status = decision.action,
+		side = decision.side
+	}
+end
+
 return Nullkiller

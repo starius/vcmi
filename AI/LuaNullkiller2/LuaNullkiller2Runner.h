@@ -32,6 +32,7 @@ struct LuaTurnResult
 	int commandCount = 0;
 	std::string status;
 	std::string error;
+	std::map<std::string, int> integers;
 	std::vector<LuaCommand> commands;
 };
 
