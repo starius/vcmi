@@ -18,6 +18,7 @@
 #include "../lib/ResourceSet.h"
 #include "../lib/StartInfo.h"
 #include "../lib/VCMIDirs.h"
+#include "../lib/CStack.h"
 #include "../lib/battle/BattleAction.h"
 #include "../lib/bonuses/Bonus.h"
 #include "../lib/callback/Calendar.h"
@@ -1088,6 +1089,25 @@ std::string fowCircle(const int3 & center, int radius)
 		", centers: [" + compactTile2D(center) + "] }";
 }
 
+std::string battleStackCreature(const CGameState & gameState, BattleID battleID, int stackID)
+{
+	const auto * battle = gameState.getBattle(battleID);
+	if(!battle)
+		return {};
+
+	const auto * stack = battle->battleGetStackByID(stackID, false);
+	if(!stack)
+		return {};
+
+	return creature(stack->creatureId());
+}
+
+void addBattleStackCreature(std::vector<std::string> & fields, const std::string & label, const CGameState & gameState, BattleID battleID, int stackID)
+{
+	if(const auto value = battleStackCreature(gameState, battleID, stackID); !value.empty())
+		fields.push_back(label + ": " + value);
+}
+
 std::string battleTarget(const BattleAction::DestinationInfo & target)
 {
 	std::vector<std::string> fields;
@@ -1098,7 +1118,7 @@ std::string battleTarget(const BattleAction::DestinationInfo & target)
 	return "{ " + boost::algorithm::join(fields, ", ") + " }";
 }
 
-std::string battleAction(const BattleAction & action)
+std::string battleAction(const CGameState & gameState, BattleID battleID, const BattleAction & action)
 {
 	std::vector<std::string> targets;
 	for(const auto & target : action.target)
@@ -1107,6 +1127,7 @@ std::string battleAction(const BattleAction & action)
 	std::vector<std::string> fields;
 	fields.push_back("side: " + battleSide(action.side));
 	fields.push_back("stack: stack/" + std::to_string(action.stackNumber));
+	addBattleStackCreature(fields, "creature", gameState, battleID, static_cast<int>(action.stackNumber));
 	fields.push_back("action: " + actionType(action.actionType));
 	if(action.spell != SpellID::NONE)
 		fields.push_back("spell: " + spell(action.spell));
@@ -1195,11 +1216,13 @@ std::string battleUnitState(const UnitChanges & change)
 	return "{ " + boost::algorithm::join(fields, ", ") + " }";
 }
 
-std::string battleStackAttacked(const BattleStackAttacked & attack)
+std::string battleStackAttacked(const CGameState & gameState, BattleID battleID, const BattleStackAttacked & attack)
 {
 	std::vector<std::string> fields;
 	fields.push_back("target: stack/" + std::to_string(attack.stackAttacked));
+	addBattleStackCreature(fields, "targetCreature", gameState, battleID, attack.stackAttacked);
 	fields.push_back("attacker: stack/" + std::to_string(attack.attackerID));
+	addBattleStackCreature(fields, "attackerCreature", gameState, battleID, attack.attackerID);
 	fields.push_back("damage: " + std::to_string(attack.damageAmount));
 	fields.push_back("killed: " + std::to_string(attack.killedAmount));
 	fields.push_back("flags: " + std::to_string(attack.flags));
@@ -1210,11 +1233,11 @@ std::string battleStackAttacked(const BattleStackAttacked & attack)
 	return "{ " + boost::algorithm::join(fields, ", ") + " }";
 }
 
-std::string battleStackAttacks(const std::vector<BattleStackAttacked> & attacks)
+std::string battleStackAttacks(const CGameState & gameState, BattleID battleID, const std::vector<BattleStackAttacked> & attacks)
 {
 	std::vector<std::string> result;
 	for(const auto & attack : attacks)
-		result.push_back(battleStackAttacked(attack));
+		result.push_back(battleStackAttacked(gameState, battleID, attack));
 	return flowList(result);
 }
 
@@ -1720,7 +1743,7 @@ public:
 	{
 		line = "decision: { actor: " + actorForPlayer(pack.player) +
 			", kind: battleAction, battle: battle/" + std::to_string(pack.battleID.getNum()) +
-			", action: " + battleAction(pack.ba) + " }";
+			", action: " + battleAction(gameState, pack.battleID, pack.ba) + " }";
 	}
 
 	void visitDigWithHero(DigWithHero & pack) override
@@ -2270,10 +2293,9 @@ public:
 		line = "battle: { id: battle/" + std::to_string(pack.battleID.getNum()) + ", event: nextRound }";
 	}
 
-	void visitBattleSetActiveStack(BattleSetActiveStack & pack) override
+	void visitBattleSetActiveStack(BattleSetActiveStack &) override
 	{
-		line = "battle: { id: battle/" + std::to_string(pack.battleID.getNum()) +
-			", event: activeStack, stack: stack/" + std::to_string(pack.stack) + " }";
+		line.clear();
 	}
 
 	void visitBattleResult(BattleResult & pack) override
@@ -2312,6 +2334,7 @@ public:
 		fields.push_back("id: battle/" + std::to_string(pack.battleID.getNum()));
 		fields.push_back("event: move");
 		fields.push_back("stack: stack/" + std::to_string(pack.stack));
+		addBattleStackCreature(fields, "creature", gameState, pack.battleID, pack.stack);
 		fields.push_back("path: " + flowList(tiles));
 		fields.push_back("distance: " + std::to_string(pack.distance));
 		if(pack.teleporting)
@@ -2327,22 +2350,26 @@ public:
 
 	void visitBattleAttack(BattleAttack & pack) override
 	{
-		line = "battle: { id: battle/" + std::to_string(pack.battleID.getNum()) +
-			", event: attack, attacker: stack/" + std::to_string(pack.stackAttacking) +
-			", to: " + std::to_string(pack.tile.toInt()) +
-			", flags: " + std::to_string(pack.flags) +
-			", attacks: " + battleStackAttacks(pack.bsa) + " }";
+		std::vector<std::string> fields;
+		fields.push_back("id: battle/" + std::to_string(pack.battleID.getNum()));
+		fields.push_back("event: attack");
+		fields.push_back("attacker: stack/" + std::to_string(pack.stackAttacking));
+		addBattleStackCreature(fields, "creature", gameState, pack.battleID, pack.stackAttacking);
+		fields.push_back("to: " + std::to_string(pack.tile.toInt()));
+		fields.push_back("flags: " + std::to_string(pack.flags));
+		fields.push_back("attacks: " + battleStackAttacks(gameState, pack.battleID, pack.bsa));
+		line = "battle: { " + boost::algorithm::join(fields, ", ") + " }";
 	}
 
 	void visitStartAction(StartAction & pack) override
 	{
 		line = "battle: { id: battle/" + std::to_string(pack.battleID.getNum()) +
-			", event: startAction, action: " + battleAction(pack.ba) + " }";
+			", event: startAction, action: " + battleAction(gameState, pack.battleID, pack.ba) + " }";
 	}
 
-	void visitEndAction(EndAction & pack) override
+	void visitEndAction(EndAction &) override
 	{
-		line = "battle: { id: battle/" + std::to_string(pack.battleID.getNum()) + ", event: endAction }";
+		line.clear();
 	}
 
 	void visitBattleSpellCast(BattleSpellCast & pack) override
@@ -2406,7 +2433,7 @@ public:
 	void visitStacksInjured(StacksInjured & pack) override
 	{
 		line = "battle: { id: battle/" + std::to_string(pack.battleID.getNum()) +
-			", event: injured, stacks: " + battleStackAttacks(pack.stacks) + " }";
+			", event: injured, stacks: " + battleStackAttacks(gameState, pack.battleID, pack.stacks) + " }";
 	}
 
 	void visitBattleEnded(BattleEnded & pack) override
