@@ -21,6 +21,7 @@
 #include "../../lib/StartInfo.h"
 #include "../../lib/entities/artifact/CArtifact.h"
 #include "../../lib/entities/artifact/CArtifactInstance.h"
+#include "../../lib/mapObjects/CGDwelling.h"
 #include "../../lib/mapObjects/CGHeroInstance.h"
 #include "../../lib/mapObjects/CGTownInstance.h"
 #include "../../lib/mapObjects/army/CStackInstance.h"
@@ -275,6 +276,44 @@ JsonNode creatureSnapshot(CreatureID creatureID)
 	result["factionID"].Integer() = creature ? creature->getFactionID().getNum() : -1;
 	if(creature)
 		result["fullRecruitCost"] = resourcesSnapshot(creature->getFullRecruitCost());
+
+	return result;
+}
+
+JsonNode dwellingCreatureSnapshot(CreatureID creatureID)
+{
+	JsonNode result = creatureSnapshot(creatureID);
+	const auto * creature = creatureID.toCreature();
+	if(creature)
+	{
+		result["level"].Integer() = creature->getLevel();
+		result["growth"].Integer() = creature->getGrowth();
+		result["fullRecruitCost"] = resourcesSnapshot(creature->getFullRecruitCost());
+	}
+	return result;
+}
+
+JsonNode dwellingSnapshot(const CGDwelling * dwelling)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	if(!dwelling)
+		return result;
+
+	result["id"].Integer() = dwelling->id.getNum();
+	result["owner"].Integer() = dwelling->tempOwner.getNum();
+	result["creatures"].setType(JsonNode::JsonType::DATA_VECTOR);
+
+	for(const auto & entry : dwelling->creatures)
+	{
+		JsonNode creatureEntry;
+		creatureEntry.setType(JsonNode::JsonType::DATA_STRUCT);
+		creatureEntry["count"].Integer() = static_cast<int64_t>(entry.first);
+		creatureEntry["creatures"].setType(JsonNode::JsonType::DATA_VECTOR);
+		for(const auto & creatureID : entry.second)
+			creatureEntry["creatures"].Vector().push_back(dwellingCreatureSnapshot(creatureID));
+		result["creatures"].Vector().push_back(creatureEntry);
+	}
 
 	return result;
 }
@@ -906,6 +945,42 @@ void CLuaNullkiller2AI::showGarrisonDialog(const CArmedInstance * up, const CGHe
 
 	if(!result.ok)
 		logAi->error("LuaNullkiller2 showGarrisonDialog failed: %s", result.error);
+
+	if(!queryAnswered)
+		answerQuery(queryID);
+}
+
+void CLuaNullkiller2AI::showRecruitmentDialog(const CGDwelling * dwelling, const CArmedInstance * dst, int level, QueryID queryID)
+{
+	if(!dwelling || !dst)
+	{
+		answerQuery(queryID);
+		return;
+	}
+
+	LuaNullkiller2Runner runner;
+	LuaRunInput input;
+	input.difficultyLevel = cc->getStartInfo()->difficulty;
+	input.snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	input.snapshot["queryID"].Integer() = queryID.getNum();
+	input.snapshot["level"].Integer() = level;
+	input.snapshot["dwelling"] = dwellingSnapshot(dwelling);
+	input.snapshot["dst"] = armySnapshot(dst);
+	input.snapshot["freeResources"] = resourcesSnapshot(cc->getResourceAmount());
+
+	bool queryAnswered = false;
+	input.commandHandler = [this, &queryAnswered](const LuaCommand & command)
+	{
+		const bool executed = executeCommand(command);
+		if(executed && command.name == "answerQuery")
+			queryAnswered = true;
+		return executed;
+	};
+
+	const LuaTurnResult result = runner.runFunction("showRecruitmentDialog", [](){}, input);
+
+	if(!result.ok)
+		logAi->error("LuaNullkiller2 showRecruitmentDialog failed: %s", result.error);
 
 	if(!queryAnswered)
 		answerQuery(queryID);

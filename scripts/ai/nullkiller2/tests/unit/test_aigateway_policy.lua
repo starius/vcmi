@@ -226,6 +226,35 @@ assert(recruitment[1].level == 0)
 assert(recruitment[1].creature.id == 402)
 assert(recruitment[1].count == 4)
 
+local mergedRecruitment = GatewayPolicy.chooseDwellingRecruitment({
+	creatures = {
+		{
+			count = 5,
+			creatures = {
+				{ id = 404, fullRecruitCost = { [7] = 120 } }
+			}
+		}
+	}
+}, {
+	armySize = 7,
+	slots = {
+		{ slot = 0, creature = { id = 501 } },
+		{ slot = 1, creature = { id = 501 } },
+		{ slot = 2, creature = { id = 502 } },
+		{ slot = 3, creature = { id = 503 } },
+		{ slot = 4, creature = { id = 504 } },
+		{ slot = 5, creature = { id = 505 } },
+		{ slot = 6, creature = { id = 506 } }
+	}
+}, {
+	[7] = 500
+})
+assert(#mergedRecruitment == 1)
+assert(mergedRecruitment[1].creature.id == 404)
+assert(mergedRecruitment[1].count == 4)
+assert(mergedRecruitment[1].merge.fromSlot == 1)
+assert(mergedRecruitment[1].merge.toSlot == 0)
+
 local function movementArtifact(id, movementBonus, options)
 	options = options or {}
 	local bonuses = movementBonus and {

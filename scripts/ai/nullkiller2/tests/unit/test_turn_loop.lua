@@ -441,3 +441,51 @@ assert(#levelResult.commandJournal == 1)
 assert(levelResult.commandJournal[1].name == "answerQuery")
 assert(levelResult.commandJournal[1].payload.query == 920)
 assert(levelResult.commandJournal[1].payload.selection == 0)
+
+local recruitmentRun = makeAI()
+local recruitmentDialogResult = Script.showRecruitmentDialog(recruitmentRun.ai, {
+	queryID = 930,
+	dwelling = {
+		id = 100,
+		creatures = {
+			{
+				count = 5,
+				creatures = {
+					{ id = 401, fullRecruitCost = { [7] = 100 } },
+					{ id = 402, fullRecruitCost = { [7] = 120 } }
+				}
+			}
+		}
+	},
+	dst = {
+		id = 101,
+		armySize = 7,
+		slots = {
+			{ slot = 0, creature = { id = 501 } },
+			{ slot = 1, creature = { id = 501 } },
+			{ slot = 2, creature = { id = 502 } },
+			{ slot = 3, creature = { id = 503 } },
+			{ slot = 4, creature = { id = 504 } },
+			{ slot = 5, creature = { id = 505 } },
+			{ slot = 6, creature = { id = 506 } }
+		}
+	},
+	freeResources = {
+		[7] = 500
+	}
+})
+assert(recruitmentDialogResult.status == "answered")
+assert(#recruitmentDialogResult.commandJournal == 3)
+assert(recruitmentDialogResult.commandJournal[1].name == "mergeStacks")
+assert(recruitmentDialogResult.commandJournal[1].payload.army == 101)
+assert(recruitmentDialogResult.commandJournal[1].payload.fromSlot == 1)
+assert(recruitmentDialogResult.commandJournal[1].payload.toSlot == 0)
+assert(recruitmentDialogResult.commandJournal[2].name == "recruitCreatures")
+assert(recruitmentDialogResult.commandJournal[2].payload.town == 100)
+assert(recruitmentDialogResult.commandJournal[2].payload.dst == 101)
+assert(recruitmentDialogResult.commandJournal[2].payload.creature == 402)
+assert(recruitmentDialogResult.commandJournal[2].payload.count == 4)
+assert(recruitmentDialogResult.commandJournal[2].payload.level == 0)
+assert(recruitmentDialogResult.commandJournal[3].name == "answerQuery")
+assert(recruitmentDialogResult.commandJournal[3].payload.query == 930)
+assert(recruitmentDialogResult.commandJournal[3].payload.selection == 0)

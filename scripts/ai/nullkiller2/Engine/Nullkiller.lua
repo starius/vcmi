@@ -815,6 +815,29 @@ function Nullkiller.showGarrisonDialog(ai, input)
 	}
 end
 
+function Nullkiller.showRecruitmentDialog(ai, input)
+	input = input or {}
+	local host = HostCommands.new(ai)
+	local dwelling = input.dwelling or input.town
+	local destination = input.dst or input.destination or input.recruiter
+
+	for _, choice in ipairs(GatewayPolicy.chooseDwellingRecruitment(dwelling, destination, input.freeResources or input.resources)) do
+		if choice.merge and choice.merge.fromSlot ~= nil and choice.merge.toSlot ~= nil then
+			host:mergeStacks(destination, choice.merge.fromSlot, choice.merge.toSlot)
+		end
+		host:recruitCreatures(dwelling, destination, choice.creature, choice.count, choice.level)
+	end
+
+	if input.queryID ~= nil and type(host.answerQuery) == "function" then
+		host:answerQuery(input.queryID, 0)
+	end
+
+	return {
+		status = "answered",
+		commandJournal = host:getJournal()
+	}
+end
+
 function Nullkiller.makeSurrenderRetreatDecision(ai, input)
 	input = input or {}
 	local decision = GatewayPolicy.makeSurrenderRetreatDecision({

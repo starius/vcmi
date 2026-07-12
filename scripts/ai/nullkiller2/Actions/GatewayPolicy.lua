@@ -25,6 +25,7 @@ local TeleportPassability = {
 	IMPASSABLE = "IMPASSABLE"
 }
 
+local RESOURCE_COUNT = 7
 local MACH4 = 16
 local BACKPACK_START = 19
 
@@ -206,11 +207,48 @@ local function resourceAmount(resources, resourceID)
 	end
 	if type(resources) == "table" then
 		if resourceID == "gold" or resourceID == "GOLD" or resourceID == 6 then
-			return resources[6] or resources[7] or resources.gold or resources.GOLD or 0
+			if resources[0] == nil and resources[7] ~= nil then
+				return resources[7] or 0
+			end
+			return resources[6] or resources.gold or resources.GOLD or 0
 		end
 		return resources[resourceID] or resources.gold or resources.GOLD or resources[1] or 0
 	end
 	return 0
+end
+
+local function resourceVectorAmount(resources, resourceID)
+	if type(resources) == "number" then
+		return resourceID == 6 and resources or 0
+	end
+	if type(resources) == "table" then
+		if resources[0] == nil and resources[7] ~= nil then
+			return resources[resourceID + 1] or 0
+		end
+		if resourceID == 6 then
+			return resources[6] or resources.gold or resources.GOLD or 0
+		end
+		return resources[resourceID] or resources[tostring(resourceID)] or 0
+	end
+	return 0
+end
+
+local function maxAffordableCount(resources, cost)
+	if type(cost) == "number" then
+		if cost <= 0 then
+			return math.huge
+		end
+		return math.floor(resourceAmount(resources, "gold") / cost)
+	end
+
+	local result = math.huge
+	for resourceID = 0, RESOURCE_COUNT - 1 do
+		local needed = resourceVectorAmount(cost, resourceID)
+		if needed > 0 then
+			result = math.min(result, math.floor(resourceVectorAmount(resources, resourceID) / needed))
+		end
+	end
+	return result
 end
 
 local function canAfford(resources, cost)
@@ -442,33 +480,149 @@ function GatewayPolicy.chooseUpgrade(upgradeInfo, stack, resources)
 	return nil
 end
 
+local function stackSlot(stack, fallback)
+	return type(stack) == "table" and (stack.slot or stack.position or stack.pos or fallback) or fallback
+end
+
+local function stackCreature(stack)
+	if type(stack) ~= "table" then
+		return stack
+	end
+	return stack.creature or stack.creatureID or stack.creatureId or stack.id or stack
+end
+
+local function stackCreatureID(stack)
+	return objectID(stackCreature(stack))
+end
+
+local function armyStacks(army)
+	local result = {}
+	for key, stack in pairs(army and (army.slots or army.stacks) or {}) do
+		local slot = stackSlot(stack, key)
+		if slot ~= nil and stackCreatureID(stack) ~= nil then
+			table.insert(result, {
+				slot = slot,
+				creature = stackCreature(stack)
+			})
+		end
+	end
+	table.sort(result, function(lhs, rhs)
+		return lhs.slot < rhs.slot
+	end)
+	return result
+end
+
+local function makeArmyState(army)
+	local state = {
+		armySize = army and (army.armySize or army.slotsCount or army.size) or 7,
+		stacks = armyStacks(army)
+	}
+	return state
+end
+
+local function occupiedSlots(state)
+	local result = {}
+	for _, stack in ipairs(state.stacks) do
+		result[stack.slot] = true
+	end
+	return result
+end
+
+local function slotForCreatureInState(state, creature)
+	local id = objectID(creature)
+	for _, stack in ipairs(state.stacks) do
+		if id ~= nil and objectID(stack.creature) == id then
+			return stack.slot
+		end
+	end
+
+	local occupied = occupiedSlots(state)
+	for slot = 0, state.armySize - 1 do
+		if not occupied[slot] then
+			return slot
+		end
+	end
+	return nil
+end
+
+local function findDuplicateMerge(state)
+	local firstByCreature = {}
+	for _, stack in ipairs(state.stacks) do
+		local id = objectID(stack.creature)
+		if id ~= nil then
+			if firstByCreature[id] ~= nil and firstByCreature[id] ~= stack.slot then
+				return {
+					fromSlot = stack.slot,
+					toSlot = firstByCreature[id]
+				}
+			end
+			firstByCreature[id] = stack.slot
+		end
+	end
+	return nil
+end
+
+local function applyMerge(state, merge)
+	if not merge then
+		return
+	end
+	for index, stack in ipairs(state.stacks) do
+		if stack.slot == merge.fromSlot then
+			table.remove(state.stacks, index)
+			return
+		end
+	end
+end
+
+local function applyRecruitment(state, creature)
+	local slot = slotForCreatureInState(state, creature)
+	if slot == nil then
+		return
+	end
+	for _, stack in ipairs(state.stacks) do
+		if stack.slot == slot then
+			return
+		end
+	end
+	table.insert(state.stacks, {
+		slot = slot,
+		creature = creature
+	})
+	table.sort(state.stacks, function(lhs, rhs)
+		return lhs.slot < rhs.slot
+	end)
+end
+
 function GatewayPolicy.chooseDwellingRecruitment(dwelling, recruiter, resourceAmountValue)
 	local result = {}
 	local creatures = dwelling and dwelling.creatures or {}
+	local state = makeArmyState(recruiter)
 
 	for level, entry in ipairs(creatures) do
 		local count = entry.count or entry[1] or 0
 		local ids = entry.creatures or entry.ids or entry[2] or {}
 		local creature = ids[#ids]
 		if count > 0 and creature then
-			local canFit = true
-			if recruiter and type(recruiter.getSlotFor) == "function" then
-				local slot = recruiter:getSlotFor(creature)
-				canFit = slot and slot.validSlot ~= false
-			elseif recruiter and recruiter.slotsByCreature then
-				canFit = recruiter.slotsByCreature[objectID(creature)] ~= nil
+			local merge = nil
+			local canFit = slotForCreatureInState(state, creature) ~= nil
+			if not canFit then
+				merge = findDuplicateMerge(state)
+				applyMerge(state, merge)
+				canFit = slotForCreatureInState(state, creature) ~= nil
 			end
 
 			local fullCost = creature.fullRecruitCost or creature.cost or 0
-			if canFit and fullCost > 0 then
-				count = math.min(count, math.floor(resourceAmount(resourceAmountValue, "gold") / fullCost))
+			if canFit then
+				count = math.min(count, maxAffordableCount(resourceAmountValue, fullCost))
 			end
 			if canFit and count > 0 then
 				table.insert(result, {
 					level = level - 1,
 					creature = creature,
-					count = count
+					count = count,
+					merge = merge
 				})
+				applyRecruitment(state, creature)
 			end
 		end
 	end

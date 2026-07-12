@@ -165,7 +165,9 @@ backpack fallback when a direct swap is illegal. The `heroExchangeStarted` callb
 the same transfer direction as native `AIGateway`, emits Lua-owned army/artifact exchange commands, and answers the
 pending query through the same host command journal. Map-object selection dialogs now route through Lua
 `GatewayPolicy.chooseMapObjectSelection` before emitting `answerQuery`. Garrison dialogs route through Lua
-`GatewayPolicy.shouldUseGarrisonTroops` and the Lua army-transfer sequencer before answering. Surrender/retreat
+`GatewayPolicy.shouldUseGarrisonTroops` and the Lua army-transfer sequencer before answering. Recruitment dialogs
+route dwelling and destination-army snapshots through `GatewayPolicy.chooseDwellingRecruitment`, including the
+native duplicate-stack merge-before-recruit case and full resource-vector affordability. Surrender/retreat
 decisions now return from Lua `GatewayPolicy.makeSurrenderRetreatDecision` and are converted to `BattleAction`
 only at the host boundary. Blocking dialogs route component snapshots through Lua selection policy; danger-aware
 yes/no parity still needs richer object and danger snapshots. Teleport dialogs route exit snapshots through Lua
@@ -350,8 +352,8 @@ trace comparison before moving on.
 ### Phase 6: Action and Query Parity
 
 - Replace every native `AIGateway` policy routine with Lua-owned choices plus exact host commands.
-- Implement Lua policies for level-up, commander level-up, blocking dialogs, teleport, tavern, market, recruitment,
-  garrison, shipyard, university, artifact assembly, object selection, battle preservation, and end-turn handling.
+- Implement Lua policies for level-up, commander level-up, blocking dialogs, teleport, tavern, market, garrison,
+  shipyard, university, artifact assembly, object selection, battle preservation, and end-turn handling.
 - Ensure checked host commands validate ownership, visibility, freshness, resource availability, pending query ids,
   and request results without choosing strategy.
 
@@ -441,7 +443,7 @@ Commit messages must stay focused on the code change and must not mention the re
    final priority parity.
 5. Add a native `Nullkiller2` trace exporter and a Lua replay/snapshot comparator so discrepancies produce
    minimized fixtures under `scripts/ai/nullkiller2/tests/fixtures/discrepancies/`.
-6. Wire query callbacks into Lua policy modules for level-up, blocking dialogs, teleport, object selection,
-   recruitment, tavern, market, university, garrison, and surrender/retreat decisions.
+6. Wire remaining query callbacks into Lua policy modules for artifact assembly, shipyard, and battle preservation
+   decisions.
 7. Strengthen the no-native-dependency gate by building `LuaNullkiller2` with native `Nullkiller2` disabled and
    auditing C++ and Lua policy code for forbidden native-delegation strings.
