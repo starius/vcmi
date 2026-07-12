@@ -12,7 +12,10 @@
 #include "LuaNullkiller2Runner.h"
 
 #include "../../lib/ScopeGuard.h"
+#include "../../lib/constants/StringConstants.h"
 #include "../../lib/filesystem/Filesystem.h"
+#include "../../lib/json/JsonNode.h"
+#include "../../lib/json/JsonUtils.h"
 
 #if __has_include(<lua.hpp>)
 #  include <lua.hpp>
@@ -29,6 +32,7 @@ namespace
 
 constexpr const char * SCRIPT_ROOT = "ai/nullkiller2/";
 constexpr const char * MAIN_MODULE = "ai/nullkiller2/main";
+constexpr const char * SETTINGS_MODULE = "config/ai/nk2ai/nk2ai-settings";
 
 struct RunContext
 {
@@ -55,6 +59,15 @@ std::string moduleToResourcePath(const std::string & moduleName)
 	return std::string(SCRIPT_ROOT) + modulePath;
 }
 
+std::string difficultyName(int difficultyLevel)
+{
+	if(difficultyLevel >= 0 && difficultyLevel < std::size(GameConstants::DIFFICULTY_NAMES))
+		return GameConstants::DIFFICULTY_NAMES[difficultyLevel];
+
+	logAi->warn("LuaNullkiller2 got invalid difficulty %d, using knight", difficultyLevel);
+	return GameConstants::DIFFICULTY_NAMES[1];
+}
+
 bool loadScriptResource(lua_State * state, const std::string & modulePath)
 {
 	auto * loader = CResourceHandler::get();
@@ -69,6 +82,49 @@ bool loadScriptResource(lua_State * state, const std::string & modulePath)
 	auto rawData = loader->load(id)->readAll();
 	auto sourceText = std::string(reinterpret_cast<char *>(rawData.first.get()), rawData.second);
 	return luaL_loadbuffer(state, sourceText.c_str(), sourceText.size(), modulePath.c_str()) == 0;
+}
+
+void pushJsonNode(lua_State * state, const JsonNode & node)
+{
+	switch(node.getType())
+	{
+	case JsonNode::JsonType::DATA_NULL:
+		lua_pushnil(state);
+		break;
+	case JsonNode::JsonType::DATA_BOOL:
+		lua_pushboolean(state, node.Bool());
+		break;
+	case JsonNode::JsonType::DATA_FLOAT:
+		lua_pushnumber(state, node.Float());
+		break;
+	case JsonNode::JsonType::DATA_INTEGER:
+		lua_pushinteger(state, static_cast<lua_Integer>(node.Integer()));
+		break;
+	case JsonNode::JsonType::DATA_STRING:
+		lua_pushlstring(state, node.String().c_str(), node.String().size());
+		break;
+	case JsonNode::JsonType::DATA_VECTOR:
+	{
+		lua_newtable(state);
+		lua_Integer index = 1;
+		for(const auto & item : node.Vector())
+		{
+			pushJsonNode(state, item);
+			lua_rawseti(state, -2, index++);
+		}
+		break;
+	}
+	case JsonNode::JsonType::DATA_STRUCT:
+	{
+		lua_newtable(state);
+		for(const auto & item : node.Struct())
+		{
+			pushJsonNode(state, item.second);
+			lua_setfield(state, -2, item.first.c_str());
+		}
+		break;
+	}
+	}
 }
 
 int luaRequire(lua_State * state)
@@ -195,11 +251,37 @@ void pushAiFacade(lua_State * state, RunContext & context)
 	lua_setfield(state, -2, "command");
 }
 
-void pushInput(lua_State * state)
+void pushSettingsInput(lua_State * state, const LuaRunInput & input)
+{
+	const auto name = difficultyName(input.difficultyLevel);
+
+	lua_newtable(state);
+
+	lua_pushlstring(state, name.c_str(), name.size());
+	lua_setfield(state, -2, "difficultyName");
+
+	lua_pushinteger(state, input.difficultyLevel);
+	lua_setfield(state, -2, "difficultyLevel");
+
+	try
+	{
+		const JsonNode rootNode = JsonUtils::assembleFromFiles(SETTINGS_MODULE);
+		pushJsonNode(state, rootNode[name]);
+		lua_setfield(state, -2, "values");
+	}
+	catch(const std::exception & e)
+	{
+		logAi->error("LuaNullkiller2 failed to load settings: %s", e.what());
+		lua_newtable(state);
+		lua_setfield(state, -2, "values");
+	}
+}
+
+void pushInput(lua_State * state, const LuaRunInput & input)
 {
 	lua_newtable(state);
 
-	lua_newtable(state);
+	pushSettingsInput(state, input);
 	lua_setfield(state, -2, "settings");
 
 	lua_newtable(state);
@@ -217,7 +299,7 @@ LuaTurnResult makeError(std::string error, bool requestedEndTurn)
 
 }
 
-LuaTurnResult LuaNullkiller2Runner::runDay(const std::function<void()> & endTurn)
+LuaTurnResult LuaNullkiller2Runner::runDay(const std::function<void()> & endTurn, const LuaRunInput & input)
 {
 	lua_State * state = luaL_newstate();
 	if(!state)
@@ -247,7 +329,7 @@ LuaTurnResult LuaNullkiller2Runner::runDay(const std::function<void()> & endTurn
 		return makeError("main script does not define runDay", context.requestedEndTurn);
 
 	pushAiFacade(state, context);
-	pushInput(state);
+	pushInput(state, input);
 
 	if(lua_pcall(state, 2, 1, 0) != 0)
 		return makeError(toStringRaw(state, -1), context.requestedEndTurn);

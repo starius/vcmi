@@ -24,10 +24,15 @@ struct LuaTurnResult
 	std::string error;
 };
 
+struct LuaRunInput
+{
+	int difficultyLevel = 1;
+};
+
 class LuaNullkiller2Runner
 {
 public:
-	LuaTurnResult runDay(const std::function<void()> & endTurn);
+	LuaTurnResult runDay(const std::function<void()> & endTurn, const LuaRunInput & input = LuaRunInput());
 };
 
 }

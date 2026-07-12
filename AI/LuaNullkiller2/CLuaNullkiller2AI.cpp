@@ -15,6 +15,7 @@
 
 #include "../../lib/battle/BattleAction.h"
 #include "../../lib/callback/CCallback.h"
+#include "../../lib/StartInfo.h"
 
 namespace LuaNullkiller2AI
 {
@@ -43,10 +44,13 @@ void CLuaNullkiller2AI::yourTurn(QueryID queryID)
 	answerQuery(queryID);
 
 	LuaNullkiller2Runner runner;
+	LuaRunInput input;
+	input.difficultyLevel = cc->getStartInfo()->difficulty;
+
 	const LuaTurnResult result = runner.runDay([this]()
 	{
 		cc->endTurn();
-	});
+	}, input);
 
 	if(!result.ok)
 		logAi->error("LuaNullkiller2 runDay failed: %s", result.error);
