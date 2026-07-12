@@ -17,6 +17,7 @@ LUA_ROOT = REPO_ROOT / "scripts/ai/nullkiller2"
 UNIT_ROOT = LUA_ROOT / "tests/unit"
 DIFFERENTIAL_ROOT = LUA_ROOT / "tests/differential"
 FIXTURE_ROOT = LUA_ROOT / "tests/fixtures/differential"
+REPLAY_RUNNER = LUA_ROOT / "tests/replay_lua_decisions.py"
 
 
 def find_lua_interpreter(explicit: str | None) -> str | None:
@@ -101,15 +102,27 @@ def run_differential_tests(lua: str, tests: list[Path]) -> int:
     return 1 if failures else 0
 
 
+def run_replay_tests(lua: str) -> int:
+    print(f"[replay] {REPLAY_RUNNER.relative_to(REPO_ROOT)}")
+    completed = subprocess.run(
+        [sys.executable, str(REPLAY_RUNNER), "--lua", lua],
+        cwd=REPO_ROOT,
+        check=False,
+    )
+    return completed.returncode
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("preset", nargs="?", default="unit", choices=["unit", "differential-smoke", "all", "list"])
+    parser.add_argument("preset", nargs="?", default="unit", choices=["unit", "differential-smoke", "replay", "all", "list"])
     parser.add_argument("--lua", help="Lua interpreter to use")
     args = parser.parse_args()
 
     if args.preset == "list":
         for test in unit_tests() + differential_tests():
             print(test.relative_to(REPO_ROOT))
+        for fixture in sorted((LUA_ROOT / "tests/fixtures/replay").glob("*.json")):
+            print(fixture.relative_to(REPO_ROOT))
         return 0
 
     lua = find_lua_interpreter(args.lua)
@@ -121,10 +134,13 @@ def main() -> int:
         return run_tests(lua, unit_tests())
     if args.preset == "differential-smoke":
         return run_differential_tests(lua, differential_tests())
+    if args.preset == "replay":
+        return run_replay_tests(lua)
 
     unit_result = run_tests(lua, unit_tests())
     differential_result = run_differential_tests(lua, differential_tests())
-    return 1 if unit_result or differential_result else 0
+    replay_result = run_replay_tests(lua)
+    return 1 if unit_result or differential_result or replay_result else 0
 
 
 if __name__ == "__main__":

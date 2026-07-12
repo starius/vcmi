@@ -1,0 +1,43 @@
+{
+  "name": "tile reveal memorizes visitables and resets tile owners when configured",
+  "function": "tileRevealed",
+  "input": {
+    "memory": {
+      "aiMemory": {
+        "visitableObjs": {},
+        "alreadyVisited": {}
+      }
+    },
+    "settings": {
+      "values": {
+        "updateHitmapOnTileReveal": true
+      }
+    },
+    "tiles": [
+      {
+        "x": 4,
+        "y": 5,
+        "z": 0
+      }
+    ],
+    "objects": [
+      {
+        "id": 943,
+        "visitable": true
+      }
+    ]
+  },
+  "expect": {
+    "status": "tile_revealed",
+    "memory": {
+      "aiMemory": {
+        "visitableObjs": {
+          "943": true
+        }
+      },
+      "dangerHitMap": {
+        "resetTileOwners": true
+      }
+    }
+  }
+}

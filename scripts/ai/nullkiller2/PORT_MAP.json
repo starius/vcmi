@@ -1099,6 +1099,17 @@
     },
     {
       "cpp": null,
+      "lua": "scripts/ai/nullkiller2/tests/replay_lua_decisions.py",
+      "status": "scaffolded",
+      "symbols": [
+        "Lua decision replay fixtures",
+        "normalized expected-subset comparator",
+        "discrepancy artifact writer"
+      ],
+      "notes": "JSON replay fixtures under tests/fixtures/replay exercise Lua entry points without a full game and compare normalized status, command journals, trace, and memory. Failures write actual JSON plus a first-difference summary under tests/fixtures/discrepancies. Native trace export and lockstep comparison remain pending."
+    },
+    {
+      "cpp": null,
       "lua": "scripts/ai/nullkiller2/main.lua",
       "status": "scaffolded",
       "symbols": [

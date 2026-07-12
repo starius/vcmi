@@ -1,0 +1,52 @@
+{
+  "name": "one-pass turn recruits the strongest available hero",
+  "function": "runDay",
+  "input": {
+    "settings": {
+      "values": {
+        "maxPass": 1,
+        "maxPriorityPass": 1
+      }
+    },
+    "townsInfo": [
+      {
+        "id": 10,
+        "name": "Town",
+        "canRecruitHero": true,
+        "townLevel": 1,
+        "factionID": 1,
+        "availableHeroes": [
+          {
+            "id": 20,
+            "name": "Hero",
+            "totalStrength": 5000,
+            "armyCost": 3000,
+            "evaluateHeroScore": 100,
+            "factionID": 1
+          }
+        ]
+      }
+    ],
+    "heroesInfo": [],
+    "freeResources": {
+      "6": 2500
+    }
+  },
+  "expect": {
+    "status": "end_turn",
+    "ended": true,
+    "commandJournal": [
+      {
+        "name": "recruitHero",
+        "payload": {
+          "town": 10,
+          "hero": 20
+        }
+      },
+      {
+        "name": "endTurn",
+        "payload": {}
+      }
+    ]
+  }
+}

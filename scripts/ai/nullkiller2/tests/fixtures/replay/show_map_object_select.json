@@ -1,0 +1,22 @@
+{
+  "name": "map object selection answers with selected target",
+  "function": "showMapObjectSelectDialog",
+  "input": {
+    "queryID": 101,
+    "selectedObject": 44,
+    "objects": [11, 44]
+  },
+  "expect": {
+    "status": "answered",
+    "selection": 44,
+    "commandJournal": [
+      {
+        "name": "answerQuery",
+        "payload": {
+          "query": 101,
+          "selection": 44
+        }
+      }
+    ]
+  }
+}

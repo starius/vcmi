@@ -145,7 +145,7 @@ The branch now has the initial standalone AI and parity infrastructure in place:
   snapshots do not need duplicate indexed maps for task presence checks.
 - `scripts/ai/nullkiller2/PORT_MAP.json` tracks mirrored C++ files and symbols, with audit coverage for forbidden
   native dependencies and unmapped/stale Lua policy files.
-- Pure Lua tests and fixture-based differential smoke tests run through
+- Pure Lua tests, fixture-based differential smoke tests, and JSON replay fixtures run through
   `scripts/ai/nullkiller2/tests/run_lua_tests.py`.
 
 The current Lua policy surface includes the core day loop, settings, state locks, task plan execution, priority
@@ -204,8 +204,8 @@ Major parity gaps remain:
   plus host validators
 - upgrade parity still needs native-vs-Lua differential traces for multi-step modded upgrade chains and unusual
   unavailable-upgrade sources; current coverage is unit/fixture level plus raw `UpgradeInfo` snapshot plumbing
-- differential tests currently cover command journals and end-turn smoke; they do not yet compare real native
-  `Nullkiller2` traces against Lua traces at each decision point
+- differential tests currently cover command journals, end-turn smoke, and JSON replay of normalized Lua decision
+  fixtures; they do not yet compare real native `Nullkiller2` traces against Lua traces at each decision point
 
 ## Mirrored Structure and Naming
 
@@ -258,15 +258,21 @@ Planned layout:
 scripts/ai/nullkiller2/tests/
   unit/
   fixtures/
+    replay/
+    discrepancies/
   golden/
   integration/
   run_lua_tests.py
+  replay_lua_decisions.py
   update_golden.py
 ```
 
 The Lua test runner should run without compiling VCMI when testing pure Lua modules. Tests that need host bindings
 or real game execution run only in the remote build/test workflow. Golden updates must be explicit: normal test
 runs compare against checked-in expected output and fail on drift.
+`replay_lua_decisions.py` replays normalized JSON decision fixtures through `main.lua`, compares expected subsets of
+status, command journals, trace, and memory, and writes actual JSON plus a first-difference summary under
+`tests/fixtures/discrepancies/` when a replay drifts.
 
 ## Differential Testing
 
