@@ -172,6 +172,7 @@ print(encode({{
 	status = result.status,
 	intent = result.intent,
 	selection = result.selection,
+	role = result.role,
 	side = result.side,
 	ended = ended,
 	commandJournal = result.commandJournal,

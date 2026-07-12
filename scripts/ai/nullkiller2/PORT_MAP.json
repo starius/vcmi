@@ -1140,12 +1140,13 @@
       "symbols": [
         "NativeTrace::recordDecision",
         "AIGateway fixed-answer query native trace hooks",
+        "AIGateway::heroGotLevel native trace hook",
         "AIGateway::showMapObjectSelectDialog native trace hook",
         "AIGateway::showTeleportDialog native trace hook",
         "LuaNullkiller2.nativeDecisionTrace.v1",
         "native-trace preset"
       ],
-      "notes": "Native trace export is opt-in through VCMI_NK2_NATIVE_TRACE and currently emits comparator-compatible fixed-answer query, showMapObjectSelectDialog, showBlockingDialog, showTeleportDialog, and makeSurrenderRetreatDecision records with decision-specific compare fields. The Lua comparator consumes the same schema and writes discrepancy artifacts. More native decision hooks and lockstep trace export remain pending."
+      "notes": "Native trace export is opt-in through VCMI_NK2_NATIVE_TRACE and currently emits comparator-compatible fixed-answer query, heroGotLevel, showMapObjectSelectDialog, showBlockingDialog, showTeleportDialog, and makeSurrenderRetreatDecision records with decision-specific compare fields. The Lua comparator consumes the same schema and writes discrepancy artifacts. More native decision hooks and lockstep trace export remain pending."
     },
     {
       "cpp": null,

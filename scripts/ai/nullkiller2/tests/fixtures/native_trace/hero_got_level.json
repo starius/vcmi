@@ -1,0 +1,125 @@
+{
+  "schema": "LuaNullkiller2.nativeDecisionTrace.v1",
+  "source": "Nullkiller2",
+  "compareMode": "exact",
+  "compare": [
+    "status",
+    "selection",
+    "role",
+    "commandJournal"
+  ],
+  "decisions": [
+    {
+      "id": "main-prefers-earth-magic",
+      "function": "heroGotLevel",
+      "input": {
+        "queryID": 921,
+        "hero": {
+          "id": 501,
+          "level": 12,
+          "secSkills": []
+        },
+        "heroesInfo": [
+          {
+            "id": 501,
+            "level": 12,
+            "evaluateHeroScore": 100,
+            "secSkills": []
+          },
+          {
+            "id": 502,
+            "level": 12,
+            "evaluateHeroScore": 10,
+            "secSkills": []
+          }
+        ],
+        "townsInfo": [
+          {
+            "id": 601
+          }
+        ],
+        "currentDay": 1,
+        "mapSize": {
+          "x": 108,
+          "y": 108,
+          "z": 0
+        },
+        "primarySkill": 0,
+        "skills": [
+          17,
+          13
+        ]
+      },
+      "native": {
+        "status": "answered",
+        "selection": 0,
+        "role": 1,
+        "commandJournal": [
+          {
+            "name": "answerQuery",
+            "payload": {
+              "query": 921,
+              "selection": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "scout-prefers-estates",
+      "function": "heroGotLevel",
+      "input": {
+        "queryID": 922,
+        "hero": {
+          "id": 502,
+          "level": 12,
+          "secSkills": []
+        },
+        "heroesInfo": [
+          {
+            "id": 501,
+            "level": 12,
+            "evaluateHeroScore": 100,
+            "secSkills": []
+          },
+          {
+            "id": 502,
+            "level": 12,
+            "evaluateHeroScore": 10,
+            "secSkills": []
+          }
+        ],
+        "townsInfo": [
+          {
+            "id": 601
+          }
+        ],
+        "currentDay": 1,
+        "mapSize": {
+          "x": 108,
+          "y": 108,
+          "z": 0
+        },
+        "primarySkill": 0,
+        "skills": [
+          17,
+          13
+        ]
+      },
+      "native": {
+        "status": "answered",
+        "selection": 1,
+        "role": 0,
+        "commandJournal": [
+          {
+            "name": "answerQuery",
+            "payload": {
+              "query": 922,
+              "selection": 1
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

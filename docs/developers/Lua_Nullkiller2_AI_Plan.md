@@ -151,8 +151,9 @@ The branch now has the initial standalone AI and parity infrastructure in place:
   special-action command journal fixture. The same runner also exposes a `native-trace` preset that replays
   normalized native `Nullkiller2` decision records through Lua and compares selected output fields exactly by
   default. Native `Nullkiller2` can write comparator-compatible decision records for
-  fixed-answer query callbacks, `showMapObjectSelectDialog`, `showBlockingDialog`, `showTeleportDialog`, and
-  `makeSurrenderRetreatDecision` when `VCMI_NK2_NATIVE_TRACE` points at an output JSON file.
+  fixed-answer query callbacks, `heroGotLevel`, `showMapObjectSelectDialog`, `showBlockingDialog`,
+  `showTeleportDialog`, and `makeSurrenderRetreatDecision` when `VCMI_NK2_NATIVE_TRACE` points at an output JSON
+  file.
 
 The current Lua policy surface includes the core day loop, settings, state locks, task plan execution, priority
 formula scaffolding, deterministic `RewardEvaluator` resource, reward, growth, cost, strategic, and conquest helpers,
@@ -195,8 +196,9 @@ yes/no parity still needs richer object and danger snapshots. Teleport dialogs r
 selection policy; destination/probing memory parity is still thinner than native `AIGateway`. Fixed-answer
 commander, tavern, market, and university queries are represented as Lua entry points that emit `answerQuery(0)`.
 Hero level-up secondary-skill choice uses a Lua port of the native `HeroManager` score maps, role-map update, and
-main/scout selection rules from visible hero/town snapshots; exact fighting-strength order still needs richer
-speciality bonus snapshots. `ExecuteHeroChain` now executes composite, Dimension Door, adventure-spell, Build Boat,
+main/scout selection rules from visible hero/town snapshots, with native trace coverage for role-dependent level-up
+choices; exact fighting-strength order still needs richer speciality bonus snapshots. `ExecuteHeroChain` now executes
+composite, Dimension Door, adventure-spell, Build Boat,
 and explicit command special-action descriptors through Lua-owned primitive host commands, stale Dimension Door
 recovery locks the hero and invalidates pathfinding like native `recoverStaleDimensionDoorAction`, and object-graph
 shortcutting uses neutral live path-info fields to skip obsolete path nodes. Build Boat path special actions now
@@ -298,11 +300,11 @@ status, command journals, trace, and memory, and writes actual JSON plus a first
 `tests/fixtures/discrepancies/` when a replay drifts. `compare_native_trace.py` consumes
 `tests/fixtures/native_trace/*.json` files or explicitly passed trace files with the
 `LuaNullkiller2.nativeDecisionTrace.v1` shape, runs each native decision input through Lua, and compares fields such
-as `status`, `selection`, `intent`, `side`, `ended`, and `commandJournal`; exact comparison is the default, while
+as `status`, `selection`, `role`, `intent`, `side`, `ended`, and `commandJournal`; exact comparison is the default, while
 `compareMode: "subset"` is reserved for reduced traces during triage. Native `Nullkiller2` trace capture is enabled
 by setting `VCMI_NK2_NATIVE_TRACE=/path/to/trace.json`; the current exporter writes fixed-answer query,
-map-object selection, blocking-dialog, teleport-dialog, and surrender/retreat decisions and will be extended decision
-by decision.
+hero-level-up, map-object selection, blocking-dialog, teleport-dialog, and surrender/retreat decisions and will be
+extended decision by decision.
 
 ## Differential Testing
 
@@ -498,8 +500,8 @@ Commit messages must stay focused on the code change and must not mention the re
 3. Extend garrison, hero exchange, artifact sequencing, and checked host validators with richer edge-case coverage.
 4. Finish `RewardEvaluator` and object-specific priority context builders, then add fixture tests for raw context and
    final priority parity.
-5. Expand the native `Nullkiller2` trace exporter beyond fixed-answer query, map-object selection, blocking-dialog,
-   teleport-dialog, and surrender/retreat decisions so discrepancies produce minimized fixtures under
+5. Expand the native `Nullkiller2` trace exporter beyond fixed-answer query, hero-level-up, map-object selection,
+   blocking-dialog, teleport-dialog, and surrender/retreat decisions so discrepancies produce minimized fixtures under
    `scripts/ai/nullkiller2/tests/fixtures/discrepancies/`.
 6. Add richer Lua policies for artifact assembly, shipyard, and battle preservation decisions where native currently
    does more than passive status/event forwarding.

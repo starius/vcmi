@@ -24,7 +24,7 @@ from replay_lua_decisions import (
 
 LUA_ROOT = REPO_ROOT / "scripts/ai/nullkiller2"
 TRACE_ROOT = LUA_ROOT / "tests/fixtures/native_trace"
-DEFAULT_COMPARE_FIELDS = ["status", "intent", "selection", "side", "ended", "commandJournal"]
+DEFAULT_COMPARE_FIELDS = ["status", "intent", "selection", "role", "side", "ended", "commandJournal"]
 MISSING = object()
 
 

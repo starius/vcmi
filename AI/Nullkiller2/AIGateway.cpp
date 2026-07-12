@@ -311,6 +311,128 @@ JsonNode teleportDialogInput(
 	return input;
 }
 
+JsonNode heroSecondarySkillsSnapshot(const std::vector<std::pair<SecondarySkill, ui8>> & skills)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_VECTOR);
+	for(const auto & skill : skills)
+	{
+		JsonNode entry;
+		entry.setType(JsonNode::JsonType::DATA_STRUCT);
+		entry["skill"].Integer() = skill.first.getNum();
+		entry["level"].Integer() = skill.second;
+		result.Vector().push_back(std::move(entry));
+	}
+	return result;
+}
+
+JsonNode secondarySkillIDsSnapshot(const std::vector<SecondarySkill> & skills)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_VECTOR);
+	for(const auto & skill : skills)
+		result.Vector().push_back(JsonNode(static_cast<int64_t>(skill.getNum())));
+	return result;
+}
+
+JsonNode primarySkillsSnapshot(const CGHeroInstance * hero)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	result["attack"].Integer() = hero->getBasePrimarySkillValue(PrimarySkill::ATTACK);
+	result["defense"].Integer() = hero->getBasePrimarySkillValue(PrimarySkill::DEFENSE);
+	result["spellPower"].Integer() = hero->getBasePrimarySkillValue(PrimarySkill::SPELL_POWER);
+	result["knowledge"].Integer() = hero->getBasePrimarySkillValue(PrimarySkill::KNOWLEDGE);
+	return result;
+}
+
+JsonNode heroLevelHeroSnapshot(const CGHeroInstance * hero, const HeroManager & heroManager, std::optional<HeroRole> role = std::nullopt)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	result["verified"].Bool() = true;
+	result["id"].Integer() = hero->id.getNum();
+	result["level"].Integer() = hero->level;
+	result["evaluateHeroScore"].Float() = heroManager.evaluateHero(hero);
+	result["totalStrength"].Integer() = static_cast<int64_t>(hero->getTotalStrength());
+	result["armyStrength"].Integer() = static_cast<int64_t>(hero->getArmyStrength());
+	result["primarySkills"] = primarySkillsSnapshot(hero);
+	result["secSkills"] = heroSecondarySkillsSnapshot(hero->secSkills);
+	result["patrol"].setType(JsonNode::JsonType::DATA_STRUCT);
+	result["patrol"]["patrolling"].Bool() = hero->patrol.patrolling;
+	if(role)
+		result["role"].Integer() = static_cast<int>(*role);
+	return result;
+}
+
+JsonNode heroLevelHeroesSnapshot(const std::vector<const CGHeroInstance *> & heroes, const HeroManager & heroManager)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_VECTOR);
+	for(const auto * hero : heroes)
+		result.Vector().push_back(heroLevelHeroSnapshot(hero, heroManager, heroManager.getHeroRoleOrDefaultInefficient(hero)));
+	return result;
+}
+
+JsonNode heroLevelTownsSnapshot(const std::vector<const CGTownInstance *> & towns)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_VECTOR);
+	for(const auto * town : towns)
+	{
+		JsonNode entry;
+		entry.setType(JsonNode::JsonType::DATA_STRUCT);
+		entry["id"].Integer() = town->id.getNum();
+		result.Vector().push_back(std::move(entry));
+	}
+	return result;
+}
+
+JsonNode mapSizeSnapshot(const int3 & mapSize)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	result["x"].Integer() = mapSize.x;
+	result["y"].Integer() = mapSize.y;
+	result["z"].Integer() = mapSize.z;
+	return result;
+}
+
+JsonNode heroGotLevelInput(
+	QueryID queryID,
+	const HeroPtr & heroPtr,
+	PrimarySkill primarySkill,
+	const std::vector<SecondarySkill> & skills,
+	const std::shared_ptr<CCallback> & callback,
+	const HeroManager & heroManager,
+	std::optional<HeroRole> role)
+{
+	JsonNode input;
+	input.setType(JsonNode::JsonType::DATA_STRUCT);
+	input["queryID"].Integer() = queryID.getNum();
+	input["primarySkill"].Integer() = primarySkill.getNum();
+	input["skills"] = secondarySkillIDsSnapshot(skills);
+	input["currentDay"].Integer() = callback->getCalendar().getCurrentDay();
+	input["mapSize"] = mapSizeSnapshot(callback->getMapSize());
+	input["townsInfo"] = heroLevelTownsSnapshot(callback->getTownsInfo());
+	input["heroesInfo"] = heroLevelHeroesSnapshot(callback->getHeroesInfo(), heroManager);
+
+	input["hero"].setType(JsonNode::JsonType::DATA_STRUCT);
+	input["hero"]["verified"].Bool() = heroPtr.isVerified(false);
+	if(heroPtr.isVerified(false))
+		input["hero"] = heroLevelHeroSnapshot(heroPtr.get(), heroManager, role);
+
+	return input;
+}
+
+JsonNode heroGotLevelNativeOutput(QueryID queryID, int selection, std::optional<HeroRole> role)
+{
+	JsonNode output = answerQueryNativeOutput(queryID, selection);
+	if(role)
+		output["role"].Integer() = static_cast<int>(*role);
+	return output;
+}
+
 JsonNode surrenderRetreatInput(const BattleStateInfoForRetreat & battleState, size_t townsCount, const Settings & settings)
 {
 	JsonNode input;
@@ -895,15 +1017,40 @@ void AIGateway::heroGotLevel(const CGHeroInstance * hero, PrimarySkill pskill, s
 	status.addQuery(queryID, boost::str(boost::format("Hero %s got level %d") % hero->getNameTranslated() % hero->level));
 	HeroPtr heroPtr(hero, cc.get());
 
-	executeActionAsync("heroGotLevel", [this, heroPtr, skills, queryID]()
+	executeActionAsync("heroGotLevel", [this, heroPtr, pskill, skills, queryID]()
 	{
 		int sel = 0;
+		std::optional<HeroRole> role;
+		std::optional<JsonNode> traceInput;
 
 		if(heroPtr.isVerified())
 		{
 			std::unique_lock lockGuard(nullkiller->aiStateMutex);
 			nullkiller->heroManager->update();
+			role = nullkiller->heroManager->getHeroRoleOrDefault(heroPtr);
 			sel = nullkiller->heroManager->selectBestSkillIndex(heroPtr, skills);
+			if(nativeTrace)
+				traceInput = heroGotLevelInput(queryID, heroPtr, pskill, skills, cc, *nullkiller->heroManager, role);
+		}
+		else if(nativeTrace)
+		{
+			std::unique_lock lockGuard(nullkiller->aiStateMutex);
+			nullkiller->heroManager->update();
+			traceInput = heroGotLevelInput(queryID, heroPtr, pskill, skills, cc, *nullkiller->heroManager, role);
+		}
+
+		if(nativeTrace && traceInput)
+		{
+			std::vector<std::string> compareFields{ "status", "selection", "commandJournal" };
+			if(role)
+				compareFields.insert(compareFields.begin() + 2, "role");
+
+			nativeTrace->recordDecision(
+				boost::str(boost::format("heroGotLevel.%d") % queryID.getNum()),
+				"heroGotLevel",
+				std::move(*traceInput),
+				heroGotLevelNativeOutput(queryID, sel, role),
+				std::move(compareFields));
 		}
 
 		answerQuery(queryID, sel);

@@ -64,6 +64,7 @@ local function answerQuery(ai, input, status)
 	return {
 		status = status or "answered",
 		selection = input.selection or 0,
+		role = input.role,
 		commandJournal = host:getJournal()
 	}
 end
@@ -1197,10 +1198,12 @@ function Nullkiller.heroGotLevel(ai, input)
 	}, input.hero) or input.hero
 	local heroManager = HeroManager.new(input)
 	heroManager:update()
-	local selection = heroManager:selectBestSkillIndex(hero, input.skills or input.secondarySkills or {})
+	local role = heroManager:getHeroRoleOrDefault(hero)
+	local selection = heroManager:selectBestSkillIndex(hero, input.skills or input.secondarySkills or {}, role)
 	return answerQuery(ai, {
 		queryID = input.queryID,
-		selection = selection
+		selection = selection,
+		role = role
 	})
 end
 
