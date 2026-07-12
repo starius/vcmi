@@ -356,7 +356,7 @@
       "symbols": [
         "Goals::AdventureSpellCast"
       ],
-      "notes": "Constructor, spell access, equality, string policy, basic cast preconditions, and host command intent are ported."
+      "notes": "Constructor, spell access, equality, string policy, basic cast preconditions, target-object state, and host command intent are ported."
     },
     {
       "cpp": "AI/Nullkiller2/Goals/AdventureSpellCast.cpp",
@@ -367,7 +367,7 @@
         "Goals::AdventureSpellCast::accept",
         "Goals::AdventureSpellCast::toString"
       ],
-      "notes": "Town Portal movement and spell-mechanics target validation require host snapshots before full parity."
+      "notes": "Town Portal selected-object state, occupied-town swap/error policy, caster ungarrisoning, cast command, and post-cast town movement are ported. Spell-mechanics target validation still requires host snapshots/helpers."
     },
     {
       "cpp": "AI/Nullkiller2/Goals/SaveResources.h",

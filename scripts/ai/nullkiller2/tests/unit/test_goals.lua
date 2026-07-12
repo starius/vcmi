@@ -252,6 +252,66 @@ local castIntent = spellCast:accept({})
 assert(castIntent.action == "castSpell")
 assert(castIntent.hero == heroA)
 
+local portalHero = {
+	id = 405,
+	name = "Town Portal Caster",
+	mana = 30,
+	garrisoned = true,
+	visitedTown = { id = 406, name = "Visited Tower" }
+}
+local portalTown = {
+	id = 407,
+	name = "Portal Castle",
+	owner = 1,
+	visitablePos = { x = 4, y = 5, z = 0 },
+	visitingHero = { id = 408, name = "Town Visitor" },
+	upperArmy = { stacksCount = 0 }
+}
+local portalLog = {}
+local portalGoal = AdventureSpellCast.new(portalHero, {
+	id = 409,
+	name = "Town Portal",
+	cost = 16,
+	isAdventure = true,
+	townPortal = true
+}):settown(portalTown):settile({ x = 4, y = 5, z = 0 })
+portalGoal:accept({
+	playerID = 1,
+	setTargetObject = function(_, townArg)
+		table.insert(portalLog, "target:" .. townArg.id)
+	end,
+	swapGarrisonHero = function(_, townArg)
+		table.insert(portalLog, "swap:" .. townArg.id)
+	end,
+	castSpell = function(_, hero, spellArg, tileArg)
+		table.insert(portalLog, "cast:" .. hero.id .. ":" .. spellArg.id .. ":" .. tileArg.x)
+	end,
+	executeHeroChain = function(_, path, objid)
+		table.insert(portalLog, "move:" .. path.targetHero.id .. ":" .. objid .. ":" .. path.targetTile.x)
+	end
+})
+assert(portalLog[1] == "target:407")
+assert(portalLog[2] == "swap:407")
+assert(portalLog[3] == "swap:406")
+assert(portalLog[4] == "cast:405:409:4")
+assert(portalLog[5] == "move:405:407:4")
+
+local blockedPortal = AdventureSpellCast.new(
+	{ id = 410, name = "Blocked Caster", mana = 30 },
+	{ id = 411, name = "Town Portal", cost = 16, isAdventure = true, townPortal = true }
+):settown({
+	id = 412,
+	name = "Blocked Town",
+	owner = 1,
+	visitingHero = { id = 413, name = "Blocker" },
+	upperArmy = { stacksCount = 1 }
+})
+local okPortal, portalError = pcall(function()
+	blockedPortal:accept({ playerID = 1, castSpell = function() end })
+end)
+assert(okPortal == false)
+assert(string.find(portalError, "already occupied", 1, true) ~= nil)
+
 local saveResources = SaveResources.new({ 1, 2, 3, 4, 5, 6, 7 })
 assert(saveResources:equals(SaveResources.new({ 0, 0, 0, 0, 0, 0, 0 })) == true)
 assert(saveResources:toString() == "SaveResources [1, 2, 3, 4, 5, 6, 7]")

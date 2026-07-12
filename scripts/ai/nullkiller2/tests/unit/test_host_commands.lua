@@ -10,12 +10,16 @@ local host = {
 
 local adapter = HostCommands.new(host)
 local lockedHeroes = {}
+local targetObject = nil
 adapter.nullkiller = {
 	lockHero = function(_, hero, reason)
 		lockedHeroes[hero.id] = reason
 	end,
 	unlockHero = function(_, hero)
 		lockedHeroes[hero.id] = nil
+	end,
+	setTargetObject = function(_, objid)
+		targetObject = objid
 	end
 }
 
@@ -31,6 +35,7 @@ adapter:dismissCreature({ id = 94 }, 5)
 adapter:lockHero({ id = 95 }, 3)
 assert(lockedHeroes[95] == 3)
 adapter:unlockHero({ id = 95 })
+adapter:setTargetObject({ id = 96 })
 adapter:endTurn()
 
 local journal = adapter:getJournal()
@@ -60,6 +65,7 @@ assert(journal[6].payload.army == 94)
 assert(journal[6].payload.slot == 5)
 assert(journal[7].name == "endTurn")
 assert(lockedHeroes[95] == nil)
+assert(targetObject == 96)
 
 assert(#called == 7)
 assert(called[1].name == "recruitHero")

@@ -160,6 +160,17 @@ function HostCommands:unlockHero(hero)
 	}
 end
 
+function HostCommands:setTargetObject(object)
+	if self.nullkiller and type(self.nullkiller.setTargetObject) == "function" then
+		self.nullkiller:setTargetObject(objectID(object))
+	end
+	return {
+		ok = true,
+		state = "setTargetObject",
+		objid = objectID(object)
+	}
+end
+
 function HostCommands:executeHeroChain(path, objid)
 	local tile = nil
 	if path then
