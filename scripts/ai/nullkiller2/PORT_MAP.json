@@ -906,7 +906,7 @@
         "AIGateway::makePossibleUpgrades",
         "AIGateway::recruitCreatures"
       ],
-      "notes": "Dialog choice, teleport selection/probing, garrison-use, map-object selection, retreat, hero-exchange direction, upgrade choice, and dwelling recruitment policies are Lua-owned against snapshots. C++ callback wiring and full army-transfer sequencing remain pending."
+      "notes": "Dialog choice, teleport selection/probing, garrison-use, map-object selection, retreat, hero-exchange direction, upgrade choice, and dwelling recruitment policies are Lua-owned against snapshots. Target-object state is wired through the host for map-object selection answers; remaining callback wiring and full army-transfer sequencing remain pending."
     },
     {
       "cpp": null,

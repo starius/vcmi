@@ -236,8 +236,32 @@ void CLuaNullkiller2AI::answerQuery(QueryID queryID, int selection) const
 	cc->selectionMade(selection, queryID);
 }
 
-bool CLuaNullkiller2AI::executeCommand(const LuaCommand & command) const
+bool CLuaNullkiller2AI::executeCommand(const LuaCommand & command)
 {
+	if(command.name == "setTargetObject")
+	{
+		targetObjectID = commandInteger(command, "objid").value_or(0);
+		return true;
+	}
+
+	if(command.name == "setActive")
+	{
+		activeHeroID = commandInteger(command, "hero").value_or(-1);
+		targetX = commandInteger(command, "x").value_or(-1);
+		targetY = commandInteger(command, "y").value_or(-1);
+		targetZ = commandInteger(command, "z").value_or(-1);
+		return true;
+	}
+
+	if(command.name == "invalidatePathfinderData")
+	{
+		pathfinderInvalidated = true;
+		return true;
+	}
+
+	if(command.name == "resetObjectClusterizer")
+		return true;
+
 	if(command.name == "lockResources")
 		return true;
 
@@ -380,6 +404,12 @@ bool CLuaNullkiller2AI::executeCommand(const LuaCommand & command) const
 void CLuaNullkiller2AI::yourTurn(QueryID queryID)
 {
 	answerQuery(queryID);
+	activeHeroID = -1;
+	targetObjectID = 0;
+	targetX = -1;
+	targetY = -1;
+	targetZ = -1;
+	pathfinderInvalidated = false;
 
 	LuaNullkiller2Runner runner;
 	LuaRunInput input;
@@ -429,7 +459,7 @@ void CLuaNullkiller2AI::showTeleportDialog(const CGHeroInstance * hero, Teleport
 
 void CLuaNullkiller2AI::showMapObjectSelectDialog(QueryID askID, const Component & icon, const MetaString & title, const MetaString & description, const std::vector<ObjectInstanceID> & objects)
 {
-	answerQuery(askID);
+	answerQuery(askID, std::max(targetObjectID, 0));
 }
 
 std::optional<BattleAction> CLuaNullkiller2AI::makeSurrenderRetreatDecision(const BattleID & battleID, const BattleStateInfoForRetreat & battleState)

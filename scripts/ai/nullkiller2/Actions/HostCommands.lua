@@ -161,48 +161,48 @@ function HostCommands:unlockHero(hero)
 end
 
 function HostCommands:setTargetObject(object)
+	local result = self:command("setTargetObject", {
+		objid = objectID(object)
+	})
 	if self.nullkiller and type(self.nullkiller.setTargetObject) == "function" then
 		self.nullkiller:setTargetObject(objectID(object))
 	end
-	return {
-		ok = true,
-		state = "setTargetObject",
-		objid = objectID(object)
-	}
+	result.state = "setTargetObject"
+	return result
 end
 
 function HostCommands:setActive(hero, tile)
+	local result = self:command("setActive", {
+		hero = objectID(hero),
+		x = tile and tile.x,
+		y = tile and tile.y,
+		z = tile and tile.z
+	})
 	if self.nullkiller and type(self.nullkiller.setActive) == "function" then
 		self.nullkiller:setActive(hero, tile)
 	end
-	return {
-		ok = true,
-		state = "setActive",
-		hero = objectID(hero),
-		tile = tile
-	}
+	result.state = "setActive"
+	return result
 end
 
 function HostCommands:invalidatePathfinderData()
+	local result = self:command("invalidatePathfinderData", {})
 	if self.nullkiller and type(self.nullkiller.invalidatePathfinderData) == "function" then
 		self.nullkiller:invalidatePathfinderData()
 	elseif self.nullkiller then
 		self.nullkiller.pathfinderInvalidated = true
 	end
-	return {
-		ok = true,
-		state = "invalidatePathfinderData"
-	}
+	result.state = "invalidatePathfinderData"
+	return result
 end
 
 function HostCommands:resetObjectClusterizer()
+	local result = self:command("resetObjectClusterizer", {})
 	if self.nullkiller and self.nullkiller.objectClusterizer and type(self.nullkiller.objectClusterizer.reset) == "function" then
 		self.nullkiller.objectClusterizer:reset()
 	end
-	return {
-		ok = true,
-		state = "resetObjectClusterizer"
-	}
+	result.state = "resetObjectClusterizer"
+	return result
 end
 
 function HostCommands:executeHeroChain(path, objid)

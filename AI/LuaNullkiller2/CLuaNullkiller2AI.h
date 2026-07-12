@@ -19,9 +19,15 @@ struct LuaCommand;
 class CLuaNullkiller2AI final : public CAdventureAI
 {
 	std::shared_ptr<CCallback> cc;
+	int activeHeroID = -1;
+	int targetObjectID = 0;
+	int targetX = -1;
+	int targetY = -1;
+	int targetZ = -1;
+	bool pathfinderInvalidated = false;
 
 	void answerQuery(QueryID queryID, int selection = 0) const;
-	bool executeCommand(const LuaCommand & command) const;
+	bool executeCommand(const LuaCommand & command);
 
 public:
 	std::string getBattleAIName() const override;
