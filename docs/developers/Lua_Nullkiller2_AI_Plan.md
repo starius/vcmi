@@ -176,9 +176,11 @@ native duplicate-stack merge-before-recruit case and full resource-vector afford
 `tileHidden`, `tileRevealed`, `newObject`, `heroVisit`, `objectRemoved`, and `objectPropertyChanged` event
 callbacks now route through Lua and mutate persistent `AIMemory` object-id sets while the host keeps raw pathfinder
 invalidation as a non-policy state flag; object removal, owner changes, and setting-gated tile reveal updates also
-record the native hitmap/tile-owner reset markers in Lua memory. The `playerBlocked`, `heroCreated`, `battleStart`, `battleEnd`,
-`battleResultsApplied`, and `battleEnded` event callbacks update Lua-owned status memory for battle/movement
-state while preserving host-side base battle notifications and raw pathfinder invalidation.
+record the native hitmap/tile-owner reset markers in Lua memory. Lightweight native state callbacks for artifact
+movement, resource/creature availability, hero stat changes, garrisons, buildings, adventure spell casts, and request
+realization now route through Lua status-memory entry points. The `playerBlocked`, `heroCreated`, `battleStart`,
+`battleEnd`, `battleResultsApplied`, and `battleEnded` event callbacks update Lua-owned status memory for
+battle/movement state while preserving host-side base battle notifications and raw pathfinder invalidation.
 Surrender/retreat
 decisions now return from Lua `GatewayPolicy.makeSurrenderRetreatDecision` and are converted to `BattleAction`
 only at the host boundary. Blocking dialogs route component snapshots through Lua selection policy; danger-aware

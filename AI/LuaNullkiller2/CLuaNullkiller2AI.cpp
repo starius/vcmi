@@ -271,6 +271,17 @@ JsonNode componentSnapshot(const Component & component)
 	return result;
 }
 
+JsonNode artifactLocationSnapshot(const ArtifactLocation & location)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	result["holder"].Integer() = location.artHolder.getNum();
+	result["slot"].Integer() = location.slot.getNum();
+	if(location.creature)
+		result["creatureSlot"].Integer() = location.creature->getNum();
+	return result;
+}
+
 JsonNode componentsSnapshot(const std::vector<Component> & components)
 {
 	JsonNode result;
@@ -1124,6 +1135,236 @@ void CLuaNullkiller2AI::playerBlocked(int reason, bool start)
 	snapshot["start"].Bool() = start;
 
 	runEventCallback("playerBlocked", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::availableCreaturesChanged(const CGDwelling * town)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	if(town)
+		snapshot["dwelling"] = dwellingSnapshot(town);
+
+	runEventCallback("availableCreaturesChanged", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::heroInGarrisonChange(const CGTownInstance * town)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	if(town)
+		snapshot["town"] = townSnapshot(town, cc);
+
+	runEventCallback("heroInGarrisonChange", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::artifactMoved(const ArtifactLocation & src, const ArtifactLocation & dst)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["src"] = artifactLocationSnapshot(src);
+	snapshot["dst"] = artifactLocationSnapshot(dst);
+
+	runEventCallback("artifactMoved", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::artifactAssembled(const ArtifactLocation & al)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["location"] = artifactLocationSnapshot(al);
+
+	runEventCallback("artifactAssembled", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::artifactPut(const ArtifactLocation & al)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["location"] = artifactLocationSnapshot(al);
+
+	runEventCallback("artifactPut", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::artifactRemoved(const ArtifactLocation & al)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["location"] = artifactLocationSnapshot(al);
+
+	runEventCallback("artifactRemoved", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::artifactDisassembled(const ArtifactLocation & al)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["location"] = artifactLocationSnapshot(al);
+
+	runEventCallback("artifactDisassembled", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::availableArtifactsChanged(const CGBlackMarket * bm)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["hasBlackMarket"].Bool() = bm != nullptr;
+
+	runEventCallback("availableArtifactsChanged", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::heroVisitsTown(const CGHeroInstance * hero, const CGTownInstance * town)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	if(hero)
+		snapshot["hero"] = heroSnapshot(hero, cc);
+	if(town)
+		snapshot["town"] = townSnapshot(town, cc);
+
+	runEventCallback("heroVisitsTown", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::heroExperienceChanged(const CGHeroInstance * hero, si64 val)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["value"].Integer() = static_cast<int64_t>(val);
+	if(hero)
+		snapshot["hero"] = heroSnapshot(hero, cc);
+
+	runEventCallback("heroExperienceChanged", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::heroPrimarySkillChanged(const CGHeroInstance * hero, PrimarySkill which, si64 val)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["skill"].Integer() = which.getNum();
+	snapshot["value"].Integer() = static_cast<int64_t>(val);
+	if(hero)
+		snapshot["hero"] = heroSnapshot(hero, cc);
+
+	runEventCallback("heroPrimarySkillChanged", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::heroMovePointsChanged(const CGHeroInstance * hero)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	if(hero)
+		snapshot["hero"] = heroSnapshot(hero, cc);
+
+	runEventCallback("heroMovePointsChanged", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::garrisonsChanged(ObjectInstanceID id1, ObjectInstanceID id2)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["id1"].Integer() = id1.getNum();
+	snapshot["id2"].Integer() = id2.getNum();
+
+	runEventCallback("garrisonsChanged", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::playerBonusChanged(const Bonus & bonus, bool gain)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["gain"].Bool() = gain;
+
+	runEventCallback("playerBonusChanged", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::advmapSpellCast(const CGHeroInstance * caster, SpellID spellID)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["spell"].Integer() = spellID.getNum();
+	if(caster)
+		snapshot["caster"] = heroSnapshot(caster, cc);
+
+	runEventCallback("advmapSpellCast", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::requestRealized(PackageApplied * pa)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	if(pa)
+	{
+		snapshot["requestID"].Integer() = static_cast<int64_t>(pa->requestID);
+		snapshot["packType"].Integer() = static_cast<int64_t>(pa->packType);
+		snapshot["result"].Bool() = pa->result;
+	}
+
+	runEventCallback("requestRealized", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::receivedResource()
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+
+	runEventCallback("receivedResource", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::heroManaPointsChanged(const CGHeroInstance * hero)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	if(hero)
+		snapshot["hero"] = heroSnapshot(hero, cc);
+
+	runEventCallback("heroManaPointsChanged", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::heroSecondarySkillChanged(const CGHeroInstance * hero, int which, int val)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["skill"].Integer() = which;
+	snapshot["value"].Integer() = val;
+	if(hero)
+		snapshot["hero"] = heroSnapshot(hero, cc);
+
+	runEventCallback("heroSecondarySkillChanged", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::beforeObjectPropertyChanged(const SetObjectProperty * sop)
+{
+	if(!sop)
+		return;
+
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["objectID"].Integer() = sop->id.getNum();
+	snapshot["property"].Integer() = static_cast<int>(sop->what);
+
+	runEventCallback("beforeObjectPropertyChanged", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::buildChanged(const CGTownInstance * town, BuildingID buildingID, int what)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["building"].Integer() = buildingID.getNum();
+	snapshot["what"].Integer() = what;
+	if(town)
+		snapshot["town"] = townSnapshot(town, cc);
+
+	runEventCallback("buildChanged", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::heroBonusChanged(const CGHeroInstance * hero, const Bonus & bonus, bool gain)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["gain"].Bool() = gain;
+	if(hero)
+		snapshot["hero"] = heroSnapshot(hero, cc);
+
+	runEventCallback("heroBonusChanged", std::move(snapshot));
 }
 
 void CLuaNullkiller2AI::heroCreated(const CGHeroInstance * hero)

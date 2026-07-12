@@ -45,6 +45,94 @@ function Script.playerBlocked(ai, input)
 	return Nullkiller.playerBlocked(ai, input or {})
 end
 
+function Script.availableCreaturesChanged(ai, input)
+	return Nullkiller.availableCreaturesChanged(ai, input or {})
+end
+
+function Script.heroInGarrisonChange(ai, input)
+	return Nullkiller.heroInGarrisonChange(ai, input or {})
+end
+
+function Script.artifactMoved(ai, input)
+	return Nullkiller.artifactMoved(ai, input or {})
+end
+
+function Script.artifactAssembled(ai, input)
+	return Nullkiller.artifactAssembled(ai, input or {})
+end
+
+function Script.artifactPut(ai, input)
+	return Nullkiller.artifactPut(ai, input or {})
+end
+
+function Script.artifactRemoved(ai, input)
+	return Nullkiller.artifactRemoved(ai, input or {})
+end
+
+function Script.artifactDisassembled(ai, input)
+	return Nullkiller.artifactDisassembled(ai, input or {})
+end
+
+function Script.availableArtifactsChanged(ai, input)
+	return Nullkiller.availableArtifactsChanged(ai, input or {})
+end
+
+function Script.heroVisitsTown(ai, input)
+	return Nullkiller.heroVisitsTown(ai, input or {})
+end
+
+function Script.heroExperienceChanged(ai, input)
+	return Nullkiller.heroExperienceChanged(ai, input or {})
+end
+
+function Script.heroPrimarySkillChanged(ai, input)
+	return Nullkiller.heroPrimarySkillChanged(ai, input or {})
+end
+
+function Script.heroMovePointsChanged(ai, input)
+	return Nullkiller.heroMovePointsChanged(ai, input or {})
+end
+
+function Script.garrisonsChanged(ai, input)
+	return Nullkiller.garrisonsChanged(ai, input or {})
+end
+
+function Script.playerBonusChanged(ai, input)
+	return Nullkiller.playerBonusChanged(ai, input or {})
+end
+
+function Script.advmapSpellCast(ai, input)
+	return Nullkiller.advmapSpellCast(ai, input or {})
+end
+
+function Script.requestRealized(ai, input)
+	return Nullkiller.requestRealized(ai, input or {})
+end
+
+function Script.receivedResource(ai, input)
+	return Nullkiller.receivedResource(ai, input or {})
+end
+
+function Script.heroManaPointsChanged(ai, input)
+	return Nullkiller.heroManaPointsChanged(ai, input or {})
+end
+
+function Script.heroSecondarySkillChanged(ai, input)
+	return Nullkiller.heroSecondarySkillChanged(ai, input or {})
+end
+
+function Script.beforeObjectPropertyChanged(ai, input)
+	return Nullkiller.beforeObjectPropertyChanged(ai, input or {})
+end
+
+function Script.buildChanged(ai, input)
+	return Nullkiller.buildChanged(ai, input or {})
+end
+
+function Script.heroBonusChanged(ai, input)
+	return Nullkiller.heroBonusChanged(ai, input or {})
+end
+
 function Script.heroCreated(ai, input)
 	return Nullkiller.heroCreated(ai, input or {})
 end

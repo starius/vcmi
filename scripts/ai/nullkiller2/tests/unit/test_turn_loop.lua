@@ -488,6 +488,45 @@ local movingResult = Script.playerBlocked(makeAI().ai, {
 assert(movingResult.status == "player_blocked")
 assert(eventMemory.status.moving == true)
 
+for _, entry in ipairs({
+	{ "availableCreaturesChanged", "available_creatures_changed" },
+	{ "heroInGarrisonChange", "hero_in_garrison_change" },
+	{ "artifactMoved", "artifact_moved" },
+	{ "artifactAssembled", "artifact_assembled" },
+	{ "artifactPut", "artifact_put" },
+	{ "artifactRemoved", "artifact_removed" },
+	{ "artifactDisassembled", "artifact_disassembled" },
+	{ "availableArtifactsChanged", "available_artifacts_changed" },
+	{ "heroVisitsTown", "hero_visits_town" },
+	{ "heroExperienceChanged", "hero_experience_changed" },
+	{ "heroPrimarySkillChanged", "hero_primary_skill_changed" },
+	{ "heroMovePointsChanged", "hero_move_points_changed" },
+	{ "garrisonsChanged", "garrisons_changed" },
+	{ "playerBonusChanged", "player_bonus_changed" },
+	{ "advmapSpellCast", "advmap_spell_cast" },
+	{ "requestRealized", "request_realized" },
+	{ "receivedResource", "received_resource" },
+	{ "heroManaPointsChanged", "hero_mana_points_changed" },
+	{ "heroSecondarySkillChanged", "hero_secondary_skill_changed" },
+	{ "beforeObjectPropertyChanged", "before_object_property_changed" },
+	{ "buildChanged", "build_changed" },
+	{ "heroBonusChanged", "hero_bonus_changed" }
+}) do
+	local eventName, statusName = entry[1], entry[2]
+	local callbackMemory = {
+		aiMemory = {
+			visitableObjs = {},
+			alreadyVisited = {}
+		}
+	}
+	local callbackResult = Script[eventName](makeAI().ai, {
+		memory = callbackMemory
+	})
+	assert(callbackResult.status == statusName)
+	assert(callbackResult.memory == callbackMemory)
+	assert(callbackMemory.status.lastEvent == statusName)
+end
+
 local heroCreatedResult = Script.heroCreated(makeAI().ai, {
 	memory = eventMemory,
 	hero = { id = 939 }

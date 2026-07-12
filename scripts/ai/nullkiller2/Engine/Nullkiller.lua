@@ -287,6 +287,14 @@ local function statusRoot(memory)
 	return memory.status
 end
 
+local function statusEvent(input, status)
+	input = input or {}
+	local root = memoryRoot(input)
+	local statusMemory = statusRoot(root)
+	statusMemory.lastEvent = status
+	return eventResult(root, status)
+end
+
 local function buildAiState(input, host, settings, state)
 	input = ensureSnapshotIndexes(input)
 	local aiNk = {}
@@ -928,6 +936,94 @@ end
 
 function Nullkiller.commanderGotLevel(ai, input)
 	return answerQuery(ai, input)
+end
+
+function Nullkiller.availableCreaturesChanged(ai, input)
+	return statusEvent(input, "available_creatures_changed")
+end
+
+function Nullkiller.heroInGarrisonChange(ai, input)
+	return statusEvent(input, "hero_in_garrison_change")
+end
+
+function Nullkiller.artifactMoved(ai, input)
+	return statusEvent(input, "artifact_moved")
+end
+
+function Nullkiller.artifactAssembled(ai, input)
+	return statusEvent(input, "artifact_assembled")
+end
+
+function Nullkiller.artifactPut(ai, input)
+	return statusEvent(input, "artifact_put")
+end
+
+function Nullkiller.artifactRemoved(ai, input)
+	return statusEvent(input, "artifact_removed")
+end
+
+function Nullkiller.artifactDisassembled(ai, input)
+	return statusEvent(input, "artifact_disassembled")
+end
+
+function Nullkiller.availableArtifactsChanged(ai, input)
+	return statusEvent(input, "available_artifacts_changed")
+end
+
+function Nullkiller.heroVisitsTown(ai, input)
+	return statusEvent(input, "hero_visits_town")
+end
+
+function Nullkiller.heroExperienceChanged(ai, input)
+	return statusEvent(input, "hero_experience_changed")
+end
+
+function Nullkiller.heroPrimarySkillChanged(ai, input)
+	return statusEvent(input, "hero_primary_skill_changed")
+end
+
+function Nullkiller.heroMovePointsChanged(ai, input)
+	return statusEvent(input, "hero_move_points_changed")
+end
+
+function Nullkiller.garrisonsChanged(ai, input)
+	return statusEvent(input, "garrisons_changed")
+end
+
+function Nullkiller.playerBonusChanged(ai, input)
+	return statusEvent(input, "player_bonus_changed")
+end
+
+function Nullkiller.advmapSpellCast(ai, input)
+	return statusEvent(input, "advmap_spell_cast")
+end
+
+function Nullkiller.requestRealized(ai, input)
+	return statusEvent(input, "request_realized")
+end
+
+function Nullkiller.receivedResource(ai, input)
+	return statusEvent(input, "received_resource")
+end
+
+function Nullkiller.heroManaPointsChanged(ai, input)
+	return statusEvent(input, "hero_mana_points_changed")
+end
+
+function Nullkiller.heroSecondarySkillChanged(ai, input)
+	return statusEvent(input, "hero_secondary_skill_changed")
+end
+
+function Nullkiller.beforeObjectPropertyChanged(ai, input)
+	return statusEvent(input, "before_object_property_changed")
+end
+
+function Nullkiller.buildChanged(ai, input)
+	return statusEvent(input, "build_changed")
+end
+
+function Nullkiller.heroBonusChanged(ai, input)
+	return statusEvent(input, "hero_bonus_changed")
 end
 
 function Nullkiller.playerBlocked(ai, input)
