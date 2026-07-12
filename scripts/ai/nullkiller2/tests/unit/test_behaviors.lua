@@ -5,6 +5,7 @@ local ExchangeSwapTownHeroes = require("Goals.ExchangeSwapTownHeroes")
 local PriorityEvaluator = require("Engine.PriorityEvaluator")
 local RecruitHeroBehavior = require("Behaviors.RecruitHeroBehavior")
 local State = require("Engine.State")
+local StayAtTownBehavior = require("Behaviors.StayAtTownBehavior")
 
 local town = { id = 10, name = "Castle", factionID = 1, townLevel = 5, canRecruitHero = true }
 local weakHero = { id = 20, name = "Weak", armyCost = 500, totalStrength = 1000, evaluateHeroScore = 10, factionID = 1 }
@@ -229,3 +230,60 @@ local goldPressureTasks = buildBehavior:decompose({
 })
 assert(#goldPressureTasks == 1)
 assert(goldPressureTasks[1].bid == 12)
+
+local stayBehavior = StayAtTownBehavior.new()
+assert(stayBehavior:toString() == "StayAtTownBehavior")
+assert(stayBehavior:equals(StayAtTownBehavior.new()) == true)
+
+local restingHero = { id = 201, name = "Resting", movementPointsRemaining = 600, movementPointsLimit = 1200 }
+local blockedHero = { id = 202, name = "Blocked", movementPointsRemaining = 600, movementPointsLimit = 1200 }
+local occupiedHero = { id = 203, name = "Guest", movementPointsRemaining = 600, movementPointsLimit = 1200 }
+local stayTown = { id = 204, name = "Tower", visitablePos = { x = 5, y = 6, z = 0 } }
+local stayTasks = stayBehavior:decompose({
+	townsInfo = { stayTown },
+	pathfinder = {
+		calculatePathInfo = function(_, paths, tile)
+			assert(tile == stayTown.visitablePos)
+			paths[1] = {
+				targetHero = restingHero,
+				tile = tile,
+				nodes = { { targetHero = restingHero } },
+				exchangeCount = 1,
+				movementCost = 0.25
+			}
+			paths[2] = {
+				targetHero = blockedHero,
+				tile = tile,
+				nodes = { { targetHero = blockedHero } },
+				exchangeCount = 0,
+				firstBlockedAction = {}
+			}
+			paths[3] = {
+				targetHero = blockedHero,
+				tile = tile,
+				nodes = { { targetHero = blockedHero } },
+				exchangeCount = 2
+			}
+		end
+	}
+})
+assert(#stayTasks == 1)
+assert(stayTasks[1].goalType == AbstractGoal.EGoals.COMPOSITION)
+local staySequence = stayTasks[1]:decompose({})
+assert(staySequence[1].goalType == AbstractGoal.EGoals.EXECUTE_HERO_CHAIN)
+assert(staySequence[2].goalType == AbstractGoal.EGoals.STAY_AT_TOWN)
+assert(staySequence[2].hero == restingHero)
+
+local occupiedStayTasks = stayBehavior:decompose({
+	townsInfo = {
+		{
+			id = 205,
+			name = "Occupied",
+			visitingHero = occupiedHero,
+			paths = {
+				{ targetHero = restingHero, tile = { x = 1, y = 1, z = 0 }, nodes = {}, exchangeCount = 0 }
+			}
+		}
+	}
+})
+assert(#occupiedStayTasks == 0)

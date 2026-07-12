@@ -6,6 +6,7 @@ local BuyArmy = require("Goals.BuyArmy")
 local CaptureObject = require("Goals.CaptureObject")
 local DigAtTile = require("Goals.DigAtTile")
 local DismissHero = require("Goals.DismissHero")
+local ExecuteHeroChain = require("Goals.ExecuteHeroChain")
 local ExploreNeighbourTile = require("Goals.ExploreNeighbourTile")
 local Goals = require("Goals.Goals")
 local Invalid = require("Goals.Invalid")
@@ -196,5 +197,37 @@ local stayIntent = stay:accept({})
 assert(stayIntent.action == "lockHero")
 assert(stayIntent.hero == restHero)
 
+local chainHero = { id = 950, name = "Crag Hack" }
+local helperHero = { id = 951, name = "Logistics" }
+local chainPath = {
+	targetHero = chainHero,
+	tile = { x = 8, y = 9, z = 0 },
+	nodes = {
+		{ targetHero = helperHero },
+		{ targetHero = chainHero }
+	},
+	chainMask = 17,
+	exchangeCount = 1
+}
+local chain = ExecuteHeroChain.new(chainPath, { id = 952, typeName = "Mine" })
+assert(chain:equals(ExecuteHeroChain.new(chainPath, { id = 952, typeName = "Mine" })) == true)
+assert(chain:equals(ExecuteHeroChain.new({
+	targetHero = chainHero,
+	tile = { x = 8, y = 10, z = 0 },
+	nodes = chainPath.nodes,
+	chainMask = 17
+})) == false)
+assert(chain:getHeroExchangeCount() == 1)
+assert(chain:isObjectAffected(950) == true)
+assert(chain:isObjectAffected(951) == true)
+assert(chain:isObjectAffected(952) == true)
+assert(#chain:getAffectedObjects() == 3)
+assert(chain:toString() == "ExecuteHeroChain Mine(8 9 0) by Crag Hack")
+local chainIntent = chain:accept({})
+assert(chainIntent.action == "executeHeroChain")
+assert(chainIntent.hero == chainHero)
+assert(chainIntent.objid == 952)
+
 assert(Goals.CaptureObject == CaptureObject)
+assert(Goals.ExecuteHeroChain == ExecuteHeroChain)
 assert(Goals.StayAtTown == StayAtTown)

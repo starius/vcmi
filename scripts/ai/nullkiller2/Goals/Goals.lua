@@ -12,6 +12,7 @@ return {
 	DigAtTile = require("Goals.DigAtTile"),
 	DismissHero = require("Goals.DismissHero"),
 	ExchangeSwapTownHeroes = require("Goals.ExchangeSwapTownHeroes"),
+	ExecuteHeroChain = require("Goals.ExecuteHeroChain"),
 	ExploreNeighbourTile = require("Goals.ExploreNeighbourTile"),
 	Invalid = require("Goals.Invalid"),
 	RecruitHero = require("Goals.RecruitHero"),

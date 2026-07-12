@@ -120,6 +120,26 @@ function HostCommands:lockResources(resources)
 	})
 end
 
+function HostCommands:executeHeroChain(path, objid)
+	local tile = nil
+	if path then
+		if type(path.targetTile) == "function" then
+			tile = path:targetTile()
+		else
+			tile = path.targetTile or path.tile
+		end
+	end
+
+	return self:command("executeHeroChain", {
+		hero = objectID(path and path.targetHero),
+		objid = objid,
+		x = tile and tile.x,
+		y = tile and tile.y,
+		z = tile and tile.z,
+		path = path
+	})
+end
+
 function HostCommands:getAvailableHeroes(town)
 	if self.host and type(self.host.getAvailableHeroes) == "function" then
 		return self.host:getAvailableHeroes(town)

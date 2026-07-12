@@ -431,6 +431,30 @@
       "notes": "Lua accept emits an exchangeSwapTownHeroes host command intent and does not call native AIGateway policy."
     },
     {
+      "cpp": "AI/Nullkiller2/Goals/ExecuteHeroChain.h",
+      "lua": "scripts/ai/nullkiller2/Goals/ExecuteHeroChain.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::ExecuteHeroChain"
+      ],
+      "notes": "Constructor state, equality, exchange count, affected-object policy, and command intent are ported."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/ExecuteHeroChain.cpp",
+      "lua": "scripts/ai/nullkiller2/Goals/ExecuteHeroChain.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::ExecuteHeroChain::ExecuteHeroChain",
+        "Goals::ExecuteHeroChain::operator==",
+        "Goals::ExecuteHeroChain::getAffectedObjects",
+        "Goals::ExecuteHeroChain::isObjectAffected",
+        "Goals::ExecuteHeroChain::accept",
+        "Goals::ExecuteHeroChain::toString",
+        "Goals::ExecuteHeroChain::moveHeroToTile"
+      ],
+      "notes": "Path execution currently stops at a Lua host command boundary; stale-path recovery, special actions, siege formation, and step-by-step movement are pending Lua ports."
+    },
+    {
       "cpp": "AI/Nullkiller2/Goals/ExploreNeighbourTile.h",
       "lua": "scripts/ai/nullkiller2/Goals/ExploreNeighbourTile.lua",
       "status": "scaffolded",
@@ -539,6 +563,25 @@
         "Goals::BuildingBehavior::decompose"
       ],
       "notes": "Emergency fortification, gold-pressure filtering, missing-resource composition, and locked-resource skipping are Lua-owned against build analyzer snapshots."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Behaviors/StayAtTownBehavior.h",
+      "lua": "scripts/ai/nullkiller2/Behaviors/StayAtTownBehavior.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::StayAtTownBehavior"
+      ],
+      "notes": "Behavior identity and equality are ported."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Behaviors/StayAtTownBehavior.cpp",
+      "lua": "scripts/ai/nullkiller2/Behaviors/StayAtTownBehavior.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::StayAtTownBehavior::toString",
+        "Goals::StayAtTownBehavior::decompose"
+      ],
+      "notes": "Town/path filtering and composition creation are Lua-owned; path calculation is a snapshot/helper input."
     },
     {
       "cpp": "AI/Nullkiller2/Engine/ResourceTrader.h",
