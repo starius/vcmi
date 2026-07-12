@@ -100,6 +100,66 @@ local function townsInfo(aiNk)
 	return call(aiNk.cc, "getTownsInfo") or aiNk.townsInfo or {}
 end
 
+local function addByID(index, object)
+	local id = objectID(object)
+	if id ~= nil and object ~= nil then
+		index[id] = object
+	end
+end
+
+local function copyIndex(index)
+	local result = {}
+	for key, value in pairs(index or {}) do
+		result[key] = value
+	end
+	return result
+end
+
+local function indexPathHeroes(index, path)
+	addByID(index, path and path.targetHero)
+	for _, node in ipairs(path and path.nodes or {}) do
+		addByID(index, node.targetHero)
+	end
+end
+
+local function indexHeroSnapshot(index, hero)
+	addByID(index, hero)
+end
+
+local function indexObjectSnapshot(objectIndex, heroIndex, object)
+	addByID(objectIndex, object)
+	for _, path in ipairs(object and object.paths or {}) do
+		indexPathHeroes(heroIndex, path)
+	end
+end
+
+local function ensureSnapshotIndexes(input)
+	input = input or {}
+	input.heroesByID = copyIndex(input.heroesByID)
+	input.objectsByID = copyIndex(input.objectsByID)
+
+	for _, hero in ipairs(input.heroesInfo or {}) do
+		indexHeroSnapshot(input.heroesByID, hero)
+	end
+
+	for _, town in ipairs(input.townsInfo or {}) do
+		indexObjectSnapshot(input.objectsByID, input.heroesByID, town)
+		indexHeroSnapshot(input.heroesByID, call(town, "getGarrisonHero") or town.garrisonHero)
+		indexHeroSnapshot(input.heroesByID, call(town, "getVisitingHero") or town.visitingHero)
+		for _, hero in ipairs(town.availableHeroes or {}) do
+			indexHeroSnapshot(input.heroesByID, hero)
+		end
+	end
+
+	for _, listName in ipairs({ "nearbyObjects", "farObjects", "visitableObjects", "objects" }) do
+		for _, object in ipairs(input[listName] or {}) do
+			indexObjectSnapshot(input.objectsByID, input.heroesByID, object)
+		end
+	end
+
+	return input
+end
+
 local function getObj(aiNk, object)
 	local id = objectID(object)
 	local result = call(aiNk.cc, "getObj", id, false)
@@ -176,6 +236,7 @@ local function makeEvaluator(aiNk)
 end
 
 local function buildAiState(input, host, settings, state)
+	input = ensureSnapshotIndexes(input)
 	local aiNk = {}
 	for key, value in pairs(input or {}) do
 		aiNk[key] = value

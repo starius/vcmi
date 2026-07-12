@@ -140,8 +140,6 @@ local artifactResult = Script.runDay(artifactRun.ai, {
 		}
 	},
 	heroesInfo = { artifactHero },
-	heroesByID = { [30] = artifactHero },
-	objectsByID = { [31] = resource },
 	nearbyObjects = { resource },
 	freeResources = { [6] = 0 }
 })

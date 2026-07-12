@@ -22,7 +22,7 @@
         "Nullkiller::resetState",
         "Nullkiller::chooseTaskFailureAction"
       ],
-      "notes": "Lua turn loop now resets state, runs priority-pass behaviors, decomposes regular behaviors by tier, executes accepted tasks through the host command journal, handles task failures, trades resources, reserves town defenders, invokes pass-level artifact optimization, and ends turn. Native callback snapshots/analyzer parity remain incomplete."
+      "notes": "Lua turn loop now normalizes vector snapshots into hero/object lookup indexes, resets state, runs priority-pass behaviors, decomposes regular behaviors by tier, executes accepted tasks through the host command journal, handles task failures, trades resources, reserves town defenders, invokes pass-level artifact optimization, and ends turn. Native callback snapshots/analyzer parity remain incomplete."
     },
     {
       "cpp": "AI/Nullkiller2/Engine/Nullkiller.h",

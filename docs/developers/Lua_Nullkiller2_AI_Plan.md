@@ -136,6 +136,8 @@ The branch now has the initial standalone AI and parity infrastructure in place:
   executes checked host commands without linking to or instantiating native `Nullkiller2`.
 - The Lua runner loads `scripts/ai/nullkiller2/main.lua`, exposes settings, trace, command, and snapshot input, and
   records a command journal that is usable by differential tests.
+- Lua normalizes vector snapshots into `heroesByID` and `objectsByID` lookup tables before turn planning, so C++
+  snapshots do not need duplicate indexed maps for task presence checks.
 - `scripts/ai/nullkiller2/PORT_MAP.json` tracks mirrored C++ files and symbols, with audit coverage for forbidden
   native dependencies and unmapped/stale Lua policy files.
 - Pure Lua tests and fixture-based differential smoke tests run through
