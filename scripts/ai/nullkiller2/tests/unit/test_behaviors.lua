@@ -2,6 +2,7 @@ local AbstractGoal = require("Goals.AbstractGoal")
 local BuildingBehavior = require("Behaviors.BuildingBehavior")
 local BuyArmyBehavior = require("Behaviors.BuyArmyBehavior")
 local CaptureObjectsBehavior = require("Behaviors.CaptureObjectsBehavior")
+local ClusterBehavior = require("Behaviors.ClusterBehavior")
 local EscapeBehavior = require("Behaviors.EscapeBehavior")
 local ExchangeSwapTownHeroes = require("Goals.ExchangeSwapTownHeroes")
 local PriorityEvaluator = require("Engine.PriorityEvaluator")
@@ -9,6 +10,7 @@ local RecruitHeroBehavior = require("Behaviors.RecruitHeroBehavior")
 local State = require("Engine.State")
 local StayAtTownBehavior = require("Behaviors.StayAtTownBehavior")
 local StartupBehavior = require("Behaviors.StartupBehavior")
+local UnlockCluster = require("Markers.UnlockCluster")
 
 local town = { id = 10, name = "Castle", factionID = 1, townLevel = 5, canRecruitHero = true }
 local weakHero = { id = 20, name = "Weak", armyCost = 500, totalStrength = 1000, evaluateHeroScore = 10, factionID = 1 }
@@ -579,3 +581,66 @@ local captureTasks = captureBehavior:decompose({
 assert(#captureTasks == 1)
 assert(captureTasks[1].goalType == AbstractGoal.EGoals.EXECUTE_HERO_CHAIN)
 assert(CaptureObjectsBehavior.new():equals(CaptureObjectsBehavior.new()) == false)
+
+local clusterHero = {
+	id = 601,
+	name = "Breaker",
+	owner = 1,
+	role = PriorityEvaluator.HeroRole.MAIN,
+	heroStrength = 1,
+	armyStrength = 1000
+}
+local clusterBlocker = {
+	id = 602,
+	ID = "MONSTER",
+	objectName = "Guard",
+	visitablePos = { x = 2, y = 2, z = 0 },
+	shouldVisit = true
+}
+local clusterCenter = {
+	id = 603,
+	visitablePos = { x = 4, y = 4, z = 0 }
+}
+local clusterPath = {
+	targetHero = clusterHero,
+	tile = clusterCenter.visitablePos,
+	blocker = clusterBlocker,
+	nodes = {
+		{ coord = clusterCenter.visitablePos, targetHero = clusterHero, parentIndex = 1 },
+		{ coord = clusterBlocker.visitablePos, targetHero = clusterHero, parentIndex = 0 }
+	},
+	turn = 0,
+	exchangeCount = 0,
+	totalDanger = 0,
+	heroArmy = { armyStrength = 1000 },
+	movementCost = 3
+}
+local cluster = {
+	blocker = clusterBlocker,
+	center = clusterCenter
+}
+local unlockCluster = UnlockCluster.new(cluster, clusterPath)
+assert(unlockCluster:equals(UnlockCluster.new(cluster, clusterPath)) == true)
+assert(unlockCluster:toString() == "Unlock Cluster Guard(2 2 0)")
+local clusterTasks = ClusterBehavior.new():decompose({
+	playerID = 1,
+	settings = { safeAttackRatio = 1.1 },
+	lockedClusters = { cluster },
+	pathfinder = {
+		getPathInfo = function(_, tile)
+			assert(tile == clusterCenter.visitablePos)
+			return { clusterPath }
+		end
+	},
+	objectClusterizer = {
+		getBlocker = function(_, path)
+			return path.blocker
+		end
+	}
+})
+assert(#clusterTasks == 1)
+assert(clusterTasks[1].goalType == AbstractGoal.EGoals.COMPOSITION)
+local clusterSequence = clusterTasks[1]:decompose({})
+assert(clusterSequence[1].goalType == AbstractGoal.EGoals.UNLOCK_CLUSTER)
+assert(clusterSequence[2].goalType == AbstractGoal.EGoals.EXECUTE_HERO_CHAIN)
+assert(clusterSequence[2].tile == clusterBlocker.visitablePos)

@@ -455,6 +455,24 @@
       "notes": "Path execution currently stops at a Lua host command boundary; stale-path recovery, special actions, siege formation, and step-by-step movement are pending Lua ports."
     },
     {
+      "cpp": "AI/Nullkiller2/Markers/UnlockCluster.h",
+      "lua": "scripts/ai/nullkiller2/Markers/UnlockCluster.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::UnlockCluster"
+      ],
+      "notes": "Constructor state, cluster/path accessors, equality, and string policy are ported."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Markers/UnlockCluster.cpp",
+      "lua": "scripts/ai/nullkiller2/Markers/UnlockCluster.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::UnlockCluster::operator==",
+        "Goals::UnlockCluster::toString"
+      ]
+    },
+    {
       "cpp": "AI/Nullkiller2/Goals/ExploreNeighbourTile.h",
       "lua": "scripts/ai/nullkiller2/Goals/ExploreNeighbourTile.lua",
       "status": "scaffolded",
@@ -658,6 +676,26 @@
         "Goals::CaptureObjectsBehavior::objectMatchesFilter"
       ],
       "notes": "Object filtering, should-visit decisions, safe path selection, blocked-action composition, and closest-way ratio are Lua-owned against path/object snapshots."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Behaviors/ClusterBehavior.h",
+      "lua": "scripts/ai/nullkiller2/Behaviors/ClusterBehavior.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::ClusterBehavior"
+      ],
+      "notes": "Behavior identity and equality are ported."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Behaviors/ClusterBehavior.cpp",
+      "lua": "scripts/ai/nullkiller2/Behaviors/ClusterBehavior.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::ClusterBehavior::toString",
+        "Goals::ClusterBehavior::decompose",
+        "Goals::ClusterBehavior::decomposeCluster"
+      ],
+      "notes": "Locked-cluster traversal, blocker path trimming, unlock task composition, and capture-task pairing are Lua-owned against cluster/path snapshots."
     },
     {
       "cpp": "AI/Nullkiller2/Engine/ResourceTrader.h",
