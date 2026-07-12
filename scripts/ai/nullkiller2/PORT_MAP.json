@@ -317,7 +317,7 @@
       "symbols": [
         "Goals::BuildBoat"
       ],
-      "notes": "Constructor, equality, and string policy are ported. Full accept parity needs shipyard/resource/relation snapshots."
+      "notes": "Constructor, equality, string policy, and snapshot field expectations for boat cost/status/relation are ported."
     },
     {
       "cpp": "AI/Nullkiller2/Goals/BuildBoat.cpp",
@@ -328,7 +328,7 @@
         "Goals::BuildBoat::accept",
         "Goals::BuildBoat::toString"
       ],
-      "notes": "Current Lua accept emits the host build-boat command boundary; precondition policy remains pending."
+      "notes": "Lua accept checks affordability, enemy ownership, and shipyard readiness before emitting the host build-boat command. Live shipyard snapshot coverage remains pending."
     },
     {
       "cpp": "AI/Nullkiller2/Goals/RecruitHero.h",

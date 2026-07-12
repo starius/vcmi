@@ -182,6 +182,48 @@ local buildBoat = BuildBoat.new(shipyard)
 assert(buildBoat:equals(BuildBoat.new(shipyard)) == true)
 assert(buildBoat:equals(BuildBoat.new({ id = 202 })) == false)
 assert(buildBoat:toString() == "BuildBoat")
+local builtBoatAt = nil
+BuildBoat.new({ id = 203, boatCost = { [7] = 500 }, shipyardStatus = 0, relation = "ALLIES" }):accept({
+	freeResources = { [7] = 1000 },
+	getFreeResources = function(self)
+		return self.freeResources
+	end,
+	buildBoat = function(_, targetShipyard)
+		builtBoatAt = targetShipyard.id
+	end
+})
+assert(builtBoatAt == 203)
+local okBoat, boatError = pcall(function()
+	BuildBoat.new({ id = 204, boatCost = { [7] = 500 }, shipyardStatus = 0 }):accept({
+		freeResources = { [7] = 499 },
+		getFreeResources = function(self)
+			return self.freeResources
+		end,
+		buildBoat = function()
+			error("should not build")
+		end
+	})
+end)
+assert(okBoat == false)
+assert(string.find(boatError, "Can not afford boat", 1, true) ~= nil)
+okBoat, boatError = pcall(function()
+	BuildBoat.new({ id = 205, enemy = true, shipyardStatus = 0 }):accept({
+		buildBoat = function()
+			error("should not build")
+		end
+	})
+end)
+assert(okBoat == false)
+assert(string.find(boatError, "enemy shipyard", 1, true) ~= nil)
+okBoat, boatError = pcall(function()
+	BuildBoat.new({ id = 206, shipyardStatus = 1 }):accept({
+		buildBoat = function()
+			error("should not build")
+		end
+	})
+end)
+assert(okBoat == false)
+assert(string.find(boatError, "Shipyard is busy.", 1, true) ~= nil)
 
 local heroA = { id = 301, name = "Aine", totalStrength = 10, mana = 20 }
 local heroB = { id = 302, name = "Dessa", totalStrength = 30 }

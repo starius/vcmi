@@ -187,6 +187,16 @@ function HostCommands:getAvailableHeroes(town)
 	return town and town.availableHeroes or {}
 end
 
+function HostCommands:getFreeResources()
+	if self.nullkiller and type(self.nullkiller.getFreeResources) == "function" then
+		return self.nullkiller:getFreeResources()
+	end
+	if self.host and type(self.host.getFreeResources) == "function" then
+		return self.host:getFreeResources()
+	end
+	return self.freeResources or {}
+end
+
 function HostCommands:swapGarrisonHero(town)
 	return self:command("swapGarrisonHero", {
 		town = objectID(town)
