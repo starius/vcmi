@@ -146,7 +146,8 @@ The branch now has the initial standalone AI and parity infrastructure in place:
 - `scripts/ai/nullkiller2/PORT_MAP.json` tracks mirrored C++ files and symbols, with audit coverage for forbidden
   native dependencies and unmapped/stale Lua policy files.
 - Pure Lua tests, fixture-based differential smoke tests, and JSON replay fixtures run through
-  `scripts/ai/nullkiller2/tests/run_lua_tests.py`.
+  `scripts/ai/nullkiller2/tests/run_lua_tests.py`; replay coverage now includes a `runDay` hero-chain
+  special-action command journal fixture.
 
 The current Lua policy surface includes the core day loop, settings, state locks, task plan execution, priority
 formula scaffolding, deterministic `RewardEvaluator` resource, reward, growth, cost, strategic, and conquest helpers,

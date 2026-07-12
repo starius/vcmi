@@ -1,0 +1,144 @@
+{
+  "name": "one-pass turn executes hero-chain battle action movement",
+  "function": "runDay",
+  "input": {
+    "playerID": 1,
+    "settings": {
+      "values": {
+        "maxPass": 1,
+        "maxPriorityPass": 1
+      }
+    },
+    "heroesInfo": [
+      {
+        "id": 30,
+        "name": "Chain Hero",
+        "owner": 1,
+        "role": 1,
+        "totalStrength": 5000,
+        "armyStrength": 5000,
+        "movementPointsRemaining": 1000,
+        "visitablePos": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      }
+    ],
+    "nearbyObjects": [
+      {
+        "id": 31,
+        "ID": "RESOURCE",
+        "resource": "gold",
+        "visitablePos": {
+          "x": 1,
+          "y": 0,
+          "z": 0
+        },
+        "paths": [
+          {
+            "targetHero": {
+              "id": 30,
+              "name": "Chain Hero",
+              "owner": 1,
+              "role": 1,
+              "totalStrength": 5000,
+              "armyStrength": 5000,
+              "movementPointsRemaining": 1000,
+              "visitablePos": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "targetTile": {
+              "x": 1,
+              "y": 0,
+              "z": 0
+            },
+            "movementCost": 0.5,
+            "totalDanger": 0,
+            "turn": 0,
+            "exchangeCount": 0,
+            "heroArmy": {
+              "armyStrength": 5000
+            },
+            "nodes": [
+              {
+                "targetHero": {
+                  "id": 30,
+                  "name": "Chain Hero",
+                  "owner": 1,
+                  "role": 1,
+                  "movementPointsRemaining": 1000,
+                  "visitablePos": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0
+                  }
+                },
+                "coord": {
+                  "x": 1,
+                  "y": 0,
+                  "z": 0
+                },
+                "specialAction": {
+                  "type": "BattleAction",
+                  "targetTile": {
+                    "x": 1,
+                    "y": 0,
+                    "z": 0
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "freeResources": {
+      "6": 0
+    }
+  },
+  "expect": {
+    "status": "end_turn",
+    "ended": true,
+    "commandJournal": [
+      {
+        "name": "setActive",
+        "payload": {
+          "hero": 30,
+          "x": 1
+        }
+      },
+      {
+        "name": "setTargetObject",
+        "payload": {
+          "objid": 31
+        }
+      },
+      {
+        "name": "resetObjectClusterizer",
+        "payload": {}
+      },
+      {
+        "name": "setActive",
+        "payload": {
+          "hero": 30,
+          "x": 1
+        }
+      },
+      {
+        "name": "moveHeroToTile",
+        "payload": {
+          "hero": 30,
+          "x": 1
+        }
+      },
+      {
+        "name": "endTurn",
+        "payload": {}
+      }
+    ]
+  }
+}
