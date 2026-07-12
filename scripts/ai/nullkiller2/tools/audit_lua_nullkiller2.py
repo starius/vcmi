@@ -38,6 +38,7 @@ FORBIDDEN_CPP_PATTERNS = [
         r"\bNK2AI::",
         r"\bAIGateway\b",
         r"target_link_libraries\s*\([^)]*\bNullkiller2\b",
+        r"command\.name\s*==\s*\"executeHeroChain\"",
     ]
 ]
 

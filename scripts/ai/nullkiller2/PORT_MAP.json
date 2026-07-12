@@ -452,7 +452,7 @@
         "Goals::ExecuteHeroChain::toString",
         "Goals::ExecuteHeroChain::moveHeroToTile"
       ],
-      "notes": "Path execution sets active hero/tile, target object, resets object clusters, and fail-closes blocked special actions with hero lock/pathfinder invalidation before the host movement boundary. Stale-path recovery, special action execution, siege formation, and step-by-step movement remain pending."
+      "notes": "Path execution sets active hero/tile, target object, resets object clusters, replays path nodes in native backward order through a granular moveHeroToTile host boundary, and fail-closes special actions with hero lock/pathfinder invalidation. Stale-path recovery, special action execution, siege formation, and object-graph shortcutting remain pending."
     },
     {
       "cpp": "AI/Nullkiller2/Markers/UnlockCluster.h",
@@ -916,7 +916,7 @@
         "HostCommands",
         "HostCommands::command journal"
       ],
-      "notes": "Lua-side command boundary and journal used by goal accept methods and differential tests. C++ host execution is command-by-command and must not delegate to native policy."
+      "notes": "Lua-side command boundary and journal used by goal accept methods and differential tests. C++ host execution is command-by-command, including granular hero movement, and must not delegate to native policy."
     },
     {
       "cpp": null,

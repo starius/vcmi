@@ -379,7 +379,7 @@ bool CLuaNullkiller2AI::executeCommand(const LuaCommand & command)
 		return true;
 	}
 
-	if(command.name == "executeHeroChain")
+	if(command.name == "moveHeroToTile")
 	{
 		const auto heroID = commandInteger(command, "hero");
 		const auto x = commandInteger(command, "x");

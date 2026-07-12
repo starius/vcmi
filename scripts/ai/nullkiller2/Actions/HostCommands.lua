@@ -4,6 +4,8 @@
 -- command, but decision code still owns which command is requested and with
 -- which payload.
 
+local State = require("Engine.State")
+
 local HostCommands = {}
 HostCommands.__index = HostCommands
 
@@ -25,6 +27,64 @@ local function spellID(value)
 		return value.id or value.num or objectID(value.spell)
 	end
 	return value
+end
+
+local function call(object, name, ...)
+	if object and type(object[name]) == "function" then
+		return object[name](object, ...)
+	end
+	return nil
+end
+
+local function targetTile(path)
+	local value = call(path, "targetTile")
+	if value ~= nil then
+		return value
+	end
+	return path and (path.targetTile or path.tile) or nil
+end
+
+local function visitablePos(object)
+	return call(object, "visitablePos") or object and (object.visitablePos or object.tile)
+end
+
+local function tileEquals(lhs, rhs)
+	lhs = lhs or {}
+	rhs = rhs or {}
+	return lhs.x == rhs.x and lhs.y == rhs.y and lhs.z == rhs.z
+end
+
+local function movementPoints(hero)
+	local value = call(hero, "movementPointsRemaining")
+	if value ~= nil then
+		return value
+	end
+	return hero and (hero.movementPointsRemaining or hero.movementPoints or 0) or 0
+end
+
+local function pathNodes(path)
+	return path and path.nodes or {}
+end
+
+local function nodeCoord(path, node)
+	return node and (node.coord or node.targetTile or node.tile) or targetTile(path)
+end
+
+local function copyTile(tile)
+	if not tile then
+		return nil
+	end
+	return {
+		x = tile.x,
+		y = tile.y,
+		z = tile.z
+	}
+end
+
+local function setVisitablePos(hero, tile)
+	if type(hero) == "table" then
+		hero.visitablePos = copyTile(tile)
+	end
 end
 
 local function copyPayload(payload)
@@ -205,24 +265,123 @@ function HostCommands:resetObjectClusterizer()
 	return result
 end
 
-function HostCommands:executeHeroChain(path, objid)
-	local tile = nil
-	if path then
-		if type(path.targetTile) == "function" then
-			tile = path:targetTile()
-		else
-			tile = path.targetTile or path.tile
+function HostCommands:moveHeroToTile(tile, hero)
+	if tileEquals(visitablePos(hero), tile) then
+		return {
+			ok = true,
+			state = "moveHeroToTile",
+			skipped = true,
+			hero = objectID(hero),
+			tile = tile
+		}
+	end
+
+	local result = self:command("moveHeroToTile", {
+		hero = objectID(hero),
+		x = tile and tile.x,
+		y = tile and tile.y,
+		z = tile and tile.z
+	})
+
+	if result.ok ~= false then
+		setVisitablePos(hero, tile)
+	end
+	result.state = "moveHeroToTile"
+	return result
+end
+
+local function lockBlockedHero(adapter, blockedIndexes, hero, parentIndex)
+	if parentIndex ~= nil then
+		blockedIndexes[parentIndex] = true
+	end
+	if hero then
+		adapter:lockHero(hero, State.HeroLockedReason.HERO_CHAIN)
+	end
+end
+
+local function executePathNode(adapter, path, node, blockedIndexes, cxxIndex)
+	local hero = node.targetHero or path and path.targetHero
+	local coord = nodeCoord(path, node)
+
+	if blockedIndexes[cxxIndex] then
+		lockBlockedHero(adapter, blockedIndexes, hero, node.parentIndex)
+		return {
+			ok = true,
+			blocked = true
+		}
+	end
+
+	if not hero or objectID(hero) == nil or not coord then
+		return {
+			ok = false,
+			error = "hero chain node is missing hero or coordinate"
+		}
+	end
+
+	if movementPoints(hero) > 0 then
+		adapter:setActive(hero, coord)
+
+		if node.specialAction then
+			lockBlockedHero(adapter, blockedIndexes, hero, node.parentIndex)
+			adapter:invalidatePathfinderData()
+			error("Path special actions are not implemented by Lua Nullkiller2 yet.", 3)
+		end
+
+		if not tileEquals(coord, visitablePos(hero)) then
+			local moveResult = adapter:moveHeroToTile(coord, hero)
+			if moveResult.ok == false then
+				lockBlockedHero(adapter, blockedIndexes, hero, node.parentIndex)
+				return moveResult
+			end
 		end
 	end
 
-	return self:command("executeHeroChain", {
-		hero = objectID(path and path.targetHero),
-		objid = objid,
-		x = tile and tile.x,
-		y = tile and tile.y,
-		z = tile and tile.z,
-		path = path
-	})
+	if tileEquals(coord, visitablePos(hero)) then
+		return {
+			ok = true
+		}
+	end
+
+	if (node.turns or node.turn or 0) == 0 then
+		return {
+			ok = false,
+			error = "unable to complete zero-turn hero chain node"
+		}
+	end
+
+	lockBlockedHero(adapter, blockedIndexes, hero, node.parentIndex)
+	return {
+		ok = true,
+		blocked = true
+	}
+end
+
+function HostCommands:executeHeroChain(path, objid)
+	local nodes = pathNodes(path)
+	if #nodes == 0 then
+		local tile = targetTile(path)
+		self:setActive(path and path.targetHero, tile)
+		return self:moveHeroToTile(tile, path and path.targetHero)
+	end
+
+	local blockedIndexes = {}
+	local result = {
+		ok = true,
+		state = "executeHeroChain",
+		objid = objid
+	}
+
+	for luaIndex = #nodes, 1, -1 do
+		local nodeResult = executePathNode(self, path, nodes[luaIndex] or {}, blockedIndexes, luaIndex - 1)
+		if nodeResult.ok == false then
+			return nodeResult
+		end
+		result = nodeResult
+	end
+
+	result.state = "executeHeroChain"
+	result.objid = objid
+	return result
 end
 
 function HostCommands:getAvailableHeroes(town)
