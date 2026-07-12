@@ -18,6 +18,9 @@
 #include "../../lib/json/JsonUtils.h"
 
 #include <array>
+#include <cmath>
+#include <limits>
+#include <set>
 
 #if __has_include(<lua.hpp>)
 #  include <lua.hpp>
@@ -363,7 +366,10 @@ void pushInput(lua_State * state, const LuaRunInput & input)
 	pushSettingsInput(state, input);
 	lua_setfield(state, -2, "settings");
 
-	lua_newtable(state);
+	if(input.memory.isNull())
+		lua_newtable(state);
+	else
+		pushJsonNode(state, input.memory);
 	lua_setfield(state, -2, "memory");
 
 	if(input.snapshot.isStruct())
@@ -393,6 +399,123 @@ int absoluteIndex(lua_State * state, int index)
 	if(index > 0 || index <= LUA_REGISTRYINDEX)
 		return index;
 	return lua_gettop(state) + index + 1;
+}
+
+JsonNode readLuaValue(lua_State * state, int index, int depth);
+
+bool isPositiveIntegerKey(lua_State * state, int index, int & key)
+{
+	if(!lua_isnumber(state, index))
+		return false;
+
+	const auto number = static_cast<double>(lua_tonumber(state, index));
+	if(!std::isfinite(number) || std::floor(number) != number || number < 1 || number > static_cast<double>(std::numeric_limits<int>::max()))
+		return false;
+
+	key = static_cast<int>(number);
+	return true;
+}
+
+std::string luaTableKey(lua_State * state, int index, int fallbackIndex)
+{
+	int numericKey = 0;
+	if(isPositiveIntegerKey(state, index, numericKey))
+		return std::to_string(numericKey);
+
+	if(lua_isstring(state, index))
+		return toStringRaw(state, index);
+
+	return "key" + std::to_string(fallbackIndex);
+}
+
+JsonNode readLuaTable(lua_State * state, int index, int depth)
+{
+	struct Entry
+	{
+		bool arrayKey = false;
+		int numericKey = 0;
+		std::string stringKey;
+		JsonNode value;
+	};
+
+	index = absoluteIndex(state, index);
+
+	std::vector<Entry> entries;
+	std::set<int> arrayKeys;
+	bool arrayOnly = true;
+	int maxArrayKey = 0;
+	int fallbackIndex = 0;
+
+	lua_pushnil(state);
+	while(lua_next(state, index) != 0)
+	{
+		Entry entry;
+		entry.arrayKey = isPositiveIntegerKey(state, -2, entry.numericKey);
+		entry.stringKey = luaTableKey(state, -2, fallbackIndex++);
+		entry.value = readLuaValue(state, -1, depth + 1);
+
+		if(entry.arrayKey)
+		{
+			arrayKeys.insert(entry.numericKey);
+			maxArrayKey = std::max(maxArrayKey, entry.numericKey);
+		}
+		else
+		{
+			arrayOnly = false;
+		}
+
+		entries.push_back(std::move(entry));
+		lua_pop(state, 1);
+	}
+
+	if(!entries.empty() && arrayOnly && static_cast<int>(arrayKeys.size()) == maxArrayKey)
+	{
+		JsonNode result;
+		result.setType(JsonNode::JsonType::DATA_VECTOR);
+		result.Vector().resize(maxArrayKey);
+		for(const auto & entry : entries)
+			result.Vector()[entry.numericKey - 1] = entry.value;
+		return result;
+	}
+
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	for(const auto & entry : entries)
+		result[entry.stringKey] = entry.value;
+	return result;
+}
+
+JsonNode readLuaValue(lua_State * state, int index, int depth)
+{
+	if(depth > 30)
+		return JsonNode();
+
+	index = absoluteIndex(state, index);
+	switch(lua_type(state, index))
+	{
+	case LUA_TNIL:
+	case LUA_TNONE:
+		return JsonNode();
+	case LUA_TBOOLEAN:
+		return JsonNode(static_cast<bool>(lua_toboolean(state, index)));
+	case LUA_TNUMBER:
+	{
+		const auto number = static_cast<double>(lua_tonumber(state, index));
+		if(std::isfinite(number) && std::floor(number) == number
+			&& number >= static_cast<double>(std::numeric_limits<int64_t>::min())
+			&& number <= static_cast<double>(std::numeric_limits<int64_t>::max()))
+		{
+			return JsonNode(static_cast<int64_t>(number));
+		}
+		return JsonNode(number);
+	}
+	case LUA_TSTRING:
+		return JsonNode(toStringRaw(state, index));
+	case LUA_TTABLE:
+		return readLuaTable(state, index, depth);
+	default:
+		return JsonNode();
+	}
 }
 
 void readIntegerResultFields(lua_State * state, LuaTurnResult & result, int tableIndex)
@@ -468,6 +591,14 @@ LuaTurnResult LuaNullkiller2Runner::runFunction(const std::string & functionName
 	lua_pop(state, 1);
 
 	readIntegerResultFields(state, result, -1);
+
+	lua_getfield(state, -1, "memory");
+	if(!lua_isnil(state, -1))
+	{
+		result.memory = readLuaValue(state, -1, 0);
+		result.hasMemory = true;
+	}
+	lua_pop(state, 1);
 
 	return result;
 }

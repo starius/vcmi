@@ -10,6 +10,7 @@
 #pragma once
 
 #include "../../lib/callback/CAdventureAI.h"
+#include "../../lib/json/JsonNode.h"
 
 class CGObjectInstance;
 class CGDwelling;
@@ -19,10 +20,13 @@ namespace LuaNullkiller2AI
 {
 
 struct LuaCommand;
+struct LuaRunInput;
+struct LuaTurnResult;
 
 class CLuaNullkiller2AI final : public CAdventureAI
 {
 	std::shared_ptr<CCallback> cc;
+	JsonNode memory;
 	int activeHeroID = -1;
 	int targetObjectID = 0;
 	int targetX = -1;
@@ -32,6 +36,8 @@ class CLuaNullkiller2AI final : public CAdventureAI
 
 	void answerQuery(QueryID queryID, int selection = 0) const;
 	bool executeCommand(const LuaCommand & command);
+	LuaRunInput makeRunInput() const;
+	void updateMemory(const LuaTurnResult & result);
 	void runQueryCallback(const std::string & functionName, QueryID queryID);
 
 public:

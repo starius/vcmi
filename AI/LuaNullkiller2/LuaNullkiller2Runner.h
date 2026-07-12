@@ -29,9 +29,11 @@ struct LuaTurnResult
 {
 	bool ok = false;
 	bool requestedEndTurn = false;
+	bool hasMemory = false;
 	int commandCount = 0;
 	std::string status;
 	std::string error;
+	JsonNode memory;
 	std::map<std::string, int> integers;
 	std::vector<LuaCommand> commands;
 };
@@ -40,6 +42,7 @@ struct LuaRunInput
 {
 	int difficultyLevel = 1;
 	std::function<bool(const LuaCommand &)> commandHandler;
+	JsonNode memory;
 	JsonNode snapshot;
 };
 

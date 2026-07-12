@@ -452,6 +452,7 @@ void CLuaNullkiller2AI::initGameInterface(std::shared_ptr<Environment> env, std:
 	cbc = callback;
 	human = false;
 	playerID = *cc->getPlayerID();
+	memory.setType(JsonNode::JsonType::DATA_STRUCT);
 }
 
 void CLuaNullkiller2AI::answerQuery(QueryID queryID, int selection) const
@@ -459,11 +460,24 @@ void CLuaNullkiller2AI::answerQuery(QueryID queryID, int selection) const
 	cc->selectionMade(selection, queryID);
 }
 
+LuaRunInput CLuaNullkiller2AI::makeRunInput() const
+{
+	LuaRunInput input;
+	input.difficultyLevel = cc->getStartInfo()->difficulty;
+	input.memory = memory;
+	return input;
+}
+
+void CLuaNullkiller2AI::updateMemory(const LuaTurnResult & result)
+{
+	if(result.hasMemory)
+		memory = result.memory;
+}
+
 void CLuaNullkiller2AI::runQueryCallback(const std::string & functionName, QueryID queryID)
 {
 	LuaNullkiller2Runner runner;
-	LuaRunInput input;
-	input.difficultyLevel = cc->getStartInfo()->difficulty;
+	LuaRunInput input = makeRunInput();
 	input.snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
 	input.snapshot["queryID"].Integer() = queryID.getNum();
 
@@ -477,6 +491,7 @@ void CLuaNullkiller2AI::runQueryCallback(const std::string & functionName, Query
 	};
 
 	const LuaTurnResult result = runner.runFunction(functionName, [](){}, input);
+	updateMemory(result);
 
 	if(!result.ok)
 		logAi->error("LuaNullkiller2 %s failed: %s", functionName, result.error);
@@ -762,8 +777,7 @@ void CLuaNullkiller2AI::yourTurn(QueryID queryID)
 	pathfinderInvalidated = false;
 
 	LuaNullkiller2Runner runner;
-	LuaRunInput input;
-	input.difficultyLevel = cc->getStartInfo()->difficulty;
+	LuaRunInput input = makeRunInput();
 	input.snapshot = makeSnapshot(cc);
 	input.commandHandler = [this](const LuaCommand & command)
 	{
@@ -774,6 +788,7 @@ void CLuaNullkiller2AI::yourTurn(QueryID queryID)
 	{
 		cc->endTurn();
 	}, input);
+	updateMemory(result);
 
 	if(!result.ok)
 		logAi->error("LuaNullkiller2 runDay failed: %s", result.error);
@@ -793,8 +808,7 @@ void CLuaNullkiller2AI::heroExchangeStarted(ObjectInstanceID hero1, ObjectInstan
 	}
 
 	LuaNullkiller2Runner runner;
-	LuaRunInput input;
-	input.difficultyLevel = cc->getStartInfo()->difficulty;
+	LuaRunInput input = makeRunInput();
 	input.snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
 	input.snapshot["firstHero"] = heroSnapshot(firstHero);
 	input.snapshot["secondHero"] = heroSnapshot(secondHero);
@@ -811,6 +825,7 @@ void CLuaNullkiller2AI::heroExchangeStarted(ObjectInstanceID hero1, ObjectInstan
 	};
 
 	const LuaTurnResult result = runner.runFunction("heroExchangeStarted", [](){}, input);
+	updateMemory(result);
 
 	if(!result.ok)
 		logAi->error("LuaNullkiller2 heroExchangeStarted failed: %s", result.error);
@@ -828,8 +843,7 @@ void CLuaNullkiller2AI::heroGotLevel(const CGHeroInstance * hero, PrimarySkill p
 	}
 
 	LuaNullkiller2Runner runner;
-	LuaRunInput input;
-	input.difficultyLevel = cc->getStartInfo()->difficulty;
+	LuaRunInput input = makeRunInput();
 	input.snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
 	input.snapshot["queryID"].Integer() = queryID.getNum();
 	input.snapshot["hero"] = heroSnapshot(hero);
@@ -848,6 +862,7 @@ void CLuaNullkiller2AI::heroGotLevel(const CGHeroInstance * hero, PrimarySkill p
 	};
 
 	const LuaTurnResult result = runner.runFunction("heroGotLevel", [](){}, input);
+	updateMemory(result);
 
 	if(!result.ok)
 		logAi->error("LuaNullkiller2 heroGotLevel failed: %s", result.error);
@@ -879,8 +894,7 @@ void CLuaNullkiller2AI::showUniversityWindow(const IMarket * market, const CGHer
 void CLuaNullkiller2AI::showBlockingDialog(const std::string & text, const std::vector<Component> & components, QueryID askID, const int soundID, bool selection, bool cancel, bool safeToAutoaccept)
 {
 	LuaNullkiller2Runner runner;
-	LuaRunInput input;
-	input.difficultyLevel = cc->getStartInfo()->difficulty;
+	LuaRunInput input = makeRunInput();
 	input.snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
 	input.snapshot["queryID"].Integer() = askID.getNum();
 	input.snapshot["selection"].Bool() = selection;
@@ -906,6 +920,7 @@ void CLuaNullkiller2AI::showBlockingDialog(const std::string & text, const std::
 	};
 
 	const LuaTurnResult result = runner.runFunction("showBlockingDialog", [](){}, input);
+	updateMemory(result);
 
 	if(!result.ok)
 		logAi->error("LuaNullkiller2 showBlockingDialog failed: %s", result.error);
@@ -923,8 +938,7 @@ void CLuaNullkiller2AI::showGarrisonDialog(const CArmedInstance * up, const CGHe
 	}
 
 	LuaNullkiller2Runner runner;
-	LuaRunInput input;
-	input.difficultyLevel = cc->getStartInfo()->difficulty;
+	LuaRunInput input = makeRunInput();
 	input.snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
 	input.snapshot["queryID"].Integer() = queryID.getNum();
 	input.snapshot["up"] = armySnapshot(up);
@@ -942,6 +956,7 @@ void CLuaNullkiller2AI::showGarrisonDialog(const CArmedInstance * up, const CGHe
 	};
 
 	const LuaTurnResult result = runner.runFunction("showGarrisonDialog", [](){}, input);
+	updateMemory(result);
 
 	if(!result.ok)
 		logAi->error("LuaNullkiller2 showGarrisonDialog failed: %s", result.error);
@@ -959,8 +974,7 @@ void CLuaNullkiller2AI::showRecruitmentDialog(const CGDwelling * dwelling, const
 	}
 
 	LuaNullkiller2Runner runner;
-	LuaRunInput input;
-	input.difficultyLevel = cc->getStartInfo()->difficulty;
+	LuaRunInput input = makeRunInput();
 	input.snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
 	input.snapshot["queryID"].Integer() = queryID.getNum();
 	input.snapshot["level"].Integer() = level;
@@ -978,6 +992,7 @@ void CLuaNullkiller2AI::showRecruitmentDialog(const CGDwelling * dwelling, const
 	};
 
 	const LuaTurnResult result = runner.runFunction("showRecruitmentDialog", [](){}, input);
+	updateMemory(result);
 
 	if(!result.ok)
 		logAi->error("LuaNullkiller2 showRecruitmentDialog failed: %s", result.error);
@@ -989,8 +1004,7 @@ void CLuaNullkiller2AI::showRecruitmentDialog(const CGDwelling * dwelling, const
 void CLuaNullkiller2AI::showTeleportDialog(const CGHeroInstance * hero, TeleportChannelID channel, TTeleportExitsList exits, bool impassable, QueryID askID)
 {
 	LuaNullkiller2Runner runner;
-	LuaRunInput input;
-	input.difficultyLevel = cc->getStartInfo()->difficulty;
+	LuaRunInput input = makeRunInput();
 	input.snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
 	input.snapshot["queryID"].Integer() = askID.getNum();
 	input.snapshot["channel"].Integer() = channel.getNum();
@@ -1009,6 +1023,7 @@ void CLuaNullkiller2AI::showTeleportDialog(const CGHeroInstance * hero, Teleport
 	};
 
 	const LuaTurnResult result = runner.runFunction("showTeleportDialog", [](){}, input);
+	updateMemory(result);
 
 	if(!result.ok)
 		logAi->error("LuaNullkiller2 showTeleportDialog failed: %s", result.error);
@@ -1020,8 +1035,7 @@ void CLuaNullkiller2AI::showTeleportDialog(const CGHeroInstance * hero, Teleport
 void CLuaNullkiller2AI::showMapObjectSelectDialog(QueryID askID, const Component & icon, const MetaString & title, const MetaString & description, const std::vector<ObjectInstanceID> & objects)
 {
 	LuaNullkiller2Runner runner;
-	LuaRunInput input;
-	input.difficultyLevel = cc->getStartInfo()->difficulty;
+	LuaRunInput input = makeRunInput();
 	input.snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
 	input.snapshot["queryID"].Integer() = askID.getNum();
 	input.snapshot["selectedObject"].Integer() = targetObjectID;
@@ -1039,6 +1053,7 @@ void CLuaNullkiller2AI::showMapObjectSelectDialog(QueryID askID, const Component
 	};
 
 	const LuaTurnResult result = runner.runFunction("showMapObjectSelectDialog", [](){}, input);
+	updateMemory(result);
 
 	if(!result.ok)
 		logAi->error("LuaNullkiller2 showMapObjectSelectDialog failed: %s", result.error);
@@ -1050,8 +1065,7 @@ void CLuaNullkiller2AI::showMapObjectSelectDialog(QueryID askID, const Component
 std::optional<BattleAction> CLuaNullkiller2AI::makeSurrenderRetreatDecision(const BattleID & battleID, const BattleStateInfoForRetreat & battleState)
 {
 	LuaNullkiller2Runner runner;
-	LuaRunInput input;
-	input.difficultyLevel = cc->getStartInfo()->difficulty;
+	LuaRunInput input = makeRunInput();
 	input.snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
 	input.snapshot["townsCount"].Integer() = static_cast<int64_t>(cc->getTownsInfo().size());
 	input.snapshot["battleState"].setType(JsonNode::JsonType::DATA_STRUCT);
@@ -1070,6 +1084,7 @@ std::optional<BattleAction> CLuaNullkiller2AI::makeSurrenderRetreatDecision(cons
 	}
 
 	const LuaTurnResult result = runner.runFunction("makeSurrenderRetreatDecision", [](){}, input);
+	updateMemory(result);
 	if(!result.ok)
 	{
 		logAi->error("LuaNullkiller2 makeSurrenderRetreatDecision failed: %s", result.error);
