@@ -606,6 +606,34 @@
       "notes": "Startup tavern build, nearest-hero chain, recruit allowance, startup swaps, fallback recruit, and garrison unlock task generation are Lua-owned against snapshots."
     },
     {
+      "cpp": "AI/Nullkiller2/Behaviors/EscapeBehavior.h",
+      "lua": "scripts/ai/nullkiller2/Behaviors/EscapeBehavior.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "EscapePathCandidate",
+        "EscapePathEvaluation",
+        "evaluateEscapePathCandidate",
+        "Goals::EscapeBehavior"
+      ],
+      "notes": "Candidate model, evaluator, behavior identity, and equality are ported."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Behaviors/EscapeBehavior.cpp",
+      "lua": "scripts/ai/nullkiller2/Behaviors/EscapeBehavior.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "actionUsesDimensionDoor",
+        "pathUsesDimensionDoor",
+        "isHeroImmediatelyThreatened",
+        "isBetterEscapePath",
+        "makeEscapePathCandidate",
+        "considerEscapePath",
+        "Goals::EscapeBehavior::toString",
+        "Goals::EscapeBehavior::decompose"
+      ],
+      "notes": "Immediate-threat detection and best escape-path selection are Lua-owned; full tile path enumeration is supplied as snapshot/helper input."
+    },
+    {
       "cpp": "AI/Nullkiller2/Engine/ResourceTrader.h",
       "lua": "scripts/ai/nullkiller2/Engine/ResourceTrader.lua",
       "status": "ported",

@@ -1,6 +1,7 @@
 local AbstractGoal = require("Goals.AbstractGoal")
 local BuildingBehavior = require("Behaviors.BuildingBehavior")
 local BuyArmyBehavior = require("Behaviors.BuyArmyBehavior")
+local EscapeBehavior = require("Behaviors.EscapeBehavior")
 local ExchangeSwapTownHeroes = require("Goals.ExchangeSwapTownHeroes")
 local PriorityEvaluator = require("Engine.PriorityEvaluator")
 local RecruitHeroBehavior = require("Behaviors.RecruitHeroBehavior")
@@ -417,3 +418,76 @@ local startupRecruitTasks = startupBehavior:decompose({
 })
 assert(#startupRecruitTasks == 1)
 assert(startupRecruitTasks[1].goalType == AbstractGoal.EGoals.RECRUIT_HERO)
+
+local escapeEvaluation = EscapeBehavior.evaluateEscapePathCandidate({
+	currentTileThreatensHero = true,
+	sameDay = true,
+	sameTile = false,
+	blockedAction = false,
+	singleHeroPath = true,
+	destinationSafe = true,
+	destinationIsSafer = true,
+	threatReduction = 40,
+	movementCost = 2
+})
+assert(escapeEvaluation.accepted == true)
+assert(escapeEvaluation.score == 20)
+assert(EscapeBehavior.evaluateEscapePathCandidate({
+	currentTileThreatensHero = true,
+	sameDay = true,
+	sameTile = true,
+	blockedAction = false,
+	singleHeroPath = true,
+	destinationSafe = true,
+	destinationIsSafer = true
+}).accepted == false)
+
+local escapingHero = {
+	id = 401,
+	name = "Endangered",
+	visitablePos = { x = 0, y = 0, z = 0 },
+	heroStrength = 1,
+	armyStrength = 100
+}
+local escapePathSlow = {
+	targetHero = escapingHero,
+	tile = { x = 1, y = 0, z = 0 },
+	nodes = {},
+	turn = 0,
+	exchangeCount = 1,
+	heroArmy = { armyStrength = 1000 },
+	totalDanger = 0,
+	movementCost = 5
+}
+local escapePathFast = {
+	targetHero = escapingHero,
+	tile = { x = 2, y = 0, z = 0 },
+	nodes = {},
+	turn = 0,
+	exchangeCount = 1,
+	heroArmy = { armyStrength = 1000 },
+	totalDanger = 0,
+	movementCost = 2
+}
+local escapeTasks = EscapeBehavior.new():decompose({
+	heroesInfo = { escapingHero },
+	settings = { safeAttackRatio = 1.1 },
+	dangerHitMap = {
+		getTileThreat = function(_, tile)
+			if tile.x == 0 then
+				return { fastestDanger = { turn = 0, danger = 500, threat = 500 } }
+			end
+			if tile.x == 1 then
+				return { fastestDanger = { turn = 2, danger = 0, threat = 100 } }
+			end
+			return { fastestDanger = { turn = 2, danger = 0, threat = 200 } }
+		end
+	},
+	escapePaths = {
+		escapePathSlow,
+		escapePathFast
+	}
+})
+assert(#escapeTasks == 1)
+assert(escapeTasks[1].goalType == AbstractGoal.EGoals.EXECUTE_HERO_CHAIN)
+assert(escapeTasks[1].chainPath == escapePathFast)
