@@ -228,7 +228,7 @@
       "symbols": [
         "Goals aggregate include"
       ],
-      "notes": "Currently aggregates the ported initial goal subset."
+      "notes": "Currently aggregates the ported goal subset, including CompleteQuest mission dispatch."
     },
     {
       "cpp": "AI/Nullkiller2/Goals/Invalid.h",
@@ -318,6 +318,36 @@
         "Goals::CaptureObject::getHash"
       ],
       "notes": "Lua decompose delegates to a Lua capture-object behavior hook when present; native behavior is not called."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/CompleteQuest.h",
+      "lua": "scripts/ai/nullkiller2/Goals/CompleteQuest.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::CompleteQuest"
+      ],
+      "notes": "Constructor, keymaster identity, string policy, hash, and snapshot field expectations are ported."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/CompleteQuest.cpp",
+      "lua": "scripts/ai/nullkiller2/Goals/CompleteQuest.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::CompleteQuest::decompose",
+        "Goals::CompleteQuest::operator==",
+        "Goals::CompleteQuest::getHash",
+        "Goals::CompleteQuest::questToString",
+        "Goals::CompleteQuest::tryCompleteQuest",
+        "Goals::CompleteQuest::missionArt",
+        "Goals::CompleteQuest::missionHero",
+        "Goals::CompleteQuest::missionArmy",
+        "Goals::CompleteQuest::missionResources",
+        "Goals::CompleteQuest::missionDestroyObj",
+        "Goals::CompleteQuest::missionIncreasePrimaryStat",
+        "Goals::CompleteQuest::missionLevel",
+        "Goals::CompleteQuest::missionKeymaster"
+      ],
+      "notes": "Lua dispatch mirrors native quest mission ordering and decomposes to Lua CaptureObjectsBehavior goals from quest/object/path snapshots. Live QuestInfo snapshot breadth, exact quest text localization, and full CQuest mission validators remain pending."
     },
     {
       "cpp": "AI/Nullkiller2/Goals/Composition.h",

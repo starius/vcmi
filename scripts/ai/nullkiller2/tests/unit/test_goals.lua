@@ -4,6 +4,8 @@ local BuildBoat = require("Goals.BuildBoat")
 local BuildThis = require("Goals.BuildThis")
 local BuyArmy = require("Goals.BuyArmy")
 local CaptureObject = require("Goals.CaptureObject")
+local CaptureObjectsBehavior = require("Behaviors.CaptureObjectsBehavior")
+local CompleteQuest = require("Goals.CompleteQuest")
 local DigAtTile = require("Goals.DigAtTile")
 local DismissHero = require("Goals.DismissHero")
 local ExchangeSwapTownHeroes = require("Goals.ExchangeSwapTownHeroes")
@@ -450,6 +452,107 @@ assert(scoutSplitLog[3] == "unlock:351")
 
 assert(Goals.Invalid == Invalid)
 assert(Goals.BuildThis == BuildThis)
+assert(Goals.CompleteQuest == CompleteQuest)
+
+local keymasterGate = { id = 401, ID = "BORDERGUARD", subID = 2, colorName = "red" }
+local keymasterSame = { id = 402, ID = "BORDER_GATE", subID = 2, colorName = "red" }
+local keymasterOther = { id = 403, ID = "BORDERGUARD", subID = 3, colorName = "blue" }
+local keyQuest = CompleteQuest.new({ object = keymasterGate, quest = { questName = "KEYMASTER" } })
+assert(keyQuest:equals(CompleteQuest.new({ object = keymasterSame, quest = { questName = "KEYMASTER" } })) == true)
+assert(keyQuest:equals(CompleteQuest.new({ object = keymasterOther, quest = { questName = "KEYMASTER" } })) == false)
+assert(keyQuest:getHash() == 2)
+assert(keyQuest:toString() == "Complete quest find red keymaster tent")
+
+local keymasterTent = {
+	id = 404,
+	ID = CaptureObjectsBehavior.Obj.KEYMASTER,
+	subID = 2,
+	visitablePos = { x = 1, y = 1, z = 0 },
+	paths = {
+		{
+			targetHero = { id = 405, owner = 0, name = "Tent Scout" },
+			targetTile = { x = 1, y = 1, z = 0 },
+			movementCost = 10,
+			totalDanger = 0,
+			turn = 0
+		}
+	}
+}
+local keyTasks = keyQuest:decompose({
+	playerID = 0,
+	visitableObjects = { keymasterTent }
+})
+assert(#keyTasks == 1)
+assert(keyTasks[1].className == "ExecuteHeroChain")
+assert(keyTasks[1].objid == keymasterTent.id)
+
+local artifactQuest = CompleteQuest.new({
+	object = { id = 410, ID = "SEER_HUT", paths = {} },
+	quest = {
+		questName = "Bring artifact",
+		rolloverText = "Bring the artifact",
+		mission = {
+			artifacts = { 141 }
+		}
+	}
+})
+local artifactTasks = artifactQuest:decompose({})
+assert(#artifactTasks == 1)
+assert(artifactTasks[1]:equals(CaptureObjectsBehavior.new():ofType(CaptureObjectsBehavior.Obj.ARTIFACT, 141)) == true)
+assert(artifactQuest:toString() == "Complete quest Bring the artifact")
+
+local heroQuest = CompleteQuest.new({
+	object = { id = 411, ID = "QUEST_GUARD", paths = {} },
+	quest = {
+		mission = {
+			heroes = { 7 }
+		}
+	}
+})
+local heroTasks = heroQuest:decompose({})
+assert(#heroTasks == 1)
+assert(heroTasks[1].objectTypes[1] == CaptureObjectsBehavior.Obj.PRISON)
+assert(#heroTasks[1].objectSubTypes == 0)
+
+local questPathObject = {
+	id = 412,
+	ID = "QUEST_GUARD",
+	shouldVisit = true,
+	visitablePos = { x = 5, y = 6, z = 0 },
+	paths = {
+		{
+			targetHero = { id = 413, owner = 0, name = "Rejected" },
+			targetTile = { x = 5, y = 6, z = 0 },
+			questAllowed = false,
+			movementCost = 9,
+			totalDanger = 0,
+			turn = 0
+		},
+		{
+			targetHero = { id = 414, owner = 0, name = "Accepted" },
+			targetTile = { x = 5, y = 6, z = 0 },
+			questAllowed = true,
+			movementCost = 7,
+			totalDanger = 0,
+			turn = 0
+		}
+	}
+}
+local resourceQuest = CompleteQuest.new({
+	object = questPathObject,
+	quest = {
+		mission = {
+			resources = { gold = 1000 }
+		}
+	}
+})
+local resourceTasks = resourceQuest:decompose({
+	playerID = 0,
+	settings = { safeAttackRatio = 1.1 }
+})
+assert(#resourceTasks == 1)
+assert(resourceTasks[1].className == "ExecuteHeroChain")
+assert(resourceTasks[1].hero.id == 414)
 
 local digA = DigAtTile.new({ x = 4, y = 5, z = 0 }):sethero({ id = 11, name = "Gem" })
 local digB = DigAtTile.new({ x = 4, y = 5, z = 0 }):sethero(digA.hero)

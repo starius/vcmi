@@ -11,8 +11,10 @@ local State = require("Engine.State")
 local CaptureObjectsBehavior = CGoal.derive("CaptureObjectsBehavior", AbstractGoal.EGoals.CAPTURE_OBJECTS)
 
 local Obj = {
+	ARTIFACT = 5,
 	BOAT = 8,
 	BORDERGUARD = 9,
+	KEYMASTER = 10,
 	CREATURE_GENERATOR1 = 17,
 	EYE_OF_MAGI = 27,
 	HERO = 34,

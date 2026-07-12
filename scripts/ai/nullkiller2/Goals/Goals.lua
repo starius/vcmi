@@ -9,6 +9,7 @@ return {
 	BuyArmy = require("Goals.BuyArmy"),
 	CaptureObject = require("Goals.CaptureObject"),
 	Composition = require("Goals.Composition"),
+	CompleteQuest = require("Goals.CompleteQuest"),
 	DigAtTile = require("Goals.DigAtTile"),
 	DismissHero = require("Goals.DismissHero"),
 	ExchangeSwapTownHeroes = require("Goals.ExchangeSwapTownHeroes"),
