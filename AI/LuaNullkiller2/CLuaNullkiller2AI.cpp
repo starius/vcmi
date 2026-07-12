@@ -1069,7 +1069,12 @@ void CLuaNullkiller2AI::objectRemoved(const CGObjectInstance * obj, const Player
 	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
 	snapshot["initiator"].Integer() = initiator.getNum();
 	if(obj)
+	{
 		snapshot["object"] = objectSnapshot(obj);
+		const auto relations = cc->getPlayerRelations(obj->tempOwner, playerID);
+		snapshot["relations"].Integer() = static_cast<int>(relations);
+		snapshot["relationsName"].String() = playerRelationsName(relations);
+	}
 
 	runEventCallback("objectRemoved", std::move(snapshot));
 }

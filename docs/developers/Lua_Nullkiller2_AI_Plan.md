@@ -172,7 +172,8 @@ route dwelling and destination-army snapshots through `GatewayPolicy.chooseDwell
 native duplicate-stack merge-before-recruit case and full resource-vector affordability. The `heroMoved`,
 `tileHidden`, `tileRevealed`, `newObject`, `heroVisit`, `objectRemoved`, and `objectPropertyChanged` event
 callbacks now route through Lua and mutate persistent `AIMemory` object-id sets while the host keeps raw pathfinder
-invalidation as a non-policy state flag.
+invalidation as a non-policy state flag; object removal and owner changes also record the native hitmap/tile-owner
+reset markers in Lua memory.
 Surrender/retreat
 decisions now return from Lua `GatewayPolicy.makeSurrenderRetreatDecision` and are converted to `BattleAction`
 only at the host boundary. Blocking dialogs route component snapshots through Lua selection policy; danger-aware

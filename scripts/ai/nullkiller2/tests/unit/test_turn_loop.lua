@@ -545,6 +545,28 @@ assert(eventMemory.aiMemory.visitableObjs["940"] == nil)
 assert(eventMemory.aiMemory.alreadyVisited["940"] == nil)
 assert(eventMemory.objectClusterizer.removedObjects["940"] == true)
 
+eventMemory.dangerHitMap = {}
+local enemyHeroRemovedResult = Script.objectRemoved(makeAI().ai, {
+	memory = eventMemory,
+	relationsName = "ENEMIES",
+	object = {
+		id = 946,
+		isHero = true
+	}
+})
+assert(enemyHeroRemovedResult.status == "object_removed")
+assert(eventMemory.dangerHitMap.resetHitmap == true)
+
+local townRemovedResult = Script.objectRemoved(makeAI().ai, {
+	memory = eventMemory,
+	object = {
+		id = 947,
+		isTown = true
+	}
+})
+assert(townRemovedResult.status == "object_removed")
+assert(eventMemory.dangerHitMap.resetTileOwners == true)
+
 local recruitmentRun = makeAI()
 local recruitmentDialogResult = Script.showRecruitmentDialog(recruitmentRun.ai, {
 	queryID = 930,

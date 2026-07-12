@@ -966,6 +966,14 @@ function Nullkiller.objectRemoved(ai, input)
 		root.objectClusterizer = root.objectClusterizer or {}
 		root.objectClusterizer.removedObjects = root.objectClusterizer.removedObjects or {}
 		root.objectClusterizer.removedObjects[tostring(objectID(input.object))] = true
+		if input.object.isHero and input.relationsName == "ENEMIES" then
+			root.dangerHitMap = root.dangerHitMap or {}
+			root.dangerHitMap.resetHitmap = true
+		end
+		if input.object.isTown then
+			root.dangerHitMap = root.dangerHitMap or {}
+			root.dangerHitMap.resetTileOwners = true
+		end
 	end
 	return eventResult(root, "object_removed")
 end
