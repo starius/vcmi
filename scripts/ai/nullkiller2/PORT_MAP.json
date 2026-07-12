@@ -538,6 +538,27 @@
       "notes": "Path execution sets active hero/tile, target object, resets object clusters, invokes Lua-owned siege formation for immediate enemy town attacks, replays path nodes in native backward order through a granular moveHeroToTile host boundary, fail-closes blocked special actions with hero lock/pathfinder invalidation, executes composite, Dimension Door, adventure-spell, Build Boat, Whirlpool, Battle, Quest, BuyArmyAction, and explicit command special-action descriptors through Lua-owned primitive commands, recovers stale Dimension Door plans with hero lock/pathfinder invalidation, applies object-graph shortcutting against neutral live path-info fields, and rejects stale zero-turn live path snapshots before movement. Live host validation remains pending."
     },
     {
+      "cpp": "AI/Nullkiller2/Pathfinding/Actions/QuestAction.h",
+      "lua": "scripts/ai/nullkiller2/Pathfinding/Actions/QuestAction.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "AIPathfinding::QuestAction"
+      ],
+      "notes": "Constructor-style descriptor normalization, canAct snapshot checks, CompleteQuest decomposition, string policy, and move-to-quest-object execution are ported."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Pathfinding/Actions/QuestAction.cpp",
+      "lua": "scripts/ai/nullkiller2/Pathfinding/Actions/QuestAction.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "AIPathfinding::QuestAction::canAct",
+        "AIPathfinding::QuestAction::decompose",
+        "AIPathfinding::QuestAction::execute",
+        "AIPathfinding::QuestAction::toString"
+      ],
+      "notes": "Lua path special-action handling decomposes blocked QuestAction descriptors into CompleteQuest and executes quest actions by moving to the quest object's visitable tile. Exact IQuestObject/CQuest validation remains snapshot-dependent."
+    },
+    {
       "cpp": "AI/Nullkiller2/Markers/UnlockCluster.h",
       "lua": "scripts/ai/nullkiller2/Markers/UnlockCluster.lua",
       "status": "ported",

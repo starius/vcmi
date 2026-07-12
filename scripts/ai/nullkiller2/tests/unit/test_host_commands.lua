@@ -454,6 +454,48 @@ assert(battleActionCalled[2].name == "moveHeroToTile")
 assert(battleActionCalled[2].payload.x == 6)
 assert(battleActionHero.visitablePos.x == 6)
 
+local questActionCalled = {}
+local questActionAdapter = HostCommands.new({
+	command = function(_, name, payload)
+		table.insert(questActionCalled, { name = name, payload = payload })
+		return { ok = true, executed = true }
+	end
+})
+local questActionHero = {
+	id = 163,
+	movementPointsRemaining = 1000,
+	visitablePos = { x = 0, y = 0, z = 0 }
+}
+questActionAdapter:executeHeroChain({
+	targetHero = questActionHero,
+	nodes = {
+		{
+			targetHero = questActionHero,
+			coord = { x = 7, y = 8, z = 0 },
+			specialAction = {
+				type = "QuestAction",
+				questInfo = {
+					object = {
+						id = 164,
+						visitablePos = { x = 7, y = 8, z = 0 }
+					},
+					quest = {
+						mission = {
+							resources = { gold = 1000 }
+						}
+					}
+				}
+			}
+		}
+	}
+}, 164)
+assert(#questActionCalled == 2)
+assert(questActionCalled[1].name == "setActive")
+assert(questActionCalled[2].name == "moveHeroToTile")
+assert(questActionCalled[2].payload.x == 7)
+assert(questActionCalled[2].payload.y == 8)
+assert(questActionHero.visitablePos.x == 7)
+
 local buyArmyActionCalled = {}
 local buyArmyActionAdapter = HostCommands.new({
 	command = function(_, name, payload)

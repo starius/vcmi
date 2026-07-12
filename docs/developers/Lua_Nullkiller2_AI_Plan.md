@@ -161,7 +161,7 @@ The branch now has the initial standalone AI and parity infrastructure in place:
 The current Lua policy surface includes the core day loop, settings, state locks, task plan execution, priority
 formula scaffolding, deterministic `RewardEvaluator` resource, reward, growth, cost, strategic, and conquest helpers,
 hero-specific `AIUtility` artifact scoring, resource trading, goal records including `CompleteQuest` mission
-dispatch to Lua capture-object behavior, marker records, priority-pass behaviors,
+dispatch to Lua capture-object behavior, `QuestAction` path special-action decomposition/execution, marker records, priority-pass behaviors,
 regular behavior decomposition, persistent `AIMemory` object-id sets, and command emission for recruit hero, build,
 build boat, dismiss hero, swap garrison hero, recruit creatures, upgrade creatures, merge stacks, cross-army
 merge/swap, split stack, dismiss creatures, cast spell, artifact swaps, granular hero movement, resource locks,

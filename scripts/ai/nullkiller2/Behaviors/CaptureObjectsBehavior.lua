@@ -113,6 +113,10 @@ local function firstBlockedAction(path)
 	return path and path.firstBlockedAction
 end
 
+local function questAction()
+	return require("Pathfinding.Actions.QuestAction")
+end
+
 local function normalizedHeroStrength(hero)
 	local result = call(hero, "getHeroStrength") or hero and (hero.heroStrength or hero.normalizedHeroStrength)
 	if type(result) ~= "number" or result <= 0 or result ~= result or result == math.huge or result == -math.huge then
@@ -391,7 +395,10 @@ function CaptureObjectsBehavior.getVisitGoals(paths, aiNk, objToVisit, force)
 		else
 			local blockedAction = firstBlockedAction(path)
 			if blockedAction then
-				local subGoal = call(blockedAction, "decompose", aiNk, path.targetHero) or blockedAction.subGoal
+				local QuestAction = questAction()
+				local subGoal = call(blockedAction, "decompose", aiNk, path.targetHero)
+					or (QuestAction.isQuestAction(blockedAction) and QuestAction.decomposeAction(blockedAction, aiNk, path.targetHero))
+					or blockedAction.subGoal
 				if subGoal and not subGoal:invalid() then
 					local composition = Composition.new()
 					composition:addNext(ExecuteHeroChain.new(path, objToVisit))

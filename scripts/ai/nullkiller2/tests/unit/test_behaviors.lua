@@ -9,6 +9,7 @@ local ExplorationBehavior = require("Behaviors.ExplorationBehavior")
 local GatherArmyBehavior = require("Behaviors.GatherArmyBehavior")
 local ExchangeSwapTownHeroes = require("Goals.ExchangeSwapTownHeroes")
 local CaptureObject = require("Goals.CaptureObject")
+local CompleteQuest = require("Goals.CompleteQuest")
 local ArmyUpgrade = require("Markers.ArmyUpgrade")
 local DefendTown = require("Markers.DefendTown")
 local ExplorationHelper = require("Helpers.ExplorationHelper")
@@ -676,6 +677,36 @@ assert(blockedGoals[1].goalType == AbstractGoal.EGoals.COMPOSITION)
 local blockedSequence = blockedGoals[1]:decompose({})
 assert(blockedSequence[1].goalType == AbstractGoal.EGoals.EXECUTE_HERO_CHAIN)
 assert(blockedSequence[2] == blockedSubGoal)
+
+local blockedQuestGoals = CaptureObjectsBehavior.getVisitGoals(
+	{
+		{
+			targetHero = captureHero,
+			tile = captureObject.visitablePos,
+			nodes = {},
+			turn = 0,
+			exchangeCount = 0,
+			totalDanger = 0,
+			firstBlockedAction = {
+				type = "QuestAction",
+				questInfo = {
+					object = captureObject,
+					quest = {
+						mission = {
+							resources = { gold = 1000 }
+						}
+					}
+				}
+			}
+		}
+	},
+	{ playerID = 1 },
+	captureObject)
+assert(#blockedQuestGoals == 1)
+local blockedQuestSequence = blockedQuestGoals[1]:decompose({})
+assert(blockedQuestSequence[1].goalType == AbstractGoal.EGoals.EXECUTE_HERO_CHAIN)
+assert(blockedQuestSequence[2].goalType == AbstractGoal.EGoals.COMPLETE_QUEST)
+assert(getmetatable(blockedQuestSequence[2]) == CompleteQuest)
 
 local captureBehavior = CaptureObjectsBehavior.new():ofType("MINE")
 local captureTasks = captureBehavior:decompose({

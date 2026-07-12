@@ -213,7 +213,10 @@ end
 local function isMoveToTileAction(action)
 	local name = normalizedActionName(action)
 	return name == "battleaction"
-		or name == "questaction"
+end
+
+local function questAction()
+	return require("Pathfinding.Actions.QuestAction")
 end
 
 local function actionDestination(action, fallback)
@@ -848,6 +851,11 @@ local function executeSpecialAction(adapter, hero, coord, action)
 			error("Buy Army special action is missing visited town", 3)
 		end
 		return recruitCreaturesFromDwelling(adapter, town, hero)
+	end
+
+	local QuestAction = questAction()
+	if QuestAction.isQuestAction(action) then
+		return QuestAction.executeAction(adapter, hero, coord, action)
 	end
 
 	if isMoveToTileAction(action) then
