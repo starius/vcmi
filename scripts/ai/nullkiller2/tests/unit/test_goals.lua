@@ -292,6 +292,80 @@ assert(exchangeLog[5] == "lock:335:" .. State.HeroLockedReason.DEFENCE)
 assert(exchangeLog[6] == "unlock:331")
 assert(exchangeLog[7] == "upgrade:331:2:332")
 
+local extractedHero = {
+	id = 341,
+	name = "Extracted",
+	upgradeSlots = {
+		{
+			slot = 0,
+			stack = { count = 2, aiValue = 5 },
+			upgradeInfo = {
+				availableUpgrades = {
+					{ id = 342, aiValue = 8, cost = { gold = 10 } }
+				}
+			}
+		}
+	}
+}
+local extractionTown = {
+	id = 340,
+	name = "Extraction Town",
+	garrisonHero = extractedHero,
+	upperArmy = {
+		id = 343,
+		stacksCount = 7,
+		armySize = 7,
+		slots = {
+			{ slot = 0, creature = { id = 344 }, count = 1 },
+			{ slot = 1, creature = { id = 344 }, count = 1, duplicatingSlot = 0 }
+		}
+	},
+	upgradeSlots = {
+		{
+			slot = 2,
+			stack = { count = 1, aiValue = 10 },
+			upgradeInfo = {
+				availableUpgrades = {
+					{ id = 346, aiValue = 20, cost = { gold = 10 } }
+				}
+			}
+		}
+	},
+	creatures = {
+		{
+			3,
+			{
+				{ id = 345, aiValue = 25, fullRecruitCost = { [7] = 100 } }
+			}
+		}
+	}
+}
+local extractionLog = {}
+ExchangeSwapTownHeroes.new(extractionTown, nil, State.HeroLockedReason.NOT_LOCKED):accept({
+	freeResources = { [7] = 250 },
+	swapGarrisonHero = function(_, townArg)
+		table.insert(extractionLog, "swap:" .. townArg.id)
+	end,
+	upgradeCreature = function(_, army, slot, creature)
+		table.insert(extractionLog, "upgrade:" .. army.id .. ":" .. slot .. ":" .. creature.id)
+	end,
+	mergeStacks = function(_, army, fromSlot, toSlot)
+		table.insert(extractionLog, "merge:" .. army.id .. ":" .. fromSlot .. ":" .. toSlot)
+	end,
+	recruitCreatures = function(_, townArg, army, creature, count, level)
+		table.insert(extractionLog, "recruit:" .. townArg.id .. ":" .. army.id .. ":" .. creature.id .. ":" .. count .. ":" .. level)
+	end,
+	unlockHero = function(_, hero)
+		table.insert(extractionLog, "unlock:" .. hero.id)
+	end
+})
+assert(extractionLog[1] == "swap:340")
+assert(extractionLog[2] == "upgrade:341:0:342")
+assert(extractionLog[3] == "upgrade:340:2:346")
+assert(extractionLog[4] == "merge:343:1:0")
+assert(extractionLog[5] == "recruit:340:343:345:2:0")
+assert(extractionLog[6] == "unlock:341")
+
 assert(Goals.Invalid == Invalid)
 assert(Goals.BuildThis == BuildThis)
 

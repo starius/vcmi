@@ -10,6 +10,8 @@ local ExchangeSwapTownHeroes = CGoal.derive(
 	AbstractGoal.EGoals.EXCHANGE_SWAP_TOWN_HEROES,
 	{ elementar = true })
 
+local RESOURCE_COUNT = 7
+
 local function townName(town)
 	return AbstractGoal._helpers.translatedName(town, tostring(CGoal.objectID(town)))
 end
@@ -67,6 +69,159 @@ local function resources(aiGw)
 	return aiGw and (aiGw.freeResources or aiGw.resources) or {}
 end
 
+local function resourceValue(resourceSnapshot, resourceID)
+	if type(resourceSnapshot) == "number" then
+		return resourceID == 6 and resourceSnapshot or 0
+	end
+	if not resourceSnapshot then
+		return 0
+	end
+	if resourceSnapshot[0] == nil and resourceSnapshot[7] ~= nil then
+		return resourceSnapshot[resourceID + 1] or 0
+	end
+	return resourceSnapshot[resourceID] or resourceSnapshot[tostring(resourceID)] or 0
+end
+
+local function resourceCost(creature)
+	return type(creature) == "table" and (creature.fullRecruitCost or creature.recruitCost or creature.cost) or 0
+end
+
+local function maxAffordableCount(resourceSnapshot, cost)
+	if type(cost) == "number" then
+		if cost <= 0 then
+			return math.huge
+		end
+		return math.floor(resourceValue(resourceSnapshot, 6) / cost)
+	end
+
+	local result = math.huge
+	for resourceID = 0, RESOURCE_COUNT - 1 do
+		local needed = resourceValue(cost, resourceID)
+		if needed > 0 then
+			result = math.min(result, math.floor(resourceValue(resourceSnapshot, resourceID) / needed))
+		end
+	end
+	return result
+end
+
+local function creatureEntries(town)
+	local result = {}
+	for level, entry in ipairs(town and town.creatures or {}) do
+		local count = entry.count or entry[1] or 0
+		local ids = entry.creatures or entry.ids or entry[2] or {}
+		local creature = ids[#ids] or entry.creature
+		if creature then
+			table.insert(result, {
+				level = level - 1,
+				count = count,
+				creature = creature
+			})
+		end
+	end
+	return result
+end
+
+local function armySize(army)
+	return army and (army.armySize or army.ARMY_SIZE) or 7
+end
+
+local function stackSlot(stack, fallback)
+	return type(stack) == "table" and (stack.slot or fallback) or fallback
+end
+
+local function stackCreature(stack)
+	return type(stack) == "table" and (stack.creature or stack.creatureID or stack) or stack
+end
+
+local function armyStacksBySlot(army)
+	return army and (army.slots or army.stacks) or {}
+end
+
+local stacksCount
+
+local function slotForCreature(army, creature)
+	if army and type(army.getSlotFor) == "function" then
+		local slot = army:getSlotFor(creature)
+		if type(slot) == "table" then
+			if slot.validSlot == false then
+				return nil
+			end
+			return slot.num or slot.id or slot[1]
+		end
+		if slot ~= nil and slot ~= false and slot ~= -1 then
+			return slot
+		end
+	end
+
+	local id = CGoal.objectID(creature)
+	local slotsByCreature = army and army.slotsByCreature
+	if slotsByCreature then
+		local slot = slotsByCreature[id] or slotsByCreature[tostring(id)]
+		if slot ~= nil then
+			return slot
+		end
+	end
+
+	if stacksCount(army) < armySize(army) then
+		return army and army.freeSlot or 0
+	end
+	return nil
+end
+
+local function findDuplicatingStack(army)
+	for slot, stack in pairs(armyStacksBySlot(army)) do
+		local fromSlot = stackSlot(stack, slot)
+		local toSlot = type(stack) == "table" and stack.duplicatingSlot
+		if toSlot ~= nil and toSlot ~= fromSlot then
+			return fromSlot, toSlot
+		end
+
+		local creature = stackCreature(stack)
+		toSlot = slotForCreature(army, creature)
+		if toSlot ~= nil and toSlot ~= fromSlot then
+			return fromSlot, toSlot
+		end
+	end
+	return nil, nil
+end
+
+local function ensureRecruitSlot(aiGw, army, creature)
+	if slotForCreature(army, creature) ~= nil then
+		return true
+	end
+
+	local fromSlot, toSlot = findDuplicatingStack(army)
+	if fromSlot ~= nil and toSlot ~= nil and aiGw and type(aiGw.mergeStacks) == "function" then
+		aiGw:mergeStacks(army, fromSlot, toSlot)
+		if type(army) == "table" and type(army.stacksCount) == "number" then
+			army.stacksCount = math.max(0, army.stacksCount - 1)
+		end
+		return true
+	end
+	return false
+end
+
+local function recruitCreaturesForArmy(aiGw, town, army)
+	local resourceSnapshot = resources(aiGw)
+	local recruited = false
+	for _, entry in ipairs(creatureEntries(town)) do
+		local count = entry.count
+		local creature = entry.creature
+		if count > 0 and ensureRecruitSlot(aiGw, army, creature) then
+			count = math.min(count, maxAffordableCount(resourceSnapshot, resourceCost(creature)))
+			if count > 0 then
+				if aiGw and type(aiGw.recruitCreatures) == "function" then
+					aiGw:recruitCreatures(town, army, creature, count, entry.level)
+					recruited = true
+				else
+					error("No creature recruitment command target.", 2)
+				end
+			end
+		end
+	end
+	return recruited
+end
+
 local function upgradeSlots(army)
 	if not army then
 		return {}
@@ -100,7 +255,7 @@ local function stacks(army)
 	return army and (army.slots or army.stacks) or {}
 end
 
-local function stacksCount(army)
+function stacksCount(army)
 	if army and type(army.stacksCount) == "function" then
 		return army:stacksCount()
 	end
@@ -181,6 +336,7 @@ function ExchangeSwapTownHeroes:accept(aiGw)
 		aiGw:swapGarrisonHero(self.town)
 		makePossibleUpgrades(aiGw, currentGarrisonHero)
 		makePossibleUpgrades(aiGw, self.town)
+		recruitCreaturesForArmy(aiGw, self.town, upperArmy(self.town))
 		if type(aiGw.unlockHero) == "function" then
 			aiGw:unlockHero(currentGarrisonHero)
 		end

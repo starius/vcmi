@@ -145,8 +145,8 @@ The current Lua policy surface includes the core day loop, settings, state locks
 formula scaffolding, deterministic `RewardEvaluator` resource, reward, growth, cost, strategic, and conquest helpers,
 hero-specific `AIUtility` artifact scoring, resource trading, goal records, marker records, priority-pass behaviors,
 regular behavior decomposition, and command emission for recruit hero, build, build boat, dismiss hero, swap garrison
-hero, recruit creatures, upgrade creatures, dismiss creatures, cast spell, granular hero movement, resource locks, and
-end turn.
+hero, recruit creatures, upgrade creatures, merge stacks, dismiss creatures, cast spell, granular hero movement,
+resource locks, and end turn.
 
 Major parity gaps remain:
 

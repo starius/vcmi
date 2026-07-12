@@ -201,6 +201,9 @@ local function resourceAmount(resources, resourceID)
 		return resources
 	end
 	if type(resources) == "table" then
+		if resourceID == "gold" or resourceID == "GOLD" or resourceID == 6 then
+			return resources[6] or resources[7] or resources.gold or resources.GOLD or 0
+		end
 		return resources[resourceID] or resources.gold or resources.GOLD or resources[1] or 0
 	end
 	return 0

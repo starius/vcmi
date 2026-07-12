@@ -182,6 +182,14 @@ function HostCommands:upgradeCreature(army, slot, creature)
 	})
 end
 
+function HostCommands:mergeStacks(army, fromSlot, toSlot)
+	return self:command("mergeStacks", {
+		army = objectID(army),
+		fromSlot = fromSlot,
+		toSlot = toSlot
+	})
+end
+
 function HostCommands:dismissCreature(army, slot)
 	return self:command("dismissCreature", {
 		army = objectID(army),

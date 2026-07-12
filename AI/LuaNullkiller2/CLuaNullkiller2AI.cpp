@@ -365,6 +365,22 @@ bool CLuaNullkiller2AI::executeCommand(const LuaCommand & command)
 		return true;
 	}
 
+	if(command.name == "mergeStacks")
+	{
+		const auto armyID = commandInteger(command, "army");
+		const auto fromSlot = commandInteger(command, "fromSlot");
+		const auto toSlot = commandInteger(command, "toSlot");
+		if(!armyID || !fromSlot || !toSlot)
+			return false;
+
+		const auto * army = dynamic_cast<const CArmedInstance *>(cc->getObj(ObjectInstanceID(*armyID), false));
+		if(!army)
+			return false;
+
+		cc->mergeStacks(army, army, SlotID(*fromSlot), SlotID(*toSlot));
+		return true;
+	}
+
 	if(command.name == "dismissCreature")
 	{
 		const auto armyID = commandInteger(command, "army");
