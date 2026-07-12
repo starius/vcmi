@@ -301,6 +301,15 @@ void CGameState::updateOnLoad(const StartInfo & si)
 
 void CGameState::initNewGame(const IMapService * mapService, vstd::RNG & randomGenerator, bool allowSavingRandomMap, Load::ProgressAccumulator & progressTracking)
 {
+	if(scenarioOps->createRandomMap() && !scenarioOps->fileURI.empty() && scenarioOps->fileURI != "random-map")
+	{
+		randomGenerator.nextInt();
+		logGlobal->info("Open generated map file: %s", scenarioOps->mapname);
+		const ResourcePath mapURI(scenarioOps->mapname, EResType::MAP);
+		map = mapService->loadMap(mapURI, this);
+		return;
+	}
+
 	if(scenarioOps->createRandomMap())
 	{
 		logGlobal->info("Create random map.");
@@ -352,6 +361,8 @@ void CGameState::initNewGame(const IMapService * mapService, vstd::RNG & randomG
 				map->name.appendRawString(boost::str(boost::format(" %s") % dt));
 
 				mapService->saveMap(map, fullPath);
+				scenarioOps->fileURI = "Maps/RandomMaps/" + fileName;
+				scenarioOps->mapname = scenarioOps->fileURI;
 
 				logGlobal->info("Random map has been saved to:");
 				logGlobal->info(fullPath.string());

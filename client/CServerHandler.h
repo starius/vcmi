@@ -114,6 +114,7 @@ class CServerHandler final : public IServerAPI, public LobbyInfo, public INetwor
 
 	void threadRunNetwork();
 	void waitForServerShutdown();
+	void debugStartPreparedMap(EStartMode mode, ESelectionScreen screen, std::shared_ptr<CMapInfo> mapInfo, std::shared_ptr<CMapGenOptions> mapGenOptions = {});
 
 	void onPacketReceived(const NetworkConnectionPtr &, const std::vector<std::byte> & message) override;
 	void onConnectionFailed(const std::string & errorMessage) override;
@@ -209,6 +210,7 @@ public:
 	void startMapAfterConnection(std::shared_ptr<CMapInfo> to);
 	bool validateGameStart(bool allowOnlyAI = false) const;
 	void debugStartTest(std::string filename, bool save = false);
+	void debugStartRandomMapTest(std::shared_ptr<CMapGenOptions> mapGenOptions);
 
 	void startGameplay(std::shared_ptr<CGameState> gameState);
 	std::optional<std::string> canQuickLoadGame(const std::string & path) const; // returns reason why not compatible, or nullopt if can

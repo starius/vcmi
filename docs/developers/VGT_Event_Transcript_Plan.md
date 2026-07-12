@@ -1,6 +1,6 @@
 # VGT Event Transcript Plan
 
-This document restarts the readable VCMI Game Transcript work from a text-first direction. It keeps the useful parts of the previous VGT readable format, but rejects binary packet dumps, save snapshots, state checkpoint hashes, record counters, and raw compatibility blobs.
+This document restarts the readable VCMI Game Transcript work from a text-first direction. It keeps the useful parts of the previous VGT readable format, but rejects binary packet dumps, save snapshots, state checkpoint hashes, record counters, and raw compatibility blobs. The map-file hash is still required because the external map file is part of the transcript input.
 
 The target is a compact YAML transcript that can be read by a human, parsed by normal YAML tooling, and used by a future recorded-game player to reconstruct a game timeline, inspect decisions, scroll through game history, and branch into playable state for any side after replaying the text events.
 
@@ -23,7 +23,7 @@ The target is a compact YAML transcript that can be read by a human, parsed by n
 
 The transcript names the map, content set, settings, map game-setting overrides, players, and all events. It does not embed the map, but it must identify the exact map file with a cryptographic hash.
 
-A replay/player tool starts from the declared map and content, verifies the map hash, initializes the game from the declared settings, restores small deterministic initialization state such as the map object-name counter, then applies VGT events. For generated random maps, the writer must save the generated map as a normal map file, hash that saved file, and reference it from the transcript.
+A replay/player tool starts from the declared map and content, verifies the map hash, initializes the game from the declared settings, restores small deterministic initialization state such as the map object-name counter, then applies VGT events. For generated random maps, the writer must save the generated map as a normal map file, hash that saved file, and reference it from the transcript. The transcript may also record the random-map generator options preserved by normal save files, but replay still loads the saved map file instead of generating a new one.
 
 This keeps the transcript readable while detecting the most dangerous external input drift: the map file. Mod/content hashing can be added later if needed, but it is not required for the first implementation.
 
@@ -41,6 +41,8 @@ map:
   source: generated-map-file
   hash: { algorithm: sha256, value: "8db3480a8b6f7e7a8c3d2a17f8c1b0c77a2b8b7c4f7f4ce0f1b5b83e7a3e0000" }
   objectNameCounter: 5576
+  generator: { width: 252, height: 252, levels: 2, humanOrComputerPlayers: 8, teams: 0, computerOnlyPlayers: 0, computerOnlyTeams: 0, water: normal, monsters: normal, template: "8XM12", roads: ["core:dirtRoad", "core:gravelRoad", "core:cobblestoneRoad"], players: { red: { type: ai, faction: random, hero: random, team: 0 }, blue: { type: ai, faction: random, hero: random, team: 1 } } }
+  initialGenerator: { width: 252, height: 252, levels: 2, humanOrComputerPlayers: 8, teams: 0, computerOnlyPlayers: 0, computerOnlyTeams: 0, water: normal, monsters: normal, template: "8XM12", roads: ["core:dirtRoad", "core:gravelRoad", "core:cobblestoneRoad"], players: { red: { type: ai, faction: random, hero: random, team: none }, blue: { type: ai, faction: random, hero: random, team: none } } }
 content:
   ruleset: sod
   mods: [{ id: vcmi, version: "1.8.0" }, { id: core, version: "1.8.0" }]

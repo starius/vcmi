@@ -127,6 +127,7 @@ public:
 	/// All standard players are by default of type EPlayerType::AI.
 	const std::map<PlayerColor, CPlayerSettings> & getPlayersSettings() const;
 	const std::map<PlayerColor, CPlayerSettings> & getSavedPlayersMap() const;
+	void setPlayerSettings(const std::map<PlayerColor, CPlayerSettings> & value);
 	void setStartingTownForPlayer(const PlayerColor & color, FactionID town);
 	void setStartingHeroForPlayer(const PlayerColor & color, HeroTypeID hero);
 	/// Sets a player type for a standard player. A standard player is the opposite of a computer only player. The

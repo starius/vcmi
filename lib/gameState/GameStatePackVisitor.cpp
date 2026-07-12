@@ -149,6 +149,9 @@ void GameStatePackVisitor::visitHeroVisitCastle(HeroVisitCastle & pack)
 
 void GameStatePackVisitor::visitChangeSpells(ChangeSpells & pack)
 {
+	if(pack.spells.empty())
+		return;
+
 	CGHeroInstance *hero = gs.getHero(pack.hid);
 
 	if(pack.learn)

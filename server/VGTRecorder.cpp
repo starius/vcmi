@@ -16,6 +16,7 @@
 #include "../lib/GameLibrary.h"
 #include "../lib/ResourceSet.h"
 #include "../lib/StartInfo.h"
+#include "../lib/VCMIDirs.h"
 #include "../lib/battle/BattleAction.h"
 #include "../lib/bonuses/Bonus.h"
 #include "../lib/callback/Calendar.h"
@@ -28,6 +29,7 @@
 #include "../lib/mapObjects/CGObjectInstance.h"
 #include "../lib/mapObjects/army/CSimpleArmy.h"
 #include "../lib/networkPacks/NetPackVisitor.h"
+#include "../lib/rmg/CMapGenOptions.h"
 #include "../lib/serializer/CSaveFile.h"
 #include "../lib/serializer/JsonSerializer.h"
 #include "../lib/texts/MetaString.h"
@@ -272,6 +274,107 @@ std::string artifactPositions(const std::vector<ArtifactPosition> & positions)
 	for(const auto & entry : positions)
 		entries.push_back(artifactPosition(entry));
 	return flowList(entries);
+}
+
+std::string team(TeamID id)
+{
+	if(id == TeamID::NO_TEAM)
+		return "none";
+	return std::to_string(id.getNum());
+}
+
+std::string randomMapPlayerType(EPlayerType value)
+{
+	switch(value)
+	{
+		case EPlayerType::HUMAN: return "human";
+		case EPlayerType::AI: return "ai";
+		case EPlayerType::COMP_ONLY: return "computerOnly";
+	}
+	return "unknown";
+}
+
+std::string randomMapWater(EWaterContent::EWaterContent value)
+{
+	switch(value)
+	{
+		case EWaterContent::RANDOM: return "random";
+		case EWaterContent::NONE: return "none";
+		case EWaterContent::NORMAL: return "normal";
+		case EWaterContent::ISLANDS: return "islands";
+	}
+	return std::to_string(static_cast<int>(value));
+}
+
+std::string randomMapMonsterStrength(EMonsterStrength::EMonsterStrength value)
+{
+	switch(value)
+	{
+		case EMonsterStrength::RANDOM: return "random";
+		case EMonsterStrength::GLOBAL_WEAK: return "weak";
+		case EMonsterStrength::GLOBAL_NORMAL: return "normal";
+		case EMonsterStrength::GLOBAL_STRONG: return "strong";
+		default: break;
+	}
+	return std::to_string(static_cast<int>(value));
+}
+
+std::string road(RoadId id)
+{
+	if(id == RoadId::NO_ROAD)
+		return yamlString("core:none");
+
+	std::string identifier = RoadId::encode(id.getNum());
+	if(identifier.empty())
+		identifier = "road:" + std::to_string(id.getNum());
+	return yamlString(identifier);
+}
+
+std::string randomMapRoads(const CMapGenOptions & options)
+{
+	std::vector<std::string> entries;
+	for(const auto roadId : { RoadId::DIRT_ROAD, RoadId::GRAVEL_ROAD, RoadId::COBBLESTONE_ROAD })
+	{
+		if(options.isRoadEnabled(roadId))
+			entries.push_back(road(roadId));
+	}
+	return flowList(entries);
+}
+
+std::string randomMapPlayer(const CMapGenOptions::CPlayerSettings & player)
+{
+	return "{ type: " + randomMapPlayerType(player.getPlayerType()) +
+		", faction: " + faction(player.getStartingTown()) +
+		", hero: " + heroType(player.getStartingHero()) +
+		", team: " + team(player.getTeam()) + " }";
+}
+
+std::string randomMapPlayers(const CMapGenOptions & options)
+{
+	std::vector<std::string> entries;
+	for(const auto & player : options.getPlayersSettings())
+		entries.push_back(color(player.first) + ": " + randomMapPlayer(player.second));
+	return "{ " + boost::algorithm::join(entries, ", ") + " }";
+}
+
+std::string randomMapGenerator(const CMapGenOptions & options)
+{
+	std::string templateName;
+	if(options.getMapTemplate())
+		templateName = options.getMapTemplate()->getId();
+
+	return "{ width: " + std::to_string(options.getWidth()) +
+		", height: " + std::to_string(options.getHeight()) +
+		", levels: " + std::to_string(options.getLevels()) +
+		", humanOrComputerPlayers: " + std::to_string(options.getHumanOrCpuPlayerCount()) +
+		", teams: " + std::to_string(options.getTeamCount()) +
+		", computerOnlyPlayers: " + std::to_string(options.getCompOnlyPlayerCount()) +
+		", computerOnlyTeams: " + std::to_string(options.getCompOnlyTeamCount()) +
+		", water: " + randomMapWater(options.getWaterContent()) +
+		", monsters: " + randomMapMonsterStrength(options.getMonsterStrength()) +
+		", template: " + yamlString(templateName) +
+		", roads: " + randomMapRoads(options) +
+		", players: " + randomMapPlayers(options) + " }";
 }
 
 std::string mode(ChangeValueMode mode)
@@ -938,6 +1041,25 @@ std::string artifactMoves(const std::vector<MoveArtifactInfo> & moves)
 	return flowList(entries);
 }
 
+std::string bulkArtifactMove(const CGameState & gameState, const BulkMoveArtifacts & pack)
+{
+	return "{ owner: " + color(pack.interfaceOwner) +
+		", from: " + objectAlias(gameState, pack.srcArtHolder) +
+		", to: " + objectAlias(gameState, pack.dstArtHolder) +
+		", fromCreatureSlot: " + optionalSlot(pack.srcCreature) +
+		", toCreatureSlot: " + optionalSlot(pack.dstCreature) +
+		", movesFromSource: " + artifactMoves(pack.artsPack0) +
+		", movesFromDestination: " + artifactMoves(pack.artsPack1) + " }";
+}
+
+std::string bulkArtifactMoves(const CGameState & gameState, const std::vector<BulkMoveArtifacts> & moves)
+{
+	std::vector<std::string> entries;
+	for(const auto & move : moves)
+		entries.push_back(bulkArtifactMove(gameState, move));
+	return flowList(entries);
+}
+
 void writeJsonCompact(std::ostream & out, const JsonNode & node)
 {
 	switch(node.getType())
@@ -994,6 +1116,11 @@ std::string jsonCompact(const JsonNode & node)
 	std::ostringstream out;
 	writeJsonCompact(out, node);
 	return out.str();
+}
+
+std::string gameSettingsOverrides(const JsonNode & node)
+{
+	return node.isNull() ? "{}" : jsonCompact(node);
 }
 
 std::string rewardableConfiguration(Rewardable::Configuration & configuration)
@@ -1168,6 +1295,19 @@ std::string sha256(const uint8_t * data, size_t size)
 
 std::optional<std::string> mapHash(const StartInfo & startInfo)
 {
+	auto hashFile = [](const boost::filesystem::path & filePath) -> std::optional<std::string>
+	{
+		if(!boost::filesystem::exists(filePath))
+			return std::nullopt;
+
+		std::ifstream input(filePath.string(), std::ios::binary);
+		std::vector<uint8_t> data((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+		if(data.empty())
+			return std::nullopt;
+
+		return sha256(data.data(), data.size());
+	};
+
 	try
 	{
 		ResourcePath mapPath(startInfo.fileURI, EResType::MAP);
@@ -1184,14 +1324,17 @@ std::optional<std::string> mapHash(const StartInfo & startInfo)
 
 	try
 	{
-		boost::filesystem::path filePath(startInfo.fileURI);
-		if(boost::filesystem::exists(filePath))
-		{
-			std::ifstream input(filePath.string(), std::ios::binary);
-			std::vector<uint8_t> data((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-			if(!data.empty())
-				return sha256(data.data(), data.size());
-		}
+		if(const auto result = hashFile(boost::filesystem::path(startInfo.fileURI)))
+			return result;
+	}
+	catch(...)
+	{
+	}
+
+	try
+	{
+		if(const auto result = hashFile(VCMIDirs::get().userDataPath() / startInfo.fileURI))
+			return result;
 	}
 	catch(...)
 	{
@@ -1717,13 +1860,7 @@ public:
 
 	void visitBulkMoveArtifacts(BulkMoveArtifacts & pack) override
 	{
-		line = "artifacts: { owner: " + color(pack.interfaceOwner) +
-			", from: " + objectAlias(gameState, pack.srcArtHolder) +
-			", to: " + objectAlias(gameState, pack.dstArtHolder) +
-			", fromCreatureSlot: " + optionalSlot(pack.srcCreature) +
-			", toCreatureSlot: " + optionalSlot(pack.dstCreature) +
-			", movesFromSource: " + artifactMoves(pack.artsPack0) +
-			", movesFromDestination: " + artifactMoves(pack.artsPack1) + " }";
+		line = "artifacts: " + bulkArtifactMove(gameState, pack);
 	}
 
 	void visitHeroVisit(HeroVisit & pack) override
@@ -1847,7 +1984,7 @@ public:
 		line = "battle: { id: battle/" + std::to_string(pack.battleID.getNum()) +
 			", event: resultsApplied, victor: " + color(pack.victor) +
 			", loser: " + color(pack.loser) +
-			", artifactMoves: " + std::to_string(pack.movingArtifacts.size()) +
+			", artifactMoves: " + bulkArtifactMoves(gameState, pack.movingArtifacts) +
 			", grownArtifacts: " + std::to_string(pack.growingArtifacts.size()) +
 			", dischargedArtifacts: " + std::to_string(pack.dischargingArtifacts.size()) + " }";
 	}
@@ -2111,8 +2248,14 @@ void VGTRecorder::ensureHeader(const CGameState & gameState)
 	output << "map:\n";
 	output << "  uri: " << yamlString(startInfo->fileURI) << "\n";
 	output << "  name: " << yamlString(startInfo->mapname) << "\n";
+	if(startInfo->mapGenOptions)
+		output << "  source: generated-map-file\n";
 	output << "  hash: { algorithm: sha256, value: " << yamlString(*hash) << " }\n";
 	output << "  objectNameCounter: " << gameState.getMap().getUniqueInstanceNameCounter() << "\n";
+	if(startInfo->mapGenOptions)
+		output << "  generator: " << randomMapGenerator(*startInfo->mapGenOptions) << "\n";
+	if(const auto * initialStartInfo = gameState.getInitialStartInfo(); initialStartInfo && initialStartInfo->mapGenOptions)
+		output << "  initialGenerator: " << randomMapGenerator(*initialStartInfo->mapGenOptions) << "\n";
 	output << "settings:\n";
 	output << "  start: " << startMode(startInfo->mode) << "\n";
 	output << "  startTime: " << static_cast<int64_t>(startInfo->startTime) << "\n";
@@ -2122,7 +2265,7 @@ void VGTRecorder::ensureHeader(const CGameState & gameState)
 	output << "  simturns: " << simturnsInfo(startInfo->simturnsInfo) << "\n";
 	output << "  timer: " << timerInfo(startInfo->turnTimerInfo) << "\n";
 	output << "  extraOptions: " << extraOptions(startInfo->extraOptionsInfo) << "\n";
-	output << "  gameSettingsOverrides: " << jsonCompact(gameState.getMap().getGameSettingsOverrides()) << "\n";
+	output << "  gameSettingsOverrides: " << gameSettingsOverrides(gameState.getMap().getGameSettingsOverrides()) << "\n";
 	output << "players:\n";
 	for(const auto & player : startInfo->playerInfos)
 		output << "  " << color(player.first) << ": " << playerSettings(player.second) << "\n";

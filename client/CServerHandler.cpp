@@ -54,6 +54,7 @@
 #include "../lib/CPlayerState.h"
 #include "../lib/mapping/CMap.h"
 #include "../lib/mapping/CMapInfo.h"
+#include "../lib/mapping/MapFormat.h"
 #include "../lib/mapObjects/CGTownInstance.h"
 #include "../lib/mapObjects/MiscObjects.h"
 #include "../lib/modding/ModIncompatibility.h"
@@ -904,20 +905,9 @@ ELoadMode CServerHandler::getLoadMode()
 	return loadMode;
 }
 
-void CServerHandler::debugStartTest(std::string filename, bool save)
+void CServerHandler::debugStartPreparedMap(EStartMode mode, ESelectionScreen screen, std::shared_ptr<CMapInfo> mapInfo, std::shared_ptr<CMapGenOptions> mapGenOptions)
 {
-	logGlobal->info("Starting debug test with file: %s", filename);
-	auto mapInfo = std::make_shared<CMapInfo>();
-	if(save)
-	{
-		resetStateForLobby(EStartMode::LOAD_GAME, ESelectionScreen::loadGame, EServerMode::LOCAL, {});
-		mapInfo->saveInit(ResourcePath(filename, EResType::SAVEGAME));
-	}
-	else
-	{
-		resetStateForLobby(EStartMode::NEW_GAME, ESelectionScreen::newGame, EServerMode::LOCAL, {});
-		mapInfo->mapInit(filename);
-	}
+	resetStateForLobby(mode, screen, EServerMode::LOCAL, {});
 	if(settings["session"]["donotstartserver"].Bool())
 		connectToServer(getLocalHostname(), getLocalPort());
 	else
@@ -928,9 +918,9 @@ void CServerHandler::debugStartTest(std::string filename, bool save)
 	while(!settings["session"]["headless"].Bool() && !ENGINE->windows().topWindow<CLobbyScreen>())
 		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-	while(!mi || mapInfo->fileURI != mi->fileURI)
+	while(!mi || (mapInfo->isRandomMap ? !mi->isRandomMap : mapInfo->fileURI != mi->fileURI))
 	{
-		setMapInfo(mapInfo);
+		setMapInfo(mapInfo, mapGenOptions);
 		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	}
 	// "Click" on color to remove us from it
@@ -951,6 +941,70 @@ void CServerHandler::debugStartTest(std::string filename, bool save)
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	}
+}
+
+void CServerHandler::debugStartTest(std::string filename, bool save)
+{
+	logGlobal->info("Starting debug test with file: %s", filename);
+	auto mapInfo = std::make_shared<CMapInfo>();
+	if(save)
+	{
+		mapInfo->saveInit(ResourcePath(filename, EResType::SAVEGAME));
+		debugStartPreparedMap(EStartMode::LOAD_GAME, ESelectionScreen::loadGame, mapInfo);
+	}
+	else
+	{
+		mapInfo->mapInit(filename);
+		debugStartPreparedMap(EStartMode::NEW_GAME, ESelectionScreen::newGame, mapInfo);
+	}
+}
+
+void CServerHandler::debugStartRandomMapTest(std::shared_ptr<CMapGenOptions> mapGenOptions)
+{
+	logGlobal->info("Starting debug random map test");
+
+	auto mapInfo = std::make_shared<CMapInfo>();
+	mapInfo->isRandomMap = true;
+	mapInfo->mapHeader = std::make_unique<CMapHeader>();
+	mapInfo->mapHeader->version = EMapFormat::VCMI;
+	mapInfo->mapHeader->name.appendLocalString(EMetaText::GENERAL_TXT, 740);
+	mapInfo->mapHeader->description.appendLocalString(EMetaText::GENERAL_TXT, 741);
+	mapInfo->mapHeader->difficulty = EMapDifficulty::NORMAL;
+	mapInfo->mapHeader->height = mapGenOptions->getHeight();
+	mapInfo->mapHeader->width = mapGenOptions->getWidth();
+	mapInfo->mapHeader->mapLayers.clear();
+	for(int i = 0; i < mapGenOptions->getLevels(); ++i)
+	{
+		if(i == 0)
+			mapInfo->mapHeader->mapLayers.push_back(MapLayerId::SURFACE);
+		else if(i == 1)
+			mapInfo->mapHeader->mapLayers.push_back(MapLayerId::UNDERGROUND);
+		else
+			mapInfo->mapHeader->mapLayers.push_back(MapLayerId::UNKNOWN);
+	}
+
+	const int playersToGenerate = mapGenOptions->getMaxPlayersCount();
+	mapInfo->mapHeader->howManyTeams = playersToGenerate;
+
+	for(auto & player : mapInfo->mapHeader->players)
+	{
+		player.canComputerPlay = false;
+		player.canHumanPlay = false;
+	}
+
+	for(const auto & player : mapGenOptions->getPlayersSettings())
+	{
+		PlayerInfo playerInfo;
+		playerInfo.isFactionRandom = player.second.getStartingTown() == FactionID::RANDOM;
+		playerInfo.canComputerPlay = player.second.getPlayerType() != EPlayerType::HUMAN;
+		playerInfo.canHumanPlay = player.second.getPlayerType() != EPlayerType::COMP_ONLY;
+		playerInfo.team = player.second.getTeam();
+		playerInfo.hasMainTown = true;
+		playerInfo.generateHeroAtMainTown = true;
+		mapInfo->mapHeader->players[player.first.getNum()] = playerInfo;
+	}
+
+	debugStartPreparedMap(EStartMode::NEW_GAME, ESelectionScreen::newGame, mapInfo, std::move(mapGenOptions));
 }
 
 class ServerHandlerCPackVisitor : public ::ICPackVisitor
