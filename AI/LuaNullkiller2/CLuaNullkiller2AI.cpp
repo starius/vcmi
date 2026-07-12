@@ -11,6 +11,7 @@
 
 #include "CLuaNullkiller2AI.h"
 
+#include "../../lib/battle/BattleAction.h"
 #include "../../lib/callback/CCallback.h"
 
 namespace LuaNullkiller2AI
