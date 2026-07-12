@@ -57,6 +57,10 @@ function Script.objectRemoved(ai, input)
 	return Nullkiller.objectRemoved(ai, input or {})
 end
 
+function Script.tileHidden(ai, input)
+	return Nullkiller.tileHidden(ai, input or {})
+end
+
 function Script.tileRevealed(ai, input)
 	return Nullkiller.tileRevealed(ai, input or {})
 end

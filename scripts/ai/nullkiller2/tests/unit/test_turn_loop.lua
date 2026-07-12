@@ -485,6 +485,18 @@ local tileRevealedResult = Script.tileRevealed(makeAI().ai, {
 assert(tileRevealedResult.status == "tile_revealed")
 assert(eventMemory.aiMemory.visitableObjs["943"] == true)
 
+local tileHiddenResult = Script.tileHidden(makeAI().ai, {
+	memory = eventMemory,
+	visibleObjects = {
+		{ id = 940 },
+		{ id = 943 }
+	}
+})
+assert(tileHiddenResult.status == "tile_hidden")
+assert(eventMemory.aiMemory.visitableObjs["940"] == true)
+assert(eventMemory.aiMemory.visitableObjs["941"] == nil)
+assert(eventMemory.aiMemory.visitableObjs["943"] == true)
+
 local heroVisitResult = Script.heroVisit(makeAI().ai, {
 	memory = eventMemory,
 	start = true,

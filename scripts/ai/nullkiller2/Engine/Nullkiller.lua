@@ -970,6 +970,21 @@ function Nullkiller.objectRemoved(ai, input)
 	return eventResult(root, "object_removed")
 end
 
+function Nullkiller.tileHidden(ai, input)
+	input = input or {}
+	local root, memory = eventMemory(input)
+	local visibleObjects = {}
+	for _, object in ipairs(input.visibleObjects or {}) do
+		visibleObjects[objectID(object)] = object
+	end
+	memory:removeInvisibleOrDeletedObjects({
+		getObj = function(_, id)
+			return visibleObjects[objectID(id)]
+		end
+	})
+	return eventResult(root, "tile_hidden")
+end
+
 function Nullkiller.tileRevealed(ai, input)
 	input = input or {}
 	local root, memory = eventMemory(input)

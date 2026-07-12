@@ -59,6 +59,7 @@ public:
 	void heroMoved(const TryMoveHero & details, bool verbose = true) override;
 	void newObject(const CGObjectInstance * obj) override;
 	void objectRemoved(const CGObjectInstance * obj, const PlayerColor & initiator) override;
+	void tileHidden(const FowTilesType & pos) override;
 	void tileRevealed(const FowTilesType & pos) override;
 	void showTeleportDialog(const CGHeroInstance * hero, TeleportChannelID channel, TTeleportExitsList exits, bool impassable, QueryID askID) override;
 	void showMapObjectSelectDialog(QueryID askID, const Component & icon, const MetaString & title, const MetaString & description, const std::vector<ObjectInstanceID> & objects) override;

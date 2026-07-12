@@ -124,6 +124,49 @@ JsonNode visitableObjectsOnTilesSnapshot(const FowTilesType & tiles, const std::
 	return result;
 }
 
+std::vector<ObjectInstanceID> rememberedObjectIDs(const JsonNode & memory)
+{
+	std::vector<ObjectInstanceID> result;
+	if(!memory.isStruct())
+		return result;
+
+	const auto aiMemory = memory.Struct().find("aiMemory");
+	if(aiMemory == memory.Struct().end() || !aiMemory->second.isStruct())
+		return result;
+
+	const auto visitableObjs = aiMemory->second.Struct().find("visitableObjs");
+	if(visitableObjs == aiMemory->second.Struct().end() || !visitableObjs->second.isStruct())
+		return result;
+
+	for(const auto & entry : visitableObjs->second.Struct())
+	{
+		if(entry.second.isBool() && !entry.second.Bool())
+			continue;
+
+		try
+		{
+			result.emplace_back(std::stoi(entry.first));
+		}
+		catch(const std::exception &)
+		{
+			logAi->warn("LuaNullkiller2 memory contains non-numeric object id: %s", entry.first);
+		}
+	}
+	return result;
+}
+
+JsonNode visibleRememberedObjectsSnapshot(const JsonNode & memory, const std::shared_ptr<CCallback> & callback)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_VECTOR);
+	for(const auto & objectID : rememberedObjectIDs(memory))
+	{
+		if(const auto * object = callback->getObj(objectID, false))
+			result.Vector().push_back(objectSnapshot(object));
+	}
+	return result;
+}
+
 std::string componentTypeName(ComponentType type)
 {
 	switch(type)
@@ -1012,6 +1055,16 @@ void CLuaNullkiller2AI::objectRemoved(const CGObjectInstance * obj, const Player
 		snapshot["object"] = objectSnapshot(obj);
 
 	runEventCallback("objectRemoved", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::tileHidden(const FowTilesType & pos)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["tiles"] = tilesSnapshot(pos);
+	snapshot["visibleObjects"] = visibleRememberedObjectsSnapshot(memory, cc);
+
+	runEventCallback("tileHidden", std::move(snapshot));
 }
 
 void CLuaNullkiller2AI::tileRevealed(const FowTilesType & pos)
