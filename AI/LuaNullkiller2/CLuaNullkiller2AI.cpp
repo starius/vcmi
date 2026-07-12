@@ -381,6 +381,43 @@ bool CLuaNullkiller2AI::executeCommand(const LuaCommand & command)
 		return true;
 	}
 
+	if(command.name == "mergeOrSwapStacks")
+	{
+		const auto sourceID = commandInteger(command, "src");
+		const auto destinationID = commandInteger(command, "dst");
+		const auto fromSlot = commandInteger(command, "fromSlot");
+		const auto toSlot = commandInteger(command, "toSlot");
+		if(!sourceID || !destinationID || !fromSlot || !toSlot)
+			return false;
+
+		const auto * source = dynamic_cast<const CArmedInstance *>(cc->getObj(ObjectInstanceID(*sourceID), false));
+		const auto * destination = dynamic_cast<const CArmedInstance *>(cc->getObj(ObjectInstanceID(*destinationID), false));
+		if(!source || !destination)
+			return false;
+
+		cc->mergeOrSwapStacks(source, destination, SlotID(*fromSlot), SlotID(*toSlot));
+		return true;
+	}
+
+	if(command.name == "splitStack")
+	{
+		const auto sourceID = commandInteger(command, "src");
+		const auto destinationID = commandInteger(command, "dst");
+		const auto fromSlot = commandInteger(command, "fromSlot");
+		const auto toSlot = commandInteger(command, "toSlot");
+		const auto count = commandInteger(command, "count");
+		if(!sourceID || !destinationID || !fromSlot || !toSlot || !count)
+			return false;
+
+		const auto * source = dynamic_cast<const CArmedInstance *>(cc->getObj(ObjectInstanceID(*sourceID), false));
+		const auto * destination = dynamic_cast<const CArmedInstance *>(cc->getObj(ObjectInstanceID(*destinationID), false));
+		if(!source || !destination)
+			return false;
+
+		cc->splitStack(source, destination, SlotID(*fromSlot), SlotID(*toSlot), *count);
+		return true;
+	}
+
 	if(command.name == "dismissCreature")
 	{
 		const auto armyID = commandInteger(command, "army");

@@ -190,6 +190,25 @@ function HostCommands:mergeStacks(army, fromSlot, toSlot)
 	})
 end
 
+function HostCommands:mergeOrSwapStacks(source, destination, fromSlot, toSlot)
+	return self:command("mergeOrSwapStacks", {
+		src = objectID(source),
+		dst = objectID(destination),
+		fromSlot = fromSlot,
+		toSlot = toSlot
+	})
+end
+
+function HostCommands:splitStack(source, destination, fromSlot, toSlot, count)
+	return self:command("splitStack", {
+		src = objectID(source),
+		dst = objectID(destination),
+		fromSlot = fromSlot,
+		toSlot = toSlot,
+		count = count
+	})
+end
+
 function HostCommands:dismissCreature(army, slot)
 	return self:command("dismissCreature", {
 		army = objectID(army),

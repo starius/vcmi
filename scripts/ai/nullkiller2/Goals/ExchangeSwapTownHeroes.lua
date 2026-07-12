@@ -133,11 +133,22 @@ local function stackCreature(stack)
 	return type(stack) == "table" and (stack.creature or stack.creatureID or stack) or stack
 end
 
+local function creatureID(value)
+	if type(value) == "table" and value.creatureID ~= nil then
+		return CGoal.objectID(value.creatureID)
+	end
+	if type(value) == "table" and value.creature ~= nil then
+		return CGoal.objectID(value.creature)
+	end
+	return CGoal.objectID(value)
+end
+
 local function armyStacksBySlot(army)
 	return army and (army.slots or army.stacks) or {}
 end
 
 local stacksCount
+local applyMergeOrSwap
 
 local function slotForCreature(army, creature)
 	if army and type(army.getSlotFor) == "function" then
@@ -153,7 +164,13 @@ local function slotForCreature(army, creature)
 		end
 	end
 
-	local id = CGoal.objectID(creature)
+	local id = creatureID(creature)
+	for slot, stack in pairs(armyStacksBySlot(army)) do
+		if id ~= nil and creatureID(stack) == id then
+			return stackSlot(stack, slot)
+		end
+	end
+
 	local slotsByCreature = army and army.slotsByCreature
 	if slotsByCreature then
 		local slot = slotsByCreature[id] or slotsByCreature[tostring(id)]
@@ -193,7 +210,9 @@ local function ensureRecruitSlot(aiGw, army, creature)
 	local fromSlot, toSlot = findDuplicatingStack(army)
 	if fromSlot ~= nil and toSlot ~= nil and aiGw and type(aiGw.mergeStacks) == "function" then
 		aiGw:mergeStacks(army, fromSlot, toSlot)
-		if type(army) == "table" and type(army.stacksCount) == "number" then
+		if applyMergeOrSwap then
+			applyMergeOrSwap(army, army, fromSlot, toSlot)
+		elseif type(army) == "table" and type(army.stacksCount) == "number" then
 			army.stacksCount = math.max(0, army.stacksCount - 1)
 		end
 		return true
@@ -260,6 +279,272 @@ function stacksCount(army)
 		return army:stacksCount()
 	end
 	return army and (army.stacksCount or 0) or 0
+end
+
+local function mutableArmyStacks(army)
+	if not army then
+		return {}
+	end
+	if not army.slots and not army.stacks then
+		army.slots = {}
+	end
+	return army.slots or army.stacks
+end
+
+local function stackAtSlot(army, targetSlot)
+	for slot, stack in pairs(armyStacksBySlot(army)) do
+		if stackSlot(stack, slot) == targetSlot then
+			return stack
+		end
+	end
+	return nil
+end
+
+local function hasStackAtSlot(army, slot)
+	return stackAtSlot(army, slot) ~= nil
+end
+
+local function firstStackSlot(army)
+	local result = nil
+	for slot, stack in pairs(armyStacksBySlot(army)) do
+		local candidate = stackSlot(stack, slot)
+		if candidate ~= nil and (result == nil or candidate < result) then
+			result = candidate
+		end
+	end
+	return result
+end
+
+local function refreshStacksCount(army)
+	if type(army) ~= "table" or type(army.stacksCount) ~= "number" then
+		return
+	end
+
+	local count = 0
+	for _, stack in pairs(armyStacksBySlot(army)) do
+		if stack ~= nil then
+			count = count + 1
+		end
+	end
+	army.stacksCount = count
+end
+
+local function removeStackAtSlot(army, targetSlot)
+	local slots = mutableArmyStacks(army)
+	for key, stack in pairs(slots) do
+		if stackSlot(stack, key) == targetSlot then
+			if type(key) == "number" and key >= 1 and slots[key] == stack then
+				table.remove(slots, key)
+			else
+				slots[key] = nil
+			end
+			refreshStacksCount(army)
+			return stack
+		end
+	end
+	return nil
+end
+
+local function setStackAtSlot(army, targetSlot, stack)
+	if not stack then
+		removeStackAtSlot(army, targetSlot)
+		return
+	end
+
+	if type(stack) == "table" then
+		stack.slot = targetSlot
+	end
+
+	local slots = mutableArmyStacks(army)
+	for key, existing in pairs(slots) do
+		if stackSlot(existing, key) == targetSlot then
+			slots[key] = stack
+			refreshStacksCount(army)
+			return
+		end
+	end
+
+	table.insert(slots, stack)
+	refreshStacksCount(army)
+end
+
+local function stackCount(stack)
+	return type(stack) == "table" and (stack.count or stack.quantity or 0) or 0
+end
+
+local function stackPower(stack)
+	if type(stack) ~= "table" then
+		return 0
+	end
+	if stack.power then
+		return stack.power
+	end
+
+	local creature = stackCreature(stack)
+	local aiValue = type(creature) == "table" and (creature.aiValue or creature.value) or stack.aiValue or 0
+	return aiValue * stackCount(stack)
+end
+
+local function armyStrength(army)
+	return army and (army.armyStrength or army.totalStrength or 0) or 0
+end
+
+local function sameCreature(left, right)
+	local leftID = creatureID(left)
+	return leftID ~= nil and leftID == creatureID(right)
+end
+
+applyMergeOrSwap = function(source, destination, fromSlot, toSlot)
+	if source == destination and fromSlot == toSlot then
+		return
+	end
+
+	local sourceStack = stackAtSlot(source, fromSlot)
+	local destinationStack = stackAtSlot(destination, toSlot)
+
+	if sourceStack and destinationStack and sameCreature(sourceStack, destinationStack) then
+		if type(destinationStack) == "table" and type(sourceStack) == "table" then
+			local combinedCount = stackCount(destinationStack) + stackCount(sourceStack)
+			local combinedPower = stackPower(destinationStack) + stackPower(sourceStack)
+			destinationStack.count = combinedCount
+			destinationStack.power = combinedPower
+		end
+		removeStackAtSlot(source, fromSlot)
+		return
+	end
+
+	removeStackAtSlot(source, fromSlot)
+	removeStackAtSlot(destination, toSlot)
+	setStackAtSlot(source, fromSlot, destinationStack)
+	setStackAtSlot(destination, toSlot, sourceStack)
+end
+
+local function bestArmyFallback(destination, source)
+	local byCreature = {}
+	for _, army in ipairs({ destination, source }) do
+		for _, stack in pairs(armyStacksBySlot(army)) do
+			local id = creatureID(stack)
+			if id ~= nil then
+				local entry = byCreature[id]
+				if not entry then
+					entry = {
+						creature = stackCreature(stack),
+						creatureID = id,
+						count = 0,
+						power = 0
+					}
+					byCreature[id] = entry
+				end
+				entry.count = entry.count + stackCount(stack)
+				entry.power = entry.power + stackPower(stack)
+			end
+		end
+	end
+
+	local result = {}
+	for _, entry in pairs(byCreature) do
+		table.insert(result, entry)
+	end
+	table.sort(result, function(left, right)
+		if left.power ~= right.power then
+			return left.power > right.power
+		end
+		return (left.creatureID or 0) < (right.creatureID or 0)
+	end)
+	return result
+end
+
+local function bestArmyForTransfer(town, destination, source)
+	return (town and (town.moveCreaturesToHeroBestArmy or town.armyTransferBestArmy or town.bestArmy))
+		or (destination and destination.bestArmy)
+		or (source and source.bestArmy)
+		or bestArmyFallback(destination, source)
+end
+
+local function bestArmyCreatureID(entry)
+	if type(entry) == "table" then
+		return creatureID(entry.creature or entry.creatureID or entry)
+	end
+	return creatureID(entry)
+end
+
+local function owner(object)
+	if type(object) ~= "table" then
+		return nil
+	end
+	return object.tempOwner or object.owner
+end
+
+local function sameOwner(left, right)
+	local leftOwner = owner(left)
+	local rightOwner = owner(right)
+	if leftOwner == nil or rightOwner == nil then
+		return true
+	end
+	return CGoal.objectID(leftOwner) == CGoal.objectID(rightOwner)
+end
+
+local function moveCreaturesToHero(aiGw, town, hero)
+	if not (aiGw and type(aiGw.mergeOrSwapStacks) == "function") then
+		return false
+	end
+
+	local destination = hero or visitingHero(town)
+	local source = upperArmy(town)
+	if not destination or not source or stacksCount(source) == 0 or not sameOwner(destination, town) then
+		return false
+	end
+
+	for _, army in ipairs({ destination, source }) do
+		if not hasStackAtSlot(army, 0) and stacksCount(army) > 0 then
+			local slot = firstStackSlot(army)
+			if slot ~= nil and slot ~= 0 then
+				aiGw:mergeOrSwapStacks(army, army, 0, slot)
+				applyMergeOrSwap(army, army, 0, slot)
+			end
+		end
+	end
+
+	local bestArmy = bestArmyForTransfer(town, destination, source)
+	local moved = false
+	for targetSlot = 0, armySize(destination) - 1 do
+		local bestEntry = bestArmy[targetSlot + 1]
+		if not bestEntry then
+			local currentStack = stackAtSlot(destination, targetSlot)
+			if currentStack then
+				local sourceSlot = slotForCreature(source, stackCreature(currentStack))
+				if sourceSlot ~= nil then
+					aiGw:mergeOrSwapStacks(destination, source, targetSlot, sourceSlot)
+					applyMergeOrSwap(destination, source, targetSlot, sourceSlot)
+					moved = true
+				elseif stackPower(currentStack) < armyStrength(destination) / 100 and type(aiGw.dismissCreature) == "function" then
+					aiGw:dismissCreature(destination, targetSlot)
+					removeStackAtSlot(destination, targetSlot)
+					moved = true
+				end
+			end
+		else
+			local targetCreature = bestArmyCreatureID(bestEntry)
+			for _, army in ipairs({ destination, source }) do
+				local found = false
+				for slot, stack in pairs(armyStacksBySlot(army)) do
+					local currentSlot = stackSlot(stack, slot)
+					if targetCreature ~= nil and creatureID(stack) == targetCreature and (currentSlot ~= targetSlot or army ~= destination) then
+						aiGw:mergeOrSwapStacks(army, destination, currentSlot, targetSlot)
+						applyMergeOrSwap(army, destination, currentSlot, targetSlot)
+						moved = true
+						found = true
+						break
+					end
+				end
+				if found then
+					break
+				end
+			end
+		end
+	end
+
+	return moved
 end
 
 local function canBeMergedWith(hero, town)
@@ -337,6 +622,7 @@ function ExchangeSwapTownHeroes:accept(aiGw)
 		makePossibleUpgrades(aiGw, currentGarrisonHero)
 		makePossibleUpgrades(aiGw, self.town)
 		recruitCreaturesForArmy(aiGw, self.town, upperArmy(self.town))
+		moveCreaturesToHero(aiGw, self.town, currentGarrisonHero)
 		if type(aiGw.unlockHero) == "function" then
 			aiGw:unlockHero(currentGarrisonHero)
 		end

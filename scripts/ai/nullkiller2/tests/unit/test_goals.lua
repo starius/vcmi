@@ -316,8 +316,8 @@ local extractionTown = {
 		stacksCount = 7,
 		armySize = 7,
 		slots = {
-			{ slot = 0, creature = { id = 344 }, count = 1 },
-			{ slot = 1, creature = { id = 344 }, count = 1, duplicatingSlot = 0 }
+			{ slot = 2, creature = { id = 344 }, count = 1 },
+			{ slot = 3, creature = { id = 344 }, count = 1, duplicatingSlot = 2 }
 		}
 	},
 	upgradeSlots = {
@@ -352,6 +352,9 @@ ExchangeSwapTownHeroes.new(extractionTown, nil, State.HeroLockedReason.NOT_LOCKE
 	mergeStacks = function(_, army, fromSlot, toSlot)
 		table.insert(extractionLog, "merge:" .. army.id .. ":" .. fromSlot .. ":" .. toSlot)
 	end,
+	mergeOrSwapStacks = function(_, source, destination, fromSlot, toSlot)
+		table.insert(extractionLog, "move:" .. source.id .. ":" .. destination.id .. ":" .. fromSlot .. ":" .. toSlot)
+	end,
 	recruitCreatures = function(_, townArg, army, creature, count, level)
 		table.insert(extractionLog, "recruit:" .. townArg.id .. ":" .. army.id .. ":" .. creature.id .. ":" .. count .. ":" .. level)
 	end,
@@ -362,9 +365,11 @@ ExchangeSwapTownHeroes.new(extractionTown, nil, State.HeroLockedReason.NOT_LOCKE
 assert(extractionLog[1] == "swap:340")
 assert(extractionLog[2] == "upgrade:341:0:342")
 assert(extractionLog[3] == "upgrade:340:2:346")
-assert(extractionLog[4] == "merge:343:1:0")
+assert(extractionLog[4] == "merge:343:3:2")
 assert(extractionLog[5] == "recruit:340:343:345:2:0")
-assert(extractionLog[6] == "unlock:341")
+assert(extractionLog[6] == "move:343:343:0:2")
+assert(extractionLog[7] == "move:343:341:0:0")
+assert(extractionLog[8] == "unlock:341")
 
 assert(Goals.Invalid == Invalid)
 assert(Goals.BuildThis == BuildThis)
