@@ -1,0 +1,162 @@
+{
+  "schema": 1,
+  "parityTarget": "AI/Nullkiller2",
+  "description": "Machine-readable map from C++ Nullkiller2 policy sources to the Lua Nullkiller2 parity port.",
+  "statusValues": [
+    "pending_lua_port",
+    "scaffolded",
+    "ported",
+    "neutral_cpp_helper",
+    "host_action_executor",
+    "obsolete",
+    "deferred"
+  ],
+  "entries": [
+    {
+      "cpp": "AI/Nullkiller2/Engine/Nullkiller.cpp",
+      "lua": "scripts/ai/nullkiller2/Engine/Nullkiller.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Nullkiller::makeTurn",
+        "Nullkiller::updateStateAndExecutePriorityPass",
+        "Nullkiller::resetState",
+        "Nullkiller::chooseTaskFailureAction"
+      ],
+      "notes": "Turn-loop shell only. Behavior decomposition and task execution remain pending."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Engine/Nullkiller.h",
+      "lua": "scripts/ai/nullkiller2/Engine/State.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "HeroLockedReason",
+        "ScanDepth",
+        "Nullkiller::lockHero",
+        "Nullkiller::unlockHero",
+        "Nullkiller::getHeroLockedReason",
+        "Nullkiller::lockResources",
+        "Nullkiller::getFreeResources"
+      ],
+      "notes": "State and enum shell only."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Engine/Settings.cpp",
+      "lua": "scripts/ai/nullkiller2/Engine/Settings.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Settings::Settings"
+      ],
+      "notes": "Accepts host-provided difficulty settings and applies C++ constructor defaults."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Engine/Settings.h",
+      "lua": "scripts/ai/nullkiller2/Engine/Settings.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Settings"
+      ],
+      "notes": "Getter parity is pending; Lua currently exposes fields directly."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Engine/PriorityEvaluator.h",
+      "lua": "scripts/ai/nullkiller2/Engine/PriorityEvaluator.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "PriorityEvaluator",
+        "RewardEvaluator",
+        "EvaluationContext",
+        "PriorityEvaluator::PriorityTier"
+      ],
+      "notes": "Priority tiers only; evaluation formulas remain pending."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Engine/PriorityEvaluator.cpp",
+      "lua": "scripts/ai/nullkiller2/Engine/PriorityEvaluator.lua",
+      "status": "pending_lua_port",
+      "symbols": [
+        "PriorityEvaluator::evaluate",
+        "PriorityEvaluator::buildEvaluationContext",
+        "RewardEvaluator"
+      ],
+      "notes": "Full scoring formulas must be ported before behavior parity."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/AbstractGoal.h",
+      "lua": "scripts/ai/nullkiller2/Goals/AbstractGoal.lua",
+      "status": "pending_lua_port",
+      "symbols": [
+        "Goals::AbstractGoal",
+        "Goals::ITask",
+        "Goals::EGoals"
+      ]
+    },
+    {
+      "cpp": "AI/Nullkiller2/Engine/ResourceTrader.cpp",
+      "lua": "scripts/ai/nullkiller2/Engine/ResourceTrader.lua",
+      "status": "pending_lua_port",
+      "symbols": [
+        "ResourceTrader"
+      ]
+    },
+    {
+      "cpp": "AI/Nullkiller2/AIGateway.cpp",
+      "lua": "scripts/ai/nullkiller2/Actions/AIGatewayPolicy.lua",
+      "status": "pending_lua_port",
+      "symbols": [
+        "AIGateway policy routines"
+      ],
+      "notes": "Lua must own policy; future C++ host may only execute exact checked player actions."
+    },
+    {
+      "cpp": null,
+      "lua": "scripts/ai/nullkiller2/main.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Script.runDay"
+      ],
+      "notes": "Lua entry point for the future host."
+    }
+  ],
+  "sourceFileGroups": [
+    {
+      "cppGlob": "AI/Nullkiller2/Behaviors/*",
+      "luaDir": "scripts/ai/nullkiller2/Behaviors",
+      "status": "pending_lua_port"
+    },
+    {
+      "cppGlob": "AI/Nullkiller2/Goals/*",
+      "luaDir": "scripts/ai/nullkiller2/Goals",
+      "status": "pending_lua_port"
+    },
+    {
+      "cppGlob": "AI/Nullkiller2/Analyzers/*",
+      "luaDir": "scripts/ai/nullkiller2/Analyzers",
+      "status": "pending_lua_port"
+    },
+    {
+      "cppGlob": "AI/Nullkiller2/Helpers/*",
+      "luaDir": "scripts/ai/nullkiller2/Helpers",
+      "status": "pending_lua_port"
+    },
+    {
+      "cppGlob": "AI/Nullkiller2/Markers/*",
+      "luaDir": "scripts/ai/nullkiller2/Markers",
+      "status": "pending_lua_port"
+    },
+    {
+      "cppGlob": "AI/Nullkiller2/Pathfinding/*",
+      "luaDir": "scripts/ai/nullkiller2/Pathfinding",
+      "status": "pending_lua_port"
+    },
+    {
+      "cppGlob": "AI/Nullkiller2/Pathfinding/Actions/*",
+      "luaDir": "scripts/ai/nullkiller2/Pathfinding/Actions",
+      "status": "pending_lua_port"
+    },
+    {
+      "cppGlob": "AI/Nullkiller2/Pathfinding/Rules/*",
+      "luaDir": "scripts/ai/nullkiller2/Pathfinding/Rules",
+      "status": "pending_lua_port"
+    }
+  ]
+}
