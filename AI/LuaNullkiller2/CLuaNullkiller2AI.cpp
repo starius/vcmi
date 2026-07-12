@@ -15,6 +15,7 @@
 
 #include "../../lib/battle/BattleAction.h"
 #include "../../lib/battle/BattleStateInfoForRetreat.h"
+#include "../../lib/bonuses/BonusEnum.h"
 #include "../../lib/callback/CCallback.h"
 #include "../../lib/CCreatureHandler.h"
 #include "../../lib/GameConstants.h"
@@ -456,6 +457,7 @@ JsonNode creatureSnapshot(CreatureID creatureID)
 	result["id"].Integer() = creatureID.getNum();
 	result["aiValue"].Integer() = creature ? creature->getAIValue() : 0;
 	result["factionID"].Integer() = creature ? creature->getFactionID().getNum() : -1;
+	result["flying"].Bool() = creature && creature->hasBonusOfType(BonusType::FLYING);
 	if(creature)
 		result["fullRecruitCost"] = resourcesSnapshot(creature->getFullRecruitCost());
 
@@ -923,6 +925,24 @@ bool CLuaNullkiller2AI::executeCommand(const LuaCommand & command)
 			return false;
 
 		cc->mergeOrSwapStacks(source, destination, SlotID(*fromSlot), SlotID(*toSlot));
+		return true;
+	}
+
+	if(command.name == "swapCreatures")
+	{
+		const auto sourceID = commandInteger(command, "src");
+		const auto destinationID = commandInteger(command, "dst");
+		const auto fromSlot = commandInteger(command, "fromSlot");
+		const auto toSlot = commandInteger(command, "toSlot");
+		if(!sourceID || !destinationID || !fromSlot || !toSlot)
+			return false;
+
+		const auto * source = dynamic_cast<const CArmedInstance *>(cc->getObj(ObjectInstanceID(*sourceID), false));
+		const auto * destination = dynamic_cast<const CArmedInstance *>(cc->getObj(ObjectInstanceID(*destinationID), false));
+		if(!source || !destination)
+			return false;
+
+		cc->swapCreatures(source, destination, SlotID(*fromSlot), SlotID(*toSlot));
 		return true;
 	}
 

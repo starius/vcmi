@@ -5,6 +5,7 @@
 -- which payload.
 
 local State = require("Engine.State")
+local ArmyFormation = require("Helpers.ArmyFormation")
 
 local HostCommands = {}
 HostCommands.__index = HostCommands
@@ -44,8 +45,37 @@ local function targetTile(path)
 	return path and (path.targetTile or path.tile) or nil
 end
 
+local function pathTurn(path)
+	local value = call(path, "turn")
+	if value ~= nil then
+		return value
+	end
+	return path and (path.turn or path.turns) or 0
+end
+
 local function visitablePos(object)
 	return call(object, "visitablePos") or object and (object.visitablePos or object.tile)
+end
+
+local function isTown(object)
+	return object and (object.isTown == true
+		or object.ID == "TOWN"
+		or object.type == "TOWN"
+		or object.typeName == "TOWN")
+end
+
+local function isEnemy(object, actor)
+	if not object then
+		return false
+	end
+	if object.enemy ~= nil then
+		return object.enemy == true
+	end
+	local relation = object.relations or object.relationsName or object.relation
+	if relation ~= nil then
+		return relation == "ENEMIES" or relation == 2
+	end
+	return object.owner ~= nil and actor and actor.owner ~= nil and object.owner ~= actor.owner
 end
 
 local function tileEquals(lhs, rhs)
@@ -344,6 +374,15 @@ function HostCommands:mergeOrSwapStacks(source, destination, fromSlot, toSlot)
 	})
 end
 
+function HostCommands:swapCreatures(source, destination, fromSlot, toSlot)
+	return self:command("swapCreatures", {
+		src = objectID(source),
+		dst = objectID(destination),
+		fromSlot = fromSlot,
+		toSlot = toSlot
+	})
+end
+
 function HostCommands:splitStack(source, destination, fromSlot, toSlot, count)
 	return self:command("splitStack", {
 		src = objectID(source),
@@ -452,6 +491,23 @@ function HostCommands:resetObjectClusterizer()
 	end
 	result.state = "resetObjectClusterizer"
 	return result
+end
+
+function HostCommands:rearrangeArmyForSiege(town, attacker, path)
+	if pathTurn(path) == 0 and isTown(town) and isEnemy(town, attacker) then
+		ArmyFormation.rearrangeArmyForSiege(self, town, attacker)
+		return {
+			ok = true,
+			state = "rearrangeArmyForSiege",
+			executed = true
+		}
+	end
+
+	return {
+		ok = true,
+		state = "rearrangeArmyForSiege",
+		skipped = true
+	}
 end
 
 function HostCommands:moveHeroToTile(tile, hero)

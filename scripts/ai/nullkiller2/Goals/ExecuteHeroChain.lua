@@ -143,6 +143,10 @@ function ExecuteHeroChain:accept(aiGw)
 		aiGw:resetObjectClusterizer()
 	end
 
+	if aiGw and type(aiGw.rearrangeArmyForSiege) == "function" then
+		aiGw:rearrangeArmyForSiege(self.targetObject, self.chainPath.targetHero, self.chainPath)
+	end
+
 	local blockedNode = hasBlockedSpecialAction(self.chainPath)
 	if blockedNode then
 		if aiGw and type(aiGw.lockHero) == "function" then
