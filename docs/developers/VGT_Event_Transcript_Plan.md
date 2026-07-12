@@ -9,6 +9,7 @@ The target is a compact YAML transcript that can be read by a human, parsed by n
 - The file is YAML 1.2, not a custom DSL.
 - The file is append-friendly. New turns or world phases can be appended to the end.
 - The file contains no binary payloads, no save snapshots, and no state checkpoint hashes.
+- Exact traditional-save replay may append a final structured `continuation` document with small engine continuation state that is not a material timeline event.
 - The header contains a required hash of the referenced map file, so replay can fail early if the map changed.
 - The map-file hash is an input-integrity check, not a replay checkpoint. It is the only required hash in the first version.
 - Records use identifiers instead of enum numbers.
@@ -16,7 +17,7 @@ The target is a compact YAML transcript that can be read by a human, parsed by n
 - Only material events are recorded. Do not record acknowledgements, duplicate network delivery, timer ticks, internal implementation noise, or random draws that never realize into game state or a decision.
 - Every actor decision is recorded: human, AI, neutral/world, battle AI, query answer, retreat/surrender choice, and scripted choice where applicable.
 - Every authoritative material effect is recorded, including effects nobody could see yet, such as neutral growth or week-start spawned monsters in fog.
-- Randomness is recorded only as realized facts near the event that consumed it. Internal RNG state is not part of this format.
+- In the material event stream, randomness is recorded only as realized facts near the event that consumed it. Internal RNG state is not a timeline event. If exact traditional-save continuation is enabled, the final `continuation` document may carry RNG continuation state so a replayed save can keep playing identically.
 - Countdown timer ticks are out of scope for the first readable transcript. If the engine persists a turn-timer state packet as part of save state, the transcript may record that packet as a compact `timer` effect; it is not a clock tick stream.
 
 ## Self-Sufficiency Boundary
@@ -26,6 +27,30 @@ The transcript names the map, content set, settings, map game-setting overrides,
 A replay/player tool starts from the declared map and content, verifies the map hash, initializes the game from the declared settings, restores small deterministic initialization state such as the map object-name counter, then applies VGT events. For generated random maps, the writer must save the generated map as a normal map file, hash that saved file, and reference it from the transcript. The transcript may also record the random-map generator options preserved by normal save files, but replay still loads the saved map file instead of generating a new one.
 
 This keeps the transcript readable while detecting the most dangerous external input drift: the map file. Mod/content hashing can be added later if needed, but it is not required for the first implementation.
+
+## Exact Replay Continuation
+
+The material event stream is sufficient to rebuild the visible game state. A traditional VCMI save also contains handler state that is not naturally expressed as user-facing events, such as the next query id, hero-pool generators, randomizer continuation state, and accumulated statistics. To support byte-for-byte comparison against a traditional save and to let a replayed save continue deterministically, the recorder may append one final document:
+
+```yaml
+---
+continuation:
+  nextQuery: "query/214"
+  heroPool:
+    red: "1338189132"
+    blue: "563674087"
+  randomizer:
+    global: "1722862872"
+    allocatedArtifacts:
+      "core:spellBook": 10
+  statistics:
+    accumulatedValues:
+      red: { movementPointsUsed: 87447 }
+    exactFloats:
+      - { mapExploredRatio: "0x1.5d06e6p-4", obeliskVisitedRatio: "0x0p+0", townBuiltRatio: "0x1.4c1bacp-4" }
+```
+
+This document is structured text, not a binary blob or checkpoint. Analysis tools can ignore it when they only need the human-readable timeline. Exact replay tools should apply it after all material events and before writing a traditional save.
 
 ## YAML Stream Shape
 
