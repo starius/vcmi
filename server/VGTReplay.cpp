@@ -12,10 +12,17 @@
 #include "CGameHandler.h"
 #include "IGameServer.h"
 
+#include "battles/BattleProcessor.h"
+#include "processors/HeroPoolProcessor.h"
+#include "processors/PlayerMessageProcessor.h"
+#include "processors/TurnOrderProcessor.h"
+#include "TurnTimerHandler.h"
+
 #include "../lib/CPlayerState.h"
 #include "../lib/CConfigHandler.h"
 #include "../lib/LoadProgress.h"
 #include "../lib/StartInfo.h"
+#include "../lib/callback/GameRandomizer.h"
 #include "../lib/campaign/CampaignState.h"
 #include "../lib/constants/StringConstants.h"
 #include "../lib/entities/artifact/CArtifactInstance.h"
@@ -936,6 +943,15 @@ public:
 		return size;
 	}
 };
+
+template<typename T>
+std::string serializedValueFingerprint(T & value)
+{
+	ByteVectorWriter writer;
+	BinarySerializer serializer(&writer);
+	serializer & value;
+	return bytesFingerprint(writer.bytes);
+}
 
 std::vector<std::byte> serializedObjectBytes(const std::shared_ptr<CGObjectInstance> & object)
 {
@@ -2129,7 +2145,8 @@ void synthesizeDisabledTimerTurnStart(CGameHandler & gameHandler, PlayerColor pl
 	if(!playerState)
 		return;
 
-	playerState->turnTimer.isActive = true;
+	if(!playerState->turnTimer.isActive && !playerState->turnTimer.isTurnEnded)
+		gameHandler.turnTimerHandler->onGameplayStart(player);
 }
 
 void synthesizeDisabledTimerTurnEnd(CGameHandler & gameHandler, PlayerColor player)
@@ -2141,7 +2158,16 @@ void synthesizeDisabledTimerTurnEnd(CGameHandler & gameHandler, PlayerColor play
 	if(!playerState)
 		return;
 
-	playerState->turnTimer.isTurnEnded = true;
+	gameHandler.turnTimerHandler->onEndTurn(player);
+}
+
+void synthesizeDisabledTimerGameplayStart(CGameHandler & gameHandler)
+{
+	if(!shouldSynthesizeDisabledTimerState(gameHandler))
+		return;
+
+	for(const auto & [player, state] : gameHandler.gameState().players)
+		gameHandler.turnTimerHandler->onGameplayStart(player);
 }
 
 void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, const JsonNode & node)
@@ -2980,6 +3006,31 @@ void writeGameStateSummary(const CGameState & gameState, std::ostream & output)
 		}
 	}
 }
+
+void writeFullSaveHandlerSummary(const std::string & inputSave, std::ostream & output)
+{
+	ReplayGameServer replayServer;
+	CGameHandler gameHandler(replayServer);
+	replayServer.attach(gameHandler);
+
+	gameHandler.gs = std::make_shared<CGameState>();
+	gameHandler.gs->preInit(LIBRARY);
+	gameHandler.randomizer = std::make_unique<GameRandomizer>(*gameHandler.gs);
+
+	CLoadFile loadFile(inputSave, gameHandler.gs.get());
+	gameHandler.gs->loadGame(loadFile);
+	loadFile.load(gameHandler);
+
+	output << "handler=present\n";
+	output << "handler.QID=" << gameHandler.QID.getNum() << "\n";
+	output << "handler.randomizer=" << serializedValueFingerprint(*gameHandler.randomizer) << "\n";
+	output << "handler.battles=" << serializedValueFingerprint(*gameHandler.battles) << "\n";
+	output << "handler.heroPool=" << serializedValueFingerprint(*gameHandler.heroPool) << "\n";
+	output << "handler.playerMessages=" << serializedValueFingerprint(*gameHandler.playerMessages) << "\n";
+	output << "handler.turnOrder=" << serializedValueFingerprint(*gameHandler.turnOrder) << "\n";
+	output << "handler.turnTimer=" << serializedValueFingerprint(*gameHandler.turnTimerHandler) << "\n";
+	output << "handler.statistics=" << serializedValueFingerprint(*gameHandler.statistics) << "\n";
+}
 }
 
 int dumpVGTGameStateSummary(const VGTGameStateSummaryOptions & options)
@@ -3012,6 +3063,14 @@ int dumpVGTGameStateSummary(const VGTGameStateSummaryOptions & options)
 	output << "preamble.mapDescription=" << savedHeader.description.toString() << "\n";
 	writeStartInfoSummary(output, "preamble.start", &savedStartInfo);
 	writeGameStateSummary(gameState, output);
+	try
+	{
+		writeFullSaveHandlerSummary(options.inputSave, output);
+	}
+	catch(const std::exception & e)
+	{
+		output << "handler=unavailable reason=" << e.what() << "\n";
+	}
 	return 0;
 }
 
@@ -3052,6 +3111,7 @@ int replayVGTJson(const VGTReplayOptions & options)
 	applyMapEngineState(gameHandler, header);
 	applyInitialState(gameHandler, header);
 	applyGameSettingsOverrides(gameHandler, header);
+	synthesizeDisabledTimerGameplayStart(gameHandler);
 	replayTranscriptDocuments(gameHandler, documents);
 	gameHandler.saveToFile(options.outputSave);
 	writeGameStateSave(gameHandler, options.outputGameStateSave);
