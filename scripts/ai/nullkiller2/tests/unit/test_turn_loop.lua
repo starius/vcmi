@@ -385,3 +385,21 @@ assert(#blockingSelectionResult.commandJournal == 1)
 assert(blockingSelectionResult.commandJournal[1].name == "answerQuery")
 assert(blockingSelectionResult.commandJournal[1].payload.query == 906)
 assert(blockingSelectionResult.commandJournal[1].payload.selection == 1)
+
+local teleportRun = makeAI()
+local teleportResult = Script.showTeleportDialog(teleportRun.ai, {
+	queryID = 907,
+	channel = 12,
+	exits = {
+		{ id = 80, pos = { x = 1, y = 1, z = 0 }, visible = true },
+		{ id = 81, pos = { x = 2, y = 2, z = 0 }, visible = true }
+	},
+	destinationTeleport = 81,
+	destinationTeleportPos = { x = 2, y = 2, z = 0 }
+})
+assert(teleportResult.status == "answered")
+assert(teleportResult.selection == 1)
+assert(#teleportResult.commandJournal == 1)
+assert(teleportResult.commandJournal[1].name == "answerQuery")
+assert(teleportResult.commandJournal[1].payload.query == 907)
+assert(teleportResult.commandJournal[1].payload.selection == 1)

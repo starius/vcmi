@@ -29,4 +29,8 @@ function Script.showBlockingDialog(ai, input)
 	return Nullkiller.showBlockingDialog(ai, input or {})
 end
 
+function Script.showTeleportDialog(ai, input)
+	return Nullkiller.showTeleportDialog(ai, input or {})
+end
+
 return Script

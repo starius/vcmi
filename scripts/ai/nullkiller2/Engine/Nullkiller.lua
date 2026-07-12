@@ -843,4 +843,23 @@ function Nullkiller.showBlockingDialog(ai, input)
 	}
 end
 
+function Nullkiller.showTeleportDialog(ai, input)
+	input = input or {}
+	local host = HostCommands.new(ai)
+	local choice = GatewayPolicy.chooseTeleportExit(input)
+	local selection = choice.selection or -1
+
+	if input.queryID ~= nil and type(host.answerQuery) == "function" then
+		host:answerQuery(input.queryID, selection)
+	end
+
+	return {
+		status = "answered",
+		selection = selection,
+		passability = choice.passability,
+		teleportChannelProbingList = choice.teleportChannelProbingList,
+		commandJournal = host:getJournal()
+	}
+end
+
 return Nullkiller

@@ -116,6 +116,22 @@ JsonNode componentsSnapshot(const std::vector<Component> & components)
 	return result;
 }
 
+JsonNode teleportExitsSnapshot(const TTeleportExitsList & exits, const std::shared_ptr<CCallback> & callback)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_VECTOR);
+	for(const auto & exit : exits)
+	{
+		JsonNode item;
+		item.setType(JsonNode::JsonType::DATA_STRUCT);
+		item["id"].Integer() = exit.first.getNum();
+		item["pos"] = tileSnapshot(exit.second);
+		item["visible"].Bool() = callback->getObj(exit.first, false) != nullptr;
+		result.Vector().push_back(item);
+	}
+	return result;
+}
+
 void addArmySnapshotFields(JsonNode & result, const CArmedInstance * army);
 JsonNode armySnapshot(const CArmedInstance * army);
 
@@ -814,7 +830,33 @@ void CLuaNullkiller2AI::showGarrisonDialog(const CArmedInstance * up, const CGHe
 
 void CLuaNullkiller2AI::showTeleportDialog(const CGHeroInstance * hero, TeleportChannelID channel, TTeleportExitsList exits, bool impassable, QueryID askID)
 {
-	answerQuery(askID);
+	LuaNullkiller2Runner runner;
+	LuaRunInput input;
+	input.difficultyLevel = cc->getStartInfo()->difficulty;
+	input.snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	input.snapshot["queryID"].Integer() = askID.getNum();
+	input.snapshot["channel"].Integer() = channel.getNum();
+	input.snapshot["impassable"].Bool() = impassable;
+	input.snapshot["exits"] = teleportExitsSnapshot(exits, cc);
+	if(hero)
+		input.snapshot["hero"] = heroSnapshot(hero);
+
+	bool queryAnswered = false;
+	input.commandHandler = [this, &queryAnswered](const LuaCommand & command)
+	{
+		const bool executed = executeCommand(command);
+		if(executed && command.name == "answerQuery")
+			queryAnswered = true;
+		return executed;
+	};
+
+	const LuaTurnResult result = runner.runFunction("showTeleportDialog", [](){}, input);
+
+	if(!result.ok)
+		logAi->error("LuaNullkiller2 showTeleportDialog failed: %s", result.error);
+
+	if(!queryAnswered)
+		answerQuery(askID);
 }
 
 void CLuaNullkiller2AI::showMapObjectSelectDialog(QueryID askID, const Component & icon, const MetaString & title, const MetaString & description, const std::vector<ObjectInstanceID> & objects)

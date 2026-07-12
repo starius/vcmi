@@ -136,8 +136,9 @@ The branch now has the initial standalone AI and parity infrastructure in place:
   snapshots, and executes checked host commands without linking to or instantiating native `Nullkiller2`.
 - The Lua runner loads `scripts/ai/nullkiller2/main.lua`, exposes settings, trace, command, and snapshot input,
   supports named entry points such as `runDay`, `heroExchangeStarted`, `showBlockingDialog`,
-  `showGarrisonDialog`, and `showMapObjectSelectDialog`, records a command journal that is usable by differential
-  tests, and returns small decision fields for non-command callbacks such as surrender/retreat.
+  `showGarrisonDialog`, `showTeleportDialog`, and `showMapObjectSelectDialog`, records a command journal that is
+  usable by differential tests, and returns small decision fields for non-command callbacks such as
+  surrender/retreat.
 - Lua normalizes vector snapshots into `heroesByID` and `objectsByID` lookup tables before turn planning, so C++
   snapshots do not need duplicate indexed maps for task presence checks.
 - `scripts/ai/nullkiller2/PORT_MAP.json` tracks mirrored C++ files and symbols, with audit coverage for forbidden
@@ -166,7 +167,8 @@ pending query through the same host command journal. Map-object selection dialog
 `GatewayPolicy.shouldUseGarrisonTroops` and the Lua army-transfer sequencer before answering. Surrender/retreat
 decisions now return from Lua `GatewayPolicy.makeSurrenderRetreatDecision` and are converted to `BattleAction`
 only at the host boundary. Blocking dialogs route component snapshots through Lua selection policy; danger-aware
-yes/no parity still needs richer object and danger snapshots.
+yes/no parity still needs richer object and danger snapshots. Teleport dialogs route exit snapshots through Lua
+selection policy; destination/probing memory parity is still thinner than native `AIGateway`.
 
 Major parity gaps remain:
 
