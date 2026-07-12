@@ -689,7 +689,32 @@ void CLuaNullkiller2AI::showTeleportDialog(const CGHeroInstance * hero, Teleport
 
 void CLuaNullkiller2AI::showMapObjectSelectDialog(QueryID askID, const Component & icon, const MetaString & title, const MetaString & description, const std::vector<ObjectInstanceID> & objects)
 {
-	answerQuery(askID, std::max(targetObjectID, 0));
+	LuaNullkiller2Runner runner;
+	LuaRunInput input;
+	input.difficultyLevel = cc->getStartInfo()->difficulty;
+	input.snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	input.snapshot["queryID"].Integer() = askID.getNum();
+	input.snapshot["selectedObject"].Integer() = targetObjectID;
+	input.snapshot["objects"].setType(JsonNode::JsonType::DATA_VECTOR);
+	for(const auto & object : objects)
+		input.snapshot["objects"].Vector().push_back(JsonNode(static_cast<int64_t>(object.getNum())));
+
+	bool queryAnswered = false;
+	input.commandHandler = [this, &queryAnswered](const LuaCommand & command)
+	{
+		const bool executed = executeCommand(command);
+		if(executed && command.name == "answerQuery")
+			queryAnswered = true;
+		return executed;
+	};
+
+	const LuaTurnResult result = runner.runFunction("showMapObjectSelectDialog", [](){}, input);
+
+	if(!result.ok)
+		logAi->error("LuaNullkiller2 showMapObjectSelectDialog failed: %s", result.error);
+
+	if(!queryAnswered)
+		answerQuery(askID);
 }
 
 std::optional<BattleAction> CLuaNullkiller2AI::makeSurrenderRetreatDecision(const BattleID & battleID, const BattleStateInfoForRetreat & battleState)

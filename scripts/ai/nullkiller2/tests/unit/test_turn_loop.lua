@@ -242,3 +242,20 @@ assert(allyVisitResult.status == "answered")
 assert(#allyVisitResult.commandJournal == 1)
 assert(allyVisitResult.commandJournal[1].name == "answerQuery")
 assert(allyVisitResult.commandJournal[1].payload.query == 901)
+
+local mapObjectRun = makeAI()
+local mapObjectResult = Script.showMapObjectSelectDialog(mapObjectRun.ai, {
+	queryID = 902,
+	selectedObject = { id = 52 },
+	objects = {
+		{ id = 51 },
+		{ id = 52 }
+	}
+})
+assert(mapObjectRun.ended() == false)
+assert(mapObjectResult.status == "answered")
+assert(mapObjectResult.selection == 52)
+assert(#mapObjectResult.commandJournal == 1)
+assert(mapObjectResult.commandJournal[1].name == "answerQuery")
+assert(mapObjectResult.commandJournal[1].payload.query == 902)
+assert(mapObjectResult.commandJournal[1].payload.selection == 52)

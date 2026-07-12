@@ -162,6 +162,14 @@ assert(GatewayPolicy.shouldUseGarrisonTroops({
 	restrictedGarrisonsForAI = false
 }) == false)
 
+assert(GatewayPolicy.chooseMapObjectSelection({
+	selectedObject = 71
+}) == 71)
+
+assert(GatewayPolicy.chooseMapObjectSelection({
+	selectedObject = { id = 72 }
+}) == 72)
+
 local firstHero = { id = 201, tempOwner = 1 }
 local secondHero = { id = 202, tempOwner = 1 }
 local exchange = GatewayPolicy.chooseHeroExchange({

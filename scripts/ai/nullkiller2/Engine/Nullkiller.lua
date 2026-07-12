@@ -746,4 +746,23 @@ function Nullkiller.heroExchangeStarted(ai, input)
 	}
 end
 
+function Nullkiller.showMapObjectSelectDialog(ai, input)
+	input = input or {}
+	local host = HostCommands.new(ai)
+	local selection = GatewayPolicy.chooseMapObjectSelection({
+		selectedObject = input.selectedObject or input.selectedObjectID or input.targetObject or input.targetObjectID,
+		objects = input.objects
+	})
+
+	if input.queryID ~= nil and type(host.answerQuery) == "function" then
+		host:answerQuery(input.queryID, selection or 0)
+	end
+
+	return {
+		status = "answered",
+		selection = selection or 0,
+		commandJournal = host:getJournal()
+	}
+end
+
 return Nullkiller
