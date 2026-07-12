@@ -189,14 +189,17 @@ selection policy; destination/probing memory parity is still thinner than native
 commander, tavern, market, and university queries are represented as Lua entry points that emit `answerQuery(0)`.
 Hero level-up secondary-skill choice uses a Lua port of the native `HeroManager` score maps, role-map update, and
 main/scout selection rules from visible hero/town snapshots; exact fighting-strength order still needs richer
-speciality bonus snapshots.
+speciality bonus snapshots. `ExecuteHeroChain` now executes composite, Dimension Door, adventure-spell, Build Boat,
+and explicit command special-action descriptors through Lua-owned primitive host commands, and stale Dimension Door
+recovery locks the hero and invalidates pathfinding like native `recoverStaleDimensionDoorAction`.
 
 Major parity gaps remain:
 
 - visible snapshots are still too thin for full analyzer, object, path, threat, query, and broader ArmyManager parity
 - hero fighting-strength ranking still needs full bonus-derived speciality snapshots for exact main/scout ordering
-- `ExecuteHeroChain` replays path nodes in native backward order and rejects stale zero-turn live path snapshots, but
-  Dimension Door stale recovery, special actions, object-graph shortcutting, and siege formation are still incomplete
+- `ExecuteHeroChain` replays path nodes in native backward order, executes the first set of Lua-owned special-action
+  descriptors, rejects stale zero-turn live path snapshots, and recovers stale Dimension Door plans, but object-graph
+  shortcutting, siege formation, richer special-action descriptors, and live host validation are still incomplete
 - cross-hero artifact legality breadth, full combined-artifact legality data, full Rewardable inspection, and richer
   live object inspection remain incomplete outside the deterministic scoring helpers and first-pass artifact
   equip/swap sequencing
@@ -459,8 +462,8 @@ Commit messages must stay focused on the code change and must not mention the re
 
 1. Expand the snapshot contract for heroes, towns, objects, paths, threats, queries, and army stacks until behavior
    fixtures no longer need hand-written placeholder fields.
-2. Complete `ExecuteHeroChain` parity: Dimension Door stale recovery, special actions, siege formation, visit/attack
-   selection, and object-graph shortcutting.
+2. Complete `ExecuteHeroChain` parity: siege formation, visit/attack selection, object-graph shortcutting, broader
+   special-action descriptors, and live host validation.
 3. Extend garrison, hero exchange, artifact sequencing, and checked host validators with richer edge-case coverage.
 4. Finish `RewardEvaluator` and object-specific priority context builders, then add fixture tests for raw context and
    final priority parity.

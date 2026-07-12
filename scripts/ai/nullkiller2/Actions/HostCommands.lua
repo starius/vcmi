@@ -97,6 +97,78 @@ local function pathInfoAccessible(value)
 	return value.accessible or value.accessibility
 end
 
+local function normalizedActionName(action)
+	if type(action) ~= "table" then
+		return ""
+	end
+
+	local name = action.type or action.kind or action.name or action.class or action.ID or ""
+	return string.gsub(string.lower(tostring(name)), "[%s_%-]", "")
+end
+
+local function actionParts(action)
+	if type(action) ~= "table" then
+		return {}
+	end
+
+	return action.parts or action.actions or action.children or {}
+end
+
+local function isDimensionDoorAction(action)
+	local name = normalizedActionName(action)
+	return action.dimensionDoor == true
+		or name == "dimensiondoor"
+		or name == "dimensiondooraction"
+end
+
+local function isAdventureCastAction(action)
+	local name = normalizedActionName(action)
+	return name == "adventurecastaction"
+		or name == "waterwalkingaction"
+		or name == "airwalkingaction"
+		or name == "summonboataction"
+		or name == "townportalaction"
+end
+
+local function isBuildBoatAction(action)
+	local name = normalizedActionName(action)
+	return name == "buildboataction"
+		or name == "buildboat"
+end
+
+local function actionDestination(action, fallback)
+	if type(action) ~= "table" then
+		return fallback
+	end
+	return action.destination or action.targetTile or action.tile or action.coord or action.target or fallback
+end
+
+local function actionSpell(action)
+	if type(action) ~= "table" then
+		return nil
+	end
+	return action.spell or action.spellID or action.spellId or action.usedSpell or action.usedSpellID or action.spellToCast
+end
+
+local function actionShipyard(action)
+	if type(action) ~= "table" then
+		return nil
+	end
+	return action.shipyard or action.shipyardID or action.shipyardId or action.targetObject or action.object or action.target
+end
+
+local function actionCommand(action)
+	if type(action) ~= "table" then
+		return nil, nil
+	end
+
+	if type(action.command) == "table" then
+		return action.command.name, action.command.payload or {}
+	end
+
+	return action.command or action.commandName, action.payload or action.commandPayload or {}
+end
+
 local function inaccessibleForZeroTurn(value)
 	local accessible = pathInfoAccessible(value)
 	return accessible == "NOT_SET"
@@ -385,6 +457,89 @@ local function lockBlockedHero(adapter, blockedIndexes, hero, parentIndex)
 	end
 end
 
+local function recoverStaleDimensionDoorAction(adapter, hero)
+	if not hero or objectID(hero) == nil then
+		return {
+			ok = false,
+			stale = true,
+			lostHero = true,
+			error = "hero was lost trying to execute Dimension Door"
+		}
+	end
+
+	adapter:lockHero(hero, State.HeroLockedReason.HERO_CHAIN)
+	adapter:invalidatePathfinderData()
+	return {
+		ok = false,
+		stale = true,
+		error = "stale Dimension Door hero chain action"
+	}
+end
+
+local function executeSpecialAction(adapter, hero, coord, action)
+	for _, part in ipairs(actionParts(action)) do
+		local partResult = executeSpecialAction(adapter, hero, coord, part)
+		if partResult.ok == false then
+			return partResult
+		end
+	end
+
+	if #actionParts(action) > 0 then
+		return {
+			ok = true
+		}
+	end
+
+	if action.cannotFulfill or action.stale then
+		if isDimensionDoorAction(action) then
+			return recoverStaleDimensionDoorAction(adapter, hero)
+		end
+		error("Can not execute " .. tostring(action.name or action.type or "special action"), 3)
+	end
+
+	if isDimensionDoorAction(action) then
+		local spell = actionSpell(action)
+		if spell == nil then
+			error("Dimension Door special action is missing spell id", 3)
+		end
+
+		local result = adapter:castSpell(hero, spell, actionDestination(action, coord))
+		if result.ok == false then
+			return recoverStaleDimensionDoorAction(adapter, hero)
+		end
+
+		setVisitablePos(hero, actionDestination(action, coord))
+		return result
+	end
+
+	if isAdventureCastAction(action) then
+		local spell = actionSpell(action)
+		if spell == nil then
+			error("Adventure spell special action is missing spell id", 3)
+		end
+		return adapter:castSpell(hero, spell, actionDestination(action))
+	end
+
+	if isBuildBoatAction(action) then
+		local shipyard = actionShipyard(action)
+		if shipyard == nil then
+			error("Build Boat special action is missing shipyard id", 3)
+		end
+		return adapter:buildBoat(shipyard)
+	end
+
+	local commandName, payload = actionCommand(action)
+	if commandName then
+		local commandPayload = copyPayload(payload)
+		if commandPayload.hero == nil then
+			commandPayload.hero = objectID(hero)
+		end
+		return adapter:command(commandName, commandPayload)
+	end
+
+	error("Path special action is not implemented by Lua Nullkiller2 yet.", 3)
+end
+
 local function executePathNode(adapter, path, node, blockedIndexes, cxxIndex)
 	local hero = node.targetHero or path and path.targetHero
 	local coord = nodeCoord(path, node)
@@ -408,9 +563,22 @@ local function executePathNode(adapter, path, node, blockedIndexes, cxxIndex)
 		adapter:setActive(hero, coord)
 
 		if node.specialAction then
-			lockBlockedHero(adapter, blockedIndexes, hero, node.parentIndex)
-			adapter:invalidatePathfinderData()
-			error("Path special actions are not implemented by Lua Nullkiller2 yet.", 3)
+			if node.actionIsBlocked then
+				lockBlockedHero(adapter, blockedIndexes, hero, node.parentIndex)
+				adapter:invalidatePathfinderData()
+				error("Path is nondeterministic.", 3)
+			end
+
+			local actionResult = executeSpecialAction(adapter, hero, coord, node.specialAction)
+			if actionResult.ok == false then
+				return actionResult
+			end
+
+			if tileEquals(coord, visitablePos(hero)) then
+				return {
+					ok = true
+				}
+			end
 		end
 
 		if (node.turns or node.turn or 0) == 0 and not tileEquals(coord, visitablePos(hero)) then

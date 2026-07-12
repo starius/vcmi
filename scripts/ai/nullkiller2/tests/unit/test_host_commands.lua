@@ -185,3 +185,128 @@ assert(staleResult.stale == true)
 assert(#staleCalled == 1)
 assert(staleCalled[1].name == "setActive")
 assert(staleCalled[1].payload.hero == 111)
+
+local dimensionDoorCalled = {}
+local dimensionDoorAdapter = HostCommands.new({
+	command = function(_, name, payload)
+		table.insert(dimensionDoorCalled, { name = name, payload = payload })
+		return { ok = true, executed = true }
+	end
+})
+local dimensionDoorHero = {
+	id = 121,
+	movementPointsRemaining = 1000,
+	visitablePos = { x = 0, y = 0, z = 0 }
+}
+local dimensionDoorResult = dimensionDoorAdapter:executeHeroChain({
+	targetHero = dimensionDoorHero,
+	nodes = {
+		{
+			targetHero = dimensionDoorHero,
+			coord = { x = 7, y = 8, z = 0 },
+			turns = 0,
+			specialAction = {
+				type = "DimensionDoorAction",
+				usedSpell = 73,
+				destination = { x = 7, y = 8, z = 0 }
+			}
+		}
+	}
+}, 122)
+assert(dimensionDoorResult.ok == true)
+assert(#dimensionDoorCalled == 2)
+assert(dimensionDoorCalled[1].name == "setActive")
+assert(dimensionDoorCalled[2].name == "castSpell")
+assert(dimensionDoorCalled[2].payload.hero == 121)
+assert(dimensionDoorCalled[2].payload.spell == 73)
+assert(dimensionDoorCalled[2].payload.x == 7)
+assert(dimensionDoorHero.visitablePos.x == 7)
+
+local staleDimensionDoorCalled = {}
+local staleDimensionDoorLocked = {}
+local staleDimensionDoorInvalidated = false
+local staleDimensionDoorAdapter = HostCommands.new({
+	command = function(_, name, payload)
+		table.insert(staleDimensionDoorCalled, { name = name, payload = payload })
+		return { ok = true, executed = true }
+	end
+})
+staleDimensionDoorAdapter.nullkiller = {
+	lockHero = function(_, hero, reason)
+		staleDimensionDoorLocked[hero.id] = reason
+	end,
+	invalidatePathfinderData = function()
+		staleDimensionDoorInvalidated = true
+	end
+}
+local staleDimensionDoorHero = {
+	id = 131,
+	movementPointsRemaining = 1000,
+	visitablePos = { x = 0, y = 0, z = 0 }
+}
+local staleDimensionDoorResult = staleDimensionDoorAdapter:executeHeroChain({
+	targetHero = staleDimensionDoorHero,
+	nodes = {
+		{
+			targetHero = staleDimensionDoorHero,
+			coord = { x = 8, y = 9, z = 0 },
+			turns = 0,
+			specialAction = {
+				type = "DimensionDoorAction",
+				usedSpell = 73,
+				destination = { x = 8, y = 9, z = 0 },
+				cannotFulfill = true
+			}
+		}
+	}
+}, 132)
+assert(staleDimensionDoorResult.ok == false)
+assert(staleDimensionDoorResult.stale == true)
+assert(staleDimensionDoorLocked[131] == 3)
+assert(staleDimensionDoorInvalidated == true)
+assert(#staleDimensionDoorCalled == 2)
+assert(staleDimensionDoorCalled[1].name == "setActive")
+assert(staleDimensionDoorCalled[2].name == "invalidatePathfinderData")
+
+local compositeCalled = {}
+local compositeAdapter = HostCommands.new({
+	command = function(_, name, payload)
+		table.insert(compositeCalled, { name = name, payload = payload })
+		return { ok = true, executed = true }
+	end
+})
+local compositeHero = {
+	id = 141,
+	movementPointsRemaining = 1000,
+	visitablePos = { x = 1, y = 1, z = 0 }
+}
+compositeAdapter:executeHeroChain({
+	targetHero = compositeHero,
+	nodes = {
+		{
+			targetHero = compositeHero,
+			coord = { x = 2, y = 2, z = 0 },
+			turns = 0,
+			specialAction = {
+				type = "CompositeAction",
+				parts = {
+					{
+						type = "BuildBoatAction",
+						shipyard = 555
+					},
+					{
+						type = "DimensionDoorAction",
+						usedSpell = 73,
+						destination = { x = 2, y = 2, z = 0 }
+					}
+				}
+			}
+		}
+	}
+}, 142)
+assert(#compositeCalled == 3)
+assert(compositeCalled[1].name == "setActive")
+assert(compositeCalled[2].name == "buildBoat")
+assert(compositeCalled[2].payload.shipyard == 555)
+assert(compositeCalled[3].name == "castSpell")
+assert(compositeHero.visitablePos.x == 2)
