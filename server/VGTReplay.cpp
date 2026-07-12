@@ -2114,6 +2114,36 @@ void applyLocalState(CGameHandler & gameHandler, const JsonNode & node)
 	*playerState->playerLocalSettings = requireField(node, "data");
 }
 
+bool shouldSynthesizeDisabledTimerState(CGameHandler & gameHandler)
+{
+	const auto * startInfo = gameHandler.gameInfo().getStartInfo();
+	return startInfo && !startInfo->turnTimerInfo.isEnabled();
+}
+
+void synthesizeDisabledTimerTurnStart(CGameHandler & gameHandler, PlayerColor player)
+{
+	if(!shouldSynthesizeDisabledTimerState(gameHandler))
+		return;
+
+	auto * playerState = gameHandler.gs->getPlayerState(player);
+	if(!playerState)
+		return;
+
+	playerState->turnTimer.isActive = true;
+}
+
+void synthesizeDisabledTimerTurnEnd(CGameHandler & gameHandler, PlayerColor player)
+{
+	if(!shouldSynthesizeDisabledTimerState(gameHandler))
+		return;
+
+	auto * playerState = gameHandler.gs->getPlayerState(player);
+	if(!playerState)
+		return;
+
+	playerState->turnTimer.isTurnEnded = true;
+}
+
 void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, const JsonNode & node)
 {
 	if(kind == "decision" || kind == "query" || kind == "info")
@@ -2280,6 +2310,7 @@ void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, con
 		pack.player = decodePlayerColor(requireString(node, "player"));
 		pack.queryID = decodeQuery(requireString(node, "query"));
 		applyEffectPack(gameHandler, pack);
+		synthesizeDisabledTimerTurnStart(gameHandler, pack.player);
 		return;
 	}
 
@@ -2288,6 +2319,7 @@ void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, con
 		PlayerEndsTurn pack;
 		pack.player = decodePlayerColor(requireString(node, "player"));
 		applyEffectPack(gameHandler, pack);
+		synthesizeDisabledTimerTurnEnd(gameHandler, pack.player);
 		return;
 	}
 
@@ -2786,6 +2818,21 @@ void writeResourceSummary(std::ostream & output, const PlayerColor & player, con
 	output << "\n";
 }
 
+std::string timerSummary(const TurnTimerInfo & timer)
+{
+	return "turn=" + std::to_string(timer.turnTimer) +
+		" base=" + std::to_string(timer.baseTimer) +
+		" battle=" + std::to_string(timer.battleTimer) +
+		" unit=" + std::to_string(timer.unitTimer) +
+		" accumulatingTurn=" + std::string(timer.accumulatingTurnTimer ? "true" : "false") +
+		" accumulatingUnit=" + std::string(timer.accumulatingUnitTimer ? "true" : "false") +
+		" active=" + std::string(timer.isActive ? "true" : "false") +
+		" battleMode=" + std::string(timer.isBattle ? "true" : "false") +
+		" movementPercent=" + std::to_string(timer.remainingMovementPointsPercent) +
+		" turnStart=" + std::string(timer.isTurnStart ? "true" : "false") +
+		" turnEnded=" + std::string(timer.isTurnEnded ? "true" : "false");
+}
+
 void writeGameStateSummary(const CGameState & gameState, std::ostream & output)
 {
 	std::optional<int> dumpObjectBytesID;
@@ -2819,7 +2866,10 @@ void writeGameStateSummary(const CGameState & gameState, std::ostream & output)
 	}
 
 	for(const auto & [color, player] : gameState.players)
+	{
 		writeResourceSummary(output, color, player.resources);
+		output << "player." << color.toString() << ".timer=" << timerSummary(player.turnTimer) << "\n";
+	}
 
 	for(const auto & heroID : gameState.getMap().getHeroesOnMap())
 	{
