@@ -76,6 +76,27 @@ std::string yamlString(const std::string & value)
 	return result;
 }
 
+bool isPlainYamlKey(const std::string & value)
+{
+	if(value.empty())
+		return false;
+	if(!std::isalpha(static_cast<unsigned char>(value.front())) && value.front() != '_')
+		return false;
+
+	for(const char ch : value)
+	{
+		const auto byte = static_cast<unsigned char>(ch);
+		if(!std::isalnum(byte) && ch != '_' && ch != '-')
+			return false;
+	}
+	return true;
+}
+
+std::string yamlKey(const std::string & value)
+{
+	return isPlainYamlKey(value) ? value : yamlString(value);
+}
+
 struct BattleBlockRecord
 {
 	std::string battleID;
@@ -1254,6 +1275,70 @@ std::string jsonCompact(const JsonNode & node)
 	std::ostringstream out;
 	writeJsonCompact(out, node);
 	return out.str();
+}
+
+bool isYamlScalarOrEmpty(const JsonNode & node)
+{
+	if(node.isVector())
+		return node.Vector().empty();
+	if(node.isStruct())
+		return node.Struct().empty();
+	return true;
+}
+
+void writeYamlIndent(std::ostream & out, size_t indent)
+{
+	for(size_t index = 0; index < indent; ++index)
+		out << ' ';
+}
+
+void writeJsonYamlBlock(std::ostream & out, const JsonNode & node, size_t indent)
+{
+	if(isYamlScalarOrEmpty(node))
+	{
+		writeJsonCompact(out, node);
+		out << "\n";
+		return;
+	}
+
+	if(node.isStruct())
+	{
+		out << "\n";
+		for(const auto & entry : node.Struct())
+		{
+			writeYamlIndent(out, indent);
+			out << yamlKey(entry.first) << ": ";
+			if(isYamlScalarOrEmpty(entry.second))
+			{
+				writeJsonCompact(out, entry.second);
+				out << "\n";
+			}
+			else
+				writeJsonYamlBlock(out, entry.second, indent + 2);
+		}
+		return;
+	}
+
+	if(node.isVector())
+	{
+		out << "\n";
+		for(const auto & entry : node.Vector())
+		{
+			writeYamlIndent(out, indent);
+			out << "- ";
+			if(isYamlScalarOrEmpty(entry))
+			{
+				writeJsonCompact(out, entry);
+				out << "\n";
+			}
+			else
+				writeJsonYamlBlock(out, entry, indent + 2);
+		}
+		return;
+	}
+
+	writeJsonCompact(out, node);
+	out << "\n";
 }
 
 std::string gameSettingsOverrides(const JsonNode & node)
@@ -2537,7 +2622,8 @@ void VGTRecorder::writeContinuationState(CGameHandler & gameHandler)
 	documentOpen = false;
 	currentTurnPlayer.reset();
 	output << "---\n";
-	output << "continuation: " << jsonCompact(continuation) << "\n";
+	output << "continuation:";
+	writeJsonYamlBlock(output, continuation, 2);
 	output.flush();
 	continuationWritten = true;
 }
