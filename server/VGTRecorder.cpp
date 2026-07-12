@@ -779,6 +779,16 @@ std::string timerInfo(const TurnTimerInfo & value)
 		", accumulatingUnit: " + boolValue(value.accumulatingUnitTimer) + " }";
 }
 
+std::string calendarDate(const Calendar & calendar)
+{
+	if(calendar.getCurrentDay() <= 0)
+		return "0";
+
+	return std::to_string(calendar.getMonth()) + "/" +
+		std::to_string(calendar.getWeek()) + "/" +
+		std::to_string(calendar.getDayOfWeek());
+}
+
 std::string victoryLossResult(const EVictoryLossCheckResult & result)
 {
 	if(result.victory())
@@ -2538,11 +2548,7 @@ void VGTRecorder::startTurnDocument(const CGameState & gameState, PlayerColor pl
 
 	const auto calendar = gameState.getCalendar();
 	output << "---\n";
-	output << "turn: { month: " << calendar.getMonth()
-		<< ", week: " << calendar.getWeek()
-		<< ", day: " << calendar.getDayOfWeek()
-		<< ", absoluteDay: " << calendar.getCurrentDay()
-		<< ", player: " << color(player) << " }\n";
+	output << "turn: { date: " << calendarDate(calendar) << ", player: " << color(player) << " }\n";
 	output << "actions:\n";
 	documentOpen = true;
 	currentTurnPlayer = player;
@@ -2555,13 +2561,9 @@ void VGTRecorder::startWorldDocument(const CGameState & gameState, const std::st
 	if(!enabled)
 		return;
 
-	const auto calendar = gameState.getCalendar();
+	const auto calendar = phase == "newTurn" ? gameState.getCalendar().nextDay() : gameState.getCalendar();
 	output << "---\n";
-	output << "world: { month: " << calendar.getMonth()
-		<< ", week: " << calendar.getWeek()
-		<< ", day: " << calendar.getDayOfWeek()
-		<< ", absoluteDay: " << calendar.getCurrentDay()
-		<< ", phase: " << phase << " }\n";
+	output << "world: { date: " << calendarDate(calendar) << ", phase: " << phase << " }\n";
 	output << "events:\n";
 	documentOpen = true;
 	currentTurnPlayer.reset();
