@@ -146,6 +146,9 @@ The branch now has the initial standalone AI and parity infrastructure in place:
   snapshots do not need duplicate indexed maps for task presence checks.
 - `scripts/ai/nullkiller2/PORT_MAP.json` tracks mirrored C++ files and symbols, with audit coverage for forbidden
   native dependencies and unmapped/stale Lua policy files.
+- `scripts/ai/nullkiller2/tools/verify_lua_nullkiller2_standalone.py` configures a dedicated build with
+  `ENABLE_NULLKILLER2_AI=OFF` and `ENABLE_LUA_NULLKILLER2_AI=ON`, verifies the resulting CMake cache, runs the
+  source audit, and builds the selected Lua AI target. This is the current no-native-dependency gate.
 - Pure Lua tests, fixture-based differential smoke tests, and JSON replay fixtures run through
   `scripts/ai/nullkiller2/tests/run_lua_tests.py`; replay coverage now includes a `runDay` hero-chain
   special-action command journal fixture. The same runner also exposes a `native-trace` preset that replays
@@ -305,6 +308,8 @@ as `status`, `selection`, `role`, `intent`, `side`, `ended`, and `commandJournal
 by setting `VCMI_NK2_NATIVE_TRACE=/path/to/trace.json`; the current exporter writes fixed-answer query,
 hero-level-up, passive UI status, map-object selection, blocking-dialog, teleport-dialog, and surrender/retreat
 decisions and will be extended decision by decision.
+The standalone no-native build gate is `scripts/ai/nullkiller2/tools/verify_lua_nullkiller2_standalone.py`; it must
+be run from an environment with VCMI build dependencies and with an explicit dedicated `--build-dir`.
 
 ## Differential Testing
 
@@ -506,5 +511,5 @@ Commit messages must stay focused on the code change and must not mention the re
    `scripts/ai/nullkiller2/tests/fixtures/discrepancies/`.
 6. Add richer Lua policies for artifact assembly, shipyard, and battle preservation decisions where native currently
    does more than passive status/event forwarding.
-7. Strengthen the no-native-dependency gate by building `LuaNullkiller2` with native `Nullkiller2` disabled and
-   auditing C++ and Lua policy code for forbidden native-delegation strings.
+7. Run the standalone no-native-dependency gate regularly and broaden it from the `LuaNullkiller2` object target to
+   the facade target once the scoped build cost is acceptable.

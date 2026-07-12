@@ -1134,6 +1134,17 @@
       "notes": "JSON replay fixtures under tests/fixtures/replay exercise Lua entry points without a full game and compare normalized status, command journals, trace, and memory, including runDay hero-chain special-action command journals. Failures write actual JSON plus a first-difference summary under tests/fixtures/discrepancies. Replay and native-trace fixtures support expectedFailure/expectFailure/xfail markers for known missing-host-data gaps; mismatches with a marker are non-fatal, while unexpected passes fail so stale markers get removed. Native trace comparison is scaffolded separately; broad native trace export and lockstep comparison remain pending."
     },
     {
+      "cpp": null,
+      "lua": "scripts/ai/nullkiller2/tools/verify_lua_nullkiller2_standalone.py",
+      "status": "scaffolded",
+      "symbols": [
+        "standalone LuaNullkiller2 build gate",
+        "ENABLE_NULLKILLER2_AI=OFF",
+        "ENABLE_LUA_NULLKILLER2_AI=ON"
+      ],
+      "notes": "Configures a dedicated CMake build with native Nullkiller2 disabled, verifies the cache, runs the LuaNullkiller2 audit, and builds the selected Lua AI target. This proves the Lua AI target remains buildable without linking or instantiating native Nullkiller2; broader facade-target coverage remains a follow-up once scoped build cost is acceptable."
+    },
+    {
       "cpp": "AI/Nullkiller2/Engine/NativeTrace.cpp",
       "lua": "scripts/ai/nullkiller2/tests/compare_native_trace.py",
       "status": "scaffolded",
