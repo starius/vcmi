@@ -356,6 +356,39 @@ assert(compositeCalled[2].payload.shipyard == 555)
 assert(compositeCalled[3].name == "castSpell")
 assert(compositeHero.visitablePos.x == 2)
 
+local buildBoatBlockedCommands = {}
+local buildBoatBlockedAdapter = HostCommands.new({
+	command = function(_, name, payload)
+		table.insert(buildBoatBlockedCommands, { name = name, payload = payload })
+		return { ok = true, executed = true }
+	end
+})
+buildBoatBlockedAdapter.freeResources = { [7] = 100 }
+local okBuildBoatSpecialAction, buildBoatSpecialActionError = pcall(function()
+	buildBoatBlockedAdapter:executeHeroChain({
+		targetHero = compositeHero,
+		nodes = {
+			{
+				targetHero = compositeHero,
+				coord = { x = 2, y = 2, z = 0 },
+				turns = 0,
+				specialAction = {
+					type = "BuildBoatAction",
+					shipyard = {
+						id = 556,
+						boatCost = { [7] = 500 },
+						shipyardStatus = 0
+					}
+				}
+			}
+		}
+	}, 142)
+end)
+assert(okBuildBoatSpecialAction == false)
+assert(string.find(buildBoatSpecialActionError, "Can not afford boat", 1, true) ~= nil)
+assert(#buildBoatBlockedCommands == 1)
+assert(buildBoatBlockedCommands[1].name == "setActive")
+
 local whirlpoolCalled = {}
 local whirlpoolAdapter = HostCommands.new({
 	command = function(_, name, payload)

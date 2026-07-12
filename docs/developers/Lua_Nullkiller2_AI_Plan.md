@@ -199,7 +199,9 @@ main/scout selection rules from visible hero/town snapshots; exact fighting-stre
 speciality bonus snapshots. `ExecuteHeroChain` now executes composite, Dimension Door, adventure-spell, Build Boat,
 and explicit command special-action descriptors through Lua-owned primitive host commands, stale Dimension Door
 recovery locks the hero and invalidates pathfinding like native `recoverStaleDimensionDoorAction`, and object-graph
-shortcutting uses neutral live path-info fields to skip obsolete path nodes. Immediate enemy-town hero chains now
+shortcutting uses neutral live path-info fields to skip obsolete path nodes. Build Boat path special actions now
+route through the same Lua `BuildBoat` goal, so rich shipyard descriptors use Lua affordability, ownership, and
+readiness checks before emitting host commands. Immediate enemy-town hero chains now
 route through a Lua `ArmyFormation` helper that mirrors one-creature decoy splits and citadel/castle siege slot
 sorting via primitive `splitStack` and `swapCreatures` commands. Whirlpool, Battle, and Quest special-action
 descriptors now execute through Lua-owned formation or movement primitives, and `BuyArmyAction` mirrors the native

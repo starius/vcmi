@@ -6,6 +6,7 @@
 
 local State = require("Engine.State")
 local ArmyFormation = require("Helpers.ArmyFormation")
+local BuildBoat = require("Goals.BuildBoat")
 
 local HostCommands = {}
 HostCommands.__index = HostCommands
@@ -830,7 +831,7 @@ local function executeSpecialAction(adapter, hero, coord, action)
 		if shipyard == nil then
 			error("Build Boat special action is missing shipyard id", 3)
 		end
-		return adapter:buildBoat(shipyard)
+		return BuildBoat.new(shipyard):accept(adapter)
 	end
 
 	if isWhirlpoolAction(action) then

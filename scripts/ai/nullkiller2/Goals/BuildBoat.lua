@@ -41,7 +41,10 @@ local function boatCost(shipyard)
 	if cost ~= nil then
 		return cost
 	end
-	return shipyard and (shipyard.boatCost or shipyard.cost)
+	if type(shipyard) == "table" then
+		return shipyard.boatCost or shipyard.cost
+	end
+	return nil
 end
 
 local function freeResources(aiGw)
@@ -52,7 +55,7 @@ local function freeResources(aiGw)
 end
 
 local function relationIsEnemy(shipyard)
-	if not shipyard then
+	if type(shipyard) ~= "table" then
 		return false
 	end
 	local relation = shipyard.relation or shipyard.relationToOwner or shipyard.playerRelation
@@ -64,7 +67,10 @@ local function shipyardStatus(shipyard)
 	if status ~= nil then
 		return status
 	end
-	return shipyard and (shipyard.shipyardStatus or shipyard.status)
+	if type(shipyard) == "table" then
+		return shipyard.shipyardStatus or shipyard.status
+	end
+	return nil
 end
 
 local function shipyardReady(shipyard)

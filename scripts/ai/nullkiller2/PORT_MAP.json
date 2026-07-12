@@ -381,7 +381,7 @@
         "Goals::BuildBoat::accept",
         "Goals::BuildBoat::toString"
       ],
-      "notes": "Lua accept checks affordability, enemy ownership, and shipyard readiness before emitting the host build-boat command. Live shipyard snapshot coverage remains pending."
+      "notes": "Lua accept checks affordability, enemy ownership, and shipyard readiness before emitting the host build-boat command. BuildBoat special actions route through the same Lua goal when the action descriptor carries a rich shipyard record. Live shipyard snapshot coverage remains pending."
     },
     {
       "cpp": "AI/Nullkiller2/Goals/RecruitHero.h",
