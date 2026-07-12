@@ -306,6 +306,7 @@ local function buildAiState(input, host, settings, state)
 	aiNk.openMap = state.openMap
 	aiNk.useObjectGraph = state.useObjectGraph
 	aiNk.pathfinderInvalidated = state.pathfinderInvalidated
+	aiNk.heroManager = aiNk.heroManager or HeroManager.new(aiNk)
 	aiNk.decomposer = DeepDecomposer.new(aiNk)
 
 	function aiNk:getFreeResources()
@@ -1087,7 +1088,14 @@ end
 
 function Nullkiller.heroGotLevel(ai, input)
 	input = input or {}
-	local selection = HeroManager.selectBestSkillIndex(input.hero, input.skills or input.secondarySkills or {})
+	input = ensureSnapshotIndexes(input)
+	local hero = getHero({
+		cc = makeCallbackFacade(input),
+		heroesByID = input.heroesByID
+	}, input.hero) or input.hero
+	local heroManager = HeroManager.new(input)
+	heroManager:update()
+	local selection = heroManager:selectBestSkillIndex(hero, input.skills or input.secondarySkills or {})
 	return answerQuery(ai, {
 		queryID = input.queryID,
 		selection = selection

@@ -431,8 +431,8 @@ local levelResult = Script.heroGotLevel(levelRun.ai, {
 		secSkills = {}
 	},
 	skills = {
-		7,
-		2
+		17,
+		13
 	}
 })
 assert(levelResult.status == "answered")
@@ -441,6 +441,28 @@ assert(#levelResult.commandJournal == 1)
 assert(levelResult.commandJournal[1].name == "answerQuery")
 assert(levelResult.commandJournal[1].payload.query == 920)
 assert(levelResult.commandJournal[1].payload.selection == 0)
+
+local roleMappedLevelResult = Script.heroGotLevel(makeAI().ai, {
+	queryID = 921,
+	hero = { id = 502 },
+	heroesInfo = {
+		{ id = 501, level = 12, evaluateHeroScore = 100, secSkills = {} },
+		{ id = 502, level = 12, evaluateHeroScore = 10, secSkills = {} }
+	},
+	townsInfo = {
+		{ id = 601 }
+	},
+	currentDay = 1,
+	mapSize = { x = 108, y = 108, z = 0 },
+	skills = {
+		17,
+		13
+	}
+})
+assert(roleMappedLevelResult.status == "answered")
+assert(roleMappedLevelResult.selection == 1)
+assert(roleMappedLevelResult.commandJournal[1].payload.query == 921)
+assert(roleMappedLevelResult.commandJournal[1].payload.selection == 1)
 
 local eventMemory = {
 	version = 2,

@@ -185,13 +185,14 @@ only at the host boundary. Blocking dialogs route component snapshots through Lu
 yes/no parity still needs richer object and danger snapshots. Teleport dialogs route exit snapshots through Lua
 selection policy; destination/probing memory parity is still thinner than native `AIGateway`. Fixed-answer
 commander, tavern, market, and university queries are represented as Lua entry points that emit `answerQuery(0)`.
-Hero level-up secondary-skill choice uses a Lua port of the native `HeroManager` score maps and rules; exact
-main/scout parity still needs a mirrored hero role map in snapshots.
+Hero level-up secondary-skill choice uses a Lua port of the native `HeroManager` score maps, role-map update, and
+main/scout selection rules from visible hero/town snapshots; exact fighting-strength order still needs richer
+speciality bonus snapshots.
 
 Major parity gaps remain:
 
 - visible snapshots are still too thin for full analyzer, object, path, threat, query, and broader ArmyManager parity
-- hero role assignment snapshots are still missing for exact main/scout level-up skill parity
+- hero fighting-strength ranking still needs full bonus-derived speciality snapshots for exact main/scout ordering
 - `ExecuteHeroChain` replays path nodes in native backward order and rejects stale zero-turn live path snapshots, but
   Dimension Door stale recovery, special actions, object-graph shortcutting, and siege formation are still incomplete
 - cross-hero artifact legality breadth, full combined-artifact legality data, full Rewardable inspection, and richer

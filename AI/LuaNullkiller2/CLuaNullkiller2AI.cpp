@@ -402,6 +402,14 @@ JsonNode heroSnapshot(const CGHeroInstance * hero, const std::shared_ptr<CCallba
 	result["totalStrength"].Integer() = static_cast<int64_t>(hero->getTotalStrength());
 	result["armyStrength"].Integer() = static_cast<int64_t>(hero->getArmyStrength());
 	result["armyCost"].Integer() = static_cast<int64_t>(hero->getArmyCost());
+	result["primarySkills"].setType(JsonNode::JsonType::DATA_STRUCT);
+	result["primarySkills"]["attack"].Integer() = hero->getBasePrimarySkillValue(PrimarySkill::ATTACK);
+	result["primarySkills"]["defense"].Integer() = hero->getBasePrimarySkillValue(PrimarySkill::DEFENSE);
+	result["primarySkills"]["spellPower"].Integer() = hero->getBasePrimarySkillValue(PrimarySkill::SPELL_POWER);
+	result["primarySkills"]["knowledge"].Integer() = hero->getBasePrimarySkillValue(PrimarySkill::KNOWLEDGE);
+	result["patrol"].setType(JsonNode::JsonType::DATA_STRUCT);
+	result["patrol"]["patrolling"].Bool() = hero->patrol.patrolling;
+	result["patrol"]["radius"].Integer() = static_cast<int64_t>(hero->patrol.patrolRadius);
 	result["secSkills"].setType(JsonNode::JsonType::DATA_VECTOR);
 	for(const auto & skill : hero->secSkills)
 	{
@@ -642,6 +650,8 @@ JsonNode makeSnapshot(const std::shared_ptr<CCallback> & callback)
 	JsonNode result;
 	result.setType(JsonNode::JsonType::DATA_STRUCT);
 	result["freeResources"] = resourcesSnapshot(callback->getResourceAmount());
+	result["currentDay"].Integer() = callback->getCalendar().getCurrentDay();
+	result["mapSize"] = tileSnapshot(callback->getMapSize());
 
 	result["townsInfo"].setType(JsonNode::JsonType::DATA_VECTOR);
 	for(const auto * town : callback->getTownsInfo())
@@ -1073,7 +1083,7 @@ void CLuaNullkiller2AI::heroGotLevel(const CGHeroInstance * hero, PrimarySkill p
 
 	LuaNullkiller2Runner runner;
 	LuaRunInput input = makeRunInput();
-	input.snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	input.snapshot = makeSnapshot(cc);
 	input.snapshot["queryID"].Integer() = queryID.getNum();
 	input.snapshot["hero"] = heroSnapshot(hero);
 	input.snapshot["primarySkill"].Integer() = pskill.getNum();

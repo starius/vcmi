@@ -718,9 +718,12 @@
         "ExistingSkillRule",
         "WisdomRule",
         "AtLeastOneMagicRule",
+        "HeroManager::update",
+        "HeroManager::getHeroRoleOrDefault",
+        "HeroManager::evaluateFightingStrength",
         "HeroManager::selectBestSkillIndex"
       ],
-      "notes": "Lua owns the secondary-skill evaluator used by hero level-up choice. Broader hero role assignment and fighting-strength analysis remain pending."
+      "notes": "Lua owns the secondary-skill evaluator and role-map update used by hero level-up choice. The role map is recomputed from visible hero/town snapshots with the native town-count cap and patrolling-main rule. Full bonus-derived speciality scoring still needs richer hero bonus snapshots."
     },
     {
       "cpp": "AI/Nullkiller2/Analyzers/HeroManager.cpp",
@@ -729,6 +732,10 @@
       "symbols": [
         "HeroManager::mainSkillsEvaluator",
         "HeroManager::scoutSkillsEvaluator",
+        "HeroManager::update",
+        "HeroManager::getHeroRoleOrDefault",
+        "HeroManager::getHeroRoleOrDefaultInefficient",
+        "HeroManager::evaluateFightingStrength",
         "HeroManager::selectBestSkillIndex",
         "SecondarySkillScoreMap::evaluateScore",
         "ExistingSkillRule::evaluateScore",
@@ -736,7 +743,7 @@
         "AtLeastOneMagicRule::evaluateScore",
         "SecondarySkillEvaluator::evaluateSecSkill"
       ],
-      "notes": "Score maps and level-up secondary skill rules are mirrored. Native role-map update before level-up is not yet mirrored, so host snapshots need a role field for exact main/scout parity."
+      "notes": "Score maps, role-map update ordering, patrolling-main handling, bigger-map main-hero cap, and level-up secondary skill rules are mirrored in Lua from snapshots. Fighting-strength ranking uses exported primary skills, secondary skills, and optional speciality/evaluateHero fixture fields; exact native speciality bonus scoring remains pending on richer bonus snapshots."
     },
     {
       "cpp": "AI/Nullkiller2/Behaviors/RecruitHeroBehavior.h",
@@ -1056,7 +1063,7 @@
         "AIGateway::recruitCreatures",
         "AIGateway::pickBestArtifacts"
       ],
-      "notes": "Dialog choice, teleport selection/probing, garrison-use, map-object selection, retreat, hero-exchange direction, battle/blocking/hero-created state events, move/reveal/hide/visit/object memory events, owner-change memory events, upgrade choice, dwelling recruitment, army-transfer, and first-pass artifact equip/swap policies are Lua-owned against snapshots. Creature upgrade policy consumes callback-exported UpgradeInfo snapshots for town and hero armed instances; the C++ host supplies raw upgrade candidates/costs and only executes resulting upgradeCreature commands. Artifact replacement uses exported hero artifact snapshots, per-holder canBePutAt tables, and the displaced-artifact backpack fallback when a direct swap is illegal. The battleEnd, battleEnded, battleResultsApplied, battleStart, commanderGotLevel, heroCreated, heroGotLevel, heroExchangeStarted, heroMoved, heroVisit, newObject, objectPropertyChanged, objectRemoved, playerBlocked, tileHidden, tileRevealed, showBlockingDialog, showGarrisonDialog, showRecruitmentDialog, showTeleportDialog, showTavernWindow, showMarketWindow, showUniversityWindow, and showMapObjectSelectDialog callbacks are wired through Lua entry points. Query callbacks answer pending queries through HostCommands.answerQuery. makeSurrenderRetreatDecision is wired through a Lua return decision converted to BattleAction at the host boundary. Hero role-map snapshots for exact level-up main/scout parity, teleport destination/probing memory, danger-aware blocking-dialog parity, cross-hero artifact legality breadth, full combined-artifact legality data, multi-step modded upgrade-chain differential breadth, remaining callback wiring, and validator breadth remain pending."
+      "notes": "Dialog choice, teleport selection/probing, garrison-use, map-object selection, retreat, hero-exchange direction, battle/blocking/hero-created state events, move/reveal/hide/visit/object memory events, owner-change memory events, upgrade choice, dwelling recruitment, army-transfer, level-up skill choice with Lua role-map update, and first-pass artifact equip/swap policies are Lua-owned against snapshots. Creature upgrade policy consumes callback-exported UpgradeInfo snapshots for town and hero armed instances; the C++ host supplies raw upgrade candidates/costs and only executes resulting upgradeCreature commands. Artifact replacement uses exported hero artifact snapshots, per-holder canBePutAt tables, and the displaced-artifact backpack fallback when a direct swap is illegal. The battleEnd, battleEnded, battleResultsApplied, battleStart, commanderGotLevel, heroCreated, heroGotLevel, heroExchangeStarted, heroMoved, heroVisit, newObject, objectPropertyChanged, objectRemoved, playerBlocked, tileHidden, tileRevealed, showBlockingDialog, showGarrisonDialog, showRecruitmentDialog, showTeleportDialog, showTavernWindow, showMarketWindow, showUniversityWindow, and showMapObjectSelectDialog callbacks are wired through Lua entry points. Query callbacks answer pending queries through HostCommands.answerQuery. makeSurrenderRetreatDecision is wired through a Lua return decision converted to BattleAction at the host boundary. Full hero speciality bonus snapshots, teleport destination/probing memory, danger-aware blocking-dialog parity, cross-hero artifact legality breadth, full combined-artifact legality data, multi-step modded upgrade-chain differential breadth, remaining callback wiring, and validator breadth remain pending."
     },
     {
       "cpp": null,
