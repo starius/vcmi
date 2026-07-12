@@ -346,6 +346,56 @@ ETileVisibility decodeVisibility(const std::string & value)
 	throw std::runtime_error("Unsupported VGT visibility mode: " + value);
 }
 
+ObjProperty decodeObjProperty(const JsonNode & node)
+{
+	if(node.isNumber())
+		return static_cast<ObjProperty>(node.Integer());
+
+	if(!node.isString())
+		throw std::runtime_error("VGT replay object property is not a string or number");
+
+	const std::string value = node.String();
+	if(value == "invalid") return ObjProperty::INVALID;
+	if(value == "owner") return ObjProperty::OWNER;
+	if(value == "unused") return ObjProperty::UNUSED;
+	if(value == "primaryStackCount") return ObjProperty::PRIMARY_STACK_COUNT;
+	if(value == "visitors") return ObjProperty::VISITORS;
+	if(value == "visited") return ObjProperty::VISITED;
+	if(value == "id") return ObjProperty::ID;
+	if(value == "availableCreature") return ObjProperty::AVAILABLE_CREATURE;
+	if(value == "monsterCount") return ObjProperty::MONSTER_COUNT;
+	if(value == "monsterPower") return ObjProperty::MONSTER_POWER;
+	if(value == "monsterExperience") return ObjProperty::MONSTER_EXP;
+	if(value == "monsterRestoreType") return ObjProperty::MONSTER_RESTORE_TYPE;
+	if(value == "monsterRefusedJoin") return ObjProperty::MONSTER_REFUSED_JOIN;
+	if(value == "structureAddVisitingHero") return ObjProperty::STRUCTURE_ADD_VISITING_HERO;
+	if(value == "structureClearVisitors") return ObjProperty::STRUCTURE_CLEAR_VISITORS;
+	if(value == "structureAddGarrisonedHero") return ObjProperty::STRUCTURE_ADD_GARRISONED_HERO;
+	if(value == "bonusValueFirst") return ObjProperty::BONUS_VALUE_FIRST;
+	if(value == "bonusValueSecond") return ObjProperty::BONUS_VALUE_SECOND;
+	if(value == "seerHutVisited") return ObjProperty::SEERHUT_VISITED;
+	if(value == "seerHutComplete") return ObjProperty::SEERHUT_COMPLETE;
+	if(value == "obeliskVisited") return ObjProperty::OBELISK_VISITED;
+	if(value == "bankDayCounter") return ObjProperty::BANK_DAYCOUNTER;
+	if(value == "bankClear") return ObjProperty::BANK_CLEAR;
+	if(value == "rewardSelect") return ObjProperty::REWARD_SELECT;
+	if(value == "rewardCleared") return ObjProperty::REWARD_CLEARED;
+	throw std::runtime_error("Unsupported VGT object property: " + value);
+}
+
+ChangeObjectVisitors::VisitMode decodeObjectVisitMode(const std::string & value)
+{
+	if(value == "addHero")
+		return ChangeObjectVisitors::VISITOR_ADD_HERO;
+	if(value == "addPlayer")
+		return ChangeObjectVisitors::VISITOR_ADD_PLAYER;
+	if(value == "scouted")
+		return ChangeObjectVisitors::VISITOR_SCOUTED;
+	if(value == "clear")
+		return ChangeObjectVisitors::VISITOR_CLEAR;
+	throw std::runtime_error("Unsupported VGT object visitor mode: " + value);
+}
+
 TavernHeroSlot decodeTavernSlot(const std::string & value)
 {
 	if(value == "none")
@@ -623,6 +673,51 @@ DecodedStackLocation decodeStackLocation(const CGameState & gameState, const Jso
 	};
 }
 
+ObjPropertyID decodeObjPropertyValue(const CGameState & gameState, ObjProperty property, const JsonNode & node)
+{
+	if(node.isString())
+	{
+		const std::string value = node.String();
+		switch(property)
+		{
+			case ObjProperty::OWNER:
+			case ObjProperty::VISITED:
+			case ObjProperty::SEERHUT_VISITED:
+				return ObjPropertyID(decodeColor(value));
+			case ObjProperty::VISITORS:
+				return ObjPropertyID(resolveObjectAlias(gameState, value));
+			case ObjProperty::ID:
+				return ObjPropertyID(MapObjectID(MapObjectID::decode(value)));
+			case ObjProperty::AVAILABLE_CREATURE:
+				return ObjPropertyID(decodeCreature(value));
+			default:
+				return ObjPropertyID(NumericID(NumericID::decode(value)));
+		}
+	}
+
+	if(!node.isNumber())
+		throw std::runtime_error("VGT replay object property value is not a string or number");
+
+	const auto value = static_cast<int32_t>(node.Integer());
+	switch(property)
+	{
+		case ObjProperty::OWNER:
+		case ObjProperty::VISITED:
+		case ObjProperty::SEERHUT_VISITED:
+			return ObjPropertyID(PlayerColor(value));
+		case ObjProperty::VISITORS:
+			return ObjPropertyID(ObjectInstanceID(value));
+		case ObjProperty::ID:
+			return ObjPropertyID(MapObjectID(value));
+		case ObjProperty::AVAILABLE_CREATURE:
+			return ObjPropertyID(CreatureID(value));
+		case ObjProperty::OBELISK_VISITED:
+			return ObjPropertyID(TeamID(value));
+		default:
+			return ObjPropertyID(NumericID(value));
+	}
+}
+
 int64_t decodeStackAlias(const std::string & value)
 {
 	const std::string prefix = "stack/";
@@ -743,6 +838,21 @@ std::vector<CreatureID> decodeCreatureList(const JsonNode & node)
 		if(!entry.isString())
 			throw std::runtime_error("VGT replay creature entry is not a string");
 		result.push_back(decodeCreature(entry.String()));
+	}
+	return result;
+}
+
+std::vector<SecondarySkill> decodeSecondarySkillList(const JsonNode & node)
+{
+	if(!node.isVector())
+		throw std::runtime_error("VGT replay secondary skill list must be a list");
+
+	std::vector<SecondarySkill> result;
+	for(const auto & entry : node.Vector())
+	{
+		if(!entry.isString())
+			throw std::runtime_error("VGT replay secondary skill entry is not a string");
+		result.push_back(decodeSecondarySkill(entry.String()));
 	}
 	return result;
 }
@@ -1057,6 +1167,9 @@ void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, con
 	if(kind == "decision" || kind == "query" || kind == "info")
 		return;
 
+	if(kind == "battle")
+		return;
+
 	if(kind == "availableHero")
 	{
 		SetAvailableHero pack;
@@ -1296,6 +1409,38 @@ void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, con
 		pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(node, "town"));
 		pack.visiting = resolveObjectAlias(gameHandler.gameState(), requireString(node, "visiting"));
 		pack.garrison = resolveObjectAlias(gameHandler.gameState(), requireString(node, "garrison"));
+		applyEffectPack(gameHandler, pack);
+		return;
+	}
+
+	if(kind == "objectProperty")
+	{
+		SetObjectProperty pack;
+		pack.id = resolveObjectAlias(gameHandler.gameState(), requireString(node, "object"));
+		pack.what = decodeObjProperty(requireField(node, "property"));
+		pack.identifier = decodeObjPropertyValue(gameHandler.gameState(), pack.what, requireField(node, "value"));
+		applyEffectPack(gameHandler, pack);
+		return;
+	}
+
+	if(kind == "objectVisitors")
+	{
+		ChangeObjectVisitors pack;
+		pack.object = resolveObjectAlias(gameHandler.gameState(), requireString(node, "object"));
+		pack.hero = resolveObjectAlias(gameHandler.gameState(), requireString(node, "hero"));
+		pack.mode = decodeObjectVisitMode(requireString(node, "mode"));
+		applyEffectPack(gameHandler, pack);
+		return;
+	}
+
+	if(kind == "levelUp")
+	{
+		HeroLevelUp pack;
+		pack.player = decodePlayerColor(requireString(node, "player"));
+		pack.heroId = resolveObjectAlias(gameHandler.gameState(), requireString(node, "hero"));
+		pack.primskill = decodePrimarySkill(requireString(node, "primary"));
+		pack.skills = decodeSecondarySkillList(requireField(node, "choices"));
+		pack.queryID = decodeQuery(requireString(node, "query"));
 		applyEffectPack(gameHandler, pack);
 		return;
 	}

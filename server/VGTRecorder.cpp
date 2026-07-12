@@ -475,6 +475,60 @@ std::string movementResult(TryMoveHero::EResult result)
 	return "unknown";
 }
 
+std::string objectProperty(ObjProperty property)
+{
+	switch(property)
+	{
+		case ObjProperty::INVALID: return "invalid";
+		case ObjProperty::OWNER: return "owner";
+		case ObjProperty::UNUSED: return "unused";
+		case ObjProperty::PRIMARY_STACK_COUNT: return "primaryStackCount";
+		case ObjProperty::VISITORS: return "visitors";
+		case ObjProperty::VISITED: return "visited";
+		case ObjProperty::ID: return "id";
+		case ObjProperty::AVAILABLE_CREATURE: return "availableCreature";
+		case ObjProperty::MONSTER_COUNT: return "monsterCount";
+		case ObjProperty::MONSTER_POWER: return "monsterPower";
+		case ObjProperty::MONSTER_EXP: return "monsterExperience";
+		case ObjProperty::MONSTER_RESTORE_TYPE: return "monsterRestoreType";
+		case ObjProperty::MONSTER_REFUSED_JOIN: return "monsterRefusedJoin";
+		case ObjProperty::STRUCTURE_ADD_VISITING_HERO: return "structureAddVisitingHero";
+		case ObjProperty::STRUCTURE_CLEAR_VISITORS: return "structureClearVisitors";
+		case ObjProperty::STRUCTURE_ADD_GARRISONED_HERO: return "structureAddGarrisonedHero";
+		case ObjProperty::BONUS_VALUE_FIRST: return "bonusValueFirst";
+		case ObjProperty::BONUS_VALUE_SECOND: return "bonusValueSecond";
+		case ObjProperty::SEERHUT_VISITED: return "seerHutVisited";
+		case ObjProperty::SEERHUT_COMPLETE: return "seerHutComplete";
+		case ObjProperty::OBELISK_VISITED: return "obeliskVisited";
+		case ObjProperty::BANK_DAYCOUNTER: return "bankDayCounter";
+		case ObjProperty::BANK_CLEAR: return "bankClear";
+		case ObjProperty::REWARD_SELECT: return "rewardSelect";
+		case ObjProperty::REWARD_CLEARED: return "rewardCleared";
+	}
+	return "unknown";
+}
+
+std::string objectPropertyValue(const CGameState & gameState, const SetObjectProperty & pack)
+{
+	switch(pack.what)
+	{
+		case ObjProperty::OWNER:
+		case ObjProperty::VISITED:
+		case ObjProperty::SEERHUT_VISITED:
+			return color(pack.identifier.as<PlayerColor>());
+		case ObjProperty::VISITORS:
+			return objectAlias(gameState, pack.identifier.as<ObjectInstanceID>());
+		case ObjProperty::ID:
+			return yamlString(MapObjectID::encode(pack.identifier.as<MapObjectID>().getNum()));
+		case ObjProperty::AVAILABLE_CREATURE:
+			return creature(pack.identifier.as<CreatureID>());
+		case ObjProperty::OBELISK_VISITED:
+			return std::to_string(pack.identifier.as<TeamID>().getNum());
+		default:
+			return std::to_string(pack.identifier.getNum());
+	}
+}
+
 std::string packetTypeName(CPack & pack)
 {
 	std::string name = boost::core::demangle(typeid(pack).name());
@@ -1611,8 +1665,8 @@ public:
 	void visitSetObjectProperty(SetObjectProperty & pack) override
 	{
 		line = "objectProperty: { object: " + objectAlias(gameState, pack.id) +
-			", property: " + std::to_string(static_cast<int>(pack.what)) +
-			", value: " + std::to_string(pack.identifier.getNum()) + " }";
+			", property: " + objectProperty(pack.what) +
+			", value: " + objectPropertyValue(gameState, pack) + " }";
 	}
 
 	void visitSetRewardableConfiguration(SetRewardableConfiguration & pack) override
