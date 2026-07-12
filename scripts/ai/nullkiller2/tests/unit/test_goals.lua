@@ -232,6 +232,44 @@ assert(upgraded.army == upgradeOnlyTown.upperArmy)
 assert(upgraded.slot == 4)
 assert(upgraded.creature.id == 303)
 
+local townUpgradeSlots = {
+	id = 310,
+	name = "Town Upgrade Slots",
+	upperArmy = {
+		id = 311
+	},
+	upgradeSlots = {
+		{
+			slot = 5,
+			stack = {
+				count = 4,
+				creature = { id = 312, aiValue = 10 }
+			},
+			upgradeInfo = {
+				availableUpgrades = {
+					{ id = 313, aiValue = 25, cost = { [7] = 25 } }
+				}
+			}
+		}
+	},
+	availableToBuy = {}
+}
+local townUpgradeCommand = nil
+local townUpgradeResult = BuyArmy.new(townUpgradeSlots, 100):accept({
+	freeResources = { [7] = 100 },
+	upgradeCreature = function(_, army, slot, creature)
+		townUpgradeCommand = {
+			army = army,
+			slot = slot,
+			creature = creature
+		}
+	end
+})
+assert(townUpgradeResult.upgradeSuccessful == true)
+assert(townUpgradeCommand.army == townUpgradeSlots)
+assert(townUpgradeCommand.slot == 5)
+assert(townUpgradeCommand.creature.id == 313)
+
 local exchangeTown = {
 	id = 330,
 	name = "Exchange Town",

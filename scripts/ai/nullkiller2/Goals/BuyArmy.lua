@@ -103,24 +103,26 @@ local function resources(aiGw)
 end
 
 local function upgradeSlots(town, army)
-	local result = call(town, "getUpgradeSlots", army)
-		or call(army, "getUpgradeSlots")
-		or army and army.upgradeSlots
-		or town and town.upgradeSlots
-		or {}
-	return result
+	local townSlots = call(town, "getUpgradeSlots", army) or (town and town.upgradeSlots)
+	if townSlots and #townSlots > 0 then
+		return townSlots, town
+	end
+
+	local armySlots = call(army, "getUpgradeSlots") or (army and army.upgradeSlots) or {}
+	return armySlots, army
 end
 
 local function makePossibleUpgrades(aiGw, town, army, resourceSnapshot)
 	local upgraded = false
-	for _, entry in ipairs(upgradeSlots(town, army)) do
+	local slots, upgradeArmy = upgradeSlots(town, army)
+	for _, entry in ipairs(slots) do
 		local stack = entry.stack or entry
 		local slot = entry.slot or stack.slot
 		local upgradeInfo = entry.upgradeInfo or entry
 		local upgrade = GatewayPolicy.chooseUpgrade(upgradeInfo, stack, resourceSnapshot)
 		if upgrade then
 			if aiGw and type(aiGw.upgradeCreature) == "function" then
-				aiGw:upgradeCreature(army, slot, upgrade.creature)
+				aiGw:upgradeCreature(entry.army or upgradeArmy or army or town, slot, upgrade.creature)
 				upgraded = true
 			else
 				error("No creature upgrade command target.", 2)

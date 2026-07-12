@@ -21,6 +21,7 @@
 #include "../../lib/StartInfo.h"
 #include "../../lib/entities/artifact/CArtifact.h"
 #include "../../lib/entities/artifact/CArtifactInstance.h"
+#include "../../lib/gameState/UpgradeInfo.h"
 #include "../../lib/mapObjects/CGDwelling.h"
 #include "../../lib/mapObjects/CGHeroInstance.h"
 #include "../../lib/mapObjects/CGObjectInstance.h"
@@ -295,8 +296,8 @@ JsonNode teleportExitsSnapshot(const TTeleportExitsList & exits, const std::shar
 	return result;
 }
 
-void addArmySnapshotFields(JsonNode & result, const CArmedInstance * army);
-JsonNode armySnapshot(const CArmedInstance * army);
+void addArmySnapshotFields(JsonNode & result, const CArmedInstance * army, const std::shared_ptr<CCallback> & callback = nullptr);
+JsonNode armySnapshot(const CArmedInstance * army, const std::shared_ptr<CCallback> & callback = nullptr);
 
 JsonNode artifactTypeSnapshot(const CArtifact * artifactType)
 {
@@ -386,7 +387,7 @@ void addHeroArtifactSnapshotFields(JsonNode & result, const CGHeroInstance * her
 	}
 }
 
-JsonNode heroSnapshot(const CGHeroInstance * hero)
+JsonNode heroSnapshot(const CGHeroInstance * hero, const std::shared_ptr<CCallback> & callback = nullptr)
 {
 	JsonNode result;
 	result.setType(JsonNode::JsonType::DATA_STRUCT);
@@ -410,7 +411,7 @@ JsonNode heroSnapshot(const CGHeroInstance * hero)
 		entry["level"].Integer() = skill.second;
 		result["secSkills"].Vector().push_back(entry);
 	}
-	addArmySnapshotFields(result, hero);
+	addArmySnapshotFields(result, hero, callback);
 	result["movementPointsRemaining"].Integer() = hero->movementPointsRemaining();
 	result["garrisoned"].Bool() = hero->isGarrisoned();
 	result["visitablePos"] = tileSnapshot(hero->visitablePos());
@@ -438,6 +439,28 @@ JsonNode creatureSnapshot(CreatureID creatureID)
 	result["factionID"].Integer() = creature ? creature->getFactionID().getNum() : -1;
 	if(creature)
 		result["fullRecruitCost"] = resourcesSnapshot(creature->getFullRecruitCost());
+
+	return result;
+}
+
+JsonNode upgradeCreatureSnapshot(CreatureID creatureID, const TResources & cost)
+{
+	JsonNode result = creatureSnapshot(creatureID);
+	result["cost"] = resourcesSnapshot(cost);
+	return result;
+}
+
+JsonNode upgradeInfoSnapshot(const UpgradeInfo & upgradeInfo)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	result["oldID"].Integer() = upgradeInfo.oldID.getNum();
+	result["canUpgrade"].Bool() = upgradeInfo.canUpgrade();
+	result["hasUpgrades"].Bool() = upgradeInfo.hasUpgrades();
+	result["availableUpgrades"].setType(JsonNode::JsonType::DATA_VECTOR);
+
+	for(const auto & upgradeID : upgradeInfo.getAvailableUpgrades())
+		result["availableUpgrades"].Vector().push_back(upgradeCreatureSnapshot(upgradeID, upgradeInfo.getUpgradeCostsFor(upgradeID)));
 
 	return result;
 }
@@ -493,10 +516,34 @@ JsonNode stackSnapshot(const SlotID & slotID, const CStackInstance * stack)
 	result["marketValue"].Integer() = static_cast<int64_t>(stack->getMarketValue());
 	result["creatureID"].Integer() = stack->getCreatureID().getNum();
 	result["creature"] = creatureSnapshot(stack->getCreatureID());
+	result["aiValue"].Integer() = stack->getCreature() ? stack->getCreature()->getAIValue() : 0;
 	return result;
 }
 
-void addArmySnapshotFields(JsonNode & result, const CArmedInstance * army)
+void addUpgradeSlotSnapshot(
+	JsonNode & result,
+	const CArmedInstance * army,
+	const SlotID & slotID,
+	const CStackInstance * stack,
+	const std::shared_ptr<CCallback> & callback)
+{
+	if(!army || !stack || !callback)
+		return;
+
+	UpgradeInfo upgradeInfo(stack->getCreatureID());
+	callback->fillUpgradeInfo(army, slotID, upgradeInfo);
+	if(!upgradeInfo.hasUpgrades())
+		return;
+
+	JsonNode entry;
+	entry.setType(JsonNode::JsonType::DATA_STRUCT);
+	entry["slot"].Integer() = slotID.getNum();
+	entry["stack"] = stackSnapshot(slotID, stack);
+	entry["upgradeInfo"] = upgradeInfoSnapshot(upgradeInfo);
+	result.Vector().push_back(entry);
+}
+
+void addArmySnapshotFields(JsonNode & result, const CArmedInstance * army, const std::shared_ptr<CCallback> & callback)
 {
 	if(!army)
 		return;
@@ -507,17 +554,23 @@ void addArmySnapshotFields(JsonNode & result, const CArmedInstance * army)
 	result["armyCost"].Integer() = static_cast<int64_t>(army->getArmyCost());
 	result["slots"].setType(JsonNode::JsonType::DATA_VECTOR);
 	result["slotsByCreature"].setType(JsonNode::JsonType::DATA_STRUCT);
+	if(callback)
+		result["upgradeSlots"].setType(JsonNode::JsonType::DATA_VECTOR);
 
 	for(const auto & slot : army->Slots())
 	{
 		const auto * stack = slot.second.get();
 		result["slots"].Vector().push_back(stackSnapshot(slot.first, stack));
 		if(stack)
+		{
 			result["slotsByCreature"][std::to_string(stack->getCreatureID().getNum())].Integer() = slot.first.getNum();
+			if(callback)
+				addUpgradeSlotSnapshot(result["upgradeSlots"], army, slot.first, stack, callback);
+		}
 	}
 }
 
-JsonNode armySnapshot(const CArmedInstance * army)
+JsonNode armySnapshot(const CArmedInstance * army, const std::shared_ptr<CCallback> & callback)
 {
 	JsonNode result;
 	result.setType(JsonNode::JsonType::DATA_STRUCT);
@@ -526,7 +579,7 @@ JsonNode armySnapshot(const CArmedInstance * army)
 
 	result["id"].Integer() = army->id.getNum();
 	result["owner"].Integer() = army->tempOwner.getNum();
-	addArmySnapshotFields(result, army);
+	addArmySnapshotFields(result, army, callback);
 	return result;
 }
 
@@ -555,21 +608,22 @@ JsonNode townSnapshot(const CGTownInstance * town, const std::shared_ptr<CCallba
 	result["fortLevel"].Integer() = town->fortLevel();
 	result["upperArmyStrength"].Integer() = static_cast<int64_t>(town->getUpperArmy()->getArmyStrength());
 	result["armyStrength"].Integer() = static_cast<int64_t>(town->getUpperArmy()->getArmyStrength());
-	result["upperArmy"] = armySnapshot(town->getUpperArmy());
+	addArmySnapshotFields(result, town, callback);
+	result["upperArmy"] = armySnapshot(town->getUpperArmy(), callback);
 	result["hasCapitol"].Bool() = town->hallLevel() >= 3;
 	result["hasBuiltResourceMarketplace"].Bool() = town->getMarketEfficiency() > 0;
 	result["visitablePos"] = tileSnapshot(town->visitablePos());
 
 	if(const auto * visitingHero = town->getVisitingHero())
-		result["visitingHero"] = heroSnapshot(visitingHero);
+		result["visitingHero"] = heroSnapshot(visitingHero, callback);
 	if(const auto * garrisonHero = town->getGarrisonHero())
-		result["garrisonHero"] = heroSnapshot(garrisonHero);
+		result["garrisonHero"] = heroSnapshot(garrisonHero, callback);
 
 	auto availableHeroes = callback->getAvailableHeroes(town);
 	result["canRecruitHero"].Bool() = !availableHeroes.empty();
 	result["availableHeroes"].setType(JsonNode::JsonType::DATA_VECTOR);
 	for(const auto * hero : availableHeroes)
-		result["availableHeroes"].Vector().push_back(heroSnapshot(hero));
+		result["availableHeroes"].Vector().push_back(heroSnapshot(hero, callback));
 
 	result["availableToBuy"].setType(JsonNode::JsonType::DATA_VECTOR);
 	for(size_t level = 0; level < town->creatures.size(); ++level)
@@ -595,7 +649,7 @@ JsonNode makeSnapshot(const std::shared_ptr<CCallback> & callback)
 
 	result["heroesInfo"].setType(JsonNode::JsonType::DATA_VECTOR);
 	for(const auto * hero : callback->getHeroesInfo())
-		result["heroesInfo"].Vector().push_back(heroSnapshot(hero));
+		result["heroesInfo"].Vector().push_back(heroSnapshot(hero, callback));
 
 	return result;
 }

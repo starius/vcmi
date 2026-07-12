@@ -465,7 +465,8 @@ function GatewayPolicy.chooseUpgrade(upgradeInfo, stack, resources)
 		return nil
 	end
 
-	local oldValue = stack.aiValue or stack.value or 0
+	local oldCreature = type(stack.creature) == "table" and stack.creature or {}
+	local oldValue = stack.aiValue or stack.value or oldCreature.aiValue or oldCreature.value or 0
 	local newValue = best.aiValue or best.value or 0
 	local count = stack.count or 0
 	local cost = multiplyCost(best.cost or upgradeInfo.costs and upgradeInfo.costs[objectID(best)] or upgradeInfo.cost or {}, count)

@@ -200,6 +200,30 @@ local upgrade = GatewayPolicy.chooseUpgrade({
 assert(upgrade.creature.id == 302)
 assert(upgrade.cost.gold == 1200)
 
+local vectorUpgrade = GatewayPolicy.chooseUpgrade({
+	availableUpgrades = {
+		{ id = 304, aiValue = 25, cost = { [7] = 25 } }
+	}
+}, {
+	count = 4,
+	creature = { id = 303, aiValue = 10 }
+}, {
+	[7] = 100
+})
+assert(vectorUpgrade.creature.id == 304)
+assert(vectorUpgrade.cost[7] == 100)
+
+assert(GatewayPolicy.chooseUpgrade({
+	availableUpgrades = {
+		{ id = 305, aiValue = 25, cost = { [7] = 25 } }
+	}
+}, {
+	count = 4,
+	creature = { id = 303, aiValue = 10 }
+}, {
+	[7] = 99
+}) == nil)
+
 assert(GatewayPolicy.chooseUpgrade({
 	availableUpgrades = {
 		{ id = 303, aiValue = 5, cost = { gold = 100 } }

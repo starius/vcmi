@@ -156,7 +156,10 @@ build boat, dismiss hero, swap garrison hero, recruit creatures, upgrade creatur
 merge/swap, split stack, dismiss creatures, cast spell, artifact swaps, granular hero movement, resource locks,
 answer query, and end turn. `ExchangeSwapTownHeroes`
 extraction now mirrors the `buildArmyIn` order through upgrades, recruitment, first-slot army correction, and
-Lua-owned transfer command sequencing from snapshots. `Analyzers/ArmyManager.lua` now owns sorted-slot
+Lua-owned transfer command sequencing from snapshots. Turn snapshots export callback-derived `UpgradeInfo` data as
+town and hero `upgradeSlots`; Lua `BuyArmy` and `ExchangeSwapTownHeroes` choose upgrade targets from those raw
+candidates and emit `upgradeCreature` commands without calling native `AIGateway::makePossibleUpgrades`.
+`Analyzers/ArmyManager.lua` now owns sorted-slot
 consolidation, faction/morale best-army filtering, scout-unit choice, scout last-stack retention, dwelling purchase
 selection, reinforcement purchase value, reinforcement transfer value, stack-power evaluation, total-army
 aggregation, and hill-fort/dwelling upgrade calculation; the transfer sequencer emits the matching scout split
@@ -196,6 +199,8 @@ Major parity gaps remain:
   equip/swap sequencing
 - garrison, artifact, and remaining hero-exchange and army-transfer edge cases need complete Lua-owned sequencing
   plus host validators
+- upgrade parity still needs native-vs-Lua differential traces for multi-step modded upgrade chains and unusual
+  unavailable-upgrade sources; current coverage is unit/fixture level plus raw `UpgradeInfo` snapshot plumbing
 - differential tests currently cover command journals and end-turn smoke; they do not yet compare real native
   `Nullkiller2` traces against Lua traces at each decision point
 
