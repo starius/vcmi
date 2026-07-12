@@ -420,3 +420,58 @@ assert(battleActionCalled[1].name == "setActive")
 assert(battleActionCalled[2].name == "moveHeroToTile")
 assert(battleActionCalled[2].payload.x == 6)
 assert(battleActionHero.visitablePos.x == 6)
+
+local buyArmyActionCalled = {}
+local buyArmyActionAdapter = HostCommands.new({
+	command = function(_, name, payload)
+		table.insert(buyArmyActionCalled, { name = name, payload = payload })
+		return { ok = true, executed = true }
+	end,
+	getFreeResources = function()
+		return { [6] = 250 }
+	end
+})
+local buyArmyTown = {
+	id = 171,
+	creatures = {
+		{
+			count = 3,
+			level = 0,
+			creatures = {
+				{ id = 61, aiValue = 30, fullRecruitCost = { [6] = 100 } }
+			}
+		}
+	}
+}
+local buyArmyHero = {
+	id = 172,
+	movementPointsRemaining = 1000,
+	armySize = 2,
+	visitablePos = { x = 0, y = 0, z = 0 },
+	visitedTown = buyArmyTown,
+	slots = {
+		{ slot = 0, count = 4, creature = { id = 60, aiValue = 10 } },
+		{ slot = 1, count = 2, creature = { id = 60, aiValue = 10 } }
+	}
+}
+buyArmyActionAdapter:executeHeroChain({
+	targetHero = buyArmyHero,
+	nodes = {
+		{
+			targetHero = buyArmyHero,
+			coord = { x = 0, y = 0, z = 0 },
+			specialAction = { type = "BuyArmyAction" }
+		}
+	}
+}, 173)
+assert(#buyArmyActionCalled == 3)
+assert(buyArmyActionCalled[1].name == "setActive")
+assert(buyArmyActionCalled[2].name == "mergeStacks")
+assert(buyArmyActionCalled[2].payload.fromSlot == 1)
+assert(buyArmyActionCalled[2].payload.toSlot == 0)
+assert(buyArmyActionCalled[3].name == "recruitCreatures")
+assert(buyArmyActionCalled[3].payload.town == 171)
+assert(buyArmyActionCalled[3].payload.dst == 172)
+assert(buyArmyActionCalled[3].payload.creature == 61)
+assert(buyArmyActionCalled[3].payload.count == 2)
+assert(buyArmyActionCalled[3].payload.level == 0)

@@ -203,6 +203,12 @@ local function isWhirlpoolAction(action)
 		or name == "whirlpool"
 end
 
+local function isBuyArmyAction(action)
+	local name = normalizedActionName(action)
+	return name == "buyarmyaction"
+		or name == "buyarmy"
+end
+
 local function isMoveToTileAction(action)
 	local name = normalizedActionName(action)
 	return name == "battleaction"
@@ -234,6 +240,13 @@ local function actionShipyard(action)
 		return nil
 	end
 	return action.shipyard or action.shipyardID or action.shipyardId or action.targetObject or action.object or action.target
+end
+
+local function actionTown(action, hero)
+	if type(action) ~= "table" then
+		return hero and hero.visitedTown
+	end
+	return action.town or action.dwelling or action.visitedTown or hero and hero.visitedTown
 end
 
 local function actionCommand(action)
@@ -279,6 +292,180 @@ local function copyPayload(payload)
 		result[key] = value
 	end
 	return result
+end
+
+local function armyStacks(army)
+	return type(army) == "table" and (army.slots or army.stacks or army.Slots) or {}
+end
+
+local function stackSlot(stack, fallback)
+	return type(stack) == "table" and (stack.slot or fallback) or fallback
+end
+
+local function stackCount(stack)
+	return type(stack) == "table" and (stack.count or stack.amount or 0) or 0
+end
+
+local function stackCreature(stack)
+	return type(stack) == "table" and (stack.creature or stack.creatureID or stack.creatureType or stack) or stack
+end
+
+local function creatureID(creature)
+	if type(creature) == "table" then
+		return creature.id or creature.creatureID or creature.typeID or creature[1]
+	end
+	return creature
+end
+
+local function stackAtSlot(army, targetSlot)
+	for key, stack in pairs(armyStacks(army)) do
+		if stackSlot(stack, key) == targetSlot then
+			return stack, key
+		end
+	end
+	return nil, nil
+end
+
+local function armySize(army)
+	return army and (army.armySize or army.ARMY_SIZE) or 7
+end
+
+local function freeSlot(army)
+	for slot = 0, armySize(army) - 1 do
+		if not stackAtSlot(army, slot) then
+			return slot
+		end
+	end
+	return nil
+end
+
+local function slotForRecruit(army, creature)
+	local id = creatureID(creature)
+	for key, stack in pairs(armyStacks(army)) do
+		if creatureID(stackCreature(stack)) == id then
+			return stackSlot(stack, key)
+		end
+	end
+	return freeSlot(army)
+end
+
+local function removeStackAtSlot(army, slot)
+	local stacks = armyStacks(army)
+	for key, stack in pairs(stacks) do
+		if stackSlot(stack, key) == slot then
+			if type(key) == "number" and key >= 1 and stacks[key] == stack then
+				table.remove(stacks, key)
+			else
+				stacks[key] = nil
+			end
+			if army and army.stacksCount then
+				army.stacksCount = army.stacksCount - 1
+			end
+			return stack
+		end
+	end
+	return nil
+end
+
+local function applyMergeStacks(army, fromSlot, toSlot)
+	local source = stackAtSlot(army, fromSlot)
+	local destination = stackAtSlot(army, toSlot)
+	if destination and source then
+		destination.count = stackCount(destination) + stackCount(source)
+	end
+	removeStackAtSlot(army, fromSlot)
+end
+
+local function mergeDuplicateStackForRecruit(adapter, army)
+	for key, stack in pairs(armyStacks(army)) do
+		local currentSlot = stackSlot(stack, key)
+		local duplicatingSlot = slotForRecruit(army, stackCreature(stack))
+		if duplicatingSlot ~= nil and duplicatingSlot ~= currentSlot then
+			adapter:mergeStacks(army, currentSlot, duplicatingSlot)
+			applyMergeStacks(army, currentSlot, duplicatingSlot)
+			return true
+		end
+	end
+	return false
+end
+
+local function getResource(resources, resourceID)
+	if type(resources) == "number" then
+		return resourceID == 6 and resources or 0
+	end
+	if not resources then
+		return 0
+	end
+	if resources[0] == nil and resources[7] ~= nil then
+		return resources[resourceID + 1] or 0
+	end
+	return resources[resourceID] or 0
+end
+
+local function resourceCost(creature)
+	return type(creature) == "table" and (creature.fullRecruitCost or creature.recruitCost or creature.cost) or 0
+end
+
+local function affordableCount(resources, creature)
+	local cost = resourceCost(creature)
+	if type(cost) == "number" then
+		if cost <= 0 then
+			return math.huge
+		end
+		return math.floor(getResource(resources, 6) / cost)
+	end
+
+	local result = math.huge
+	for resourceID = 0, 6 do
+		local needed = getResource(cost, resourceID)
+		if needed > 0 then
+			result = math.min(result, math.floor(getResource(resources, resourceID) / needed))
+		end
+	end
+	return result
+end
+
+local function recruitEntries(dwelling)
+	return dwelling and (dwelling.creatures or dwelling.availableToBuy or dwelling.armyAvailableToBuy) or {}
+end
+
+local function recruitEntryCreature(entry)
+	if type(entry) ~= "table" then
+		return entry
+	end
+	if entry.creatures and #entry.creatures > 0 then
+		return entry.creatures[#entry.creatures]
+	end
+	return entry.creature or entry.creID or entry
+end
+
+local function recruitCreaturesFromDwelling(adapter, dwelling, recruiter)
+	local recruited = false
+	for level, entry in ipairs(recruitEntries(dwelling)) do
+		local creature = recruitEntryCreature(entry)
+		if creatureID(creature) ~= nil then
+			if slotForRecruit(recruiter, creature) == nil then
+				mergeDuplicateStackForRecruit(adapter, recruiter)
+			end
+
+			if slotForRecruit(recruiter, creature) ~= nil then
+				local count = math.min(entry.count or 0, affordableCount(adapter:getFreeResources(), creature))
+				if count > 0 then
+					adapter:recruitCreatures(dwelling, recruiter, creature, count, entry.level or level - 1)
+					recruited = true
+				end
+			end
+		end
+	end
+
+	if not recruited then
+		error("No creatures to buy.", 3)
+	end
+
+	return {
+		ok = true,
+		state = "buyArmyAction"
+	}
 end
 
 function HostCommands.new(host)
@@ -652,6 +839,14 @@ local function executeSpecialAction(adapter, hero, coord, action)
 			ok = true,
 			state = "whirlpoolAction"
 		}
+	end
+
+	if isBuyArmyAction(action) then
+		local town = actionTown(action, hero)
+		if town == nil then
+			error("Buy Army special action is missing visited town", 3)
+		end
+		return recruitCreaturesFromDwelling(adapter, town, hero)
 	end
 
 	if isMoveToTileAction(action) then
