@@ -408,6 +408,29 @@
       "notes": "Lua accept emits the dismiss-hero host command intent and keeps the same invalid-hero guard."
     },
     {
+      "cpp": "AI/Nullkiller2/Goals/ExchangeSwapTownHeroes.h",
+      "lua": "scripts/ai/nullkiller2/Goals/ExchangeSwapTownHeroes.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::ExchangeSwapTownHeroes"
+      ],
+      "notes": "Constructor, affected object policy, equality, and string policy are ported. Full accept parity requires host garrison/army command execution."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/ExchangeSwapTownHeroes.cpp",
+      "lua": "scripts/ai/nullkiller2/Goals/ExchangeSwapTownHeroes.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::ExchangeSwapTownHeroes::ExchangeSwapTownHeroes",
+        "Goals::ExchangeSwapTownHeroes::getAffectedObjects",
+        "Goals::ExchangeSwapTownHeroes::isObjectAffected",
+        "Goals::ExchangeSwapTownHeroes::toString",
+        "Goals::ExchangeSwapTownHeroes::operator==",
+        "Goals::ExchangeSwapTownHeroes::accept"
+      ],
+      "notes": "Lua accept emits an exchangeSwapTownHeroes host command intent and does not call native AIGateway policy."
+    },
+    {
       "cpp": "AI/Nullkiller2/Goals/ExploreNeighbourTile.h",
       "lua": "scripts/ai/nullkiller2/Goals/ExploreNeighbourTile.lua",
       "status": "scaffolded",
@@ -453,6 +476,50 @@
         "Goals::StayAtTown::getMovementWasted"
       ],
       "notes": "Lua accept locks the hero through Lua state or host command intent."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Behaviors/BuyArmyBehavior.h",
+      "lua": "scripts/ai/nullkiller2/Behaviors/BuyArmyBehavior.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::BuyArmyBehavior"
+      ],
+      "notes": "Behavior identity and task-generation formula are ported against Lua snapshots."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Behaviors/BuyArmyBehavior.cpp",
+      "lua": "scripts/ai/nullkiller2/Behaviors/BuyArmyBehavior.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::BuyArmyBehavior::toString",
+        "Goals::BuyArmyBehavior::decompose"
+      ],
+      "notes": "ArmyManager and threat data are host/Lua snapshot inputs; task selection and city-hall gold-pressure guard are Lua-owned."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Behaviors/RecruitHeroBehavior.h",
+      "lua": "scripts/ai/nullkiller2/Behaviors/RecruitHeroBehavior.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "RecruitHeroChoice",
+        "Goals::RecruitHeroBehavior",
+        "RecruitHeroBehavior::isDefensiveRecruitEmergency",
+        "RecruitHeroBehavior::shouldRecruitHero"
+      ],
+      "notes": "Core static decision helpers and behavior shape are ported."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Behaviors/RecruitHeroBehavior.cpp",
+      "lua": "scripts/ai/nullkiller2/Behaviors/RecruitHeroBehavior.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::RecruitHeroBehavior::toString",
+        "Goals::RecruitHeroBehavior::decompose",
+        "RecruitHeroBehavior::calculateTreasureSources",
+        "RecruitHeroBehavior::calculateBestHero",
+        "RecruitHeroBehavior::calculateFinalDecision"
+      ],
+      "notes": "Hero/town/threat values are Lua snapshot inputs. Defensive emergency composition generation is Lua-owned."
     },
     {
       "cpp": "AI/Nullkiller2/Engine/ResourceTrader.h",
