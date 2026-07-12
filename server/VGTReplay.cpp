@@ -2791,6 +2791,79 @@ void rebuildTurnOrderStateFromTranscript(CGameHandler & gameHandler, const JsonN
 	gameHandler.turnOrder->replaceStateForReplay(awaiting, acting, acted);
 }
 
+bool isRealQueryAlias(const JsonNode & node, const char * field)
+{
+	if(!hasField(node, field))
+		return false;
+
+	const auto value = requireString(node, field);
+	return value != "query/none" && value != "query/client";
+}
+
+int countBattleQueries(const JsonNode & node)
+{
+	if(!hasField(node, "events"))
+		return isRealQueryAlias(node, "query") ? 1 : 0;
+
+	const JsonNode & events = requireField(node, "events");
+	if(!events.isVector())
+		return 0;
+
+	int result = 0;
+	for(const auto & event : events.Vector())
+	{
+		if(event.isStruct() && isRealQueryAlias(event, "query"))
+			++result;
+	}
+	return result;
+}
+
+int countQueryProducingRecord(const std::string & kind, const JsonNode & node)
+{
+	if(kind == "move")
+		return 1;
+	if(kind == "visit" && requireBool(node, "start"))
+		return 1;
+	if(kind == "query")
+		return 1;
+	if(kind == "levelUp")
+		return 1;
+	if(kind == "turnStart" && isRealQueryAlias(node, "query"))
+		return 1;
+	if(kind == "battle")
+		return countBattleQueries(node);
+	return 0;
+}
+
+void rebuildNextQueryIDFromTranscript(CGameHandler & gameHandler, const JsonNode & documents)
+{
+	int queryObjectsCreated = 0;
+	for(size_t documentIndex = 1; documentIndex < documents.Vector().size(); ++documentIndex)
+	{
+		const JsonNode & document = documents.Vector()[documentIndex];
+		const JsonNode * records = nullptr;
+		if(const auto actionsIter = document.Struct().find("actions"); actionsIter != document.Struct().end())
+			records = &actionsIter->second;
+		if(!records)
+		{
+			if(const auto eventsIter = document.Struct().find("events"); eventsIter != document.Struct().end())
+				records = &eventsIter->second;
+		}
+		if(!records || !records->isVector())
+			continue;
+
+		for(const auto & record : records->Vector())
+		{
+			if(!record.isStruct() || record.Struct().size() != 1)
+				continue;
+
+			const auto & entry = *record.Struct().begin();
+			queryObjectsCreated += countQueryProducingRecord(entry.first, entry.second);
+		}
+	}
+	gameHandler.QID = QueryID(1 + queryObjectsCreated);
+}
+
 void writeGameStateSave(const CGameHandler & gameHandler, const std::string & path)
 {
 	if(path.empty())
@@ -3187,6 +3260,7 @@ int replayVGTJson(const VGTReplayOptions & options)
 	synthesizeDisabledTimerGameplayStart(gameHandler);
 	replayTranscriptDocuments(gameHandler, documents);
 	rebuildTurnOrderStateFromTranscript(gameHandler, documents);
+	rebuildNextQueryIDFromTranscript(gameHandler, documents);
 	gameHandler.saveToFile(options.outputSave);
 	writeGameStateSave(gameHandler, options.outputGameStateSave);
 	return 0;
