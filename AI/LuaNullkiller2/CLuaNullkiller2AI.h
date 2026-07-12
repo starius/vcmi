@@ -11,6 +11,9 @@
 
 #include "../../lib/callback/CAdventureAI.h"
 
+class CGObjectInstance;
+class IMarket;
+
 namespace LuaNullkiller2AI
 {
 
@@ -28,6 +31,7 @@ class CLuaNullkiller2AI final : public CAdventureAI
 
 	void answerQuery(QueryID queryID, int selection = 0) const;
 	bool executeCommand(const LuaCommand & command);
+	void runQueryCallback(const std::string & functionName, QueryID queryID);
 
 public:
 	std::string getBattleAIName() const override;
@@ -36,6 +40,9 @@ public:
 	void yourTurn(QueryID queryID) override;
 	void heroGotLevel(const CGHeroInstance * hero, PrimarySkill pskill, std::vector<SecondarySkill> & skills, QueryID queryID) override;
 	void commanderGotLevel(const CCommanderInstance * commander, std::vector<ui32> skills, QueryID queryID) override;
+	void showTavernWindow(const CGObjectInstance * object, const CGHeroInstance * visitor, QueryID queryID) override;
+	void showMarketWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID) override;
+	void showUniversityWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID) override;
 	void showBlockingDialog(const std::string & text, const std::vector<Component> & components, QueryID askID, const int soundID, bool selection, bool cancel, bool safeToAutoaccept) override;
 	void showGarrisonDialog(const CArmedInstance * up, const CGHeroInstance * down, bool removableUnits, QueryID queryID, const MetaString & customTitle) override;
 	void heroExchangeStarted(ObjectInstanceID hero1, ObjectInstanceID hero2, QueryID query) override;

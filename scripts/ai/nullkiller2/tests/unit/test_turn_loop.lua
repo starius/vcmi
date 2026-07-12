@@ -403,3 +403,21 @@ assert(#teleportResult.commandJournal == 1)
 assert(teleportResult.commandJournal[1].name == "answerQuery")
 assert(teleportResult.commandJournal[1].payload.query == 907)
 assert(teleportResult.commandJournal[1].payload.selection == 1)
+
+for index, functionName in ipairs({
+	"commanderGotLevel",
+	"showTavernWindow",
+	"showMarketWindow",
+	"showUniversityWindow"
+}) do
+	local simpleQueryRun = makeAI()
+	local simpleQueryResult = Script[functionName](simpleQueryRun.ai, {
+		queryID = 910 + index
+	})
+	assert(simpleQueryResult.status == "answered")
+	assert(simpleQueryResult.selection == 0)
+	assert(#simpleQueryResult.commandJournal == 1)
+	assert(simpleQueryResult.commandJournal[1].name == "answerQuery")
+	assert(simpleQueryResult.commandJournal[1].payload.query == 910 + index)
+	assert(simpleQueryResult.commandJournal[1].payload.selection == 0)
+end

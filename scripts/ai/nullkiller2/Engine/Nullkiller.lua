@@ -53,6 +53,19 @@ local function sameOwner(left, right)
 	return leftOwner ~= nil and rightOwner ~= nil and leftOwner == rightOwner
 end
 
+local function answerQuery(ai, input, status)
+	input = input or {}
+	local host = HostCommands.new(ai)
+	if input.queryID ~= nil and type(host.answerQuery) == "function" then
+		host:answerQuery(input.queryID, input.selection or 0)
+	end
+	return {
+		status = status or "answered",
+		selection = input.selection or 0,
+		commandJournal = host:getJournal()
+	}
+end
+
 local function trace(ai, event, data)
 	if ai and ai.trace then
 		ai:trace(event, data or {})
@@ -860,6 +873,22 @@ function Nullkiller.showTeleportDialog(ai, input)
 		teleportChannelProbingList = choice.teleportChannelProbingList,
 		commandJournal = host:getJournal()
 	}
+end
+
+function Nullkiller.commanderGotLevel(ai, input)
+	return answerQuery(ai, input)
+end
+
+function Nullkiller.showTavernWindow(ai, input)
+	return answerQuery(ai, input)
+end
+
+function Nullkiller.showMarketWindow(ai, input)
+	return answerQuery(ai, input)
+end
+
+function Nullkiller.showUniversityWindow(ai, input)
+	return answerQuery(ai, input)
 end
 
 return Nullkiller

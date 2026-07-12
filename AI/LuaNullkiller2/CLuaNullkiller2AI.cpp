@@ -410,6 +410,32 @@ void CLuaNullkiller2AI::answerQuery(QueryID queryID, int selection) const
 	cc->selectionMade(selection, queryID);
 }
 
+void CLuaNullkiller2AI::runQueryCallback(const std::string & functionName, QueryID queryID)
+{
+	LuaNullkiller2Runner runner;
+	LuaRunInput input;
+	input.difficultyLevel = cc->getStartInfo()->difficulty;
+	input.snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	input.snapshot["queryID"].Integer() = queryID.getNum();
+
+	bool queryAnswered = false;
+	input.commandHandler = [this, &queryAnswered](const LuaCommand & command)
+	{
+		const bool executed = executeCommand(command);
+		if(executed && command.name == "answerQuery")
+			queryAnswered = true;
+		return executed;
+	};
+
+	const LuaTurnResult result = runner.runFunction(functionName, [](){}, input);
+
+	if(!result.ok)
+		logAi->error("LuaNullkiller2 %s failed: %s", functionName, result.error);
+
+	if(!queryAnswered)
+		answerQuery(queryID);
+}
+
 bool CLuaNullkiller2AI::executeCommand(const LuaCommand & command)
 {
 	if(command.name == "setTargetObject")
@@ -751,7 +777,22 @@ void CLuaNullkiller2AI::heroGotLevel(const CGHeroInstance * hero, PrimarySkill p
 
 void CLuaNullkiller2AI::commanderGotLevel(const CCommanderInstance * commander, std::vector<ui32> skills, QueryID queryID)
 {
-	answerQuery(queryID);
+	runQueryCallback("commanderGotLevel", queryID);
+}
+
+void CLuaNullkiller2AI::showTavernWindow(const CGObjectInstance * object, const CGHeroInstance * visitor, QueryID queryID)
+{
+	runQueryCallback("showTavernWindow", queryID);
+}
+
+void CLuaNullkiller2AI::showMarketWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID)
+{
+	runQueryCallback("showMarketWindow", queryID);
+}
+
+void CLuaNullkiller2AI::showUniversityWindow(const IMarket * market, const CGHeroInstance * visitor, QueryID queryID)
+{
+	runQueryCallback("showUniversityWindow", queryID);
 }
 
 void CLuaNullkiller2AI::showBlockingDialog(const std::string & text, const std::vector<Component> & components, QueryID askID, const int soundID, bool selection, bool cancel, bool safeToAutoaccept)

@@ -33,4 +33,20 @@ function Script.showTeleportDialog(ai, input)
 	return Nullkiller.showTeleportDialog(ai, input or {})
 end
 
+function Script.commanderGotLevel(ai, input)
+	return Nullkiller.commanderGotLevel(ai, input or {})
+end
+
+function Script.showTavernWindow(ai, input)
+	return Nullkiller.showTavernWindow(ai, input or {})
+end
+
+function Script.showMarketWindow(ai, input)
+	return Nullkiller.showMarketWindow(ai, input or {})
+end
+
+function Script.showUniversityWindow(ai, input)
+	return Nullkiller.showUniversityWindow(ai, input or {})
+end
+
 return Script
