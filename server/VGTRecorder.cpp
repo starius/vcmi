@@ -438,6 +438,13 @@ std::string battleResult(EBattleResult result)
 	return "unknown";
 }
 
+std::string battleHeroResult(const CGameState & gameState, const BattleResultAccepted::HeroBattleResults & result)
+{
+	return "{ hero: " + objectAlias(gameState, result.heroID) +
+		", army: " + objectAlias(gameState, result.armyID) +
+		", experience: " + std::to_string(result.exp) + " }";
+}
+
 std::string actionType(EActionType action)
 {
 	switch(action)
@@ -1808,7 +1815,9 @@ public:
 	void visitBattleResultAccepted(BattleResultAccepted & pack) override
 	{
 		line = "battle: { id: battle/" + std::to_string(pack.battleID.getNum()) +
-			", event: resultAccepted, winner: " + battleSide(pack.winnerSide) + " }";
+			", event: resultAccepted, winner: " + battleSide(pack.winnerSide) +
+			", attacker: " + battleHeroResult(gameState, pack.heroResult[BattleSide::ATTACKER]) +
+			", defender: " + battleHeroResult(gameState, pack.heroResult[BattleSide::DEFENDER]) + " }";
 	}
 
 	void visitBattleResultsApplied(BattleResultsApplied & pack) override

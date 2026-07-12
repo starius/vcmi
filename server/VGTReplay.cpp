@@ -23,6 +23,7 @@
 #include "../lib/mapObjects/CGObjectInstance.h"
 #include "../lib/mapObjects/CGHeroInstance.h"
 #include "../lib/networkPacks/PacksForClient.h"
+#include "../lib/networkPacks/PacksForClientBattle.h"
 #include "../lib/networkPacks/PacksForServer.h"
 
 #include <algorithm>
@@ -783,6 +784,15 @@ GiveBonus::VariantType decodeBonusTarget(const CGameState & gameState, GiveBonus
 	throw std::runtime_error("Unsupported VGT bonus target kind");
 }
 
+BattleResultAccepted::HeroBattleResults decodeBattleHeroResult(const CGameState & gameState, const JsonNode & node)
+{
+	BattleResultAccepted::HeroBattleResults result;
+	result.heroID = resolveObjectAlias(gameState, requireString(node, "hero"));
+	result.armyID = resolveObjectAlias(gameState, requireString(node, "army"));
+	result.exp = static_cast<TExpType>(requireInteger(node, "experience"));
+	return result;
+}
+
 [[maybe_unused]] BattleAction decodeBattleAction(const JsonNode & node)
 {
 	BattleAction result;
@@ -1279,13 +1289,33 @@ void applyArmyEffect(CGameHandler & gameHandler, const JsonNode & node)
 	applyEffectPack(gameHandler, pack);
 }
 
+void applyBattleEffect(CGameHandler & gameHandler, const JsonNode & node)
+{
+	const std::string event = requireString(node, "event");
+	if(event == "resultAccepted")
+	{
+		if(!hasField(node, "attacker") || !hasField(node, "defender"))
+			return;
+
+		BattleResultAccepted pack;
+		pack.battleID = decodeBattleAlias(requireString(node, "id"));
+		pack.winnerSide = decodeBattleSide(requireString(node, "winner"));
+		pack.heroResult[BattleSide::ATTACKER] = decodeBattleHeroResult(gameHandler.gameState(), requireField(node, "attacker"));
+		pack.heroResult[BattleSide::DEFENDER] = decodeBattleHeroResult(gameHandler.gameState(), requireField(node, "defender"));
+		applyEffectPack(gameHandler, pack);
+	}
+}
+
 void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, const JsonNode & node)
 {
 	if(kind == "decision" || kind == "query" || kind == "info")
 		return;
 
 	if(kind == "battle")
+	{
+		applyBattleEffect(gameHandler, node);
 		return;
+	}
 
 	if(kind == "availableHero")
 	{
