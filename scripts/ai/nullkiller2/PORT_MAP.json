@@ -382,12 +382,24 @@
       "notes": "Lua accept emits the dismiss-hero host command intent and keeps the same invalid-hero guard."
     },
     {
+      "cpp": "AI/Nullkiller2/Engine/ResourceTrader.h",
+      "lua": "scripts/ai/nullkiller2/Engine/ResourceTrader.lua",
+      "status": "ported",
+      "symbols": [
+        "ResourceTrader",
+        "ResourceTrader::ARMY_GOLD_RATIO_PER_MAKE_TURN_PASS",
+        "ResourceTrader::EXPENDABLE_BULK_RATIO"
+      ]
+    },
+    {
       "cpp": "AI/Nullkiller2/Engine/ResourceTrader.cpp",
       "lua": "scripts/ai/nullkiller2/Engine/ResourceTrader.lua",
-      "status": "pending_lua_port",
+      "status": "ported",
       "symbols": [
-        "ResourceTrader"
-      ]
+        "ResourceTrader::trade",
+        "ResourceTrader::tradeHelper"
+      ],
+      "notes": "Lua accepts both C++ resource ids (0..6) and Lua vectors (1..7). Market and callback access are host snapshot calls; trade choice logic is Lua-owned."
     },
     {
       "cpp": "AI/Nullkiller2/AIGateway.cpp",
