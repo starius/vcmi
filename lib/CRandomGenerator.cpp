@@ -26,7 +26,13 @@ CRandomGenerator::CRandomGenerator(int seed)
 void CRandomGenerator::setSeed(int seed)
 {
 	logRng->trace("CRandomGenerator::setSeed (%d)", seed);
+	currentSeed = seed;
 	rand.seed(seed);
+}
+
+int CRandomGenerator::getSeed() const
+{
+	return currentSeed;
 }
 
 void CRandomGenerator::resetSeed()
@@ -101,4 +107,3 @@ CRandomGenerator & CRandomGenerator::getDefault()
 	static thread_local CRandomGenerator defaultRand;
 	return defaultRand;
 }
-

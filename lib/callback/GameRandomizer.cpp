@@ -237,6 +237,11 @@ void GameRandomizer::setSeed(int newSeed)
 	globalRandomNumberGenerator.setSeed(newSeed);
 }
 
+int GameRandomizer::getDefaultSeed() const
+{
+	return globalRandomNumberGenerator.getSeed();
+}
+
 PrimarySkill GameRandomizer::rollPrimarySkillForLevelup(const CGHeroInstance * hero)
 {
 	if(!heroSkillSeed.count(hero->getHeroTypeID()))

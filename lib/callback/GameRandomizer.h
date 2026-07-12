@@ -122,6 +122,7 @@ public:
 	vstd::RNG & getDefault() override;
 
 	void setSeed(int newSeed);
+	int getDefaultSeed() const;
 
 	template<typename Handler>
 	void serialize(Handler & h)

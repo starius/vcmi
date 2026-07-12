@@ -31,6 +31,7 @@ class VGTRecorder final
 	bool baselineSaveEnabled = false;
 	bool headerWritten = false;
 	bool documentOpen = false;
+	std::optional<int> randomSeed;
 	std::optional<PlayerColor> currentTurnPlayer;
 
 	VGTRecorder() = default;
@@ -46,6 +47,7 @@ public:
 	static VGTRecorder & get();
 
 	bool isEnabled();
+	void setRandomSeed(int seed);
 
 	void recordDecision(const CGameState & gameState, CPackForServer & pack);
 	void recordEffect(const CGameState & gameState, CPackForClient & pack);

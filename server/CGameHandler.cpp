@@ -574,6 +574,7 @@ void CGameHandler::init(StartInfo *si, Load::ProgressAccumulator & progressTrack
 	randomizer = std::make_unique<GameRandomizer>(*gs);
 	if (requestedSeed != 0)
 		randomizer->setSeed(requestedSeed);
+	VGTRecorder::get().setRandomSeed(randomizer->getDefaultSeed());
 	logGlobal->info("Using random seed: %d", randomizer->getDefault().nextInt());
 	gs->preInit(LIBRARY);
 	logGlobal->info("Gamestate created!");

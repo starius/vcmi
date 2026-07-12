@@ -1793,6 +1793,12 @@ bool VGTRecorder::isEnabled()
 	return enabled;
 }
 
+void VGTRecorder::setRandomSeed(int seed)
+{
+	std::scoped_lock lock(outputMutex);
+	randomSeed = seed;
+}
+
 void VGTRecorder::initializeFromEnvironment()
 {
 	if(checkedEnvironment)
@@ -1855,7 +1861,10 @@ void VGTRecorder::ensureHeader(const CGameState & gameState)
 	output << "  hash: { algorithm: sha256, value: " << yamlString(*hash) << " }\n";
 	output << "settings:\n";
 	output << "  start: " << startMode(startInfo->mode) << "\n";
+	output << "  startTime: " << static_cast<int64_t>(startInfo->startTime) << "\n";
 	output << "  difficulty: " << difficulty(startInfo->difficulty) << "\n";
+	if(randomSeed)
+		output << "  randomSeed: " << *randomSeed << "\n";
 	output << "  timer: " << (startInfo->turnTimerInfo.isEnabled() ? "enabled" : "none") << "\n";
 	output << "players:\n";
 	for(const auto & player : startInfo->playerInfos)
