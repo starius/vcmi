@@ -15,6 +15,7 @@
 
 #include "../../lib/battle/BattleAction.h"
 #include "../../lib/callback/CCallback.h"
+#include "../../lib/GameConstants.h"
 #include "../../lib/StartInfo.h"
 #include "../../lib/mapObjects/CGHeroInstance.h"
 #include "../../lib/mapObjects/CGTownInstance.h"
@@ -32,6 +33,96 @@ std::optional<int> commandInteger(const LuaCommand & command, const std::string 
 		return std::nullopt;
 
 	return found->second;
+}
+
+JsonNode tileSnapshot(const int3 & tile)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	result["x"].Integer() = tile.x;
+	result["y"].Integer() = tile.y;
+	result["z"].Integer() = tile.z;
+	return result;
+}
+
+JsonNode heroSnapshot(const CGHeroInstance * hero)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	if(!hero)
+		return result;
+
+	result["id"].Integer() = hero->id.getNum();
+	result["name"].String() = hero->getNameTranslated();
+	result["owner"].Integer() = hero->tempOwner.getNum();
+	result["factionID"].Integer() = hero->getFactionID().getNum();
+	result["totalStrength"].Integer() = static_cast<int64_t>(hero->getTotalStrength());
+	result["armyStrength"].Integer() = static_cast<int64_t>(hero->getArmyStrength());
+	result["armyCost"].Integer() = static_cast<int64_t>(hero->getArmyCost());
+	result["movementPointsRemaining"].Integer() = hero->movementPointsRemaining();
+	result["garrisoned"].Bool() = hero->isGarrisoned();
+	result["visitablePos"] = tileSnapshot(hero->visitablePos());
+	return result;
+}
+
+JsonNode resourcesSnapshot(const TResources & resources)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_VECTOR);
+	for(int resourceID = 0; resourceID < GameConstants::RESOURCE_QUANTITY; ++resourceID)
+		result.Vector().push_back(JsonNode(resources[GameResID(resourceID)]));
+	return result;
+}
+
+JsonNode townSnapshot(const CGTownInstance * town, const std::shared_ptr<CCallback> & callback)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	if(!town)
+		return result;
+
+	result["id"].Integer() = town->id.getNum();
+	result["name"].String() = town->getNameTranslated();
+	result["owner"].Integer() = town->tempOwner.getNum();
+	result["factionID"].Integer() = town->getFactionID().getNum();
+	result["townLevel"].Integer() = town->getTownLevel();
+	result["fortLevel"].Integer() = town->fortLevel();
+	result["upperArmyStrength"].Integer() = static_cast<int64_t>(town->getUpperArmy()->getArmyStrength());
+	result["armyStrength"].Integer() = static_cast<int64_t>(town->getUpperArmy()->getArmyStrength());
+	result["hasCapitol"].Bool() = town->hallLevel() >= 3;
+	result["hasBuiltResourceMarketplace"].Bool() = town->getMarketEfficiency() > 0;
+	result["visitablePos"] = tileSnapshot(town->visitablePos());
+
+	if(const auto * visitingHero = town->getVisitingHero())
+		result["visitingHero"] = heroSnapshot(visitingHero);
+	if(const auto * garrisonHero = town->getGarrisonHero())
+		result["garrisonHero"] = heroSnapshot(garrisonHero);
+
+	auto availableHeroes = callback->getAvailableHeroes(town);
+	result["canRecruitHero"].Bool() = !availableHeroes.empty();
+	result["availableHeroes"].setType(JsonNode::JsonType::DATA_VECTOR);
+	for(const auto * hero : availableHeroes)
+		result["availableHeroes"].Vector().push_back(heroSnapshot(hero));
+
+	result["threats"].setType(JsonNode::JsonType::DATA_VECTOR);
+	return result;
+}
+
+JsonNode makeSnapshot(const std::shared_ptr<CCallback> & callback)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	result["freeResources"] = resourcesSnapshot(callback->getResourceAmount());
+
+	result["townsInfo"].setType(JsonNode::JsonType::DATA_VECTOR);
+	for(const auto * town : callback->getTownsInfo())
+		result["townsInfo"].Vector().push_back(townSnapshot(town, callback));
+
+	result["heroesInfo"].setType(JsonNode::JsonType::DATA_VECTOR);
+	for(const auto * hero : callback->getHeroesInfo())
+		result["heroesInfo"].Vector().push_back(heroSnapshot(hero));
+
+	return result;
 }
 
 }
@@ -174,6 +265,7 @@ void CLuaNullkiller2AI::yourTurn(QueryID queryID)
 	LuaNullkiller2Runner runner;
 	LuaRunInput input;
 	input.difficultyLevel = cc->getStartInfo()->difficulty;
+	input.snapshot = makeSnapshot(cc);
 	input.commandHandler = [this](const LuaCommand & command)
 	{
 		return executeCommand(command);

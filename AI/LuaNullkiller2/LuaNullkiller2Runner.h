@@ -14,6 +14,8 @@
 #include <string>
 #include <vector>
 
+#include "../../lib/json/JsonNode.h"
+
 namespace LuaNullkiller2AI
 {
 
@@ -37,6 +39,7 @@ struct LuaRunInput
 {
 	int difficultyLevel = 1;
 	std::function<bool(const LuaCommand &)> commandHandler;
+	JsonNode snapshot;
 };
 
 class LuaNullkiller2Runner

@@ -352,6 +352,18 @@ void pushInput(lua_State * state, const LuaRunInput & input)
 
 	lua_newtable(state);
 	lua_setfield(state, -2, "memory");
+
+	if(input.snapshot.isStruct())
+	{
+		for(const auto & item : input.snapshot.Struct())
+		{
+			if(item.first == "settings" || item.first == "memory")
+				continue;
+
+			pushJsonNode(state, item.second);
+			lua_setfield(state, -2, item.first.c_str());
+		}
+	}
 }
 
 LuaTurnResult makeError(std::string error, bool requestedEndTurn)
