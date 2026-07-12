@@ -355,3 +355,68 @@ assert(compositeCalled[2].name == "buildBoat")
 assert(compositeCalled[2].payload.shipyard == 555)
 assert(compositeCalled[3].name == "castSpell")
 assert(compositeHero.visitablePos.x == 2)
+
+local whirlpoolCalled = {}
+local whirlpoolAdapter = HostCommands.new({
+	command = function(_, name, payload)
+		table.insert(whirlpoolCalled, { name = name, payload = payload })
+		return { ok = true, executed = true }
+	end
+})
+local whirlpoolHero = {
+	id = 151,
+	movementPointsRemaining = 1000,
+	armySize = 2,
+	visitablePos = { x = 0, y = 0, z = 0 },
+	slots = {
+		{ slot = 0, count = 4, creature = { id = 7, aiValue = 10 } }
+	}
+}
+whirlpoolAdapter:executeHeroChain({
+	targetHero = whirlpoolHero,
+	nodes = {
+		{
+			targetHero = whirlpoolHero,
+			coord = { x = 4, y = 4, z = 0 },
+			specialAction = { type = "WhirlpoolAction" }
+		}
+	}
+}, 152)
+assert(#whirlpoolCalled == 3)
+assert(whirlpoolCalled[1].name == "setActive")
+assert(whirlpoolCalled[2].name == "splitStack")
+assert(whirlpoolCalled[2].payload.fromSlot == 0)
+assert(whirlpoolCalled[2].payload.toSlot == 1)
+assert(whirlpoolCalled[3].name == "moveHeroToTile")
+assert(whirlpoolHero.visitablePos.x == 4)
+
+local battleActionCalled = {}
+local battleActionAdapter = HostCommands.new({
+	command = function(_, name, payload)
+		table.insert(battleActionCalled, { name = name, payload = payload })
+		return { ok = true, executed = true }
+	end
+})
+local battleActionHero = {
+	id = 161,
+	movementPointsRemaining = 1000,
+	visitablePos = { x = 0, y = 0, z = 0 }
+}
+battleActionAdapter:executeHeroChain({
+	targetHero = battleActionHero,
+	nodes = {
+		{
+			targetHero = battleActionHero,
+			coord = { x = 6, y = 6, z = 0 },
+			specialAction = {
+				type = "BattleAction",
+				targetTile = { x = 6, y = 6, z = 0 }
+			}
+		}
+	}
+}, 162)
+assert(#battleActionCalled == 2)
+assert(battleActionCalled[1].name == "setActive")
+assert(battleActionCalled[2].name == "moveHeroToTile")
+assert(battleActionCalled[2].payload.x == 6)
+assert(battleActionHero.visitablePos.x == 6)

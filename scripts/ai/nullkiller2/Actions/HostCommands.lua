@@ -197,11 +197,29 @@ local function isBuildBoatAction(action)
 		or name == "buildboat"
 end
 
+local function isWhirlpoolAction(action)
+	local name = normalizedActionName(action)
+	return name == "whirlpoolaction"
+		or name == "whirlpool"
+end
+
+local function isMoveToTileAction(action)
+	local name = normalizedActionName(action)
+	return name == "battleaction"
+		or name == "questaction"
+end
+
 local function actionDestination(action, fallback)
 	if type(action) ~= "table" then
 		return fallback
 	end
-	return action.destination or action.targetTile or action.tile or action.coord or action.target or fallback
+	local candidate = action.destination or action.targetTile or action.tile or action.coord
+	if type(candidate) == "table" and candidate.x ~= nil then
+		return candidate
+	end
+
+	local object = action.targetObject or action.questObject or action.object or action.target
+	return visitablePos(object) or fallback
 end
 
 local function actionSpell(action)
@@ -626,6 +644,22 @@ local function executeSpecialAction(adapter, hero, coord, action)
 			error("Build Boat special action is missing shipyard id", 3)
 		end
 		return adapter:buildBoat(shipyard)
+	end
+
+	if isWhirlpoolAction(action) then
+		ArmyFormation.rearrangeArmyForWhirlpool(adapter, hero)
+		return {
+			ok = true,
+			state = "whirlpoolAction"
+		}
+	end
+
+	if isMoveToTileAction(action) then
+		local tile = actionDestination(action, coord)
+		if tile == nil then
+			error("Move-to-tile special action is missing target tile", 3)
+		end
+		return adapter:moveHeroToTile(tile, hero)
 	end
 
 	local commandName, payload = actionCommand(action)

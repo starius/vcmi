@@ -194,7 +194,8 @@ and explicit command special-action descriptors through Lua-owned primitive host
 recovery locks the hero and invalidates pathfinding like native `recoverStaleDimensionDoorAction`, and object-graph
 shortcutting uses neutral live path-info fields to skip obsolete path nodes. Immediate enemy-town hero chains now
 route through a Lua `ArmyFormation` helper that mirrors one-creature decoy splits and citadel/castle siege slot
-sorting via primitive `splitStack` and `swapCreatures` commands.
+sorting via primitive `splitStack` and `swapCreatures` commands. Whirlpool, Battle, and Quest special-action
+descriptors now execute through Lua-owned formation or movement primitives.
 
 Major parity gaps remain:
 
@@ -202,8 +203,8 @@ Major parity gaps remain:
 - hero fighting-strength ranking still needs full bonus-derived speciality snapshots for exact main/scout ordering
 - `ExecuteHeroChain` replays path nodes in native backward order, executes the first set of Lua-owned special-action
   descriptors, applies object-graph shortcutting, rejects stale zero-turn live path snapshots, and recovers stale
-  Dimension Door plans, and invokes Lua-owned siege formation for immediate enemy-town attacks, but richer
-  special-action descriptors and live host validation are still incomplete
+  Dimension Door plans, and invokes Lua-owned siege formation for immediate enemy-town attacks, but BuyArmyAction
+  descriptors and live host validation are still incomplete
 - cross-hero artifact legality breadth, full combined-artifact legality data, full Rewardable inspection, and richer
   live object inspection remain incomplete outside the deterministic scoring helpers and first-pass artifact
   equip/swap sequencing
@@ -466,8 +467,7 @@ Commit messages must stay focused on the code change and must not mention the re
 
 1. Expand the snapshot contract for heroes, towns, objects, paths, threats, queries, and army stacks until behavior
    fixtures no longer need hand-written placeholder fields.
-2. Complete `ExecuteHeroChain` parity: visit/attack selection, broader special-action descriptors, and live host
-   validation.
+2. Complete `ExecuteHeroChain` parity: visit/attack selection, BuyArmyAction descriptors, and live host validation.
 3. Extend garrison, hero exchange, artifact sequencing, and checked host validators with richer edge-case coverage.
 4. Finish `RewardEvaluator` and object-specific priority context builders, then add fixture tests for raw context and
    final priority parity.
