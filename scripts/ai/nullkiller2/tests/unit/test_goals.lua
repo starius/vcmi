@@ -167,6 +167,42 @@ BuyArmy.new(fullTown, 100):accept({
 assert(dismissSlot == 3)
 assert(recruitedCreature == 206)
 
+local upgradeOnlyTown = {
+	id = 301,
+	name = "Upgrade Town",
+	upperArmy = {
+		id = 302,
+		upgradeSlots = {
+			{
+				slot = 4,
+				stack = { count = 10, aiValue = 10 },
+				upgradeInfo = {
+					availableUpgrades = {
+						{ id = 303, aiValue = 30, cost = { gold = 20 } }
+					}
+				}
+			}
+		}
+	},
+	availableToBuy = {}
+}
+local upgraded = nil
+local upgradeOnlyResult = BuyArmy.new(upgradeOnlyTown, 100):accept({
+	freeResources = { gold = 1000 },
+	upgradeCreature = function(_, army, slot, creature)
+		upgraded = {
+			army = army,
+			slot = slot,
+			creature = creature
+		}
+	end
+})
+assert(upgradeOnlyResult.valueBought == 0)
+assert(upgradeOnlyResult.upgradeSuccessful == true)
+assert(upgraded.army == upgradeOnlyTown.upperArmy)
+assert(upgraded.slot == 4)
+assert(upgraded.creature.id == 303)
+
 assert(Goals.Invalid == Invalid)
 assert(Goals.BuildThis == BuildThis)
 

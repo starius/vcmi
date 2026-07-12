@@ -349,6 +349,22 @@ bool CLuaNullkiller2AI::executeCommand(const LuaCommand & command)
 		return true;
 	}
 
+	if(command.name == "upgradeCreature")
+	{
+		const auto armyID = commandInteger(command, "army");
+		const auto slotID = commandInteger(command, "slot");
+		const auto creatureID = commandInteger(command, "creature");
+		if(!armyID || !slotID || !creatureID)
+			return false;
+
+		const auto * army = dynamic_cast<const CArmedInstance *>(cc->getObj(ObjectInstanceID(*armyID), false));
+		if(!army)
+			return false;
+
+		cc->upgradeCreature(army, SlotID(*slotID), CreatureID(*creatureID));
+		return true;
+	}
+
 	if(command.name == "dismissCreature")
 	{
 		const auto armyID = commandInteger(command, "army");

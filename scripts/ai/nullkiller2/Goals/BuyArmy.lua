@@ -1,6 +1,7 @@
 -- Mirrors AI/Nullkiller2/Goals/BuyArmy.{h,cpp}: BuyArmy identity, string, and task shape.
 
 local AbstractGoal = require("Goals.AbstractGoal")
+local GatewayPolicy = require("Actions.GatewayPolicy")
 local CGoal = require("Goals.CGoal")
 
 local BuyArmy = CGoal.derive("BuyArmy", AbstractGoal.EGoals.BUY_ARMY, { elementar = true })
@@ -87,6 +88,34 @@ local function resources(aiGw)
 		return aiGw:getResourceAmount()
 	end
 	return aiGw and (aiGw.freeResources or aiGw.resources) or {}
+end
+
+local function upgradeSlots(town, army)
+	local result = call(town, "getUpgradeSlots", army)
+		or call(army, "getUpgradeSlots")
+		or army and army.upgradeSlots
+		or town and town.upgradeSlots
+		or {}
+	return result
+end
+
+local function makePossibleUpgrades(aiGw, town, army, resourceSnapshot)
+	local upgraded = false
+	for _, entry in ipairs(upgradeSlots(town, army)) do
+		local stack = entry.stack or entry
+		local slot = entry.slot or stack.slot
+		local upgradeInfo = entry.upgradeInfo or entry
+		local upgrade = GatewayPolicy.chooseUpgrade(upgradeInfo, stack, resourceSnapshot)
+		if upgrade then
+			if aiGw and type(aiGw.upgradeCreature) == "function" then
+				aiGw:upgradeCreature(army, slot, upgrade.creature)
+				upgraded = true
+			else
+				error("No creature upgrade command target.", 2)
+			end
+		end
+	end
+	return upgraded
 end
 
 local function armyStacks(army)
@@ -181,9 +210,18 @@ end
 function BuyArmy:accept(aiGw)
 	local valueBought = 0
 	local army = upperArmy(self.town)
+	local resourceSnapshot = resources(aiGw)
+	local upgradeSuccessful = makePossibleUpgrades(aiGw, self.town, army, resourceSnapshot)
 	local armyToBuy = {}
 	for _, creatureInfo in ipairs(availableArmy(self.town)) do
 		table.insert(armyToBuy, creatureInfo)
+	end
+
+	if #armyToBuy == 0 and upgradeSuccessful then
+		return {
+			valueBought = 0,
+			upgradeSuccessful = true
+		}
 	end
 
 	table.sort(armyToBuy, function(lhs, rhs)
@@ -197,7 +235,7 @@ function BuyArmy:accept(aiGw)
 
 		local creature = creatureInfo.creature or creatureInfo.creID or creatureInfo
 		if self.objid == -1 or numericID(creature) == self.objid then
-			local count = math.min(creatureInfo.count or 0, maxAffordableCount(resources(aiGw), resourceCost(creature)))
+			local count = math.min(creatureInfo.count or 0, maxAffordableCount(resourceSnapshot, resourceCost(creature)))
 			if count > 0 then
 				local freedSlot = false
 				if BuyArmy.needsFreeSlotToRecruit(army, numericID(creature)) then
@@ -225,7 +263,8 @@ function BuyArmy:accept(aiGw)
 	end
 
 	return {
-		valueBought = valueBought
+		valueBought = valueBought,
+		upgradeSuccessful = upgradeSuccessful
 	}
 end
 

@@ -174,6 +174,14 @@ function HostCommands:recruitCreatures(town, destination, creature, count, level
 	})
 end
 
+function HostCommands:upgradeCreature(army, slot, creature)
+	return self:command("upgradeCreature", {
+		army = objectID(army),
+		slot = slot,
+		creature = objectID(creature)
+	})
+end
+
 function HostCommands:dismissCreature(army, slot)
 	return self:command("dismissCreature", {
 		army = objectID(army),
