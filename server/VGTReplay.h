@@ -23,5 +23,12 @@ struct VGTGameStateSummaryOptions
 	std::string outputSummary;
 };
 
+struct VGTGameStateNormalizeOptions
+{
+	std::string inputSave;
+	std::string outputSave;
+};
+
 int replayVGTJson(const VGTReplayOptions & options);
 int dumpVGTGameStateSummary(const VGTGameStateSummaryOptions & options);
+int normalizeVGTGameStateSave(const VGTGameStateNormalizeOptions & options);

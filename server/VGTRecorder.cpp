@@ -779,6 +779,15 @@ std::string turnTimerState(const TurnTimerInfo & value)
 		" }";
 }
 
+std::string victoryLossResult(const EVictoryLossCheckResult & result)
+{
+	if(result.victory())
+		return "victory";
+	if(result.loss())
+		return "loss";
+	return "ingame";
+}
+
 std::string extraOptions(const ExtraOptionsInfo & value)
 {
 	return "{ cheatsAllowed: " + boolValue(value.cheatsAllowed) +
@@ -1746,6 +1755,13 @@ public:
 	void visitPlayerEndsTurn(PlayerEndsTurn & pack) override
 	{
 		line = "turnEnd: { player: " + color(pack.player) + " }";
+	}
+
+	void visitPlayerEndsGame(PlayerEndsGame & pack) override
+	{
+		line = "playerEnd: { player: " + color(pack.player) +
+			", result: " + victoryLossResult(pack.victoryLossCheckResult) +
+			", silent: " + boolValue(pack.silentEnd) + " }";
 	}
 
 	void visitSetResources(SetResources & pack) override

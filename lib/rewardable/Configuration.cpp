@@ -85,14 +85,25 @@ void Rewardable::Variables::serializeJson(JsonSerializeFormat & handler)
 {
 	if (handler.saving)
 	{
+		JsonNode valuesNode;
+		for (auto const & entry : values)
+			valuesNode[entry.first].Integer() = entry.second;
+
 		JsonNode presetNode;
 		for (auto const & entry : preset)
 			presetNode[entry.first] = entry.second;
 
+		handler.serializeRaw("values", valuesNode, {});
 		handler.serializeRaw("preset", presetNode, {});
 	}
 	else
 	{
+		values.clear();
+		JsonNode valuesNode;
+		handler.serializeRaw("values", valuesNode, {});
+		for (auto const & entry : valuesNode.Struct())
+			values[entry.first] = static_cast<int>(entry.second.Integer());
+
 		preset.clear();
 		JsonNode presetNode;
 		handler.serializeRaw("preset", presetNode, {});

@@ -241,6 +241,8 @@ static void handleCommandOptions(int argc, const char * argv[], boost::program_o
 	("vgt-replay-game-state-save", boost::program_options::value<std::string>(), "Write replayed game state only to this save file")
 	("vgt-dump-game-state-save", boost::program_options::value<std::string>(), "Write a VGT game state save summary for diagnostics")
 	("vgt-dump-output", boost::program_options::value<std::string>(), "Path for --vgt-dump-game-state-save output")
+	("vgt-normalize-game-state-save", boost::program_options::value<std::string>(), "Load and rewrite a VGT game state save for diagnostics")
+	("vgt-normalize-output", boost::program_options::value<std::string>(), "Path for --vgt-normalize-game-state-save output")
 	("port", boost::program_options::value<ui16>(), "port at which server will listen to connections from client")
 	("lobby", "start server in lobby mode in which server connects to a global lobby");
 
@@ -340,6 +342,21 @@ int main(int argc, const char * argv[])
 		logConfigurator.deconfigure();
 		delete LIBRARY;
 		return summaryResult;
+	}
+
+	if(opts.count("vgt-normalize-game-state-save"))
+	{
+		if(!opts.count("vgt-normalize-output"))
+			throw std::runtime_error("--vgt-normalize-output is required with --vgt-normalize-game-state-save");
+
+		VGTGameStateNormalizeOptions normalizeOptions;
+		normalizeOptions.inputSave = opts["vgt-normalize-game-state-save"].as<std::string>();
+		normalizeOptions.outputSave = opts["vgt-normalize-output"].as<std::string>();
+		const int normalizeResult = normalizeVGTGameStateSave(normalizeOptions);
+
+		logConfigurator.deconfigure();
+		delete LIBRARY;
+		return normalizeResult;
 	}
 
 	if(!opts.count("dummy-run"))

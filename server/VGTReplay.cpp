@@ -29,6 +29,8 @@
 #include "../lib/mapObjects/CGCreature.h"
 #include "../lib/mapObjects/CGHeroInstance.h"
 #include "../lib/mapObjects/CGTownInstance.h"
+#include "../lib/mapObjects/CRewardableObject.h"
+#include "../lib/mapObjects/MiscObjects.h"
 #include "../lib/mapObjects/ObjectTemplate.h"
 #include "../lib/mapObjects/army/CArmedInstance.h"
 #include "../lib/networkPacks/PacksForClient.h"
@@ -39,6 +41,7 @@
 #include "../lib/serializer/CLoadFile.h"
 #include "../lib/serializer/CSaveFile.h"
 #include "../lib/serializer/JsonDeserializer.h"
+#include "../lib/serializer/JsonSerializer.h"
 
 #include <algorithm>
 #include <boost/filesystem.hpp>
@@ -381,6 +384,17 @@ TryMoveHero::EResult decodeMovementResult(const std::string & value)
 	if(value == "disembark")
 		return TryMoveHero::DISEMBARK;
 	throw std::runtime_error("Unsupported VGT movement result: " + value);
+}
+
+EVictoryLossCheckResult decodeVictoryLossResult(const std::string & value)
+{
+	if(value == "victory")
+		return EVictoryLossCheckResult::victory(MetaString(), MetaString());
+	if(value == "loss")
+		return EVictoryLossCheckResult::defeat(MetaString(), MetaString());
+	if(value == "ingame")
+		return EVictoryLossCheckResult();
+	throw std::runtime_error("Unsupported VGT player end result: " + value);
 }
 
 EWeekType decodeWeekType(const std::string & value)
@@ -884,6 +898,62 @@ std::string artifactSetSummary(const CArtifactSet & artifactSet)
 		entries.push_back(std::to_string(slot.getNum()) + ":" + ArtifactID::encode(artifact->getTypeId().getNum()) + "#" + std::to_string(artifact->getId().getNum()));
 	}
 	return "[" + boost::algorithm::join(entries, ", ") + "]";
+}
+
+std::string bytesFingerprint(const std::vector<std::byte> & bytes)
+{
+	uint64_t hash = 14695981039346656037ULL;
+	for(const auto byte : bytes)
+	{
+		hash ^= static_cast<uint8_t>(byte);
+		hash *= 1099511628211ULL;
+	}
+	return std::to_string(bytes.size()) + ":" + std::to_string(hash);
+}
+
+std::string bytesHex(const std::vector<std::byte> & bytes)
+{
+	static constexpr char digits[] = "0123456789abcdef";
+	std::string result;
+	result.reserve(bytes.size() * 2);
+	for(const auto byte : bytes)
+	{
+		const auto value = static_cast<uint8_t>(byte);
+		result.push_back(digits[value >> 4]);
+		result.push_back(digits[value & 0x0f]);
+	}
+	return result;
+}
+
+class ByteVectorWriter final : public IBinaryWriter
+{
+public:
+	std::vector<std::byte> bytes;
+
+	int write(const std::byte * data, unsigned size) override
+	{
+		bytes.insert(bytes.end(), data, data + size);
+		return size;
+	}
+};
+
+std::vector<std::byte> serializedObjectBytes(const std::shared_ptr<CGObjectInstance> & object)
+{
+	if(!object)
+		return {};
+
+	ByteVectorWriter writer;
+	BinarySerializer serializer(&writer);
+	serializer & object;
+	return writer.bytes;
+}
+
+std::string serializedObjectFingerprint(const std::shared_ptr<CGObjectInstance> & object)
+{
+	if(!object)
+		return "null";
+
+	return bytesFingerprint(serializedObjectBytes(object));
 }
 
 void validateBulkArtifactMove(const CGameState & gameState, const BulkMoveArtifacts & pack)
@@ -2218,6 +2288,16 @@ void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, con
 		return;
 	}
 
+	if(kind == "playerEnd")
+	{
+		PlayerEndsGame pack;
+		pack.player = decodePlayerColor(requireString(node, "player"));
+		pack.victoryLossCheckResult = decodeVictoryLossResult(requireString(node, "result"));
+		pack.silentEnd = requireBool(node, "silent");
+		applyEffectPack(gameHandler, pack);
+		return;
+	}
+
 	if(kind == "resources")
 	{
 		SetResources pack;
@@ -2705,10 +2785,35 @@ void writeResourceSummary(std::ostream & output, const PlayerColor & player, con
 
 void writeGameStateSummary(const CGameState & gameState, std::ostream & output)
 {
+	std::optional<int> dumpObjectBytesID;
+	if(const char * value = std::getenv("VCMI_VGT_DUMP_OBJECT_BYTES"))
+		dumpObjectBytesID = std::stoi(value);
+
 	writeStartInfoSummary(output, "scenario", gameState.getStartInfo());
 	writeStartInfoSummary(output, "initial", gameState.getInitialStartInfo());
 	output << "day=" << gameState.getCalendar().getCurrentDay() << "\n";
 	output << "objectNameCounter=" << gameState.getMap().getUniqueInstanceNameCounter() << "\n";
+
+	for(const auto & [channelID, channel] : gameState.getMap().teleportChannels)
+	{
+		output << "teleportChannel id=" << channelID.getNum()
+			<< " passability=" << static_cast<int>(channel->passability)
+			<< " entrances=";
+		for(size_t index = 0; index < channel->entrances.size(); ++index)
+		{
+			if(index)
+				output << ",";
+			output << channel->entrances[index].getNum();
+		}
+		output << " exits=";
+		for(size_t index = 0; index < channel->exits.size(); ++index)
+		{
+			if(index)
+				output << ",";
+			output << channel->exits[index].getNum();
+		}
+		output << "\n";
+	}
 
 	for(const auto & [color, player] : gameState.players)
 		writeResourceSummary(output, color, player.resources);
@@ -2776,7 +2881,11 @@ void writeGameStateSummary(const CGameState & gameState, std::ostream & output)
 	{
 		if(!object)
 			continue;
+		const auto objectIndex = static_cast<size_t>(object->id.getNum());
 		const auto * bonusNode = dynamic_cast<const CBonusSystemNode *>(object);
+		const auto * teleport = dynamic_cast<const CGTeleport *>(object);
+		const auto * rewardable = dynamic_cast<const CRewardableObject *>(object);
+		const auto * armed = dynamic_cast<const CArmedInstance *>(object);
 		output << "object id=" << object->id.getNum()
 			<< " name=" << object->instanceName
 			<< " type=" << MapObjectID::encode(object->ID.getNum())
@@ -2787,7 +2896,35 @@ void writeGameStateSummary(const CGameState & gameState, std::ostream & output)
 			<< " removable=" << object->removable
 			<< " appearance=" << (object->appearance ? object->appearance->stringID : "")
 			<< " exportedBonuses=" << (bonusNode ? bonusNode->getExportedBonusList().size() : 0)
+			<< " teleportChannel=" << (teleport ? teleport->channel.getNum() : -1)
+			<< " teleportEntrance=" << (teleport && teleport->isEntrance() ? "true" : "false")
+			<< " teleportExit=" << (teleport && teleport->isExit() ? "true" : "false")
+			<< " bonusNodeType=" << (bonusNode ? static_cast<int>(bonusNode->getNodeType()) : -1)
+			<< " armedFormation=" << (armed ? static_cast<int>(armed->formation) : -1)
+			<< " armedArmy=" << (armed ? armySummary(*armed) : "[]")
 			<< "\n";
+		if(objectIndex < gameState.getMap().objects.size())
+		{
+			output << "objectSerialized id=" << object->id.getNum()
+				<< " bytes=" << serializedObjectFingerprint(gameState.getMap().objects[objectIndex])
+				<< "\n";
+			if(dumpObjectBytesID && *dumpObjectBytesID == object->id.getNum())
+			{
+				output << "objectSerializedBytes id=" << object->id.getNum()
+					<< " hex=" << bytesHex(serializedObjectBytes(gameState.getMap().objects[objectIndex]))
+					<< "\n";
+			}
+		}
+		if(rewardable)
+		{
+			JsonNode configuration;
+			JsonSerializer handler(nullptr, configuration);
+			const_cast<CRewardableObject *>(rewardable)->configuration.serializeJson(handler);
+			output << "rewardable id=" << object->id.getNum()
+				<< " cleared=" << (rewardable->isOnceVisitableObjectCleared() ? "true" : "false")
+				<< " configuration=" << configuration.toCompactString()
+				<< "\n";
+		}
 	}
 }
 }
@@ -2822,6 +2959,24 @@ int dumpVGTGameStateSummary(const VGTGameStateSummaryOptions & options)
 	output << "preamble.mapDescription=" << savedHeader.description.toString() << "\n";
 	writeStartInfoSummary(output, "preamble.start", &savedStartInfo);
 	writeGameStateSummary(gameState, output);
+	return 0;
+}
+
+int normalizeVGTGameStateSave(const VGTGameStateNormalizeOptions & options)
+{
+	CGameState gameState;
+	gameState.preInit(LIBRARY);
+	CLoadFile loadFile(options.inputSave, &gameState);
+	gameState.loadGame(loadFile);
+	gameState.preInit(LIBRARY);
+
+	const boost::filesystem::path targetPath(options.outputSave);
+	if(!targetPath.parent_path().empty())
+		boost::filesystem::create_directories(targetPath.parent_path());
+
+	CSaveFile save;
+	gameState.saveGame(save);
+	save.write(targetPath);
 	return 0;
 }
 
