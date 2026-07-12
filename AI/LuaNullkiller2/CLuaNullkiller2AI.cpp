@@ -69,6 +69,9 @@ JsonNode objectSnapshot(const CGObjectInstance * object)
 	result["ID"].String() = object->getTypeName();
 	result["type"].String() = object->getTypeName();
 	result["name"].String() = object->getObjectName();
+	result["isHero"].Bool() = object->ID == Obj::HERO;
+	result["isMonster"].Bool() = object->ID == Obj::MONSTER;
+	result["isTown"].Bool() = object->ID == Obj::TOWN;
 	result["owner"].Integer() = object->tempOwner.getNum();
 	result["visitable"].Bool() = object->isVisitable();
 	if(object->isVisitable())
@@ -93,6 +96,20 @@ std::string moveResultName(TryMoveHero::EResult result)
 		return "EMBARK";
 	case TryMoveHero::DISEMBARK:
 		return "DISEMBARK";
+	}
+	return "UNKNOWN";
+}
+
+std::string playerRelationsName(PlayerRelations relations)
+{
+	switch(relations)
+	{
+	case PlayerRelations::ENEMIES:
+		return "ENEMIES";
+	case PlayerRelations::ALLIES:
+		return "ALLIES";
+	case PlayerRelations::SAME_PLAYER:
+		return "SAME_PLAYER";
 	}
 	return "UNKNOWN";
 }
@@ -1055,6 +1072,31 @@ void CLuaNullkiller2AI::objectRemoved(const CGObjectInstance * obj, const Player
 		snapshot["object"] = objectSnapshot(obj);
 
 	runEventCallback("objectRemoved", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::objectPropertyChanged(const SetObjectProperty * sop)
+{
+	if(!sop)
+		return;
+
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["objectID"].Integer() = sop->id.getNum();
+	snapshot["property"].Integer() = static_cast<int>(sop->what);
+
+	if(sop->what == ObjProperty::OWNER)
+	{
+		const auto owner = sop->identifier.as<PlayerColor>();
+		const auto relations = cc->getPlayerRelations(playerID, owner);
+		snapshot["propertyName"].String() = "OWNER";
+		snapshot["owner"].Integer() = owner.getNum();
+		snapshot["relations"].Integer() = static_cast<int>(relations);
+		snapshot["relationsName"].String() = playerRelationsName(relations);
+		if(const auto * object = cc->getObj(sop->id, false))
+			snapshot["object"] = objectSnapshot(object);
+	}
+
+	runEventCallback("objectPropertyChanged", std::move(snapshot));
 }
 
 void CLuaNullkiller2AI::tileHidden(const FowTilesType & pos)

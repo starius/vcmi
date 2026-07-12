@@ -509,6 +509,31 @@ assert(heroVisitResult.status == "hero_visit")
 assert(eventMemory.aiMemory.alreadyVisited["940"] == true)
 assert(eventMemory.objectClusterizer.invalidatedObjects["940"] == true)
 
+eventMemory.aiMemory.alreadyVisited["944"] = true
+local ownerChangedResult = Script.objectPropertyChanged(makeAI().ai, {
+	memory = eventMemory,
+	propertyName = "OWNER",
+	relationsName = "ENEMIES",
+	object = {
+		id = 944,
+		ID = "MINE"
+	}
+})
+assert(ownerChangedResult.status == "object_property_changed")
+assert(eventMemory.aiMemory.alreadyVisited["944"] == nil)
+
+local townOwnerChangedResult = Script.objectPropertyChanged(makeAI().ai, {
+	memory = eventMemory,
+	propertyName = "OWNER",
+	relationsName = "SAME_PLAYER",
+	object = {
+		id = 945,
+		ID = "town"
+	}
+})
+assert(townOwnerChangedResult.status == "object_property_changed")
+assert(eventMemory.dangerHitMap.resetHitmap == true)
+
 local objectRemovedResult = Script.objectRemoved(makeAI().ai, {
 	memory = eventMemory,
 	object = {

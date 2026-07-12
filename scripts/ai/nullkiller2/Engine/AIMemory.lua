@@ -126,7 +126,7 @@ function AIMemory:markObjectVisited(obj)
 	end
 
 	local kind = objectType(obj)
-	if kind == "MONSTER" or kind == "monster" then
+	if obj.isMonster or kind == "MONSTER" or kind == "monster" then
 		return
 	end
 

@@ -970,6 +970,23 @@ function Nullkiller.objectRemoved(ai, input)
 	return eventResult(root, "object_removed")
 end
 
+function Nullkiller.objectPropertyChanged(ai, input)
+	input = input or {}
+	local root, memory = eventMemory(input)
+	if input.propertyName == "OWNER" and input.object then
+		if input.relationsName == "ENEMIES" then
+			memory:markObjectUnvisited(input.object)
+		elseif input.relationsName == "SAME_PLAYER" then
+			local objectTypeName = tostring(input.object.ID or input.object.type or ""):lower()
+			if input.object.isTown or objectTypeName == "town" then
+				root.dangerHitMap = root.dangerHitMap or {}
+				root.dangerHitMap.resetHitmap = true
+			end
+		end
+	end
+	return eventResult(root, "object_property_changed")
+end
+
 function Nullkiller.tileHidden(ai, input)
 	input = input or {}
 	local root, memory = eventMemory(input)
