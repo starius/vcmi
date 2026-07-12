@@ -11,6 +11,10 @@ This is not a wrapper around `Nullkiller2`. The new AI must not fall back to `Nu
 business-logic helpers. Existing C++ game-rule validation and neutral compute services may be exposed to Lua, but
 all AI choices must live in Lua.
 
+The intended maintenance model is a 1-to-1 Lua/C++ implementation pair. When a future change lands in the C++
+`Nullkiller2` implementation, it should be obvious where the matching Lua change belongs. When a Lua parity fix
+finds a C++ bug or desirable cleanup, it should be equally easy to mirror that change back to C++.
+
 ## Current Findings
 
 The `/home/user/vcmi/script-ai` branch has useful infrastructure, but it is not the target architecture:
@@ -72,17 +76,22 @@ AI/LuaNullkiller2/
 
 scripts/ai/nullkiller2/
   main.lua
-  engine.lua
-  settings.lua
-  state.lua
-  goals/
-  behaviors/
-  evaluators/
-  analyzers/
-  path/
-  actions/
-  queries/
-  util/
+  Engine/
+    Nullkiller.lua
+    Settings.lua
+    PriorityEvaluator.lua
+    FuzzyHelper.lua
+    ResourceTrader.lua
+    State.lua
+  Goals/
+  Behaviors/
+  Analyzers/
+  Helpers/
+  Markers/
+  Pathfinding/
+  Actions/
+  Queries/
+  Util/
 ```
 
 `CLuaNullkiller2AI` should derive directly from `CAdventureAI`, not from `NK2AI::AIGateway`. It should own a Lua
@@ -101,22 +110,115 @@ The C++ host should provide:
 
 The Lua package should mirror `Nullkiller2` concepts using data records rather than C++ inheritance:
 
-- `engine.lua`: equivalent of `Nullkiller::makeTurn`, `updateStateAndExecutePriorityPass`, task failure policy, and
-  end-of-pass cleanup.
-- `settings.lua`: reads the same `config/ai/nk2ai/nk2ai-settings` values through host-provided JSON.
-- `state.lua`: owns locks, active hero/target, scan depth, memory, and cached analysis.
-- `goals/`: goal and task records for the existing `EGoals` set, plus `decompose`, `accept`, equality/hash, affected
+- `Engine/Nullkiller.lua`: equivalent of `Nullkiller::makeTurn`, `updateStateAndExecutePriorityPass`, task failure
+  policy, and end-of-pass cleanup.
+- `Engine/Settings.lua`: reads the same `config/ai/nk2ai/nk2ai-settings` values through host-provided JSON.
+- `Engine/State.lua`: owns locks, active hero/target, scan depth, memory, and cached analysis.
+- `Goals/`: goal and task records for the existing `EGoals` set, plus `decompose`, `accept`, equality/hash, affected
   objects, and hero-exchange counts.
-- `behaviors/`: `Startup`, `RecruitHero`, `BuyArmy`, `Building`, `CaptureObjects`, `Cluster`, `Defence`, `Escape`,
+- `Behaviors/`: `Startup`, `RecruitHero`, `BuyArmy`, `Building`, `CaptureObjects`, `Cluster`, `Defence`, `Escape`,
   `GatherArmy`, `Exploration`, and `StayAtTown`.
-- `evaluators/`: `PriorityEvaluator`, `RewardEvaluator`, fuzzy danger scoring, priority tiers, and deterministic
-  sorting/tie-breaking.
-- `analyzers/`: Lua versions of build, hero, army, object-cluster, memory, and hit-map analysis.
-- `path/`: Lua-owned interpretation of route records, hero chains, special actions, object graph choices, and path
-  task construction. Heavy route enumeration can call neutral host pathfinding.
-- `actions/`: exact action execution wrappers that call `ai.player:*` host commands.
-- `queries/`: level-up, blocking dialog, teleport, tavern, market, recruitment, garrison, university, artifact
+- `Engine/PriorityEvaluator.lua` and related modules: `PriorityEvaluator`, `RewardEvaluator`, fuzzy danger scoring,
+  priority tiers, and deterministic sorting/tie-breaking.
+- `Analyzers/`: Lua versions of build, hero, army, object-cluster, memory, and hit-map analysis.
+- `Pathfinding/`: Lua-owned interpretation of route records, hero chains, special actions, object graph choices, and
+  path task construction. Heavy route enumeration can call neutral host pathfinding.
+- `Actions/`: exact action execution wrappers that call `ai.player:*` host commands.
+- `Queries/`: level-up, blocking dialog, teleport, tavern, market, recruitment, garrison, university, artifact
   assembly, and map-object selection policies.
+
+## Mirrored Structure and Naming
+
+The Lua port should deliberately preserve the names and boundaries of the C++ implementation unless Lua syntax or
+runtime constraints make that impractical. Readability for side-by-side comparison is more important than idiomatic
+Lua abstraction at this stage.
+
+Mirroring rules:
+
+- Keep directory names aligned: `Engine`, `Goals`, `Behaviors`, `Analyzers`, `Helpers`, `Markers`, and
+  `Pathfinding` in C++ map to matching Lua module groups under `scripts/ai/nullkiller2/`.
+- Keep function names recognizable. For example, `Nullkiller::makeTurn` maps to `Nullkiller.makeTurn`,
+  `updateStateAndExecutePriorityPass` keeps that exact Lua function name, and `PriorityEvaluator::evaluate` maps to
+  `PriorityEvaluator.evaluate`.
+- Keep enum and constant names stable. Lua tables should expose `HeroLockedReason.DEFENCE`,
+  `ScanDepth.MAIN_FULL`, `PriorityTier.INSTAKILL`, and goal names matching the C++ identifiers.
+- Keep task/goal fields close to C++ names: `priority`, `hero`, `town`, `objid`, `tile`, `bid`, `resID`,
+  `goldCost`, `buildingCost`, and `affectedObjects`.
+- Preserve control-flow shape before improving style. If C++ uses priority passes, behavior decomposition, task
+  filtering, then action execution, the Lua version should have the same named stages.
+- Add a comment with the source C++ symbol at the top of non-trivial Lua ports, such as
+  `-- Mirrors AI/Nullkiller2/Engine/Nullkiller.cpp: Nullkiller::makeTurn`.
+- Avoid merging multiple C++ concepts into one Lua module during parity work. Refactors can happen after parity, but
+  only with tests that keep side-by-side trace comparison intact.
+
+Add a generated port index, for example `scripts/ai/nullkiller2/PORT_MAP.md` or JSON, that maps every mirrored Lua
+module/function to the C++ file and symbol it currently follows. The index should be updated with code changes and
+used by review scripts to find unmapped C++ or Lua policy functions.
+
+## Regression Test Infrastructure
+
+Lua engine regression tests need to be convenient enough to run after every small port. They should not require a
+full game unless the test specifically covers integrated game behavior.
+
+Required layers:
+
+- Pure Lua unit tests for deterministic modules: settings parsing, resources, goal equality/hash, task filtering,
+  priority formulas, reward calculations, behavior decomposition from fixture snapshots, and query-choice policies.
+- JSON fixture tests for host input/output: visible state snapshots, legal action options, route records, query
+  records, and action results captured from real games and reduced to stable fixtures.
+- Golden trace tests for turn slices: given the same fixture input, Lua should emit the same ordered trace events,
+  task families, selected priorities, locks, and requested actions as the checked baseline.
+- Integration smoke tests that run `LuaNullkiller2` through a short fixed generated-map scenario and verify it ends
+  turns, answers mandatory queries, and does not call forbidden native helpers.
+- Regression corpus tests that replay known discrepancy fixtures and previously fixed parity bugs.
+
+Planned layout:
+
+```text
+scripts/ai/nullkiller2/tests/
+  unit/
+  fixtures/
+  golden/
+  integration/
+  run_lua_tests.py
+  update_golden.py
+```
+
+The Lua test runner should run without compiling VCMI when testing pure Lua modules. Tests that need host bindings
+or real game execution run only in the remote build/test workflow. Golden updates must be explicit: normal test
+runs compare against checked-in expected output and fail on drift.
+
+## Differential Testing
+
+Differential testing is the main tool for maintaining 1-to-1 parity. It should compare C++ `Nullkiller2` and Lua
+`LuaNullkiller2` at several levels, not only by final win/loss.
+
+Required modes:
+
+- Snapshot mode: run C++ `Nullkiller2` on a state and export normalized decision inputs, analyzer outputs, generated
+  goals/tasks, priority contexts, selected task, locks, and requested action. Feed the same normalized snapshot to
+  Lua and diff the same records.
+- Lockstep mode: execute both AIs from the same seed/map with deterministic settings. After every pass or action,
+  normalize and compare trace events. Stop at the first divergence with a compact explanation.
+- Replay mode: take a previously captured C++ trace and replay each decision point through Lua without running a
+  full game, useful for fast local Lua tests and reduced discrepancy fixtures.
+- Tolerance mode: allow explicitly documented benign differences such as unordered equal-priority candidates or
+  floating-point epsilon, while treating selected task/action/query-answer drift as a failure.
+- Bisect mode: run the lockstep corpus across recent commits or fixture revisions to find the first change that
+  introduced a Lua/C++ discrepancy.
+
+Trace records must use stable machine fields rather than localized strings. Each compared decision should include
+the C++ source symbol, Lua module/function, pass index, priority tier, task id/type, affected object ids, hero ids,
+town ids, route/action ids, raw priority context, final priority, and requested action.
+
+The differential harness should produce three artifacts:
+
+- a human-readable first-difference summary
+- normalized JSON traces for both sides
+- a minimized fixture that can be checked into `scripts/ai/nullkiller2/tests/fixtures/discrepancies/`
+
+The parity target is exact selected-behavior parity. If exact parity is blocked by missing host data or a neutral
+helper gap, the discrepancy fixture stays in the corpus with an expected-failure marker and a linked TODO.
 
 ## Implementation Phases
 
@@ -128,6 +230,7 @@ The Lua package should mirror `Nullkiller2` concepts using data records rather t
   `PriorityEvaluator`, `AIGateway` policy routines, and pathfinding special actions.
 - Add an audit script that fails if `AI/LuaNullkiller2` includes `AI/Nullkiller2`, links `Nullkiller2`, or exposes
   host commands named after native `Nullkiller2` task helpers.
+- Add the port index and require every Lua policy function to reference the C++ symbol it mirrors.
 
 ### Phase 1: Host Skeleton
 
@@ -145,14 +248,16 @@ The Lua package should mirror `Nullkiller2` concepts using data records rather t
 - Load the same `nk2ai-settings` values for the active difficulty.
 - Implement Lua records for resources, heroes, towns, objects, paths, goals, tasks, and priority tiers.
 - Add deterministic comparison helpers so Lua ordering matches C++ ordering where possible.
+- Add pure Lua unit tests for these records before porting behavior logic.
 
 ### Phase 3: Core Turn Loop Parity
 
-- Port `Nullkiller::makeTurn` to `engine.lua`.
+- Port `Nullkiller::makeTurn` to `Engine/Nullkiller.lua`.
 - Port resource locks, hero locks, scan depth, active target, object presence checks, task failure policy, and pass
   loop limits.
 - Implement priority pass structure before ordinary adventure behavior selection.
 - Add trace output that can be compared with native `Nullkiller2` traces at pass/task/action granularity.
+- Add the first lockstep differential test for a one-pass no-op or end-turn scenario.
 
 ### Phase 4: Goal and Behavior Port
 
@@ -178,6 +283,8 @@ trace comparison before moving on.
 - Keep raw mechanics in host helpers only where they are not decisions. For example, Lua may ask for reachable paths
   and raw battle/army strength, but Lua computes thresholds, risk classes, rewards, and final priority.
 - Preserve C++ formulas exactly first, including quirks and thresholds. Improvement work comes later.
+- Add fixture-level differential tests for priority contexts and final priority values before relying on integrated
+  map outcomes.
 
 ### Phase 6: Action and Query Parity
 
@@ -199,6 +306,8 @@ trace comparison before moving on.
 
 - Reuse and adapt `script-ai` Python trace/batch tools, but remove all native bounded-task assumptions.
 - Add a fixed corpus of small generated maps and saved scenarios.
+- Add pure Lua, fixture replay, snapshot differential, lockstep differential, and short integrated game commands
+  behind one runner with clear presets such as `unit`, `fixtures`, `snapshot`, `lockstep-smoke`, and `corpus`.
 - Run native `Nullkiller2` and `LuaNullkiller2` on the same seeds and compare:
   - pass count and priority pass decisions
   - generated task families and selected priorities
@@ -206,6 +315,8 @@ trace comparison before moving on.
   - final day state summaries
   - game outcome over longer runs
 - Accept temporary divergence only when it is documented with a specific missing port item.
+- Make first-difference reports the default output, because parity work needs the earliest cause, not only the final
+  mismatch.
 
 ### Phase 9: No-Native-Dependency Gate
 
@@ -217,6 +328,8 @@ Before claiming parity, prove:
 - No Lua facade method executes a native task handle, native priority pass, native analyzer, native build-army helper,
   or full-day fallback.
 - The AI can complete fixed-map turns when `Nullkiller2` is unavailable in the build.
+- Mirrored structure and port-index checks pass, with no unmapped Lua policy modules and no unmapped C++ business
+  logic that is marked as required for parity.
 
 ### Phase 10: Post-Parity Improvement
 
@@ -259,8 +372,10 @@ Commit messages must stay focused on the code change and must not mention the re
 ## Immediate Next Steps
 
 1. Add the port checklist and dependency audit script.
-2. Import the smallest useful subset of `script-ai` Lua runner/action infrastructure.
-3. Create the standalone `AI/LuaNullkiller2` target and `LuaNullkiller2` factory registration.
-4. Add the first Lua `engine.lua` skeleton that can load settings, trace a day start, and end the turn without
-   native fallback.
-5. Set up the remote work directory and run the first lightweight build check there.
+2. Add the mirrored port index and initial Lua regression-test runner layout.
+3. Import the smallest useful subset of `script-ai` Lua runner/action infrastructure.
+4. Create the standalone `AI/LuaNullkiller2` target and `LuaNullkiller2` factory registration.
+5. Add the first Lua `Engine/Nullkiller.lua` skeleton that can load settings, trace a day start, and end the turn
+   without native fallback.
+6. Add the first differential smoke fixture that compares C++ and Lua day-start/end-turn traces.
+7. Set up the remote work directory and run the first lightweight build check there.
