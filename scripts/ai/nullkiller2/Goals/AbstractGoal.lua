@@ -107,6 +107,14 @@ local function tileToString(tile)
 	return string.format("(%s %s %s)", tostring(tile.x), tostring(tile.y), tostring(tile.z))
 end
 
+local function resourcesToString(resources)
+	local result = {}
+	for index = 1, 7 do
+		result[index] = tostring(resources and resources[index] or 0)
+	end
+	return "[" .. table.concat(result, ", ") .. "]"
+end
+
 function AbstractGoal.new(goalType)
 	return setmetatable({
 		isAbstract = true,
@@ -257,6 +265,7 @@ end
 AbstractGoal._helpers = {
 	numericID = numericID,
 	resourceJsonKey = resourceJsonKey,
+	resourcesToString = resourcesToString,
 	tileToString = tileToString,
 	translatedName = translatedName
 }

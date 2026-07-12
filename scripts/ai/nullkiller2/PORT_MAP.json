@@ -192,6 +192,121 @@
       "notes": "Full accept parity depends on Lua snapshots for army value, recruit costs, slots, and host command execution."
     },
     {
+      "cpp": "AI/Nullkiller2/Goals/DigAtTile.h",
+      "lua": "scripts/ai/nullkiller2/Goals/DigAtTile.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::DigAtTile::DigAtTile",
+        "Goals::DigAtTile::operator=="
+      ]
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/DigAtTile.cpp",
+      "lua": "scripts/ai/nullkiller2/Goals/DigAtTile.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::DigAtTile::operator=="
+      ],
+      "notes": "Commented-out C++ decomposition remains non-active upstream and is not ported as executable policy."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/BuildBoat.h",
+      "lua": "scripts/ai/nullkiller2/Goals/BuildBoat.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::BuildBoat"
+      ],
+      "notes": "Constructor, equality, and string policy are ported. Full accept parity needs shipyard/resource/relation snapshots."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/BuildBoat.cpp",
+      "lua": "scripts/ai/nullkiller2/Goals/BuildBoat.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::BuildBoat::operator==",
+        "Goals::BuildBoat::accept",
+        "Goals::BuildBoat::toString"
+      ],
+      "notes": "Current Lua accept emits the host build-boat command boundary; precondition policy remains pending."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/RecruitHero.h",
+      "lua": "scripts/ai/nullkiller2/Goals/RecruitHero.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::RecruitHero"
+      ],
+      "notes": "Constructor, equality, getHero, string policy, strongest-available selection, and host command intent are ported."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/RecruitHero.cpp",
+      "lua": "scripts/ai/nullkiller2/Goals/RecruitHero.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::RecruitHero::toString",
+        "Goals::RecruitHero::accept"
+      ],
+      "notes": "Cluster refresh side effects need explicit Lua state plumbing before this can be marked fully ported."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/AdventureSpellCast.h",
+      "lua": "scripts/ai/nullkiller2/Goals/AdventureSpellCast.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::AdventureSpellCast"
+      ],
+      "notes": "Constructor, spell access, equality, string policy, basic cast preconditions, and host command intent are ported."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/AdventureSpellCast.cpp",
+      "lua": "scripts/ai/nullkiller2/Goals/AdventureSpellCast.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::AdventureSpellCast::operator==",
+        "Goals::AdventureSpellCast::accept",
+        "Goals::AdventureSpellCast::toString"
+      ],
+      "notes": "Town Portal movement and spell-mechanics target validation require host snapshots before full parity."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/SaveResources.h",
+      "lua": "scripts/ai/nullkiller2/Goals/SaveResources.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::SaveResources"
+      ]
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/SaveResources.cpp",
+      "lua": "scripts/ai/nullkiller2/Goals/SaveResources.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::SaveResources::operator==",
+        "Goals::SaveResources::accept",
+        "Goals::SaveResources::toString"
+      ],
+      "notes": "Lua accept locks resources through the Lua Nullkiller state/host shim and returns a fulfilled marker instead of throwing a C++ exception."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/DismissHero.h",
+      "lua": "scripts/ai/nullkiller2/Goals/DismissHero.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::DismissHero"
+      ]
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/DismissHero.cpp",
+      "lua": "scripts/ai/nullkiller2/Goals/DismissHero.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::DismissHero::operator==",
+        "Goals::DismissHero::accept",
+        "Goals::DismissHero::toString"
+      ],
+      "notes": "Lua accept emits the dismiss-hero host command intent and keeps the same invalid-hero guard."
+    },
+    {
       "cpp": "AI/Nullkiller2/Engine/ResourceTrader.cpp",
       "lua": "scripts/ai/nullkiller2/Engine/ResourceTrader.lua",
       "status": "pending_lua_port",
