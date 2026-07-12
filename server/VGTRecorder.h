@@ -16,6 +16,7 @@
 #include <string>
 
 class CGameState;
+class CGameHandler;
 struct CPackForClient;
 struct CPackForServer;
 
@@ -24,8 +25,10 @@ class VGTRecorder final
 	std::ofstream output;
 	mutable std::mutex outputMutex;
 	std::string outputPath;
+	std::string baselineSavePath;
 	bool checkedEnvironment = false;
 	bool enabled = false;
+	bool baselineSaveEnabled = false;
 	bool headerWritten = false;
 	bool documentOpen = false;
 	std::optional<PlayerColor> currentTurnPlayer;
@@ -37,6 +40,7 @@ class VGTRecorder final
 	void startTurnDocument(const CGameState & gameState, PlayerColor player);
 	void startWorldDocument(const CGameState & gameState, const std::string & phase);
 	void writeActionLine(const CGameState & gameState, const std::string & line);
+	void writeBaselineSave(CGameHandler & gameHandler);
 
 public:
 	static VGTRecorder & get();
@@ -45,4 +49,5 @@ public:
 
 	void recordDecision(const CGameState & gameState, CPackForServer & pack);
 	void recordEffect(const CGameState & gameState, CPackForClient & pack);
+	void recordAppliedState(CGameHandler & gameHandler);
 };

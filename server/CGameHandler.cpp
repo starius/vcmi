@@ -1640,6 +1640,15 @@ bool CGameHandler::responseStatistic(PlayerColor player)
 	return true;
 }
 
+void CGameHandler::saveToFile(const std::string & filename)
+{
+	CSaveFile save;
+	gameState().saveGame(save);
+	logGlobal->info("Saving server state");
+	save.save(*this);
+	save.write(filename);
+}
+
 void CGameHandler::save(const std::string & filename, PlayerColor playerToNotifyOnSuccess)
 {
 	logGlobal->info("Saving to %s", filename);
@@ -1658,11 +1667,7 @@ void CGameHandler::save(const std::string & filename, PlayerColor playerToNotify
 
 	try
 	{
-		CSaveFile save;
-		gameState().saveGame(save);
-		logGlobal->info("Saving server state");
-		save.save(*this);
-		save.write(*CResourceHandler::get("local")->getResourceName(savePath));
+		saveToFile(CResourceHandler::get("local")->getResourceName(savePath)->string());
 
 		if(playerToNotifyOnSuccess.isValidPlayer())
 		{

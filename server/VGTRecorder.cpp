@@ -9,6 +9,8 @@
 #include "StdInc.h"
 #include "VGTRecorder.h"
 
+#include "CGameHandler.h"
+
 #include "../Version.h"
 #include "../lib/GameConstants.h"
 #include "../lib/GameLibrary.h"
@@ -1811,6 +1813,16 @@ void VGTRecorder::initializeFromEnvironment()
 		else
 			logGlobal->error("Unable to open VGT transcript '%s'", outputPath);
 	}
+
+	const char * baselineSave = std::getenv("VCMI_VGT_BASELINE_SAVE");
+	if(baselineSave && !std::string(baselineSave).empty())
+	{
+		baselineSavePath = baselineSave;
+		const boost::filesystem::path savePath(baselineSavePath);
+		if(!savePath.parent_path().empty())
+			boost::filesystem::create_directories(savePath.parent_path());
+		baselineSaveEnabled = true;
+	}
 }
 
 void VGTRecorder::ensureHeader(const CGameState & gameState)
@@ -1907,6 +1919,28 @@ void VGTRecorder::writeActionLine(const CGameState & gameState, const std::strin
 	output.flush();
 }
 
+void VGTRecorder::writeBaselineSave(CGameHandler & gameHandler)
+{
+	if(!baselineSaveEnabled)
+		return;
+
+	try
+	{
+		const boost::filesystem::path targetPath(baselineSavePath);
+		boost::filesystem::path temporaryPath = targetPath;
+		temporaryPath += ".tmp";
+
+		gameHandler.saveToFile(temporaryPath.string());
+		if(boost::filesystem::exists(targetPath))
+			boost::filesystem::remove(targetPath);
+		boost::filesystem::rename(temporaryPath, targetPath);
+	}
+	catch(const std::exception & e)
+	{
+		logGlobal->error("Unable to write VGT baseline save '%s': %s", baselineSavePath, e.what());
+	}
+}
+
 void VGTRecorder::recordDecision(const CGameState & gameState, CPackForServer & pack)
 {
 	std::scoped_lock lock(outputMutex);
@@ -1941,4 +1975,11 @@ void VGTRecorder::recordEffect(const CGameState & gameState, CPackForClient & pa
 	EffectRecorder recorder(gameState);
 	pack.visit(recorder);
 	writeActionLine(gameState, recorder.result());
+}
+
+void VGTRecorder::recordAppliedState(CGameHandler & gameHandler)
+{
+	std::scoped_lock lock(outputMutex);
+	initializeFromEnvironment();
+	writeBaselineSave(gameHandler);
 }
