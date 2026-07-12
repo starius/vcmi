@@ -38,6 +38,7 @@ class VGTRecorder final
 	std::optional<int> exitAfterTurnEnds;
 	int observedTurnEnds = 0;
 	std::optional<PlayerColor> currentTurnPlayer;
+	std::optional<std::string> activeBattleBlock;
 
 	VGTRecorder() = default;
 

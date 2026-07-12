@@ -73,6 +73,46 @@ std::string yamlString(const std::string & value)
 	return result;
 }
 
+struct BattleBlockRecord
+{
+	std::string battleID;
+	std::string record;
+};
+
+std::optional<BattleBlockRecord> battleBlockRecord(const std::string & line)
+{
+	const std::string battlePrefix = "battle: { id: ";
+	if(line.rfind(battlePrefix, 0) == 0)
+	{
+		const size_t battleIDStart = battlePrefix.size();
+		const size_t battleIDEnd = line.find(", ", battleIDStart);
+		if(battleIDEnd == std::string::npos || line.size() < 2 || line.substr(line.size() - 2) != " }")
+			return std::nullopt;
+
+		BattleBlockRecord result;
+		result.battleID = line.substr(battleIDStart, battleIDEnd - battleIDStart);
+		result.record = "{ " + line.substr(battleIDEnd + 2, line.size() - battleIDEnd - 4) + " }";
+		return result;
+	}
+
+	const std::string battleDecisionKind = "kind: battleAction";
+	const std::string battleDecisionMarker = ", battle: ";
+	const size_t battleFieldStart = line.find(battleDecisionMarker);
+	if(line.rfind("decision: { ", 0) != 0 || line.find(battleDecisionKind) == std::string::npos || battleFieldStart == std::string::npos)
+		return std::nullopt;
+
+	const size_t battleIDStart = battleFieldStart + battleDecisionMarker.size();
+	const size_t battleIDEnd = line.find(", ", battleIDStart);
+	if(battleIDEnd == std::string::npos)
+		return std::nullopt;
+
+	BattleBlockRecord result;
+	result.battleID = line.substr(battleIDStart, battleIDEnd - battleIDStart);
+	result.record = line;
+	result.record.erase(battleFieldStart, battleIDEnd - battleFieldStart);
+	return result;
+}
+
 std::string flowList(const std::vector<std::string> & values)
 {
 	std::ostringstream out;
@@ -2426,6 +2466,7 @@ void VGTRecorder::startTurnDocument(const CGameState & gameState, PlayerColor pl
 	output << "actions:\n";
 	documentOpen = true;
 	currentTurnPlayer = player;
+	activeBattleBlock.reset();
 }
 
 void VGTRecorder::startWorldDocument(const CGameState & gameState, const std::string & phase)
@@ -2444,6 +2485,7 @@ void VGTRecorder::startWorldDocument(const CGameState & gameState, const std::st
 	output << "events:\n";
 	documentOpen = true;
 	currentTurnPlayer.reset();
+	activeBattleBlock.reset();
 }
 
 void VGTRecorder::writeActionLine(const CGameState & gameState, const std::string & line)
@@ -2454,6 +2496,22 @@ void VGTRecorder::writeActionLine(const CGameState & gameState, const std::strin
 		startWorldDocument(gameState, "startup");
 	if(!enabled || !documentOpen)
 		return;
+
+	if(const auto battleRecord = battleBlockRecord(line))
+	{
+		if(activeBattleBlock != battleRecord->battleID)
+		{
+			output << "  - battle:\n";
+			output << "      id: " << battleRecord->battleID << "\n";
+			output << "      events:\n";
+			activeBattleBlock = battleRecord->battleID;
+		}
+		output << "        - " << battleRecord->record << "\n";
+		output.flush();
+		return;
+	}
+
+	activeBattleBlock.reset();
 	output << "  - " << line << "\n";
 	output.flush();
 }

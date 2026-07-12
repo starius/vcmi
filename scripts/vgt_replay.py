@@ -126,7 +126,12 @@ def validate_map_hash(map_info: dict[str, Any], roots: list[Path]) -> Path:
 def summarize(documents: list[dict[str, Any]]) -> collections.Counter[str]:
     counter: collections.Counter[str] = collections.Counter()
     for _, _, record in iter_records(documents):
-        counter[next(iter(record))] += 1
+        key = next(iter(record))
+        value = record[key]
+        if key == "battle" and isinstance(value, dict) and isinstance(value.get("events"), list):
+            counter[key] += len(value["events"])
+        else:
+            counter[key] += 1
     return counter
 
 

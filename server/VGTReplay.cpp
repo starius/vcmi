@@ -1970,7 +1970,16 @@ void applyArmyEffect(CGameHandler & gameHandler, const JsonNode & node)
 	applyEffectPack(gameHandler, pack);
 }
 
-void applyBattleEffect(CGameHandler & gameHandler, const JsonNode & node)
+BattleID decodeBattleRecordID(const JsonNode & node, const std::optional<std::string> & parentBattleID)
+{
+	if(hasField(node, "id"))
+		return decodeBattleAlias(requireString(node, "id"));
+	if(parentBattleID)
+		return decodeBattleAlias(*parentBattleID);
+	throw std::runtime_error("VGT battle record has no battle id");
+}
+
+void applyBattleEffect(CGameHandler & gameHandler, const JsonNode & node, const std::optional<std::string> & parentBattleID = std::nullopt)
 {
 	const std::string event = requireString(node, "event");
 	if(event == "resultAccepted")
@@ -1979,7 +1988,7 @@ void applyBattleEffect(CGameHandler & gameHandler, const JsonNode & node)
 			return;
 
 		BattleResultAccepted pack;
-		pack.battleID = decodeBattleAlias(requireString(node, "id"));
+		pack.battleID = decodeBattleRecordID(node, parentBattleID);
 		pack.winnerSide = decodeBattleSide(requireString(node, "winner"));
 		pack.heroResult[BattleSide::ATTACKER] = decodeBattleHeroResult(gameHandler.gameState(), requireField(node, "attacker"));
 		pack.heroResult[BattleSide::DEFENDER] = decodeBattleHeroResult(gameHandler.gameState(), requireField(node, "defender"));
@@ -2001,6 +2010,28 @@ void applyBattleEffect(CGameHandler & gameHandler, const JsonNode & node)
 	}
 }
 
+void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node)
+{
+	const std::string battleID = requireString(node, "id");
+	const JsonNode & events = requireField(node, "events");
+	if(!events.isVector())
+		throw std::runtime_error("VGT battle block events field is not a list");
+
+	for(const JsonNode & record : events.Vector())
+	{
+		if(!record.isStruct())
+			throw std::runtime_error("VGT battle block event is not a mapping");
+		if(hasField(record, "event"))
+		{
+			applyBattleEffect(gameHandler, record, battleID);
+			continue;
+		}
+		if(record.Struct().size() == 1 && record.Struct().begin()->first == "decision")
+			continue;
+		throw std::runtime_error("Unsupported VGT battle block event");
+	}
+}
+
 void applyLocalState(CGameHandler & gameHandler, const JsonNode & node)
 {
 	const PlayerColor player = decodePlayerColor(requireString(node, "player"));
@@ -2017,6 +2048,11 @@ void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, con
 
 	if(kind == "battle")
 	{
+		if(hasField(node, "events"))
+		{
+			applyBattleBlock(gameHandler, node);
+			return;
+		}
 		applyBattleEffect(gameHandler, node);
 		return;
 	}
