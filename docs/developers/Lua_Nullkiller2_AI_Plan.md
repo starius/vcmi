@@ -169,9 +169,10 @@ pending query through the same host command journal. Map-object selection dialog
 `GatewayPolicy.chooseMapObjectSelection` before emitting `answerQuery`. Garrison dialogs route through Lua
 `GatewayPolicy.shouldUseGarrisonTroops` and the Lua army-transfer sequencer before answering. Recruitment dialogs
 route dwelling and destination-army snapshots through `GatewayPolicy.chooseDwellingRecruitment`, including the
-native duplicate-stack merge-before-recruit case and full resource-vector affordability. The `newObject`,
-`heroVisit`, and `objectRemoved` event callbacks now route through Lua and mutate persistent `AIMemory` object-id
-sets while the host keeps raw pathfinder invalidation as a non-policy state flag. Surrender/retreat
+native duplicate-stack merge-before-recruit case and full resource-vector affordability. The `heroMoved`,
+`tileRevealed`, `newObject`, `heroVisit`, and `objectRemoved` event callbacks now route through Lua and mutate
+persistent `AIMemory` object-id sets while the host keeps raw pathfinder invalidation as a non-policy state flag.
+Surrender/retreat
 decisions now return from Lua `GatewayPolicy.makeSurrenderRetreatDecision` and are converted to `BattleAction`
 only at the host boundary. Blocking dialogs route component snapshots through Lua selection policy; danger-aware
 yes/no parity still needs richer object and danger snapshots. Teleport dialogs route exit snapshots through Lua

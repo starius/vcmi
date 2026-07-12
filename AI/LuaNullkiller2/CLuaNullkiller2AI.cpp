@@ -29,6 +29,7 @@
 #include "../../lib/mapObjects/IObjectInterface.h"
 #include "../../lib/networkPacks/ArtifactLocation.h"
 #include "../../lib/networkPacks/Component.h"
+#include "../../lib/networkPacks/PacksForClient.h"
 
 namespace LuaNullkiller2AI
 {
@@ -73,6 +74,53 @@ JsonNode objectSnapshot(const CGObjectInstance * object)
 	if(object->isVisitable())
 		result["visitablePos"] = tileSnapshot(object->visitablePos());
 	result["anchorPos"] = tileSnapshot(object->anchorPos());
+	return result;
+}
+
+std::string moveResultName(TryMoveHero::EResult result)
+{
+	switch(result)
+	{
+	case TryMoveHero::FAILED:
+		return "FAILED";
+	case TryMoveHero::SUCCESS:
+		return "SUCCESS";
+	case TryMoveHero::TELEPORTATION:
+		return "TELEPORTATION";
+	case TryMoveHero::BLOCKING_VISIT:
+		return "BLOCKING_VISIT";
+	case TryMoveHero::EMBARK:
+		return "EMBARK";
+	case TryMoveHero::DISEMBARK:
+		return "DISEMBARK";
+	}
+	return "UNKNOWN";
+}
+
+JsonNode tilesSnapshot(const FowTilesType & tiles)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_VECTOR);
+	for(const auto & tile : tiles)
+		result.Vector().push_back(tileSnapshot(tile));
+	return result;
+}
+
+JsonNode visitableObjectsOnTilesSnapshot(const FowTilesType & tiles, const std::shared_ptr<CCallback> & callback)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_VECTOR);
+	std::set<ObjectInstanceID> seenObjects;
+
+	for(const auto & tile : tiles)
+	{
+		for(const auto * object : callback->getVisitableObjs(tile))
+		{
+			if(object && seenObjects.insert(object->id).second)
+				result.Vector().push_back(objectSnapshot(object));
+		}
+	}
+
 	return result;
 }
 
@@ -925,6 +973,24 @@ void CLuaNullkiller2AI::heroVisit(const CGHeroInstance * visitor, const CGObject
 	runEventCallback("heroVisit", std::move(snapshot));
 }
 
+void CLuaNullkiller2AI::heroMoved(const TryMoveHero & details, bool verbose)
+{
+	pathfinderInvalidated = true;
+
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["hero"].Integer() = details.id.getNum();
+	snapshot["movePoints"].Integer() = static_cast<int64_t>(details.movePoints);
+	snapshot["result"].Integer() = static_cast<int>(details.result);
+	snapshot["resultName"].String() = moveResultName(details.result);
+	snapshot["start"] = tileSnapshot(details.start);
+	snapshot["end"] = tileSnapshot(details.end);
+	snapshot["fowRevealed"] = tilesSnapshot(details.fowRevealed);
+	snapshot["fowRevealedObjects"] = visitableObjectsOnTilesSnapshot(details.fowRevealed, cc);
+
+	runEventCallback("heroMoved", std::move(snapshot));
+}
+
 void CLuaNullkiller2AI::newObject(const CGObjectInstance * obj)
 {
 	pathfinderInvalidated = true;
@@ -946,6 +1012,16 @@ void CLuaNullkiller2AI::objectRemoved(const CGObjectInstance * obj, const Player
 		snapshot["object"] = objectSnapshot(obj);
 
 	runEventCallback("objectRemoved", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::tileRevealed(const FowTilesType & pos)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["tiles"] = tilesSnapshot(pos);
+	snapshot["objects"] = visitableObjectsOnTilesSnapshot(pos, cc);
+
+	runEventCallback("tileRevealed", std::move(snapshot));
 }
 
 void CLuaNullkiller2AI::showTavernWindow(const CGObjectInstance * object, const CGHeroInstance * visitor, QueryID queryID)

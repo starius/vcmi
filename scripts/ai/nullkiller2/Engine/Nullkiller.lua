@@ -936,6 +936,18 @@ function Nullkiller.heroVisit(ai, input)
 	return eventResult(root, "hero_visit")
 end
 
+function Nullkiller.heroMoved(ai, input)
+	input = input or {}
+	local root, memory = eventMemory(input)
+	root.pathfinderInvalidated = true
+	for _, object in ipairs(input.fowRevealedObjects or {}) do
+		if object.visitable ~= false then
+			memory:addVisitableObject(object)
+		end
+	end
+	return eventResult(root, "hero_moved")
+end
+
 function Nullkiller.newObject(ai, input)
 	input = input or {}
 	local root, memory = eventMemory(input)
@@ -956,6 +968,17 @@ function Nullkiller.objectRemoved(ai, input)
 		root.objectClusterizer.removedObjects[tostring(objectID(input.object))] = true
 	end
 	return eventResult(root, "object_removed")
+end
+
+function Nullkiller.tileRevealed(ai, input)
+	input = input or {}
+	local root, memory = eventMemory(input)
+	for _, object in ipairs(input.objects or {}) do
+		if object.visitable ~= false then
+			memory:addVisitableObject(object)
+		end
+	end
+	return eventResult(root, "tile_revealed")
 end
 
 function Nullkiller.heroGotLevel(ai, input)

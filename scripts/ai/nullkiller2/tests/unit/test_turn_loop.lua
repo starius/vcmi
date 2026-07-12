@@ -461,6 +461,30 @@ assert(newObjectResult.memory == eventMemory)
 assert(eventMemory.pathfinderInvalidated == true)
 assert(eventMemory.aiMemory.visitableObjs["940"] == true)
 
+eventMemory.pathfinderInvalidated = false
+local heroMovedResult = Script.heroMoved(makeAI().ai, {
+	memory = eventMemory,
+	hero = 30,
+	resultName = "SUCCESS",
+	fowRevealedObjects = {
+		{ id = 941, visitable = true },
+		{ id = 942, visitable = false }
+	}
+})
+assert(heroMovedResult.status == "hero_moved")
+assert(eventMemory.pathfinderInvalidated == true)
+assert(eventMemory.aiMemory.visitableObjs["941"] == true)
+assert(eventMemory.aiMemory.visitableObjs["942"] == nil)
+
+local tileRevealedResult = Script.tileRevealed(makeAI().ai, {
+	memory = eventMemory,
+	objects = {
+		{ id = 943, visitable = true }
+	}
+})
+assert(tileRevealedResult.status == "tile_revealed")
+assert(eventMemory.aiMemory.visitableObjs["943"] == true)
+
 local heroVisitResult = Script.heroVisit(makeAI().ai, {
 	memory = eventMemory,
 	start = true,

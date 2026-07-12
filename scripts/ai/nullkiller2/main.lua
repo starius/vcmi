@@ -45,12 +45,20 @@ function Script.heroVisit(ai, input)
 	return Nullkiller.heroVisit(ai, input or {})
 end
 
+function Script.heroMoved(ai, input)
+	return Nullkiller.heroMoved(ai, input or {})
+end
+
 function Script.newObject(ai, input)
 	return Nullkiller.newObject(ai, input or {})
 end
 
 function Script.objectRemoved(ai, input)
 	return Nullkiller.objectRemoved(ai, input or {})
+end
+
+function Script.tileRevealed(ai, input)
+	return Nullkiller.tileRevealed(ai, input or {})
 end
 
 function Script.heroGotLevel(ai, input)
