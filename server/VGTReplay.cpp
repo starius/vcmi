@@ -17,6 +17,7 @@
 #include "../lib/StartInfo.h"
 #include "../lib/constants/StringConstants.h"
 #include "../lib/gameState/CGameState.h"
+#include "../lib/json/JsonBonus.h"
 #include "../lib/json/JsonNode.h"
 #include "../lib/mapping/CMap.h"
 #include "../lib/mapObjects/CGObjectInstance.h"
@@ -437,6 +438,19 @@ BattleSide decodeBattleSide(const std::string & value)
 	throw std::runtime_error("Unsupported VGT battle side: " + value);
 }
 
+GiveBonus::ETarget decodeBonusTargetKind(const std::string & value)
+{
+	if(value == "object")
+		return GiveBonus::ETarget::OBJECT;
+	if(value == "player")
+		return GiveBonus::ETarget::PLAYER;
+	if(value == "battle")
+		return GiveBonus::ETarget::BATTLE;
+	if(value == "heroCommander")
+		return GiveBonus::ETarget::HERO_COMMANDER;
+	throw std::runtime_error("Unsupported VGT bonus target kind: " + value);
+}
+
 EActionType decodeActionType(const std::string & value)
 {
 	if(value == "none")
@@ -730,8 +744,30 @@ int64_t decodeStackAlias(const std::string & value)
 {
 	const std::string prefix = "battle/";
 	if(!value.starts_with(prefix))
-		throw std::runtime_error("Unsupported VGT battle alias: " + value);
+	throw std::runtime_error("Unsupported VGT battle alias: " + value);
 	return BattleID(std::stoi(value.substr(prefix.size())));
+}
+
+GiveBonus::VariantType decodeBonusTarget(const CGameState & gameState, GiveBonus::ETarget targetKind, std::string value)
+{
+	switch(targetKind)
+	{
+		case GiveBonus::ETarget::OBJECT:
+			return GiveBonus::VariantType(resolveObjectAlias(gameState, value));
+		case GiveBonus::ETarget::PLAYER:
+			return GiveBonus::VariantType(decodePlayerColor(value));
+		case GiveBonus::ETarget::BATTLE:
+			return GiveBonus::VariantType(decodeBattleAlias(value));
+		case GiveBonus::ETarget::HERO_COMMANDER:
+		{
+			const std::string suffix = "/commander";
+			if(!value.ends_with(suffix))
+				throw std::runtime_error("VGT hero commander bonus target lacks /commander suffix: " + value);
+			value.erase(value.size() - suffix.size());
+			return GiveBonus::VariantType(resolveObjectAlias(gameState, value));
+		}
+	}
+	throw std::runtime_error("Unsupported VGT bonus target kind");
 }
 
 [[maybe_unused]] BattleAction decodeBattleAction(const JsonNode & node)
@@ -1188,6 +1224,44 @@ void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, con
 		SetAvailableArtifacts pack;
 		pack.id = resolveObjectAlias(gameHandler.gameState(), requireString(node, "object"));
 		pack.arts = decodeArtifactList(requireField(node, "artifacts"));
+		applyEffectPack(gameHandler, pack);
+		return;
+	}
+
+	if(kind == "heroRecruited")
+	{
+		HeroRecruited pack;
+		pack.player = decodePlayerColor(requireString(node, "player"));
+		pack.hid = decodeHeroType(requireString(node, "hero"));
+		pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(node, "town"));
+		pack.tile = decodePosition(requireField(node, "tile"));
+		pack.boatId = resolveObjectAlias(gameHandler.gameState(), requireString(node, "boat"));
+		applyEffectPack(gameHandler, pack);
+		return;
+	}
+
+	if(kind == "heroOwner")
+	{
+		GiveHero pack;
+		pack.id = resolveObjectAlias(gameHandler.gameState(), requireString(node, "hero"));
+		pack.player = decodePlayerColor(requireString(node, "player"));
+		pack.boatId = resolveObjectAlias(gameHandler.gameState(), requireString(node, "boat"));
+		applyEffectPack(gameHandler, pack);
+		return;
+	}
+
+	if(kind == "bonus")
+	{
+		GiveBonus pack;
+		pack.who = decodeBonusTargetKind(requireString(node, "targetKind"));
+		if(pack.who == GiveBonus::ETarget::BATTLE)
+			return;
+
+		pack.id = decodeBonusTarget(gameHandler.gameState(), pack.who, requireString(node, "target"));
+		const auto parsedBonus = JsonUtils::parseBonus(requireField(node, "value"));
+		if(!parsedBonus)
+			throw std::runtime_error("Unable to parse VGT bonus value");
+		pack.bonus = *parsedBonus;
 		applyEffectPack(gameHandler, pack);
 		return;
 	}
