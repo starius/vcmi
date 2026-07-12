@@ -754,6 +754,9 @@ std::string simturnsInfo(const SimturnsInfo & value)
 
 std::string timerInfo(const TurnTimerInfo & value)
 {
+	if(!value.isEnabled())
+		return "none";
+
 	return "{ enabled: " + boolValue(value.isEnabled()) +
 		", turn: " + std::to_string(value.turnTimer) +
 		", base: " + std::to_string(value.baseTimer) +
@@ -761,22 +764,6 @@ std::string timerInfo(const TurnTimerInfo & value)
 		", unit: " + std::to_string(value.unitTimer) +
 		", accumulatingTurn: " + boolValue(value.accumulatingTurnTimer) +
 		", accumulatingUnit: " + boolValue(value.accumulatingUnitTimer) + " }";
-}
-
-std::string turnTimerState(const TurnTimerInfo & value)
-{
-	return "{ turn: " + std::to_string(value.turnTimer) +
-		", base: " + std::to_string(value.baseTimer) +
-		", battle: " + std::to_string(value.battleTimer) +
-		", unit: " + std::to_string(value.unitTimer) +
-		", accumulatingTurn: " + boolValue(value.accumulatingTurnTimer) +
-		", accumulatingUnit: " + boolValue(value.accumulatingUnitTimer) +
-		", active: " + boolValue(value.isActive) +
-		", battleMode: " + boolValue(value.isBattle) +
-		", movementPercent: " + std::to_string(value.remainingMovementPointsPercent) +
-		", turnStart: " + boolValue(value.isTurnStart) +
-		", turnEnded: " + boolValue(value.isTurnEnded) +
-		" }";
 }
 
 std::string victoryLossResult(const EVictoryLossCheckResult & result)
@@ -1739,7 +1726,7 @@ public:
 
 	void visitTurnTimeUpdate(TurnTimeUpdate & pack) override
 	{
-		line = "timer: { player: " + color(pack.player) + ", state: " + turnTimerState(pack.turnTimer) + " }";
+		line.clear();
 	}
 
 	void visitPlayerBlocked(PlayerBlocked &) override

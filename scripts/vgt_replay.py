@@ -71,9 +71,11 @@ def header(documents: list[dict[str, Any]]) -> dict[str, Any]:
     for field in ("start", "startTime", "difficulty", "randomSeed", "simturns", "timer", "extraOptions", "gameSettingsOverrides"):
         if field not in settings:
             raise VGTError(f"header settings.{field} is missing")
-    for field in ("simturns", "timer", "extraOptions", "gameSettingsOverrides"):
+    for field in ("simturns", "extraOptions", "gameSettingsOverrides"):
         if not isinstance(settings[field], dict):
             raise VGTError(f"header settings.{field} must be a mapping")
+    if settings["timer"] != "none" and not isinstance(settings["timer"], dict):
+        raise VGTError("header settings.timer must be a mapping or none")
     def validate_players(players: Any, field_name: str) -> None:
         if not isinstance(players, dict) or not players:
             raise VGTError(f"header {field_name} field is missing or invalid")

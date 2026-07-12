@@ -1437,6 +1437,9 @@ SimturnsInfo decodeSimturns(const JsonNode & node)
 TurnTimerInfo decodeTimer(const JsonNode & node)
 {
 	TurnTimerInfo result;
+	if(node.isString() && node.String() == "none")
+		return result;
+
 	result.turnTimer = static_cast<int>(requireInteger(node, "turn"));
 	result.baseTimer = static_cast<int>(requireInteger(node, "base"));
 	result.battleTimer = static_cast<int>(requireInteger(node, "battle"));
