@@ -244,6 +244,15 @@ function HostCommands:splitStack(source, destination, fromSlot, toSlot, count)
 	})
 end
 
+function HostCommands:swapArtifacts(sourceHero, sourceSlot, destinationHero, destinationSlot)
+	return self:command("swapArtifacts", {
+		srcHero = objectID(sourceHero),
+		srcSlot = sourceSlot,
+		dstHero = objectID(destinationHero),
+		dstSlot = destinationSlot
+	})
+end
+
 function HostCommands:dismissCreature(army, slot)
 	return self:command("dismissCreature", {
 		army = objectID(army),

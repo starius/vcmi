@@ -22,6 +22,7 @@
 #include "../../lib/mapObjects/CGTownInstance.h"
 #include "../../lib/mapObjects/army/CStackInstance.h"
 #include "../../lib/mapObjects/IObjectInterface.h"
+#include "../../lib/networkPacks/ArtifactLocation.h"
 
 namespace LuaNullkiller2AI
 {
@@ -416,6 +417,25 @@ bool CLuaNullkiller2AI::executeCommand(const LuaCommand & command)
 
 		cc->splitStack(source, destination, SlotID(*fromSlot), SlotID(*toSlot), *count);
 		return true;
+	}
+
+	if(command.name == "swapArtifacts")
+	{
+		const auto sourceHeroID = commandInteger(command, "srcHero");
+		const auto sourceSlot = commandInteger(command, "srcSlot");
+		const auto destinationHeroID = commandInteger(command, "dstHero");
+		const auto destinationSlot = commandInteger(command, "dstSlot");
+		if(!sourceHeroID || !sourceSlot || !destinationHeroID || !destinationSlot)
+			return false;
+
+		const auto * sourceHero = cc->getHero(ObjectInstanceID(*sourceHeroID));
+		const auto * destinationHero = cc->getHero(ObjectInstanceID(*destinationHeroID));
+		if(!sourceHero || !destinationHero)
+			return false;
+
+		return cc->swapArtifacts(
+			ArtifactLocation(sourceHero->id, ArtifactPosition(*sourceSlot)),
+			ArtifactLocation(destinationHero->id, ArtifactPosition(*destinationSlot)));
 	}
 
 	if(command.name == "dismissCreature")

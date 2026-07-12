@@ -217,3 +217,64 @@ assert(#recruitment == 1)
 assert(recruitment[1].level == 0)
 assert(recruitment[1].creature.id == 402)
 assert(recruitment[1].count == 4)
+
+local function movementArtifact(id, movementBonus)
+	return {
+		id = id,
+		possibleSlots = { 0 },
+		exportedBonuses = movementBonus and {
+			{
+				type = "MOVEMENT",
+				subtype = "heroMovementLand",
+				val = movementBonus
+			}
+		} or {}
+	}
+end
+
+local function artifactJournal()
+	local journal = {}
+	return journal, {
+		swapArtifacts = function(_, sourceHero, sourceSlot, destinationHero, destinationSlot)
+			table.insert(journal, {
+				sourceHero = sourceHero,
+				sourceSlot = sourceSlot,
+				destinationHero = destinationHero,
+				destinationSlot = destinationSlot
+			})
+		end
+	}
+end
+
+local equipHero = {
+	id = 501,
+	artifactsInBackpack = {
+		{ slot = 19, artifact = movementArtifact(601, 50) }
+	}
+}
+local equipJournal, equipGateway = artifactJournal()
+assert(GatewayPolicy.pickBestArtifacts(equipGateway, equipHero) == 1)
+assert(#equipJournal == 1)
+assert(equipJournal[1].sourceHero == equipHero)
+assert(equipJournal[1].sourceSlot == 19)
+assert(equipJournal[1].destinationHero == equipHero)
+assert(equipJournal[1].destinationSlot == 0)
+assert(equipHero.artifactsWorn[1].artifact.id == 601)
+
+local swapHero = {
+	id = 502,
+	artifactsWorn = {
+		{ slot = 0, artifact = movementArtifact(602, 1) }
+	},
+	artifactsInBackpack = {
+		{ slot = 19, artifact = movementArtifact(603, 50) }
+	}
+}
+local swapJournal, swapGateway = artifactJournal()
+assert(GatewayPolicy.pickBestArtifacts(swapGateway, swapHero) == 1)
+assert(#swapJournal == 1)
+assert(swapJournal[1].sourceHero == swapHero)
+assert(swapJournal[1].sourceSlot == 19)
+assert(swapJournal[1].destinationHero == swapHero)
+assert(swapJournal[1].destinationSlot == 0)
+assert(swapHero.artifactsWorn[1].artifact.id == 603)

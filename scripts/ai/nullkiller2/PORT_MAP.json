@@ -923,7 +923,7 @@
         "getArtifactBonusRelevance",
         "getArtifactScoreForHero"
       ],
-      "notes": "Hero-specific artifact relevance and equipped-artifact score formulas are Lua-owned against hero slot, stack bonus, spellbook, and artifact bonus snapshots. Broader AIUtility helper coverage and artifact move sequencing remain pending."
+      "notes": "Hero-specific artifact relevance and equipped-artifact score formulas are Lua-owned against hero slot, stack bonus, spellbook, and artifact bonus snapshots. GatewayPolicy now has first-pass artifact equip/swap sequencing against hero artifact snapshots; broader AIUtility helper coverage, richer artifact snapshots, and combined-artifact fallback moves remain pending."
     },
     {
       "cpp": "AI/Nullkiller2/Helpers/ExplorationHelper.cpp",
@@ -993,9 +993,10 @@
         "AIGateway::makeSurrenderRetreatDecision",
         "AIGateway::heroExchangeStarted",
         "AIGateway::makePossibleUpgrades",
-        "AIGateway::recruitCreatures"
+        "AIGateway::recruitCreatures",
+        "AIGateway::pickBestArtifacts"
       ],
-      "notes": "Dialog choice, teleport selection/probing, garrison-use, map-object selection, retreat, hero-exchange direction, upgrade choice, dwelling recruitment, and army-transfer policies are Lua-owned against snapshots. Target-object state is wired through the host for map-object selection answers; remaining callback wiring and validator breadth remain pending."
+      "notes": "Dialog choice, teleport selection/probing, garrison-use, map-object selection, retreat, hero-exchange direction, upgrade choice, dwelling recruitment, army-transfer, and first-pass artifact equip/swap policies are Lua-owned against snapshots. Target-object state is wired through the host for map-object selection answers; richer live artifact snapshots, combined-artifact fallback moves, remaining callback wiring, and validator breadth remain pending."
     },
     {
       "cpp": null,
@@ -1005,7 +1006,7 @@
         "HostCommands",
         "HostCommands::command journal"
       ],
-      "notes": "Lua-side command boundary and journal used by goal accept methods and differential tests. C++ host execution is command-by-command, including granular hero movement, creature upgrades, stack merge/swap, and stack split commands, and must not delegate to native policy."
+      "notes": "Lua-side command boundary and journal used by goal accept methods and differential tests. C++ host execution is command-by-command, including granular hero movement, creature upgrades, stack merge/swap, stack split, and artifact swap commands, and must not delegate to native policy."
     },
     {
       "cpp": null,

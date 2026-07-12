@@ -146,21 +146,24 @@ formula scaffolding, deterministic `RewardEvaluator` resource, reward, growth, c
 hero-specific `AIUtility` artifact scoring, resource trading, goal records, marker records, priority-pass behaviors,
 regular behavior decomposition, and command emission for recruit hero, build, build boat, dismiss hero, swap garrison
 hero, recruit creatures, upgrade creatures, merge stacks, cross-army merge/swap, split stack, dismiss creatures,
-cast spell, granular hero movement, resource locks, and end turn. `ExchangeSwapTownHeroes` extraction now mirrors
-the `buildArmyIn` order through upgrades, recruitment, first-slot army correction, and Lua-owned transfer command
-sequencing from snapshots. `Analyzers/ArmyManager.lua` now owns sorted-slot consolidation, faction/morale best-army
-filtering, scout-unit choice, scout last-stack retention, dwelling purchase selection, reinforcement purchase value,
-reinforcement transfer value, stack-power evaluation, total-army aggregation, and hill-fort/dwelling upgrade
-calculation; the transfer sequencer emits the matching scout split
-commands when a source army must keep one stack.
+cast spell, artifact swaps, granular hero movement, resource locks, and end turn. `ExchangeSwapTownHeroes`
+extraction now mirrors the `buildArmyIn` order through upgrades, recruitment, first-slot army correction, and
+Lua-owned transfer command sequencing from snapshots. `Analyzers/ArmyManager.lua` now owns sorted-slot
+consolidation, faction/morale best-army filtering, scout-unit choice, scout last-stack retention, dwelling purchase
+selection, reinforcement purchase value, reinforcement transfer value, stack-power evaluation, total-army
+aggregation, and hill-fort/dwelling upgrade calculation; the transfer sequencer emits the matching scout split
+commands when a source army must keep one stack. `GatewayPolicy.pickBestArtifacts` now owns first-pass artifact
+equip/swap sequencing from hero artifact snapshots for empty legal equipment slots and higher-scoring replacement
+artifacts.
 
 Major parity gaps remain:
 
 - visible snapshots are still too thin for full analyzer, object, path, threat, query, and broader ArmyManager parity
 - `ExecuteHeroChain` replays path nodes in native backward order and rejects stale zero-turn live path snapshots, but
   Dimension Door stale recovery, special actions, object-graph shortcutting, and siege formation are still incomplete
-- artifact equipment sequencing, full Rewardable inspection, and richer live object inspection remain incomplete
-  outside the deterministic scoring helpers
+- richer artifact snapshots, combined-artifact fallback moves, full Rewardable inspection, and richer live object
+  inspection remain incomplete outside the deterministic scoring helpers and first-pass artifact equip/swap
+  sequencing
 - garrison, hero exchange, artifact, and remaining army-transfer edge cases need complete Lua-owned sequencing plus
   host validators
 - differential tests currently cover command journals and end-turn smoke; they do not yet compare real native
@@ -414,7 +417,7 @@ Commit messages must stay focused on the code change and must not mention the re
    fixtures no longer need hand-written placeholder fields.
 2. Complete `ExecuteHeroChain` parity: Dimension Door stale recovery, special actions, siege formation, visit/attack
    selection, and object-graph shortcutting.
-3. Finish `ExchangeSwapTownHeroes`, garrison, artifact command sequencing, and checked host validators.
+3. Extend garrison, hero exchange, artifact sequencing, and checked host validators with richer edge-case coverage.
 4. Finish `RewardEvaluator` and object-specific priority context builders, then add fixture tests for raw context and
    final priority parity.
 5. Add a native `Nullkiller2` trace exporter and a Lua replay/snapshot comparator so discrepancies produce

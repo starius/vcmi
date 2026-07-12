@@ -4,6 +4,7 @@
 -- business choices made by those callbacks so they can be regression-tested
 -- and compared against native parity snapshots.
 
+local AIUtility = require("Helpers.AIUtility")
 local PriorityEvaluator = require("Engine.PriorityEvaluator")
 
 local GatewayPolicy = {}
@@ -23,6 +24,9 @@ local ObjectType = {
 local TeleportPassability = {
 	IMPASSABLE = "IMPASSABLE"
 }
+
+local MACH4 = 16
+local BACKPACK_START = 19
 
 local function call(object, name, ...)
 	if object and type(object[name]) == "function" then
@@ -470,6 +474,209 @@ function GatewayPolicy.chooseDwellingRecruitment(dwelling, recruiter, resourceAm
 	end
 
 	return result
+end
+
+local function artifactSlot(entry, fallback)
+	return type(entry) == "table" and (entry.slot or entry.position or entry.pos or fallback) or fallback
+end
+
+local function artifactFromSlot(entry)
+	return type(entry) == "table" and (entry.artifact or entry.art or entry.item or entry) or entry
+end
+
+local function artifactInstanceID(artifact)
+	return objectID(artifact and (artifact.instanceID or artifact.artifactInstanceID or artifact.artifactID or artifact))
+end
+
+local function artifactPossibleSlots(artifact)
+	if not artifact then
+		return {}
+	end
+	return artifact.possibleSlots
+		or artifact.equipmentSlots
+		or artifact.slots
+		or artifact.type and (artifact.type.possibleSlots or artifact.type.equipmentSlots or artifact.type.slots)
+		or {}
+end
+
+local function artifactCanBePutAt(artifact, hero, slot)
+	if not artifact then
+		return false
+	end
+	if artifact.canBePutAt then
+		if type(artifact.canBePutAt) == "function" then
+			return artifact:canBePutAt(hero, slot)
+		end
+		if type(artifact.canBePutAt) == "table" then
+			return artifact.canBePutAt[slot] ~= false and artifact.canBePutAt[tostring(slot)] ~= false
+		end
+	end
+	local denied = artifact.deniedSlots
+	return not (type(denied) == "table" and (denied[slot] or denied[tostring(slot)]))
+end
+
+local function isEquipmentSlot(slot)
+	return type(slot) == "number" and slot >= 0 and slot < BACKPACK_START
+end
+
+local function addArtifactLocations(result, hero, entries)
+	for index, entry in pairs(entries or {}) do
+		local artifact = artifactFromSlot(entry)
+		if artifact then
+			table.insert(result, {
+				hero = hero,
+				slot = artifactSlot(entry, index),
+				artifact = artifact,
+				locked = type(entry) == "table" and entry.locked == true
+			})
+		end
+	end
+end
+
+local function collectArtifacts(hero, otherHero, giveStuffToFirstHero)
+	local result = {}
+	if giveStuffToFirstHero then
+		addArtifactLocations(result, hero, hero and (hero.artifactsWorn or hero.wornArtifacts))
+	end
+	addArtifactLocations(result, hero, hero and (hero.artifactsInBackpack or hero.backpackArtifacts))
+	if otherHero then
+		addArtifactLocations(result, otherHero, otherHero.artifactsWorn or otherHero.wornArtifacts)
+		addArtifactLocations(result, otherHero, otherHero.artifactsInBackpack or otherHero.backpackArtifacts)
+	end
+	return result
+end
+
+local function findArtifactAt(hero, slot)
+	for _, entry in pairs(hero and (hero.artifactsWorn or hero.wornArtifacts) or {}) do
+		if artifactSlot(entry) == slot then
+			return entry, artifactFromSlot(entry)
+		end
+	end
+	for _, entry in pairs(hero and (hero.artifactsInBackpack or hero.backpackArtifacts) or {}) do
+		if artifactSlot(entry) == slot then
+			return entry, artifactFromSlot(entry)
+		end
+	end
+	return nil, nil
+end
+
+local function isPositionFree(hero, slot)
+	if hero and hero.freeArtifactSlots then
+		return hero.freeArtifactSlots[slot] == true or hero.freeArtifactSlots[tostring(slot)] == true
+	end
+	return findArtifactAt(hero, slot) == nil
+end
+
+local function setArtifactAt(hero, slot, artifact)
+	local entry = findArtifactAt(hero, slot)
+	if entry then
+		entry.artifact = artifact
+		entry.art = artifact
+		entry.item = artifact
+	elseif isEquipmentSlot(slot) then
+		hero.artifactsWorn = hero.artifactsWorn or {}
+		table.insert(hero.artifactsWorn, { slot = slot, artifact = artifact })
+	else
+		hero.artifactsInBackpack = hero.artifactsInBackpack or {}
+		table.insert(hero.artifactsInBackpack, { slot = slot, artifact = artifact })
+	end
+end
+
+local function removeArtifactAt(hero, slot)
+	for _, entries in ipairs({ hero and (hero.artifactsWorn or hero.wornArtifacts), hero and (hero.artifactsInBackpack or hero.backpackArtifacts) }) do
+		for index, entry in pairs(entries or {}) do
+			if artifactSlot(entry, index) == slot then
+				entries[index] = nil
+				return
+			end
+		end
+	end
+end
+
+local function applyArtifactSwap(sourceHero, sourceSlot, destinationHero, destinationSlot)
+	local _, sourceArtifact = findArtifactAt(sourceHero, sourceSlot)
+	local _, destinationArtifact = findArtifactAt(destinationHero, destinationSlot)
+	removeArtifactAt(sourceHero, sourceSlot)
+	removeArtifactAt(destinationHero, destinationSlot)
+	if destinationArtifact then
+		setArtifactAt(sourceHero, sourceSlot, destinationArtifact)
+	end
+	if sourceArtifact then
+		setArtifactAt(destinationHero, destinationSlot, sourceArtifact)
+	end
+end
+
+local function swapArtifacts(aiGw, sourceHero, sourceSlot, destinationHero, destinationSlot)
+	aiGw:swapArtifacts(sourceHero, sourceSlot, destinationHero, destinationSlot)
+	applyArtifactSwap(sourceHero, sourceSlot, destinationHero, destinationSlot)
+end
+
+local function equipArtifactsForTarget(aiGw, hero, otherHero, giveStuffToFirstHero)
+	local target = (giveStuffToFirstHero or not otherHero) and hero or otherHero
+	local swapped = {}
+	local commandCount = 0
+	local changeMade = true
+
+	while changeMade do
+		changeMade = false
+		for _, location in ipairs(collectArtifacts(hero, otherHero, giveStuffToFirstHero)) do
+			local skip = (objectID(location.hero) == objectID(target) and isEquipmentSlot(location.slot))
+				or location.slot == MACH4
+				or location.locked
+
+			if not skip then
+				local artifact = location.artifact
+				for _, slot in ipairs(artifactPossibleSlots(artifact)) do
+					if isPositionFree(target, slot) and artifactCanBePutAt(artifact, target, slot) then
+						swapArtifacts(aiGw, location.hero, location.slot, target, slot)
+						commandCount = commandCount + 1
+						changeMade = true
+						break
+					end
+				end
+				if changeMade then
+					break
+				end
+
+				local artifactScore = AIUtility.getArtifactScoreForHero(target, artifact)
+				for _, slot in ipairs(artifactPossibleSlots(artifact)) do
+					local _, otherArtifact = findArtifactAt(target, slot)
+					if otherArtifact then
+						local otherArtifactScore = AIUtility.getArtifactScoreForHero(target, otherArtifact)
+						if artifactScore > otherArtifactScore and artifactCanBePutAt(artifact, target, slot) then
+							local left = artifactInstanceID(artifact)
+							local right = artifactInstanceID(otherArtifact)
+							local swapKey = tostring(math.min(left or 0, right or 0)) .. ":" .. tostring(math.max(left or 0, right or 0))
+							if not swapped[swapKey] then
+								swapArtifacts(aiGw, location.hero, location.slot, target, slot)
+								swapped[swapKey] = true
+								commandCount = commandCount + 1
+								changeMade = true
+							end
+							break
+						end
+					end
+				end
+				if changeMade then
+					break
+				end
+			end
+		end
+	end
+
+	return commandCount
+end
+
+function GatewayPolicy.pickBestArtifacts(aiGw, hero, otherHero)
+	if not (aiGw and type(aiGw.swapArtifacts) == "function") then
+		return 0
+	end
+
+	local commandCount = equipArtifactsForTarget(aiGw, hero, otherHero, true)
+	if otherHero then
+		commandCount = commandCount + equipArtifactsForTarget(aiGw, hero, otherHero, false)
+	end
+	return commandCount
 end
 
 GatewayPolicy.ComponentType = ComponentType
