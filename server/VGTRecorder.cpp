@@ -1076,6 +1076,18 @@ std::string fowTiles(const FowTilesType & tiles)
 	return flowList(runs);
 }
 
+std::string compactTile2D(const int3 & tile)
+{
+	return std::to_string(tile.x) + "x" + std::to_string(tile.y);
+}
+
+std::string fowCircle(const int3 & center, int radius)
+{
+	return "{ z: " + std::to_string(center.z) +
+		", radius: " + std::to_string(radius) +
+		", centers: [" + compactTile2D(center) + "] }";
+}
+
 std::string battleTarget(const BattleAction::DestinationInfo & target)
 {
 	std::vector<std::string> fields;
@@ -1968,8 +1980,13 @@ public:
 			", result: " + movementResult(pack.result) +
 			", movement: " + std::to_string(pack.movePoints);
 		if(!pack.fowRevealed.empty())
-			line += ", revealed: " + fowTiles(pack.fowRevealed);
-		if(pack.attackedFrom.isValid())
+		{
+			if(const auto * hero = gameState.getHero(pack.id))
+				line += ", revealed: " + fowCircle(hero->getSightCenter() + (pack.end - pack.start), hero->getSightRadius());
+			else
+				line += ", revealed: " + fowTiles(pack.fowRevealed);
+		}
+		if(pack.result == TryMoveHero::BLOCKING_VISIT && pack.attackedFrom.isValid() && pack.attackedFrom != int3())
 			line += ", attackedFrom: " + pos(pack.attackedFrom);
 		line += " }";
 	}

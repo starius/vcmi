@@ -706,6 +706,53 @@ FowTilesType decodeFowRuns(const JsonNode & node)
 	return result;
 }
 
+int3 decodeCompactTile2D(const std::string & value, int z)
+{
+	const auto separator = value.find('x');
+	if(separator == std::string::npos)
+		throw std::runtime_error("VGT compact tile must use x separator: " + value);
+	return int3(
+		std::stoi(value.substr(0, separator)),
+		std::stoi(value.substr(separator + 1)),
+		z);
+}
+
+void insertFowCircle(const CGameState & gameState, FowTilesType & result, const int3 & center, int radius)
+{
+	for(int x = std::max(center.x - radius, 0); x <= std::min(center.x + radius, gameState.getMap().width - 1); ++x)
+	{
+		for(int y = std::max(center.y - radius, 0); y <= std::min(center.y + radius, gameState.getMap().height - 1); ++y)
+		{
+			const int3 tile(x, y, center.z);
+			if(center.dist(tile, int3::DIST_2D) <= static_cast<ui32>(radius))
+				result.insert(tile);
+		}
+	}
+}
+
+FowTilesType decodeFowTiles(const CGameState & gameState, const JsonNode & node)
+{
+	if(node.isVector() || node.isNull())
+		return decodeFowRuns(node);
+	if(!node.isStruct())
+		throw std::runtime_error("VGT replay fog field must be a list or compact mapping");
+
+	const int z = static_cast<int>(requireInteger(node, "z"));
+	const int radius = static_cast<int>(requireInteger(node, "radius"));
+	const auto & centers = requireField(node, "centers");
+	if(!centers.isVector())
+		throw std::runtime_error("VGT replay fog centers must be a list");
+
+	FowTilesType result;
+	for(const auto & center : centers.Vector())
+	{
+		if(!center.isString())
+			throw std::runtime_error("VGT replay fog center must be a compact string");
+		insertFowCircle(gameState, result, decodeCompactTile2D(center.String(), z), radius);
+	}
+	return result;
+}
+
 std::string sanitizedAliasName(std::string name)
 {
 	std::transform(name.begin(), name.end(), name.begin(), [](unsigned char character)
@@ -2598,7 +2645,7 @@ void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, con
 		FoWChange pack;
 		pack.player = decodePlayerColor(requireString(node, "player"));
 		pack.mode = decodeVisibility(requireString(node, "mode"));
-		pack.tiles = decodeFowRuns(requireField(node, "runs"));
+		pack.tiles = decodeFowTiles(gameHandler.gameState(), requireField(node, "runs"));
 		applyEffectPack(gameHandler, pack);
 		return;
 	}
@@ -2665,7 +2712,7 @@ void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, con
 		pack.result = decodeMovementResult(requireString(node, "result"));
 		pack.movePoints = static_cast<ui32>(requireInteger(node, "movement"));
 		if(const auto * revealed = findField(node, "revealed"))
-			pack.fowRevealed = decodeFowRuns(*revealed);
+			pack.fowRevealed = decodeFowTiles(gameHandler.gameState(), *revealed);
 		if(const auto * attackedFrom = findField(node, "attackedFrom"))
 			pack.attackedFrom = decodePosition(*attackedFrom);
 		applyEffectPack(gameHandler, pack);
