@@ -314,6 +314,8 @@ The future player tool should:
 
 Because VGT contains no snapshots, jumping to the middle requires replay from the start or using a cache built by the tool. That is acceptable for the text format.
 
+Decision replay through normal mechanics is useful for debugging, but it is not sufficient for exact reconstruction unless every RNG draw is reproduced. The authoritative replay path must apply recorded material effects. Decisions explain what an actor requested; effects state what actually became true, including realized random outcomes such as a wandering monster joining instead of starting a battle.
+
 ## Open Questions
 
 - How much initial alias data should be written versus derived from the map at replay time?
