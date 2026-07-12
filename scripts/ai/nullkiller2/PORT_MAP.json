@@ -116,7 +116,7 @@
         "EvaluationContext",
         "PriorityEvaluator::PriorityTier"
       ],
-      "notes": "Priority tiers, HeroRole, EvaluationContext defaults, non-critical strategical value clamp, and formula helpers are ported. RewardEvaluator object inspection remains pending."
+      "notes": "Priority tiers, HeroRole, EvaluationContext defaults, non-critical strategical value clamp, and formula helpers are ported. RewardEvaluator resource/gold helper coverage lives in Engine/RewardEvaluator.lua; full object inspection remains pending."
     },
     {
       "cpp": "AI/Nullkiller2/Engine/PriorityEvaluator.cpp",
@@ -131,7 +131,20 @@
         "PriorityEvaluator::evaluateConquestValue",
         "RewardEvaluator"
       ],
-      "notes": "Priority-tier scoring formulas are ported against Lua EvaluationContext snapshots. Native object-specific context builders and RewardEvaluator routines remain pending."
+      "notes": "Priority-tier scoring formulas are ported against Lua EvaluationContext snapshots. Native object-specific context builders and most RewardEvaluator routines remain pending."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Engine/PriorityEvaluator.cpp",
+      "lua": "scripts/ai/nullkiller2/Engine/RewardEvaluator.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "RewardEvaluator::getResourcesGoldReward",
+        "RewardEvaluator::getNowResourceRequirementStrength",
+        "RewardEvaluator::getTotalResourceRequirementStrength",
+        "RewardEvaluator::getCombinedResourceRequirementStrength",
+        "RewardEvaluator::getGoldReward"
+      ],
+      "notes": "Deterministic resource pressure, army-cost, and simple object gold-reward helpers are ported with fixture coverage. Full Rewardable inspection, C++ callback-backed town income, army reward, growth, skill reward, conquest value, and enemy danger remain pending."
     },
     {
       "cpp": "AI/Nullkiller2/Goals/AbstractGoal.h",
