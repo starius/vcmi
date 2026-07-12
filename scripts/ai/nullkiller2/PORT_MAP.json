@@ -231,7 +231,7 @@
         "Goals::BuyArmy",
         "Goals::BuyArmy::needsFreeSlotToRecruit"
       ],
-      "notes": "Constructor, equality, string policy, free-slot helper, purchase ordering, affordability capping, and stack-dismissal selection are ported."
+      "notes": "Constructor, equality, string policy, free-slot helper, purchase ordering, affordability capping, and stack-dismissal selection from upper-army slot snapshots are ported."
     },
     {
       "cpp": "AI/Nullkiller2/Goals/BuyArmy.cpp",
@@ -242,7 +242,7 @@
         "Goals::BuyArmy::toString",
         "Goals::BuyArmy::accept"
       ],
-      "notes": "Lua accept emits granular recruit/dismiss creature commands from snapshot purchase data. Pre-recruit upgrade attempts and post-recruit visiting-hero movement remain pending."
+      "notes": "Lua accept emits granular recruit/dismiss creature commands from town purchase and upper-army stack snapshots. Pre-recruit upgrade attempts and post-recruit visiting-hero movement remain pending."
     },
     {
       "cpp": "AI/Nullkiller2/Goals/CaptureObject.h",

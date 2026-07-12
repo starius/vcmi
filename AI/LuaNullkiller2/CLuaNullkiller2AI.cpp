@@ -20,6 +20,7 @@
 #include "../../lib/StartInfo.h"
 #include "../../lib/mapObjects/CGHeroInstance.h"
 #include "../../lib/mapObjects/CGTownInstance.h"
+#include "../../lib/mapObjects/army/CStackInstance.h"
 #include "../../lib/mapObjects/IObjectInterface.h"
 
 namespace LuaNullkiller2AI
@@ -46,6 +47,9 @@ JsonNode tileSnapshot(const int3 & tile)
 	return result;
 }
 
+void addArmySnapshotFields(JsonNode & result, const CArmedInstance * army);
+JsonNode armySnapshot(const CArmedInstance * army);
+
 JsonNode heroSnapshot(const CGHeroInstance * hero)
 {
 	JsonNode result;
@@ -60,6 +64,7 @@ JsonNode heroSnapshot(const CGHeroInstance * hero)
 	result["totalStrength"].Integer() = static_cast<int64_t>(hero->getTotalStrength());
 	result["armyStrength"].Integer() = static_cast<int64_t>(hero->getArmyStrength());
 	result["armyCost"].Integer() = static_cast<int64_t>(hero->getArmyCost());
+	addArmySnapshotFields(result, hero);
 	result["movementPointsRemaining"].Integer() = hero->movementPointsRemaining();
 	result["garrisoned"].Bool() = hero->isGarrisoned();
 	result["visitablePos"] = tileSnapshot(hero->visitablePos());
@@ -75,21 +80,78 @@ JsonNode resourcesSnapshot(const TResources & resources)
 	return result;
 }
 
-JsonNode purchasableCreatureSnapshot(CreatureID creatureID, int count, int level)
+JsonNode creatureSnapshot(CreatureID creatureID)
 {
 	JsonNode result;
 	result.setType(JsonNode::JsonType::DATA_STRUCT);
 	const auto * creature = creatureID.toCreature();
 
+	result["id"].Integer() = creatureID.getNum();
+	result["aiValue"].Integer() = creature ? creature->getAIValue() : 0;
+	result["factionID"].Integer() = creature ? creature->getFactionID().getNum() : -1;
+	if(creature)
+		result["fullRecruitCost"] = resourcesSnapshot(creature->getFullRecruitCost());
+
+	return result;
+}
+
+JsonNode stackSnapshot(const SlotID & slotID, const CStackInstance * stack)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	if(!stack)
+		return result;
+
+	result["slot"].Integer() = slotID.getNum();
+	result["count"].Integer() = static_cast<int64_t>(stack->getCount());
+	result["power"].Integer() = static_cast<int64_t>(stack->getPower());
+	result["marketValue"].Integer() = static_cast<int64_t>(stack->getMarketValue());
+	result["creatureID"].Integer() = stack->getCreatureID().getNum();
+	result["creature"] = creatureSnapshot(stack->getCreatureID());
+	return result;
+}
+
+void addArmySnapshotFields(JsonNode & result, const CArmedInstance * army)
+{
+	if(!army)
+		return;
+
+	result["armySize"].Integer() = GameConstants::ARMY_SIZE;
+	result["stacksCount"].Integer() = army->stacksCount();
+	result["armyStrength"].Integer() = static_cast<int64_t>(army->getArmyStrength());
+	result["armyCost"].Integer() = static_cast<int64_t>(army->getArmyCost());
+	result["slots"].setType(JsonNode::JsonType::DATA_VECTOR);
+	result["slotsByCreature"].setType(JsonNode::JsonType::DATA_STRUCT);
+
+	for(const auto & slot : army->Slots())
+	{
+		const auto * stack = slot.second.get();
+		result["slots"].Vector().push_back(stackSnapshot(slot.first, stack));
+		if(stack)
+			result["slotsByCreature"][std::to_string(stack->getCreatureID().getNum())].Integer() = slot.first.getNum();
+	}
+}
+
+JsonNode armySnapshot(const CArmedInstance * army)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	if(!army)
+		return result;
+
+	result["id"].Integer() = army->id.getNum();
+	result["owner"].Integer() = army->tempOwner.getNum();
+	addArmySnapshotFields(result, army);
+	return result;
+}
+
+JsonNode purchasableCreatureSnapshot(CreatureID creatureID, int count, int level)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
 	result["count"].Integer() = count;
 	result["level"].Integer() = level;
-	result["creature"].setType(JsonNode::JsonType::DATA_STRUCT);
-	result["creature"]["id"].Integer() = creatureID.getNum();
-	result["creature"]["aiValue"].Integer() = creature ? creature->getAIValue() : 0;
-	result["creature"]["factionID"].Integer() = creature ? creature->getFactionID().getNum() : -1;
-	if(creature)
-		result["creature"]["fullRecruitCost"] = resourcesSnapshot(creature->getFullRecruitCost());
-
+	result["creature"] = creatureSnapshot(creatureID);
 	return result;
 }
 
@@ -108,6 +170,7 @@ JsonNode townSnapshot(const CGTownInstance * town, const std::shared_ptr<CCallba
 	result["fortLevel"].Integer() = town->fortLevel();
 	result["upperArmyStrength"].Integer() = static_cast<int64_t>(town->getUpperArmy()->getArmyStrength());
 	result["armyStrength"].Integer() = static_cast<int64_t>(town->getUpperArmy()->getArmyStrength());
+	result["upperArmy"] = armySnapshot(town->getUpperArmy());
 	result["hasCapitol"].Bool() = town->hallLevel() >= 3;
 	result["hasBuiltResourceMarketplace"].Bool() = town->getMarketEfficiency() > 0;
 	result["visitablePos"] = tileSnapshot(town->visitablePos());

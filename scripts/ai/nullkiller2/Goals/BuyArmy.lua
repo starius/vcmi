@@ -109,7 +109,11 @@ local function slotHasCreature(army, creatureID)
 		end
 		return result ~= false
 	end
-	return army and army.slotsByCreature and army.slotsByCreature[numericID(creatureID)] ~= nil
+
+	local slotsByCreature = type(army) == "table" and army.slotsByCreature or nil
+	local id = numericID(creatureID)
+	return slotsByCreature ~= nil
+		and (slotsByCreature[id] ~= nil or slotsByCreature[tostring(id)] ~= nil)
 end
 
 local function lowestDismissibleSlot(army, town)
@@ -118,6 +122,7 @@ local function lowestDismissibleSlot(army, town)
 	local townFaction = creatureFactionID(town)
 
 	for slot, stack in pairs(armyStacks(army)) do
+		local actualSlot = type(stack) == "table" and (stack.slot or slot) or slot
 		local creature = type(stack) == "table" and (stack.creature or stack.creatureID or stack) or stack
 		if numericID(creature) ~= nil and creatureFactionID(creature) ~= townFaction then
 			local count = type(stack) == "table" and (stack.count or stack.stackCount or 0) or 0
@@ -126,7 +131,7 @@ local function lowestDismissibleSlot(army, town)
 			local marketValue = (stackValue or creatureValue or creatureAIValue(creature)) * count
 			if marketValue < resultValue then
 				resultValue = marketValue
-				resultSlot = slot
+				resultSlot = actualSlot
 			end
 		end
 	end
@@ -163,7 +168,7 @@ function BuyArmy.needsFreeSlotToRecruit(army, creatureID)
 			hasSlot = slot ~= nil and slot ~= false
 		end
 	elseif army and army.slotsByCreature then
-		hasSlot = army.slotsByCreature[creatureID] ~= nil
+		hasSlot = army.slotsByCreature[creatureID] ~= nil or army.slotsByCreature[tostring(creatureID)] ~= nil
 	end
 
 	return stacksCount == armySize and not hasSlot
@@ -194,14 +199,16 @@ function BuyArmy:accept(aiGw)
 		if self.objid == -1 or numericID(creature) == self.objid then
 			local count = math.min(creatureInfo.count or 0, maxAffordableCount(resources(aiGw), resourceCost(creature)))
 			if count > 0 then
+				local freedSlot = false
 				if BuyArmy.needsFreeSlotToRecruit(army, numericID(creature)) then
 					local slot = lowestDismissibleSlot(army, self.town)
 					if slot ~= nil and aiGw and type(aiGw.dismissCreature) == "function" then
 						aiGw:dismissCreature(army, slot)
+						freedSlot = true
 					end
 				end
 
-				if stacksCount(army) < (army and (army.armySize or army.ARMY_SIZE) or 7) or slotHasCreature(army, creature) then
+				if freedSlot or stacksCount(army) < (army and (army.armySize or army.ARMY_SIZE) or 7) or slotHasCreature(army, creature) then
 					if aiGw and type(aiGw.recruitCreatures) == "function" then
 						aiGw:recruitCreatures(self.town, army, creature, count, creatureInfo.level)
 					else

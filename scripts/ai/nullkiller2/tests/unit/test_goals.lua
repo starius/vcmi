@@ -77,6 +77,7 @@ assert(task:toString() == "Buy army at Castle Black")
 
 assert(BuyArmy.needsFreeSlotToRecruit({ stacksCount = 7, armySize = 7, slotsByCreature = {} }, 3) == true)
 assert(BuyArmy.needsFreeSlotToRecruit({ stacksCount = 7, armySize = 7, slotsByCreature = { [3] = 1 } }, 3) == false)
+assert(BuyArmy.needsFreeSlotToRecruit({ stacksCount = 7, armySize = 7, slotsByCreature = { ["3"] = 1 } }, 3) == false)
 assert(BuyArmy.needsFreeSlotToRecruit({ stacksCount = 6, armySize = 7, slotsByCreature = {} }, 3) == false)
 
 town.factionID = 1
@@ -121,6 +122,50 @@ assert(buyArmyJournal[1].destination == town.upperArmy)
 assert(buyArmyJournal[1].creature.id == 106)
 assert(buyArmyJournal[1].count == 5)
 assert(buyArmyJournal[1].level == 1)
+
+local fullTown = {
+	id = 201,
+	name = "Full Town",
+	factionID = 1,
+	upperArmy = {
+		id = 202,
+		stacksCount = 7,
+		armySize = 7,
+		slotsByCreature = {
+			["205"] = 3
+		},
+		slots = {
+			{
+				slot = 3,
+				count = 1,
+				marketValue = 1,
+				creature = { id = 205, factionID = 2, aiValue = 1 }
+			}
+		}
+	},
+	availableToBuy = {
+		{
+			creature = { id = 206, aiValue = 100, factionID = 1, fullRecruitCost = { [7] = 100 } },
+			count = 2,
+			level = 2
+		}
+	}
+}
+local dismissSlot = nil
+local recruitedCreature = nil
+BuyArmy.new(fullTown, 100):accept({
+	freeResources = { [7] = 1000 },
+	dismissCreature = function(_, army, slot)
+		assert(army == fullTown.upperArmy)
+		dismissSlot = slot
+	end,
+	recruitCreatures = function(_, _, destination, creature)
+		assert(destination == fullTown.upperArmy)
+		recruitedCreature = creature.id
+	end
+})
+assert(dismissSlot == 3)
+assert(recruitedCreature == 206)
 
 assert(Goals.Invalid == Invalid)
 assert(Goals.BuildThis == BuildThis)
