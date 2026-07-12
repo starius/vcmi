@@ -43,6 +43,16 @@ local function resourceValue(resources, resourceID)
 	return resources[resourceID] or 0
 end
 
+local function numericID(value)
+	if type(value) == "number" then
+		return value
+	end
+	if type(value) == "table" then
+		return value.num or value.id or value.objectID or value.objectId or value[1]
+	end
+	return value
+end
+
 local function marketValue(resources)
 	if not resources then
 		return 0
@@ -142,6 +152,34 @@ end
 
 local function mageGuildLevel(town)
 	return call(town, "mageGuildLevel") or town and (town.mageGuildLevel or town.mageGuild or 0) or 0
+end
+
+local function townFaction(town)
+	return call(town, "getFactionID") or town and (town.factionID or town.faction)
+end
+
+local function townLevel(town)
+	return call(town, "getTownLevel") or town and (town.townLevel or town.level) or 0
+end
+
+local function tableSize(value)
+	local result = 0
+	for _ in pairs(value or {}) do
+		result = result + 1
+	end
+	return result
+end
+
+local function magesGuildLevelFromBuilding(id)
+	id = numericID(id)
+	if id ~= nil and id >= 0 and id <= 4 then
+		return id + 1
+	end
+	return 0
+end
+
+local function isMagesGuild(id)
+	return magesGuildLevelFromBuilding(id) > 0
 end
 
 local function addMovementByRole(context, role, movementCost)
@@ -256,6 +294,34 @@ local function buildExplorePointContext(context, task)
 	end
 end
 
+local function buildAdventureSpellCastContext(context, task, aiNk)
+	if task.goalType ~= AbstractGoal.EGoals.ADVENTURE_SPELL_CAST or not task.hero then
+		return
+	end
+
+	local spell = call(task, "getSpell") or task.spellID
+	if not spell then
+		return
+	end
+
+	local role = heroRole(aiNk, task.hero)
+	context.heroRole = role
+
+	local isDimensionDoor = spell.dimensionDoor == true
+		or spell.type == "DimensionDoor"
+		or spell.effect == "DimensionDoor"
+		or spell.mechanics == "DimensionDoor"
+		or spell.movementPointsTaken ~= nil
+	if isDimensionDoor then
+		local movementLimit = math.max(1, movementPointsLimit(task.hero))
+		local movementSpent = math.min(movementPointsRemaining(task.hero), spell.movementPointsTaken or 0)
+		local movementCost = movementSpent / movementLimit
+
+		context.movementCost = context.movementCost + movementCost
+		addMovementByRole(context, role, movementCost)
+	end
+end
+
 local function buildStayAtTownContext(context, task)
 	if task.goalType ~= AbstractGoal.EGoals.STAY_AT_TOWN then
 		return
@@ -314,13 +380,101 @@ local function buildDismissHeroContext(context, task, aiNk)
 	context.goldCost = context.goldCost + RewardEvaluator.HERO_GOLD_COST + RewardEvaluator.getArmyCost(dismissedHero)
 end
 
+local function sameTownBonus(task, aiNk)
+	local buildingInfo = task.buildingInfo or {}
+	if buildingInfo.sameTownBonus ~= nil then
+		return buildingInfo.sameTownBonus
+	end
+	if task.townInfo and task.townInfo.sameTownBonus ~= nil then
+		return task.townInfo.sameTownBonus
+	end
+
+	local taskFaction = townFaction(task.town)
+	local result = 0
+	for _, town in ipairs(aiNk and aiNk.townsInfo or {}) do
+		if taskFaction ~= nil and townFaction(town) == taskFaction then
+			result = result + townLevel(town)
+		end
+	end
+	return result > 0 and result or 1
+end
+
+local function buildThisContext(context, task, aiNk)
+	if task.goalType ~= AbstractGoal.EGoals.BUILD_STRUCTURE then
+		return
+	end
+
+	local buildingInfo = task.buildingInfo or {}
+	local id = numericID(buildingInfo.id or task.bid)
+	local prerequisitesCount = buildingInfo.prerequisitesCount or 1
+	local buildCost = buildingInfo.buildCost or buildingInfo.cost or {}
+	local buildCostWithPrerequisites = buildingInfo.buildCostWithPrerequisites or buildCost
+	local dailyIncome = buildingInfo.dailyIncome or {}
+
+	context.goldReward = context.goldReward + 7 * marketValue(dailyIncome) / 2
+	context.heroRole = PriorityEvaluator.HeroRole.MAIN
+	addMovementByRole(context, context.heroRole, prerequisitesCount)
+	context.goldCost = context.goldCost + resourceValue(buildCost, 6)
+	context.closestWayRatio = 1
+	context.buildingCost = addResources(context.buildingCost, buildCostWithPrerequisites)
+
+	if id == 14 or resourceValue(dailyIncome, 0) > 0 then
+		context.isTradeBuilding = true
+	end
+
+	local creatureID = buildingInfo.creatureID
+	local hasCreature = creatureID ~= nil and creatureID ~= "NONE" and creatureID ~= -1
+	if hasCreature then
+		context:addNonCriticalStrategicalValue(((task.townInfo and task.townInfo.armyStrength) or 0) / 50000.0)
+
+		if buildingInfo.baseCreatureID == creatureID then
+			context:addNonCriticalStrategicalValue((0.5 + 0.1 * (buildingInfo.creatureLevel or 0)) / prerequisitesCount)
+			context.armyReward = context.armyReward + (buildingInfo.armyStrength or 0) * 1.5
+		else
+			local potentialUpgradeValue = buildingInfo.potentialUpgradeValue or buildingInfo.upgradeArmyReward or 0
+			context:addNonCriticalStrategicalValue(potentialUpgradeValue / 10000.0 / prerequisitesCount)
+			if buildingInfo.isDwelling then
+				context.armyReward = context.armyReward + (buildingInfo.armyStrength or 0) - (buildingInfo.baseCreatureGrowthPower or 0)
+			else
+				context.armyReward = context.armyReward + (buildingInfo.baseCreatureGrowthPower or 0)
+			end
+			if buildingInfo.alreadyOwn and marketValue(buildCostWithPrerequisites) > 0 then
+				context.armyReward = context.armyReward / marketValue(buildCostWithPrerequisites)
+			end
+		end
+	elseif id == 8 or id == 9 then
+		context:addNonCriticalStrategicalValue(tableSize(task.town and task.town.creatures) * 0.2)
+		context.armyReward = context.armyReward + ((task.townInfo and task.townInfo.armyStrength) or 0) / 2
+	elseif isMagesGuild(id) then
+		context.skillReward = context.skillReward + 2 * magesGuildLevelFromBuilding(id)
+		if not buildingInfo.alreadyOwn then
+			context.armyReward = context.armyReward + (buildingInfo.spellcasterArmyReward or 0)
+		end
+	end
+
+	context.armyReward = context.armyReward * sameTownBonus(task, aiNk)
+
+	if context.goldReward > 0 then
+		local goldPressure = call(aiNk and aiNk.buildAnalyzer, "getGoldPressure") or aiNk and aiNk.goldPressure or 1
+		context:addNonCriticalStrategicalValue(context.goldReward * goldPressure / 3500.0 / prerequisitesCount)
+	end
+
+	if buildingInfo.isMissingResources and prerequisitesCount == 1 then
+		context.strategicalValue = context.strategicalValue / 3
+		addMovementByRole(context, context.heroRole, 5)
+		context.turn = context.turn + 5
+	end
+end
+
 local function buildContextForSubgoal(context, task, aiNk)
 	buildHeroExchangeContext(context, task, aiNk)
 	buildArmyUpgradeContext(context, task)
 	buildExplorePointContext(context, task)
+	buildAdventureSpellCastContext(context, task, aiNk)
 	buildStayAtTownContext(context, task)
 	buildExchangeSwapTownHeroesContext(context, task, aiNk)
 	buildDismissHeroContext(context, task, aiNk)
+	buildThisContext(context, task, aiNk)
 end
 
 function PriorityEvaluator.buildEvaluationContext(goal, aiNk)

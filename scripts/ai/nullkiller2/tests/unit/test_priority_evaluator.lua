@@ -1,5 +1,7 @@
 local AbstractGoal = require("Goals.AbstractGoal")
+local AdventureSpellCast = require("Goals.AdventureSpellCast")
 local ArmyUpgrade = require("Markers.ArmyUpgrade")
+local BuildThis = require("Goals.BuildThis")
 local CGoal = require("Goals.CGoal")
 local DismissHero = require("Goals.DismissHero")
 local ExchangeSwapTownHeroes = require("Goals.ExchangeSwapTownHeroes")
@@ -142,6 +144,70 @@ local dismissContext = PriorityEvaluator.buildEvaluationContext(DismissHero.new(
 assert(dismissContext.movementCost == 700)
 assert(dismissContext.movementCostByRole[PriorityEvaluator.HeroRole.SCOUT] == 700)
 assert(dismissContext.goldCost == 2700)
+
+local spellContext = PriorityEvaluator.buildEvaluationContext(AdventureSpellCast.new({
+	id = 601,
+	role = PriorityEvaluator.HeroRole.MAIN,
+	movementPointsRemaining = 600,
+	movementPointsLimit = 1200
+}, {
+	name = "Dimension Door",
+	dimensionDoor = true,
+	movementPointsTaken = 300
+}), aiNk)
+assert(spellContext.heroRole == PriorityEvaluator.HeroRole.MAIN)
+assert(almostEquals(spellContext.movementCost, 0.25))
+assert(almostEquals(spellContext.movementCostByRole[PriorityEvaluator.HeroRole.MAIN], 0.25))
+
+local buildTown = { id = 701, factionID = 3, townLevel = 3, creatures = { {}, {} } }
+local buildContext = PriorityEvaluator.buildEvaluationContext(BuildThis.new({
+	id = 20,
+	name = "Creature dwelling",
+	prerequisitesCount = 2,
+	dailyIncome = { [6] = 100 },
+	buildCost = { [6] = 500 },
+	buildCostWithPrerequisites = { [0] = 2, [6] = 500 },
+	creatureID = 12,
+	baseCreatureID = 12,
+	creatureLevel = 2,
+	armyStrength = 1000
+}, {
+	town = buildTown,
+	armyStrength = 10000
+}), {
+	goldPressure = 1,
+	townsInfo = {
+		buildTown
+	}
+})
+assert(buildContext.goldReward == 350)
+assert(buildContext.goldCost == 500)
+assert(buildContext.buildingCost[0] == 2)
+assert(buildContext.buildingCost[6] == 500)
+assert(almostEquals(buildContext.strategicalValue, 0.35))
+assert(buildContext.armyReward == 4500)
+assert(buildContext.movementCostByRole[PriorityEvaluator.HeroRole.MAIN] == 2)
+
+local missingBuildContext = PriorityEvaluator.buildEvaluationContext(BuildThis.new({
+	id = 14,
+	name = "Marketplace",
+	prerequisitesCount = 1,
+	dailyIncome = { [0] = 1, [6] = 100 },
+	buildCost = { [6] = 500 },
+	buildCostWithPrerequisites = { [6] = 500 },
+	isMissingResources = true
+}, {
+	town = buildTown,
+	sameTownBonus = 1
+}), {
+	goldPressure = 1
+})
+assert(missingBuildContext.isTradeBuilding == true)
+assert(missingBuildContext.goldReward == 700)
+assert(missingBuildContext.goldCost == 500)
+assert(almostEquals(missingBuildContext.strategicalValue, 0.2 / 3))
+assert(missingBuildContext.movementCostByRole[PriorityEvaluator.HeroRole.MAIN] == 6)
+assert(missingBuildContext.turn == 5)
 
 local buildingScore = PriorityEvaluator.evaluate(EvalGoal.new({
 	strategicalValue = 1,

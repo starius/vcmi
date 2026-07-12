@@ -153,8 +153,7 @@ Major parity gaps remain:
 - `ExecuteHeroChain` replays path nodes in native backward order, but stale-path recovery, special actions,
   object-graph shortcutting, and siege formation are still incomplete
 - artifact-specific `RewardEvaluator` scoring, skill reward, upgrade reward, enemy danger, and the heavier
-  `ExecuteHeroChain`, defend-town, cluster, adventure-spell, and build-structure priority context builders are not
-  yet fully ported
+  `ExecuteHeroChain`, defend-town, and cluster priority context builders are not yet fully ported
 - garrison, hero exchange, artifact, and army-transfer commands need complete Lua-owned sequencing plus host
   validators
 - differential tests currently cover command journals and end-turn smoke; they do not yet compare real native
