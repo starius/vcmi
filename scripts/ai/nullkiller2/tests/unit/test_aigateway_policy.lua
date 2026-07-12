@@ -220,18 +220,30 @@ assert(recruitment[1].count == 4)
 
 local function movementArtifact(id, movementBonus, options)
 	options = options or {}
+	local bonuses = movementBonus and {
+		{
+			type = "MOVEMENT",
+			subtype = "heroMovementLand",
+			val = movementBonus
+		}
+	} or {}
 	return {
 		id = id,
 		possibleSlots = options.possibleSlots or { 0 },
 		deniedSlots = options.deniedSlots,
-		exportedBonuses = movementBonus and {
-			{
-				type = "MOVEMENT",
-				subtype = "heroMovementLand",
-				val = movementBonus
-			}
-		} or {}
+		exportedBonuses = bonuses
 	}
+end
+
+local function snapshotMovementArtifact(id, movementBonus)
+	local artifact = movementArtifact(id, nil)
+	artifact.instanceID = id
+	artifact.artifactType = {
+		ID = "artifact-" .. tostring(id),
+		exportedBonuses = movementArtifact(id, movementBonus).exportedBonuses,
+		constituents = {}
+	}
+	return artifact
 end
 
 local function artifactJournal()
@@ -269,7 +281,7 @@ local swapHero = {
 		{ slot = 0, artifact = movementArtifact(602, 1) }
 	},
 	artifactsInBackpack = {
-		{ slot = 19, artifact = movementArtifact(603, 50) }
+		{ slot = 19, artifact = snapshotMovementArtifact(603, 50) }
 	}
 }
 local swapJournal, swapGateway = artifactJournal()

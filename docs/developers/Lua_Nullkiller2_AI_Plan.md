@@ -153,17 +153,17 @@ consolidation, faction/morale best-army filtering, scout-unit choice, scout last
 selection, reinforcement purchase value, reinforcement transfer value, stack-power evaluation, total-army
 aggregation, and hill-fort/dwelling upgrade calculation; the transfer sequencer emits the matching scout split
 commands when a source army must keep one stack. `GatewayPolicy.pickBestArtifacts` now owns first-pass artifact
-equip/swap sequencing from hero artifact snapshots for empty legal equipment slots, higher-scoring replacement
-artifacts, and the displaced-artifact backpack fallback when a direct swap is illegal.
+equip/swap sequencing from exported hero artifact snapshots for empty legal equipment slots, higher-scoring
+replacement artifacts, and the displaced-artifact backpack fallback when a direct swap is illegal.
 
 Major parity gaps remain:
 
 - visible snapshots are still too thin for full analyzer, object, path, threat, query, and broader ArmyManager parity
 - `ExecuteHeroChain` replays path nodes in native backward order and rejects stale zero-turn live path snapshots, but
   Dimension Door stale recovery, special actions, object-graph shortcutting, and siege formation are still incomplete
-- richer artifact snapshots, full combined-artifact legality data, full Rewardable inspection, and richer live object
-  inspection remain incomplete outside the deterministic scoring helpers and first-pass artifact equip/swap
-  sequencing
+- target-specific artifact legality snapshots, full combined-artifact legality data, full Rewardable inspection, and
+  richer live object inspection remain incomplete outside the deterministic scoring helpers and first-pass artifact
+  equip/swap sequencing
 - garrison, hero exchange, artifact, and remaining army-transfer edge cases need complete Lua-owned sequencing plus
   host validators
 - differential tests currently cover command journals and end-turn smoke; they do not yet compare real native

@@ -18,6 +18,8 @@
 #include "../../lib/CCreatureHandler.h"
 #include "../../lib/GameConstants.h"
 #include "../../lib/StartInfo.h"
+#include "../../lib/entities/artifact/CArtifact.h"
+#include "../../lib/entities/artifact/CArtifactInstance.h"
 #include "../../lib/mapObjects/CGHeroInstance.h"
 #include "../../lib/mapObjects/CGTownInstance.h"
 #include "../../lib/mapObjects/army/CStackInstance.h"
@@ -51,6 +53,88 @@ JsonNode tileSnapshot(const int3 & tile)
 void addArmySnapshotFields(JsonNode & result, const CArmedInstance * army);
 JsonNode armySnapshot(const CArmedInstance * army);
 
+JsonNode artifactTypeSnapshot(const CArtifact * artifactType)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	if(!artifactType)
+		return result;
+
+	result["id"].Integer() = artifactType->getId().getNum();
+	result["ID"].String() = artifactType->getJsonKey();
+	result["name"].String() = artifactType->getJsonKey();
+	result["price"].Integer() = artifactType->getPrice();
+	result["isScroll"].Bool() = artifactType->isScroll();
+	result["spellScroll"].Bool() = artifactType->isScroll();
+	result["possibleSlots"].setType(JsonNode::JsonType::DATA_VECTOR);
+	if(const auto slots = artifactType->getPossibleSlots().find(ArtBearer::HERO); slots != artifactType->getPossibleSlots().end())
+	{
+		for(const auto & slot : slots->second)
+			result["possibleSlots"].Vector().push_back(JsonNode(static_cast<int64_t>(slot.getNum())));
+	}
+	result["exportedBonuses"] = artifactType->getExportedBonusList().toJsonNode();
+	result["constituents"].setType(JsonNode::JsonType::DATA_VECTOR);
+	for(const auto * constituent : artifactType->getConstituents())
+		result["constituents"].Vector().push_back(artifactTypeSnapshot(constituent));
+	return result;
+}
+
+JsonNode artifactSnapshot(const CArtifactInstance * artifact)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	if(!artifact)
+		return result;
+
+	const auto * artifactType = artifact->getType();
+	result["id"].Integer() = artifact->getId().getNum();
+	result["instanceID"].Integer() = artifact->getId().getNum();
+	result["artifactID"].Integer() = artifact->getTypeId().getNum();
+	result["artifactType"] = artifactTypeSnapshot(artifactType);
+	if(artifactType)
+	{
+		result["typeID"].Integer() = artifactType->getId().getNum();
+		result["typeName"].String() = artifactType->getJsonKey();
+		result["possibleSlots"] = result["artifactType"]["possibleSlots"];
+		result["exportedBonuses"] = result["artifactType"]["exportedBonuses"];
+		result["constituents"] = result["artifactType"]["constituents"];
+	}
+	result["isScroll"].Bool() = artifact->isScroll();
+	result["spellScroll"].Bool() = artifact->isScroll();
+	if(artifact->isScroll())
+		result["scrollSpellID"].Integer() = artifact->getScrollSpellID().getNum();
+	return result;
+}
+
+JsonNode artifactSlotSnapshot(const ArtifactPosition & slot, const ArtSlotInfo & slotInfo)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_STRUCT);
+	result["slot"].Integer() = slot.getNum();
+	result["locked"].Bool() = slotInfo.locked;
+	if(const auto * artifact = slotInfo.getArt())
+		result["artifact"] = artifactSnapshot(artifact);
+	return result;
+}
+
+void addHeroArtifactSnapshotFields(JsonNode & result, const CGHeroInstance * hero)
+{
+	if(!hero)
+		return;
+
+	result["artifactsWorn"].setType(JsonNode::JsonType::DATA_VECTOR);
+	for(const auto & [slot, slotInfo] : hero->artifactsWorn)
+		result["artifactsWorn"].Vector().push_back(artifactSlotSnapshot(slot, slotInfo));
+
+	result["artifactsInBackpack"].setType(JsonNode::JsonType::DATA_VECTOR);
+	ArtifactPosition backpackSlot = ArtifactPosition::BACKPACK_START;
+	for(const auto & slotInfo : hero->artifactsInBackpack)
+	{
+		result["artifactsInBackpack"].Vector().push_back(artifactSlotSnapshot(backpackSlot, slotInfo));
+		backpackSlot = ArtifactPosition(backpackSlot + 1);
+	}
+}
+
 JsonNode heroSnapshot(const CGHeroInstance * hero)
 {
 	JsonNode result;
@@ -69,6 +153,7 @@ JsonNode heroSnapshot(const CGHeroInstance * hero)
 	result["movementPointsRemaining"].Integer() = hero->movementPointsRemaining();
 	result["garrisoned"].Bool() = hero->isGarrisoned();
 	result["visitablePos"] = tileSnapshot(hero->visitablePos());
+	addHeroArtifactSnapshotFields(result, hero);
 	return result;
 }
 
