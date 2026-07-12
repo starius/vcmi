@@ -1039,6 +1039,8 @@
         "AIGateway::showMapObjectSelectDialog",
         "AIGateway::makeSurrenderRetreatDecision",
         "AIGateway::heroExchangeStarted",
+        "AIGateway::playerBlocked",
+        "AIGateway::heroCreated",
         "AIGateway::heroVisit",
         "AIGateway::heroMoved",
         "AIGateway::newObject",
@@ -1046,11 +1048,15 @@
         "AIGateway::objectPropertyChanged",
         "AIGateway::tileHidden",
         "AIGateway::tileRevealed",
+        "AIGateway::battleStart",
+        "AIGateway::battleEnd",
+        "AIGateway::battleResultsApplied",
+        "AIGateway::battleEnded",
         "AIGateway::makePossibleUpgrades",
         "AIGateway::recruitCreatures",
         "AIGateway::pickBestArtifacts"
       ],
-      "notes": "Dialog choice, teleport selection/probing, garrison-use, map-object selection, retreat, hero-exchange direction, move/reveal/hide/visit/object memory events, owner-change memory events, upgrade choice, dwelling recruitment, army-transfer, and first-pass artifact equip/swap policies are Lua-owned against snapshots. Artifact replacement uses exported hero artifact snapshots, per-holder canBePutAt tables, and the displaced-artifact backpack fallback when a direct swap is illegal. The commanderGotLevel, heroGotLevel, heroExchangeStarted, heroMoved, heroVisit, newObject, objectPropertyChanged, objectRemoved, tileHidden, tileRevealed, showBlockingDialog, showGarrisonDialog, showRecruitmentDialog, showTeleportDialog, showTavernWindow, showMarketWindow, showUniversityWindow, and showMapObjectSelectDialog callbacks are wired through Lua entry points. Query callbacks answer pending queries through HostCommands.answerQuery. makeSurrenderRetreatDecision is wired through a Lua return decision converted to BattleAction at the host boundary. Hero role-map snapshots for exact level-up main/scout parity, teleport destination/probing memory, danger-aware blocking-dialog parity, cross-hero artifact legality breadth, full combined-artifact legality data, remaining callback wiring, and validator breadth remain pending."
+      "notes": "Dialog choice, teleport selection/probing, garrison-use, map-object selection, retreat, hero-exchange direction, battle/blocking/hero-created state events, move/reveal/hide/visit/object memory events, owner-change memory events, upgrade choice, dwelling recruitment, army-transfer, and first-pass artifact equip/swap policies are Lua-owned against snapshots. Artifact replacement uses exported hero artifact snapshots, per-holder canBePutAt tables, and the displaced-artifact backpack fallback when a direct swap is illegal. The battleEnd, battleEnded, battleResultsApplied, battleStart, commanderGotLevel, heroCreated, heroGotLevel, heroExchangeStarted, heroMoved, heroVisit, newObject, objectPropertyChanged, objectRemoved, playerBlocked, tileHidden, tileRevealed, showBlockingDialog, showGarrisonDialog, showRecruitmentDialog, showTeleportDialog, showTavernWindow, showMarketWindow, showUniversityWindow, and showMapObjectSelectDialog callbacks are wired through Lua entry points. Query callbacks answer pending queries through HostCommands.answerQuery. makeSurrenderRetreatDecision is wired through a Lua return decision converted to BattleAction at the host boundary. Hero role-map snapshots for exact level-up main/scout parity, teleport destination/probing memory, danger-aware blocking-dialog parity, cross-hero artifact legality breadth, full combined-artifact legality data, remaining callback wiring, and validator breadth remain pending."
     },
     {
       "cpp": null,
@@ -1069,6 +1075,11 @@
       "symbols": [
         "Script.runDay",
         "Script.commanderGotLevel",
+        "Script.battleEnd",
+        "Script.battleEnded",
+        "Script.battleResultsApplied",
+        "Script.battleStart",
+        "Script.heroCreated",
         "Script.heroGotLevel",
         "Script.heroExchangeStarted",
         "Script.heroMoved",
@@ -1077,6 +1088,7 @@
         "Script.newObject",
         "Script.objectRemoved",
         "Script.objectPropertyChanged",
+        "Script.playerBlocked",
         "Script.tileHidden",
         "Script.tileRevealed",
         "Script.showBlockingDialog",

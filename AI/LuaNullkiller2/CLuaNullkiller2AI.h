@@ -55,6 +55,8 @@ public:
 	void showGarrisonDialog(const CArmedInstance * up, const CGHeroInstance * down, bool removableUnits, QueryID queryID, const MetaString & customTitle) override;
 	void showRecruitmentDialog(const CGDwelling * dwelling, const CArmedInstance * dst, int level, QueryID queryID) override;
 	void heroExchangeStarted(ObjectInstanceID hero1, ObjectInstanceID hero2, QueryID query) override;
+	void playerBlocked(int reason, bool start) override;
+	void heroCreated(const CGHeroInstance * hero) override;
 	void heroVisit(const CGHeroInstance * visitor, const CGObjectInstance * visitedObj, bool start) override;
 	void heroMoved(const TryMoveHero & details, bool verbose = true) override;
 	void newObject(const CGObjectInstance * obj) override;
@@ -62,6 +64,10 @@ public:
 	void objectPropertyChanged(const SetObjectProperty * sop) override;
 	void tileHidden(const FowTilesType & pos) override;
 	void tileRevealed(const FowTilesType & pos) override;
+	void battleStart(const BattleID & battleID, const CCreatureSet * army1, const CCreatureSet * army2, int3 tile, const CGHeroInstance * hero1, const CGHeroInstance * hero2, BattleSide side, bool replayAllowed) override;
+	void battleEnd(const BattleID & battleID, const BattleResult * battleResult, QueryID queryID) override;
+	void battleResultsApplied() override;
+	void battleEnded() override;
 	void showTeleportDialog(const CGHeroInstance * hero, TeleportChannelID channel, TTeleportExitsList exits, bool impassable, QueryID askID) override;
 	void showMapObjectSelectDialog(QueryID askID, const Component & icon, const MetaString & title, const MetaString & description, const std::vector<ObjectInstanceID> & objects) override;
 	std::optional<BattleAction> makeSurrenderRetreatDecision(const BattleID & battleID, const BattleStateInfoForRetreat & battleState) override;

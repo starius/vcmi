@@ -30,6 +30,7 @@
 #include "../../lib/networkPacks/ArtifactLocation.h"
 #include "../../lib/networkPacks/Component.h"
 #include "../../lib/networkPacks/PacksForClient.h"
+#include "../../lib/networkPacks/PacksForClientBattle.h"
 
 namespace LuaNullkiller2AI
 {
@@ -110,6 +111,36 @@ std::string playerRelationsName(PlayerRelations relations)
 		return "ALLIES";
 	case PlayerRelations::SAME_PLAYER:
 		return "SAME_PLAYER";
+	}
+	return "UNKNOWN";
+}
+
+std::string battleSideName(BattleSide side)
+{
+	switch(side)
+	{
+	case BattleSide::NONE:
+		return "NONE";
+	case BattleSide::INVALID:
+		return "INVALID";
+	case BattleSide::ALL_KNOWING:
+		return "ALL_KNOWING";
+	case BattleSide::ATTACKER:
+		return "ATTACKER";
+	case BattleSide::DEFENDER:
+		return "DEFENDER";
+	}
+	return "UNKNOWN";
+}
+
+std::string playerBlockedReasonName(int reason)
+{
+	switch(reason)
+	{
+	case PlayerBlocked::UPCOMING_BATTLE:
+		return "UPCOMING_BATTLE";
+	case PlayerBlocked::ONGOING_MOVEMENT:
+		return "ONGOING_MOVEMENT";
 	}
 	return "UNKNOWN";
 }
@@ -1020,6 +1051,30 @@ void CLuaNullkiller2AI::commanderGotLevel(const CCommanderInstance * commander, 
 	runQueryCallback("commanderGotLevel", queryID);
 }
 
+void CLuaNullkiller2AI::playerBlocked(int reason, bool start)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["reason"].Integer() = reason;
+	snapshot["reasonName"].String() = playerBlockedReasonName(reason);
+	snapshot["start"].Bool() = start;
+
+	runEventCallback("playerBlocked", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::heroCreated(const CGHeroInstance * hero)
+{
+	pathfinderInvalidated = true;
+
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	if(hero)
+		snapshot["hero"] = heroSnapshot(hero);
+	snapshot["pathfinderInvalidated"].Bool() = true;
+
+	runEventCallback("heroCreated", std::move(snapshot));
+}
+
 void CLuaNullkiller2AI::heroVisit(const CGHeroInstance * visitor, const CGObjectInstance * visitedObj, bool start)
 {
 	JsonNode snapshot;
@@ -1122,6 +1177,58 @@ void CLuaNullkiller2AI::tileRevealed(const FowTilesType & pos)
 	snapshot["objects"] = visitableObjectsOnTilesSnapshot(pos, cc);
 
 	runEventCallback("tileRevealed", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::battleStart(const BattleID & battleID, const CCreatureSet * army1, const CCreatureSet * army2, int3 tile, const CGHeroInstance * hero1, const CGHeroInstance * hero2, BattleSide side, bool replayAllowed)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["battleID"].Integer() = battleID.getNum();
+	snapshot["tile"] = tileSnapshot(tile);
+	snapshot["side"].Integer() = static_cast<int>(side);
+	snapshot["sideName"].String() = battleSideName(side);
+	snapshot["replayAllowed"].Bool() = replayAllowed;
+	if(hero1)
+		snapshot["hero1"] = heroSnapshot(hero1);
+	if(hero2)
+		snapshot["hero2"] = heroSnapshot(hero2);
+	if(const auto * presumedEnemy = vstd::backOrNull(cc->getVisitableObjs(tile)))
+		snapshot["presumedEnemy"] = objectSnapshot(presumedEnemy);
+
+	runEventCallback("battleStart", std::move(snapshot));
+	CAdventureAI::battleStart(battleID, army1, army2, tile, hero1, hero2, side, replayAllowed);
+}
+
+void CLuaNullkiller2AI::battleEnd(const BattleID & battleID, const BattleResult * battleResult, QueryID queryID)
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	snapshot["battleID"].Integer() = battleID.getNum();
+	snapshot["queryID"].Integer() = queryID.getNum();
+	if(battleResult)
+	{
+		snapshot["result"].Integer() = static_cast<int>(battleResult->result);
+		snapshot["winner"].Integer() = static_cast<int>(battleResult->winner);
+		snapshot["winnerName"].String() = battleSideName(battleResult->winner);
+		snapshot["attacker"].Integer() = battleResult->attacker.getNum();
+	}
+
+	runEventCallback("battleEnd", std::move(snapshot));
+	CAdventureAI::battleEnd(battleID, battleResult, queryID);
+}
+
+void CLuaNullkiller2AI::battleResultsApplied()
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	runEventCallback("battleResultsApplied", std::move(snapshot));
+}
+
+void CLuaNullkiller2AI::battleEnded()
+{
+	JsonNode snapshot;
+	snapshot.setType(JsonNode::JsonType::DATA_STRUCT);
+	runEventCallback("battleEnded", std::move(snapshot));
 }
 
 void CLuaNullkiller2AI::showTavernWindow(const CGObjectInstance * object, const CGHeroInstance * visitor, QueryID queryID)

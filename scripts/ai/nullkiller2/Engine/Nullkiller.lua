@@ -282,6 +282,11 @@ local function eventResult(memory, status)
 	}
 end
 
+local function statusRoot(memory)
+	memory.status = memory.status or {}
+	return memory.status
+end
+
 local function buildAiState(input, host, settings, state)
 	input = ensureSnapshotIndexes(input)
 	local aiNk = {}
@@ -924,6 +929,30 @@ function Nullkiller.commanderGotLevel(ai, input)
 	return answerQuery(ai, input)
 end
 
+function Nullkiller.playerBlocked(ai, input)
+	input = input or {}
+	local root = memoryRoot(input)
+	local status = statusRoot(root)
+	if input.reasonName == "UPCOMING_BATTLE" and input.start then
+		status.battle = "UPCOMING_BATTLE"
+	end
+	if input.reasonName == "ONGOING_MOVEMENT" then
+		status.moving = input.start == true
+	end
+	return eventResult(root, "player_blocked")
+end
+
+function Nullkiller.heroCreated(ai, input)
+	input = input or {}
+	local root = memoryRoot(input)
+	root.pathfinderInvalidated = true
+	if input.hero then
+		root.createdHeroes = root.createdHeroes or {}
+		root.createdHeroes[tostring(objectID(input.hero))] = true
+	end
+	return eventResult(root, "hero_created")
+end
+
 function Nullkiller.heroVisit(ai, input)
 	input = input or {}
 	local root, memory = eventMemory(input)
@@ -1019,6 +1048,41 @@ function Nullkiller.tileRevealed(ai, input)
 		end
 	end
 	return eventResult(root, "tile_revealed")
+end
+
+function Nullkiller.battleStart(ai, input)
+	input = input or {}
+	local root = memoryRoot(input)
+	local status = statusRoot(root)
+	status.battle = "ONGOING_BATTLE"
+	status.battleID = input.battleID
+	status.battleSide = input.sideName or input.side
+	if input.presumedEnemy then
+		status.presumedEnemy = objectID(input.presumedEnemy)
+	end
+	return eventResult(root, "battle_start")
+end
+
+function Nullkiller.battleEnd(ai, input)
+	input = input or {}
+	local root = memoryRoot(input)
+	local status = statusRoot(root)
+	status.battle = "ENDING_BATTLE"
+	status.battleID = input.battleID
+	status.battleWinner = input.winnerName or input.winner
+	return eventResult(root, "battle_end")
+end
+
+function Nullkiller.battleResultsApplied(ai, input)
+	local root = memoryRoot(input or {})
+	statusRoot(root).battle = "ENDING_BATTLE"
+	return eventResult(root, "battle_results_applied")
+end
+
+function Nullkiller.battleEnded(ai, input)
+	local root = memoryRoot(input or {})
+	statusRoot(root).battle = "NO_BATTLE"
+	return eventResult(root, "battle_ended")
 end
 
 function Nullkiller.heroGotLevel(ai, input)

@@ -41,6 +41,14 @@ function Script.commanderGotLevel(ai, input)
 	return Nullkiller.commanderGotLevel(ai, input or {})
 end
 
+function Script.playerBlocked(ai, input)
+	return Nullkiller.playerBlocked(ai, input or {})
+end
+
+function Script.heroCreated(ai, input)
+	return Nullkiller.heroCreated(ai, input or {})
+end
+
 function Script.heroVisit(ai, input)
 	return Nullkiller.heroVisit(ai, input or {})
 end
@@ -67,6 +75,22 @@ end
 
 function Script.tileRevealed(ai, input)
 	return Nullkiller.tileRevealed(ai, input or {})
+end
+
+function Script.battleStart(ai, input)
+	return Nullkiller.battleStart(ai, input or {})
+end
+
+function Script.battleEnd(ai, input)
+	return Nullkiller.battleEnd(ai, input or {})
+end
+
+function Script.battleResultsApplied(ai, input)
+	return Nullkiller.battleResultsApplied(ai, input or {})
+end
+
+function Script.battleEnded(ai, input)
+	return Nullkiller.battleEnded(ai, input or {})
 end
 
 function Script.heroGotLevel(ai, input)

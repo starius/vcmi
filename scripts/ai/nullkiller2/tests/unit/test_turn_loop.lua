@@ -449,6 +449,31 @@ local eventMemory = {
 		alreadyVisited = {}
 	}
 }
+
+local blockedResult = Script.playerBlocked(makeAI().ai, {
+	memory = eventMemory,
+	reasonName = "UPCOMING_BATTLE",
+	start = true
+})
+assert(blockedResult.status == "player_blocked")
+assert(eventMemory.status.battle == "UPCOMING_BATTLE")
+
+local movingResult = Script.playerBlocked(makeAI().ai, {
+	memory = eventMemory,
+	reasonName = "ONGOING_MOVEMENT",
+	start = true
+})
+assert(movingResult.status == "player_blocked")
+assert(eventMemory.status.moving == true)
+
+local heroCreatedResult = Script.heroCreated(makeAI().ai, {
+	memory = eventMemory,
+	hero = { id = 939 }
+})
+assert(heroCreatedResult.status == "hero_created")
+assert(eventMemory.pathfinderInvalidated == true)
+assert(eventMemory.createdHeroes["939"] == true)
+
 local newObjectResult = Script.newObject(makeAI().ai, {
 	memory = eventMemory,
 	object = {
@@ -566,6 +591,38 @@ local townRemovedResult = Script.objectRemoved(makeAI().ai, {
 })
 assert(townRemovedResult.status == "object_removed")
 assert(eventMemory.dangerHitMap.resetTileOwners == true)
+
+local battleStartResult = Script.battleStart(makeAI().ai, {
+	memory = eventMemory,
+	battleID = 950,
+	sideName = "ATTACKER",
+	presumedEnemy = { id = 951 }
+})
+assert(battleStartResult.status == "battle_start")
+assert(eventMemory.status.battle == "ONGOING_BATTLE")
+assert(eventMemory.status.battleID == 950)
+assert(eventMemory.status.presumedEnemy == 951)
+
+local battleEndResult = Script.battleEnd(makeAI().ai, {
+	memory = eventMemory,
+	battleID = 950,
+	winnerName = "DEFENDER"
+})
+assert(battleEndResult.status == "battle_end")
+assert(eventMemory.status.battle == "ENDING_BATTLE")
+assert(eventMemory.status.battleWinner == "DEFENDER")
+
+local battleAppliedResult = Script.battleResultsApplied(makeAI().ai, {
+	memory = eventMemory
+})
+assert(battleAppliedResult.status == "battle_results_applied")
+assert(eventMemory.status.battle == "ENDING_BATTLE")
+
+local battleEndedResult = Script.battleEnded(makeAI().ai, {
+	memory = eventMemory
+})
+assert(battleEndedResult.status == "battle_ended")
+assert(eventMemory.status.battle == "NO_BATTLE")
 
 local recruitmentRun = makeAI()
 local recruitmentDialogResult = Script.showRecruitmentDialog(recruitmentRun.ai, {
