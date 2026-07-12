@@ -79,7 +79,7 @@ JsonNode artifactTypeSnapshot(const CArtifact * artifactType)
 	return result;
 }
 
-JsonNode artifactSnapshot(const CArtifactInstance * artifact)
+JsonNode artifactSnapshot(const CArtifactInstance * artifact, const CArtifactSet * holder)
 {
 	JsonNode result;
 	result.setType(JsonNode::JsonType::DATA_STRUCT);
@@ -103,17 +103,23 @@ JsonNode artifactSnapshot(const CArtifactInstance * artifact)
 	result["spellScroll"].Bool() = artifact->isScroll();
 	if(artifact->isScroll())
 		result["scrollSpellID"].Integer() = artifact->getScrollSpellID().getNum();
+	if(holder)
+	{
+		result["canBePutAt"].setType(JsonNode::JsonType::DATA_STRUCT);
+		for(ArtifactPosition slot(0); slot <= ArtifactPosition::BACKPACK_START; slot = ArtifactPosition(slot + 1))
+			result["canBePutAt"][std::to_string(slot.getNum())].Bool() = artifact->canBePutAt(holder, slot, true);
+	}
 	return result;
 }
 
-JsonNode artifactSlotSnapshot(const ArtifactPosition & slot, const ArtSlotInfo & slotInfo)
+JsonNode artifactSlotSnapshot(const ArtifactPosition & slot, const ArtSlotInfo & slotInfo, const CArtifactSet * holder)
 {
 	JsonNode result;
 	result.setType(JsonNode::JsonType::DATA_STRUCT);
 	result["slot"].Integer() = slot.getNum();
 	result["locked"].Bool() = slotInfo.locked;
 	if(const auto * artifact = slotInfo.getArt())
-		result["artifact"] = artifactSnapshot(artifact);
+		result["artifact"] = artifactSnapshot(artifact, holder);
 	return result;
 }
 
@@ -124,13 +130,13 @@ void addHeroArtifactSnapshotFields(JsonNode & result, const CGHeroInstance * her
 
 	result["artifactsWorn"].setType(JsonNode::JsonType::DATA_VECTOR);
 	for(const auto & [slot, slotInfo] : hero->artifactsWorn)
-		result["artifactsWorn"].Vector().push_back(artifactSlotSnapshot(slot, slotInfo));
+		result["artifactsWorn"].Vector().push_back(artifactSlotSnapshot(slot, slotInfo, hero));
 
 	result["artifactsInBackpack"].setType(JsonNode::JsonType::DATA_VECTOR);
 	ArtifactPosition backpackSlot = ArtifactPosition::BACKPACK_START;
 	for(const auto & slotInfo : hero->artifactsInBackpack)
 	{
-		result["artifactsInBackpack"].Vector().push_back(artifactSlotSnapshot(backpackSlot, slotInfo));
+		result["artifactsInBackpack"].Vector().push_back(artifactSlotSnapshot(backpackSlot, slotInfo, hero));
 		backpackSlot = ArtifactPosition(backpackSlot + 1);
 	}
 }

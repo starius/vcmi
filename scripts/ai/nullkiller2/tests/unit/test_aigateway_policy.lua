@@ -275,6 +275,18 @@ assert(equipJournal[1].destinationHero == equipHero)
 assert(equipJournal[1].destinationSlot == 0)
 assert(equipHero.artifactsWorn[1].artifact.id == 601)
 
+local deniedArtifact = movementArtifact(606, 50)
+deniedArtifact.canBePutAt = { ["0"] = false }
+local deniedHero = {
+	id = 505,
+	artifactsInBackpack = {
+		{ slot = 19, artifact = deniedArtifact }
+	}
+}
+local deniedJournal, deniedGateway = artifactJournal()
+assert(GatewayPolicy.pickBestArtifacts(deniedGateway, deniedHero) == 0)
+assert(#deniedJournal == 0)
+
 local swapHero = {
 	id = 502,
 	artifactsWorn = {

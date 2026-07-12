@@ -164,8 +164,8 @@ Major parity gaps remain:
 - visible snapshots are still too thin for full analyzer, object, path, threat, query, and broader ArmyManager parity
 - `ExecuteHeroChain` replays path nodes in native backward order and rejects stale zero-turn live path snapshots, but
   Dimension Door stale recovery, special actions, object-graph shortcutting, and siege formation are still incomplete
-- target-specific artifact legality snapshots, full combined-artifact legality data, full Rewardable inspection, and
-  richer live object inspection remain incomplete outside the deterministic scoring helpers and first-pass artifact
+- cross-hero artifact legality breadth, full combined-artifact legality data, full Rewardable inspection, and richer
+  live object inspection remain incomplete outside the deterministic scoring helpers and first-pass artifact
   equip/swap sequencing
 - garrison, hero exchange, artifact, and remaining army-transfer edge cases need complete Lua-owned sequencing plus
   host validators
