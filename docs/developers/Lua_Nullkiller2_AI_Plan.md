@@ -127,6 +127,35 @@ The Lua package should mirror `Nullkiller2` concepts using data records rather t
 - `Queries/`: level-up, blocking dialog, teleport, tavern, market, recruitment, garrison, university, artifact
   assembly, and map-object selection policies.
 
+## Current Branch Status
+
+The branch now has the initial standalone AI and parity infrastructure in place:
+
+- `ENABLE_LUA_NULLKILLER2_AI`, the `AI/LuaNullkiller2` target, and `AIFactory` registration are present.
+- `CLuaNullkiller2AI` derives directly from `CAdventureAI`, loads the Lua runner, passes a visible snapshot, and
+  executes checked host commands without linking to or instantiating native `Nullkiller2`.
+- The Lua runner loads `scripts/ai/nullkiller2/main.lua`, exposes settings, trace, command, and snapshot input, and
+  records a command journal that is usable by differential tests.
+- `scripts/ai/nullkiller2/PORT_MAP.json` tracks mirrored C++ files and symbols, with audit coverage for forbidden
+  native dependencies and unmapped/stale Lua policy files.
+- Pure Lua tests and fixture-based differential smoke tests run through
+  `scripts/ai/nullkiller2/tests/run_lua_tests.py`.
+
+The current Lua policy surface includes the core day loop, settings, state locks, task plan execution, priority
+formula scaffolding, resource trading, goal records, marker records, priority-pass behaviors, regular behavior
+decomposition, and command emission for recruit hero, build, build boat, dismiss hero, swap garrison hero, recruit
+creatures, dismiss creatures, cast spell, path-end movement, resource locks, and end turn.
+
+Major parity gaps remain:
+
+- visible snapshots are still too thin for full analyzer, object, path, threat, query, and army-transfer parity
+- `ExecuteHeroChain` still moves to the final tile instead of replaying full C++ path-action sequencing
+- `RewardEvaluator` and object-specific priority context builders are not yet fully ported
+- garrison, hero exchange, artifact, and army-transfer commands need complete Lua-owned sequencing plus host
+  validators
+- differential tests currently cover command journals and end-turn smoke; they do not yet compare real native
+  `Nullkiller2` traces against Lua traces at each decision point
+
 ## Mirrored Structure and Naming
 
 The Lua port should deliberately preserve the names and boundaries of the C++ implementation unless Lua syntax or
@@ -371,11 +400,17 @@ Commit messages must stay focused on the code change and must not mention the re
 
 ## Immediate Next Steps
 
-1. Add the port checklist and dependency audit script.
-2. Add the mirrored port index and initial Lua regression-test runner layout.
-3. Import the smallest useful subset of `script-ai` Lua runner/action infrastructure.
-4. Create the standalone `AI/LuaNullkiller2` target and `LuaNullkiller2` factory registration.
-5. Add the first Lua `Engine/Nullkiller.lua` skeleton that can load settings, trace a day start, and end the turn
-   without native fallback.
-6. Add the first differential smoke fixture that compares C++ and Lua day-start/end-turn traces.
-7. Set up the remote work directory and run the first lightweight build check there.
+1. Expand the snapshot contract for heroes, towns, objects, paths, threats, queries, and army stacks until behavior
+   fixtures no longer need hand-written placeholder fields.
+2. Complete `ExecuteHeroChain` parity: stale-path recovery, special actions, siege formation, visit/attack
+   selection, and step-by-step movement commands.
+3. Finish `ExchangeSwapTownHeroes`, garrison, army-transfer, upgrade, and artifact command sequencing with Lua-owned
+   policy and checked host validators.
+4. Port `RewardEvaluator` and object-specific priority context builders, then add fixture tests for raw context and
+   final priority parity.
+5. Add a native `Nullkiller2` trace exporter and a Lua replay/snapshot comparator so discrepancies produce
+   minimized fixtures under `scripts/ai/nullkiller2/tests/fixtures/discrepancies/`.
+6. Wire query callbacks into Lua policy modules for level-up, blocking dialogs, teleport, object selection,
+   recruitment, tavern, market, university, garrison, and surrender/retreat decisions.
+7. Strengthen the no-native-dependency gate by building `LuaNullkiller2` with native `Nullkiller2` disabled and
+   auditing C++ and Lua policy code for forbidden native-delegation strings.
