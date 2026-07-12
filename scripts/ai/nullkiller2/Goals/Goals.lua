@@ -7,11 +7,14 @@ return {
 	CGoal = require("Goals.CGoal"),
 	BuildThis = require("Goals.BuildThis"),
 	BuyArmy = require("Goals.BuyArmy"),
+	CaptureObject = require("Goals.CaptureObject"),
 	Composition = require("Goals.Composition"),
 	DigAtTile = require("Goals.DigAtTile"),
 	DismissHero = require("Goals.DismissHero"),
+	ExploreNeighbourTile = require("Goals.ExploreNeighbourTile"),
 	Invalid = require("Goals.Invalid"),
 	RecruitHero = require("Goals.RecruitHero"),
 	SaveResources = require("Goals.SaveResources"),
+	StayAtTown = require("Goals.StayAtTown"),
 	Trade = require("Goals.Trade")
 }

@@ -3,12 +3,15 @@ local AdventureSpellCast = require("Goals.AdventureSpellCast")
 local BuildBoat = require("Goals.BuildBoat")
 local BuildThis = require("Goals.BuildThis")
 local BuyArmy = require("Goals.BuyArmy")
+local CaptureObject = require("Goals.CaptureObject")
 local DigAtTile = require("Goals.DigAtTile")
 local DismissHero = require("Goals.DismissHero")
+local ExploreNeighbourTile = require("Goals.ExploreNeighbourTile")
 local Goals = require("Goals.Goals")
 local Invalid = require("Goals.Invalid")
 local RecruitHero = require("Goals.RecruitHero")
 local SaveResources = require("Goals.SaveResources")
+local StayAtTown = require("Goals.StayAtTown")
 local Trade = require("Goals.Trade")
 
 assert(AbstractGoal.EGoals.INVALID == -1)
@@ -139,5 +142,59 @@ assert(Goals.AdventureSpellCast == AdventureSpellCast)
 assert(Goals.BuildBoat == BuildBoat)
 assert(Goals.DigAtTile == DigAtTile)
 assert(Goals.DismissHero == DismissHero)
+assert(Goals.ExploreNeighbourTile == ExploreNeighbourTile)
 assert(Goals.RecruitHero == RecruitHero)
 assert(Goals.SaveResources == SaveResources)
+
+local object = { id = 800, typeName = "Mine", visitablePos = { x = 2, y = 3, z = 0 } }
+local capture = CaptureObject.new(object)
+assert(capture:equals(CaptureObject.new(object)) == true)
+assert(capture:hasHash() == true)
+assert(capture:getHash() == 800)
+assert(capture:toString() == "Capture Mine at (2 3 0)")
+
+local candidate = ExploreNeighbourTile.evaluateNeighbourExplorationCandidate({
+	sameDay = true,
+	accessible = true,
+	safe = true,
+	tilesDiscovered = 4,
+	movementCost = 2
+})
+assert(candidate.accepted == true)
+assert(candidate.value == 8)
+assert(ExploreNeighbourTile.evaluateNeighbourExplorationCandidate({
+	sameDay = false,
+	accessible = true,
+	safe = true,
+	tilesDiscovered = 4,
+	movementCost = 2
+}).accepted == false)
+assert(ExploreNeighbourTile.evaluateTileScore(4, 2) == 2)
+
+local explorer = {
+	id = 801,
+	name = "Scout",
+	movementPointsRemaining = 100,
+	neighbourExplorationCandidates = {
+		{ tile = { x = 1, y = 0, z = 0 }, sameDay = true, accessible = true, safe = true, tilesDiscovered = 2, movementCost = 1 },
+		{ tile = { x = 2, y = 0, z = 0 }, sameDay = true, accessible = true, safe = true, tilesDiscovered = 3, movementCost = 1 }
+	}
+}
+local target = ExploreNeighbourTile.findTarget(explorer, {})
+assert(target.tile.x == 2)
+local exploreIntent = ExploreNeighbourTile.new(explorer, 1):accept({})
+assert(exploreIntent.action == "moveHeroToTile")
+assert(exploreIntent.tile.x == 2)
+
+local restTown = { id = 901, name = "Tower" }
+local restHero = { id = 902, name = "Solmyr", movementPointsRemaining = 600, movementPointsLimit = 1200, mana = 7, manaLimit = 20 }
+local stay = StayAtTown.new(restTown, { targetHero = restHero, movementCost = 0.2 })
+assert(stay:equals(StayAtTown.new(restTown, { targetHero = restHero, movementCost = 0 })) == true)
+assert(math.abs(stay:getMovementWasted() - 0.3) < 0.0001)
+assert(stay:toString() == "Stay at town Tower hero Solmyr, mana: 7 / 20")
+local stayIntent = stay:accept({})
+assert(stayIntent.action == "lockHero")
+assert(stayIntent.hero == restHero)
+
+assert(Goals.CaptureObject == CaptureObject)
+assert(Goals.StayAtTown == StayAtTown)

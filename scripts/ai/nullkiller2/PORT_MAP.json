@@ -245,6 +245,28 @@
       "notes": "Full accept parity depends on Lua snapshots for army value, recruit costs, slots, and host command execution."
     },
     {
+      "cpp": "AI/Nullkiller2/Goals/CaptureObject.h",
+      "lua": "scripts/ai/nullkiller2/Goals/CaptureObject.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::CaptureObject"
+      ],
+      "notes": "Constructor, equality, hash, and string policy are ported. Decomposition needs CaptureObjectsBehavior parity."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/CaptureObject.cpp",
+      "lua": "scripts/ai/nullkiller2/Goals/CaptureObject.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::CaptureObject::operator==",
+        "Goals::CaptureObject::decompose",
+        "Goals::CaptureObject::toString",
+        "Goals::CaptureObject::hasHash",
+        "Goals::CaptureObject::getHash"
+      ],
+      "notes": "Lua decompose delegates to a Lua capture-object behavior hook when present; native behavior is not called."
+    },
+    {
       "cpp": "AI/Nullkiller2/Goals/Composition.h",
       "lua": "scripts/ai/nullkiller2/Goals/Composition.lua",
       "status": "ported",
@@ -384,6 +406,53 @@
         "Goals::DismissHero::toString"
       ],
       "notes": "Lua accept emits the dismiss-hero host command intent and keeps the same invalid-hero guard."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/ExploreNeighbourTile.h",
+      "lua": "scripts/ai/nullkiller2/Goals/ExploreNeighbourTile.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "NeighbourExplorationCandidate",
+        "NeighbourExplorationEvaluation",
+        "NeighbourExplorationTarget",
+        "evaluateNeighbourExplorationCandidate",
+        "Goals::ExploreNeighbourTile"
+      ],
+      "notes": "Candidate evaluation, tile score, identity, string, and host movement intent are ported. Target discovery uses Lua/host candidate snapshots until ExplorationHelper is ported."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/ExploreNeighbourTile.cpp",
+      "lua": "scripts/ai/nullkiller2/Goals/ExploreNeighbourTile.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "evaluateNeighbourExplorationCandidate",
+        "Goals::ExploreNeighbourTile::operator==",
+        "Goals::ExploreNeighbourTile::findTarget",
+        "Goals::ExploreNeighbourTile::accept",
+        "Goals::ExploreNeighbourTile::toString"
+      ],
+      "notes": "Path and discovery calculations require Lua snapshots from pathfinder/exploration helper ports."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/StayAtTown.h",
+      "lua": "scripts/ai/nullkiller2/Goals/StayAtTown.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::StayAtTown"
+      ]
+    },
+    {
+      "cpp": "AI/Nullkiller2/Goals/StayAtTown.cpp",
+      "lua": "scripts/ai/nullkiller2/Goals/StayAtTown.lua",
+      "status": "ported",
+      "symbols": [
+        "Goals::StayAtTown::StayAtTown",
+        "Goals::StayAtTown::operator==",
+        "Goals::StayAtTown::toString",
+        "Goals::StayAtTown::accept",
+        "Goals::StayAtTown::getMovementWasted"
+      ],
+      "notes": "Lua accept locks the hero through Lua state or host command intent."
     },
     {
       "cpp": "AI/Nullkiller2/Engine/ResourceTrader.h",
