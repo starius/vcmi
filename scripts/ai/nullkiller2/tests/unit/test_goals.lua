@@ -371,6 +371,45 @@ assert(extractionLog[6] == "move:343:343:0:2")
 assert(extractionLog[7] == "move:343:341:0:0")
 assert(extractionLog[8] == "unlock:341")
 
+local scoutSplitHero = { id = 351, name = "Scout Split" }
+local scoutSplitTown = {
+	id = 350,
+	name = "Scout Split Town",
+	garrisonHero = scoutSplitHero,
+	upperArmy = {
+		id = 352,
+		stacksCount = 1,
+		needsLastStack = true,
+		slots = {
+			{
+				slot = 0,
+				creature = { id = 353, factionID = 1, level = 2, movementRange = 5 },
+				count = 5,
+				power = 50
+			}
+		}
+	}
+}
+local scoutSplitLog = {}
+ExchangeSwapTownHeroes.new(scoutSplitTown, nil, State.HeroLockedReason.NOT_LOCKED):accept({
+	freeResources = {},
+	swapGarrisonHero = function(_, townArg)
+		table.insert(scoutSplitLog, "swap:" .. townArg.id)
+	end,
+	mergeOrSwapStacks = function(_, source, destination, fromSlot, toSlot)
+		table.insert(scoutSplitLog, "move:" .. source.id .. ":" .. destination.id .. ":" .. fromSlot .. ":" .. toSlot)
+	end,
+	splitStack = function(_, source, destination, fromSlot, toSlot, count)
+		table.insert(scoutSplitLog, "split:" .. source.id .. ":" .. destination.id .. ":" .. fromSlot .. ":" .. toSlot .. ":" .. count)
+	end,
+	unlockHero = function(_, hero)
+		table.insert(scoutSplitLog, "unlock:" .. hero.id)
+	end
+})
+assert(scoutSplitLog[1] == "swap:350")
+assert(scoutSplitLog[2] == "split:352:351:0:0:4")
+assert(scoutSplitLog[3] == "unlock:351")
+
 assert(Goals.Invalid == Invalid)
 assert(Goals.BuildThis == BuildThis)
 

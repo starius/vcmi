@@ -465,7 +465,7 @@
         "Goals::ExchangeSwapTownHeroes::operator==",
         "Goals::ExchangeSwapTownHeroes::accept"
       ],
-      "notes": "Lua accept emits granular swap, move-to-town, upgrade-creature, merge-stack, recruit-creature, cross-army merge/swap transfer, dismiss-creature, lock, and unlock commands. buildArmyIn extraction now sequences moveCreaturesToHero from Lua snapshots; full ArmyManager best-army selection and scout last-stack split parity remain pending."
+      "notes": "Lua accept emits granular swap, move-to-town, upgrade-creature, merge-stack, recruit-creature, cross-army merge/swap transfer, scout last-stack split, dismiss-creature, lock, and unlock commands. buildArmyIn extraction now sequences moveCreaturesToHero from Lua snapshots. Remaining exchange parity work is richer garrison/hero-exchange edge coverage and validator breadth."
     },
     {
       "cpp": "AI/Nullkiller2/Goals/ExecuteHeroChain.h",

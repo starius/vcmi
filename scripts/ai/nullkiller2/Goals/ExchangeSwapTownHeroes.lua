@@ -395,6 +395,19 @@ local function sameCreature(left, right)
 	return leftID ~= nil and leftID == creatureID(right)
 end
 
+local function copyStack(stack, count, power)
+	if type(stack) ~= "table" then
+		return stack
+	end
+	local result = {}
+	for key, value in pairs(stack) do
+		result[key] = value
+	end
+	result.count = count
+	result.power = power
+	return result
+end
+
 applyMergeOrSwap = function(source, destination, fromSlot, toSlot)
 	if source == destination and fromSlot == toSlot then
 		return
@@ -418,6 +431,43 @@ applyMergeOrSwap = function(source, destination, fromSlot, toSlot)
 	removeStackAtSlot(destination, toSlot)
 	setStackAtSlot(source, fromSlot, destinationStack)
 	setStackAtSlot(destination, toSlot, sourceStack)
+end
+
+local function applySplitStack(source, destination, fromSlot, toSlot, count)
+	local sourceStack = stackAtSlot(source, fromSlot)
+	if not sourceStack then
+		return
+	end
+
+	local sourceCount = stackCount(sourceStack)
+	if sourceCount <= 0 then
+		return
+	end
+
+	local movedCount = math.min(count, sourceCount)
+	if movedCount <= 0 then
+		return
+	end
+
+	local sourcePower = stackPower(sourceStack)
+	local movedPower = sourceCount == 0 and 0 or sourcePower * movedCount / sourceCount
+	local movedStack = copyStack(sourceStack, movedCount, movedPower)
+	local remainingCount = sourceCount - movedCount
+
+	if remainingCount <= 0 then
+		removeStackAtSlot(source, fromSlot)
+	else
+		sourceStack.count = remainingCount
+		sourceStack.power = sourcePower - movedPower
+	end
+
+	local destinationStack = stackAtSlot(destination, toSlot)
+	if destinationStack and sameCreature(destinationStack, movedStack) then
+		destinationStack.count = stackCount(destinationStack) + movedCount
+		destinationStack.power = stackPower(destinationStack) + movedPower
+	else
+		setStackAtSlot(destination, toSlot, movedStack)
+	end
 end
 
 local function bestArmyForTransfer(town, destination, source)
@@ -454,6 +504,28 @@ local function sameOwner(left, right)
 	return CGoal.objectID(leftOwner) == CGoal.objectID(rightOwner)
 end
 
+local function sourceNeedsLastStack(source)
+	if source and type(source.needsLastStack) == "function" then
+		return source:needsLastStack()
+	end
+	return source and source.needsLastStack == true
+end
+
+local function freeSlot(army)
+	if not army then
+		return nil
+	end
+	if army.freeSlot ~= nil then
+		return army.freeSlot
+	end
+	for slot = 0, armySize(army) - 1 do
+		if not hasStackAtSlot(army, slot) then
+			return slot
+		end
+	end
+	return nil
+end
+
 local function moveCreaturesToHero(aiGw, town, hero)
 	if not (aiGw and type(aiGw.mergeOrSwapStacks) == "function") then
 		return false
@@ -476,6 +548,11 @@ local function moveCreaturesToHero(aiGw, town, hero)
 	end
 
 	local bestArmy = bestArmyForTransfer(town, destination, source)
+	local transferContext = {
+		armySize = armySize(destination),
+		settings = town and town.settings or destination and destination.settings or source and source.settings,
+		terrain = source and (source.terrain or source.armyTerrain) or town and town.terrain
+	}
 	local moved = false
 	for targetSlot = 0, armySize(destination) - 1 do
 		local bestEntry = bestArmy[targetSlot + 1]
@@ -500,6 +577,42 @@ local function moveCreaturesToHero(aiGw, town, hero)
 				for slot, stack in pairs(armyStacksBySlot(army)) do
 					local currentSlot = stackSlot(stack, slot)
 					if targetCreature ~= nil and creatureID(stack) == targetCreature and (currentSlot ~= targetSlot or army ~= destination) then
+						if army == source
+							and sourceNeedsLastStack(source)
+							and stacksCount(source) == 1
+							and (not hasStackAtSlot(destination, targetSlot) or creatureID(stackAtSlot(destination, targetSlot)) == targetCreature) then
+							if type(aiGw.splitStack) ~= "function" then
+								error("No split-stack command target.", 2)
+							end
+
+							local weakest = ArmyManager.getBestUnitForScout(bestArmy, transferContext.terrain, transferContext)
+							local weakestCreature = bestArmyCreatureID(weakest)
+							if weakestCreature == targetCreature then
+								if stackCount(stack) == 1 then
+									found = true
+									break
+								end
+
+								local splitTargetSlot = slotForCreature(destination, targetCreature)
+								if splitTargetSlot ~= nil then
+									local nativeCount = (stackAtSlot(destination, targetSlot) and stackCount(stackAtSlot(destination, targetSlot)) or 0)
+										+ stackCount(stack) - 1
+									aiGw:splitStack(source, destination, currentSlot, splitTargetSlot, nativeCount)
+									applySplitStack(source, destination, currentSlot, splitTargetSlot, stackCount(stack) - 1)
+									moved = true
+								end
+								found = true
+								break
+							else
+								local weakestSlot = slotForCreature(destination, weakest and (weakest.creature or weakest.creatureID))
+								local targetFreeSlot = freeSlot(source)
+								if weakestSlot ~= nil and targetFreeSlot ~= nil then
+									aiGw:splitStack(destination, source, weakestSlot, targetFreeSlot, 1)
+									applySplitStack(destination, source, weakestSlot, targetFreeSlot, 1)
+								end
+							end
+						end
+
 						aiGw:mergeOrSwapStacks(army, destination, currentSlot, targetSlot)
 						applyMergeOrSwap(army, destination, currentSlot, targetSlot)
 						moved = true
