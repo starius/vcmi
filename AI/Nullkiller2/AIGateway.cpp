@@ -269,6 +269,48 @@ JsonNode blockingDialogNativeOutput(QueryID queryID, int selection)
 	return answerQueryNativeOutput(queryID, selection);
 }
 
+JsonNode teleportExitsSnapshot(const TTeleportExitsList & exits, const std::shared_ptr<CCallback> & callback)
+{
+	JsonNode result;
+	result.setType(JsonNode::JsonType::DATA_VECTOR);
+	for(const auto & exit : exits)
+	{
+		JsonNode item;
+		item.setType(JsonNode::JsonType::DATA_STRUCT);
+		item["id"].Integer() = exit.first.getNum();
+		item["pos"] = tileSnapshot(exit.second);
+		item["visible"].Bool() = callback->getObj(exit.first, false) != nullptr;
+		result.Vector().push_back(std::move(item));
+	}
+	return result;
+}
+
+JsonNode teleportDialogInput(
+	QueryID queryID,
+	TeleportChannelID channel,
+	const TTeleportExitsList & exits,
+	bool impassable,
+	ObjectInstanceID destinationTeleport,
+	const int3 & destinationTeleportPos,
+	bool channelProbing,
+	const std::vector<ObjectInstanceID> & probingList,
+	const std::shared_ptr<CCallback> & callback)
+{
+	JsonNode input;
+	input.setType(JsonNode::JsonType::DATA_STRUCT);
+	input["queryID"].Integer() = queryID.getNum();
+	input["channel"].Integer() = channel.getNum();
+	input["impassable"].Bool() = impassable;
+	input["exits"] = teleportExitsSnapshot(exits, callback);
+	if(destinationTeleport != ObjectInstanceID())
+		input["destinationTeleport"].Integer() = destinationTeleport.getNum();
+	if(destinationTeleportPos.isValid())
+		input["destinationTeleportPos"] = tileSnapshot(destinationTeleportPos);
+	input["channelProbing"].Bool() = channelProbing;
+	input["teleportChannelProbingList"] = objectIDsSnapshot(probingList);
+	return input;
+}
+
 JsonNode surrenderRetreatInput(const BattleStateInfoForRetreat & battleState, size_t townsCount, const Settings & settings)
 {
 	JsonNode input;
@@ -1003,6 +1045,16 @@ void AIGateway::showTeleportDialog(const CGHeroInstance * hero, TeleportChannelI
 {
 	status.addQuery(askID, boost::str(boost::format("Teleport dialog query with %d exits") % exits.size()));
 
+	JsonNode traceInput = teleportDialogInput(
+		askID,
+		channel,
+		exits,
+		impassable,
+		destinationTeleport,
+		destinationTeleportPos,
+		status.channelProbing(),
+		teleportChannelProbingList,
+		cc);
 	int chosenExit = -1;
 	if(impassable)
 	{
@@ -1035,8 +1087,17 @@ void AIGateway::showTeleportDialog(const CGHeroInstance * hero, TeleportChannelI
 		}
 	}
 
-	executeActionAsync("showTeleportDialog", [this, askID, chosenExit]()
+	executeActionAsync("showTeleportDialog", [this, askID, chosenExit, traceInput = std::move(traceInput)]() mutable
 	{
+		if(nativeTrace)
+		{
+			nativeTrace->recordDecision(
+				boost::str(boost::format("showTeleportDialog.%d") % askID.getNum()),
+				"showTeleportDialog",
+				std::move(traceInput),
+				answerQueryNativeOutput(askID, chosenExit),
+				{ "status", "selection", "commandJournal" });
+		}
 		answerQuery(askID, chosenExit);
 	});
 }

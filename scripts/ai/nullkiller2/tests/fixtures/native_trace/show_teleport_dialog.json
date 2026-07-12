@@ -1,0 +1,65 @@
+{
+  "schema": "LuaNullkiller2.nativeDecisionTrace.v1",
+  "source": "Nullkiller2",
+  "compareMode": "exact",
+  "compare": [
+    "status",
+    "selection",
+    "commandJournal"
+  ],
+  "decisions": [
+    {
+      "id": "known-destination",
+      "function": "showTeleportDialog",
+      "input": {
+        "queryID": 907,
+        "channel": 12,
+        "impassable": false,
+        "exits": [
+          {
+            "id": 80,
+            "pos": {
+              "x": 1,
+              "y": 1,
+              "z": 0,
+              "valid": true
+            },
+            "visible": true
+          },
+          {
+            "id": 81,
+            "pos": {
+              "x": 2,
+              "y": 2,
+              "z": 0,
+              "valid": true
+            },
+            "visible": true
+          }
+        ],
+        "destinationTeleport": 81,
+        "destinationTeleportPos": {
+          "x": 2,
+          "y": 2,
+          "z": 0,
+          "valid": true
+        },
+        "channelProbing": false,
+        "teleportChannelProbingList": []
+      },
+      "native": {
+        "status": "answered",
+        "selection": 1,
+        "commandJournal": [
+          {
+            "name": "answerQuery",
+            "payload": {
+              "query": 907,
+              "selection": 1
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
