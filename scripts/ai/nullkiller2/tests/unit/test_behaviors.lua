@@ -5,6 +5,7 @@ local CaptureObjectsBehavior = require("Behaviors.CaptureObjectsBehavior")
 local ClusterBehavior = require("Behaviors.ClusterBehavior")
 local EscapeBehavior = require("Behaviors.EscapeBehavior")
 local ExplorationBehavior = require("Behaviors.ExplorationBehavior")
+local GatherArmyBehavior = require("Behaviors.GatherArmyBehavior")
 local ExchangeSwapTownHeroes = require("Goals.ExchangeSwapTownHeroes")
 local CaptureObject = require("Goals.CaptureObject")
 local ArmyUpgrade = require("Markers.ArmyUpgrade")
@@ -755,3 +756,83 @@ assert(armyUpgrade:equals(ArmyUpgrade.new(exchangeTargetHero, upgrader, {})) == 
 assert(armyUpgrade:getUpgradeValue() == 5000)
 assert(armyUpgrade:getInitialArmyValue() == 1500)
 assert(armyUpgrade:toString() == "Army upgrade at Castle(1 2 0)")
+
+local gatherBehavior = GatherArmyBehavior.new()
+assert(gatherBehavior:toString() == "Gather army")
+assert(gatherBehavior:equals(GatherArmyBehavior.new()) == true)
+
+local receiverHero = {
+	id = 901,
+	name = "Receiver",
+	owner = 1,
+	role = PriorityEvaluator.HeroRole.MAIN,
+	evaluateHeroScore = 100,
+	armyStrength = 5000,
+	visitablePos = { x = 1, y = 1, z = 0 }
+}
+local donorHero = {
+	id = 902,
+	name = "Donor",
+	owner = 1,
+	role = PriorityEvaluator.HeroRole.SCOUT,
+	evaluateHeroScore = 10,
+	heroStrength = 1
+}
+local gatherPath = {
+	targetHero = donorHero,
+	tile = receiverHero.visitablePos,
+	nodes = { { targetHero = donorHero } },
+	turn = 0,
+	exchangeCount = 0,
+	totalDanger = 0,
+	heroArmy = { armyStrength = 4000 },
+	reinforcementArmyStrength = 1200,
+	movementCost = 2
+}
+local gatherTasks = gatherBehavior:deliverArmyToHero({
+	playerID = 1,
+	settings = { safeAttackRatio = 1.1 },
+	heroManager = {},
+	pathfinder = {
+		getPathInfo = function()
+			return { gatherPath }
+		end
+	}
+}, receiverHero)
+assert(#gatherTasks == 1)
+local gatherSequence = gatherTasks[1]:decompose({})
+assert(gatherSequence[1].goalType == AbstractGoal.EGoals.HERO_EXCHANGE)
+assert(gatherSequence[2].goalType == AbstractGoal.EGoals.EXECUTE_HERO_CHAIN)
+
+local upgradeTown = {
+	id = 903,
+	name = "Castle",
+	ID = "TOWN",
+	visitablePos = { x = 4, y = 4, z = 0 },
+	shouldVisit = true
+}
+local upgradePath = {
+	targetHero = receiverHero,
+	tile = upgradeTown.visitablePos,
+	nodes = {},
+	turn = 0,
+	exchangeCount = 0,
+	totalDanger = 0,
+	heroArmy = { armyStrength = 10000 },
+	heroStrength = 10000,
+	upgrade = { upgradeValue = 5000, upgradeCost = { [6] = 1000 } },
+	movementCost = 1
+}
+local upgradeTasks = gatherBehavior:upgradeArmy({
+	playerID = 1,
+	settings = { safeAttackRatio = 1.1, scoutHeroTurnDistanceLimit = 2 },
+	pathfinder = {
+		getPathInfo = function()
+			return { upgradePath }
+		end
+	}
+}, upgradeTown)
+assert(#upgradeTasks == 1)
+local upgradeSequence = upgradeTasks[1]:decompose({})
+assert(upgradeSequence[1].goalType == AbstractGoal.EGoals.ARMY_UPGRADE)
+assert(upgradeSequence[2].goalType == AbstractGoal.EGoals.EXECUTE_HERO_CHAIN)

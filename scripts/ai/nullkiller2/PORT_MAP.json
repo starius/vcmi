@@ -734,6 +734,27 @@
       "notes": "Object filtering, should-visit decisions, safe path selection, blocked-action composition, and closest-way ratio are Lua-owned against path/object snapshots."
     },
     {
+      "cpp": "AI/Nullkiller2/Behaviors/GatherArmyBehavior.h",
+      "lua": "scripts/ai/nullkiller2/Behaviors/GatherArmyBehavior.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::GatherArmyBehavior"
+      ],
+      "notes": "Behavior identity and equality are ported."
+    },
+    {
+      "cpp": "AI/Nullkiller2/Behaviors/GatherArmyBehavior.cpp",
+      "lua": "scripts/ai/nullkiller2/Behaviors/GatherArmyBehavior.lua",
+      "status": "scaffolded",
+      "symbols": [
+        "Goals::GatherArmyBehavior::toString",
+        "Goals::GatherArmyBehavior::decompose",
+        "Goals::GatherArmyBehavior::deliverArmyToHero",
+        "Goals::GatherArmyBehavior::upgradeArmy"
+      ],
+      "notes": "Main-hero delivery filtering, reinforcement thresholds, garrison exchange composition, upgrade thresholds, and visit-goal composition are Lua-owned against path/army-manager snapshots."
+    },
+    {
       "cpp": "AI/Nullkiller2/Behaviors/ClusterBehavior.h",
       "lua": "scripts/ai/nullkiller2/Behaviors/ClusterBehavior.lua",
       "status": "scaffolded",
