@@ -238,6 +238,7 @@ static void handleCommandOptions(int argc, const char * argv[], boost::program_o
 	("export-lua-docs", boost::program_options::value<std::string>(), "Export Lua scripting API documentation to specified directory")
 	("vgt-replay-json", boost::program_options::value<std::string>(), "Replay a normalized VGT transcript JSON file")
 	("vgt-replay-save", boost::program_options::value<std::string>(), "Write replayed state to this save file")
+	("vgt-replay-game-state-save", boost::program_options::value<std::string>(), "Write replayed game state only to this save file")
 	("port", boost::program_options::value<ui16>(), "port at which server will listen to connections from client")
 	("lobby", "start server in lobby mode in which server connects to a global lobby");
 
@@ -315,6 +316,8 @@ int main(int argc, const char * argv[])
 		VGTReplayOptions replayOptions;
 		replayOptions.inputJson = opts["vgt-replay-json"].as<std::string>();
 		replayOptions.outputSave = opts["vgt-replay-save"].as<std::string>();
+		if(opts.count("vgt-replay-game-state-save"))
+			replayOptions.outputGameStateSave = opts["vgt-replay-game-state-save"].as<std::string>();
 		const int replayResult = replayVGTJson(replayOptions);
 
 		logConfigurator.deconfigure();

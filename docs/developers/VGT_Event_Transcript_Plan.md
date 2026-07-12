@@ -17,11 +17,11 @@ The target is a compact YAML transcript that can be read by a human, parsed by n
 - Every actor decision is recorded: human, AI, neutral/world, battle AI, query answer, retreat/surrender choice, and scripted choice where applicable.
 - Every authoritative material effect is recorded, including effects nobody could see yet, such as neutral growth or week-start spawned monsters in fog.
 - Randomness is recorded only as realized facts near the event that consumed it. Internal RNG state is not part of this format.
-- Timers are out of scope for the first readable transcript.
+- Countdown timer ticks are out of scope for the first readable transcript. If the engine persists a turn-timer state packet as part of save state, the transcript may record that packet as a compact `timer` effect; it is not a clock tick stream.
 
 ## Self-Sufficiency Boundary
 
-The transcript names the map, content set, settings, players, and all events. It does not embed the map, but it must identify the exact map file with a cryptographic hash.
+The transcript names the map, content set, settings, map game-setting overrides, players, and all events. It does not embed the map, but it must identify the exact map file with a cryptographic hash.
 
 A replay/player tool starts from the declared map and content, verifies the map hash, initializes the game from the declared settings, then applies VGT events. For generated random maps, the writer must save the generated map as a normal map file, hash that saved file, and reference it from the transcript.
 
@@ -47,9 +47,13 @@ settings:
   start: newGame
   difficulty: normal
   timer: none
+  gameSettingsOverrides: { spells: { tomesGrantBannedSpells: true } }
 players:
   red:  { controller: ai, adventureAI: Nullkiller2, battleAI: BattleAI, team: none }
   blue: { controller: ai, adventureAI: Nullkiller2, battleAI: BattleAI, team: none }
+initialPlayers:
+  red:  { controller: ai, faction: random, hero: random, startingBonus: random }
+  blue: { controller: ai, faction: random, hero: random, startingBonus: random }
 aliases:
   hero/red/orrin: { type: "core:orrin", start: [10, 10, 0] }
   town/red/castle: { type: "core:castle", start: [8, 10, 0] }
@@ -73,6 +77,8 @@ events:
   - week: { kind: creature, creature: "core:imp" }
   - spawn: { id: object/monster/imp/at-44-19-0, type: "core:imp", count: 34, position: [44, 19, 0], visibleTo: [] }
 ```
+
+`players` is the resolved setup after lobby and map random choices have been realized. It is the primary human-readable roster. `initialPlayers` is the original setup passed into game initialization. It preserves choices such as `random` so a replay can rebuild VCMI's `initialOpts` and traditional save files exactly.
 
 ## Identifiers
 

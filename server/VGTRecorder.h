@@ -26,9 +26,11 @@ class VGTRecorder final
 	mutable std::mutex outputMutex;
 	std::string outputPath;
 	std::string baselineSavePath;
+	std::string baselineGameStateSavePath;
 	bool checkedEnvironment = false;
 	bool enabled = false;
 	bool baselineSaveEnabled = false;
+	bool baselineGameStateSaveEnabled = false;
 	bool headerWritten = false;
 	bool documentOpen = false;
 	std::optional<int> randomSeed;

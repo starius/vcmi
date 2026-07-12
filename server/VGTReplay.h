@@ -14,6 +14,7 @@ struct VGTReplayOptions
 {
 	std::string inputJson;
 	std::string outputSave;
+	std::string outputGameStateSave;
 };
 
 int replayVGTJson(const VGTReplayOptions & options);

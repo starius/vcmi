@@ -937,6 +937,16 @@ void CMap::overrideGameSettings(const JsonNode & input)
 	return gameSettings->loadOverrides(input);
 }
 
+void CMap::updateGameSettingsOverrides(const JsonNode & input)
+{
+	return gameSettings->updateOverrides(input);
+}
+
+JsonNode CMap::getGameSettingsOverrides() const
+{
+	return gameSettings->getOverrides();
+}
+
 CArtifactInstance * CMap::createScroll(const SpellID & spellId)
 {
 	return createArtifact(ArtifactID::SPELL_SCROLL, spellId);
@@ -1199,4 +1209,3 @@ void CMap::deserializeHeroPool(const std::vector<std::shared_ptr<CGHeroInstance>
 		if (hero)
 			heroesPool.at(hero->getHeroTypeID().getNum()) = hero;
 }
-

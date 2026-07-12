@@ -12,6 +12,7 @@
 #include "CGameHandler.h"
 #include "IGameServer.h"
 
+#include "../lib/CPlayerState.h"
 #include "../lib/CConfigHandler.h"
 #include "../lib/LoadProgress.h"
 #include "../lib/StartInfo.h"
@@ -25,8 +26,10 @@
 #include "../lib/networkPacks/PacksForClient.h"
 #include "../lib/networkPacks/PacksForClientBattle.h"
 #include "../lib/networkPacks/PacksForServer.h"
+#include "../lib/serializer/CSaveFile.h"
 
 #include <algorithm>
+#include <boost/filesystem.hpp>
 #include <cctype>
 #include <fstream>
 #include <sstream>
@@ -1062,6 +1065,17 @@ TurnTimerInfo decodeTimer(const JsonNode & node)
 	return result;
 }
 
+TurnTimerInfo decodeTurnTimerState(const JsonNode & node)
+{
+	TurnTimerInfo result = decodeTimer(node);
+	result.isActive = requireBool(node, "active");
+	result.isBattle = requireBool(node, "battleMode");
+	result.remainingMovementPointsPercent = static_cast<int>(requireInteger(node, "movementPercent"));
+	result.isTurnStart = requireBool(node, "turnStart");
+	result.isTurnEnded = requireBool(node, "turnEnded");
+	return result;
+}
+
 ExtraOptionsInfo decodeExtraOptions(const JsonNode & node)
 {
 	ExtraOptionsInfo result;
@@ -1092,6 +1106,8 @@ StartInfo decodeStartInfo(const JsonNode & header)
 	const auto & map = requireField(header, "map");
 	const auto & settingsNode = requireField(header, "settings");
 	const auto & players = requireField(header, "players");
+	const auto initialPlayersIter = header.Struct().find("initialPlayers");
+	const auto & playersForInitialization = initialPlayersIter != header.Struct().end() ? initialPlayersIter->second : players;
 
 	result.mode = decodeStartMode(requireString(settingsNode, "start"));
 	result.startTime = static_cast<time_t>(requireInteger(settingsNode, "startTime"));
@@ -1102,11 +1118,11 @@ StartInfo decodeStartInfo(const JsonNode & header)
 	result.turnTimerInfo = decodeTimer(requireField(settingsNode, "timer"));
 	result.extraOptionsInfo = decodeExtraOptions(requireField(settingsNode, "extraOptions"));
 
-	if(!players.isStruct())
+	if(!playersForInitialization.isStruct())
 		throw std::runtime_error("VGT replay players field is not a mapping");
 
 	result.playerInfos.clear();
-	for(const auto & entry : players.Struct())
+	for(const auto & entry : playersForInitialization.Struct())
 	{
 		const PlayerColor color = decodePlayerColor(entry.first);
 		result.playerInfos[color] = decodePlayerSettings(entry.second, color);
@@ -1120,6 +1136,16 @@ void setReplaySeed(const JsonNode & header)
 	const auto seed = requireInteger(settingsNode, "randomSeed");
 	Settings serverSettings = settings.write["server"];
 	serverSettings["seed"].Integer() = seed;
+}
+
+void applyGameSettingsOverrides(CGameHandler & gameHandler, const JsonNode & header)
+{
+	const auto & settingsNode = requireField(header, "settings");
+	const auto iter = settingsNode.Struct().find("gameSettingsOverrides");
+	if(iter == settingsNode.Struct().end())
+		return;
+
+	gameHandler.gs->getMap().updateGameSettingsOverrides(iter->second);
 }
 
 void replayPack(CGameHandler & gameHandler, CPackForServer & pack, PlayerColor player)
@@ -1306,6 +1332,15 @@ void applyBattleEffect(CGameHandler & gameHandler, const JsonNode & node)
 	}
 }
 
+void applyLocalState(CGameHandler & gameHandler, const JsonNode & node)
+{
+	const PlayerColor player = decodePlayerColor(requireString(node, "player"));
+	auto * playerState = gameHandler.gs->getPlayerState(player);
+	if(!playerState)
+		throw std::runtime_error("VGT replay localState references unknown player: " + requireString(node, "player"));
+	*playerState->playerLocalSettings = requireField(node, "data");
+}
+
 void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, const JsonNode & node)
 {
 	if(kind == "decision" || kind == "query" || kind == "info")
@@ -1314,6 +1349,12 @@ void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, con
 	if(kind == "battle")
 	{
 		applyBattleEffect(gameHandler, node);
+		return;
+	}
+
+	if(kind == "localState")
+	{
+		applyLocalState(gameHandler, node);
 		return;
 	}
 
@@ -1326,6 +1367,15 @@ void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, con
 		pack.hid = decodeHeroType(requireString(node, "hero"));
 		pack.army = decodeSimpleArmy(requireField(node, "army"));
 		pack.replenishPoints = requireBool(node, "replenishMovement");
+		applyEffectPack(gameHandler, pack);
+		return;
+	}
+
+	if(kind == "timer")
+	{
+		TurnTimeUpdate pack;
+		pack.player = decodePlayerColor(requireString(node, "player"));
+		pack.turnTimer = decodeTurnTimerState(requireField(node, "state"));
 		applyEffectPack(gameHandler, pack);
 		return;
 	}
@@ -1693,6 +1743,20 @@ void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & docu
 		}
 	}
 }
+
+void writeGameStateSave(const CGameHandler & gameHandler, const std::string & path)
+{
+	if(path.empty())
+		return;
+
+	const boost::filesystem::path targetPath(path);
+	if(!targetPath.parent_path().empty())
+		boost::filesystem::create_directories(targetPath.parent_path());
+
+	CSaveFile save;
+	gameHandler.gameState().saveGame(save);
+	save.write(targetPath);
+}
 }
 
 int replayVGTJson(const VGTReplayOptions & options)
@@ -1711,7 +1775,9 @@ int replayVGTJson(const VGTReplayOptions & options)
 
 	Load::ProgressAccumulator progress;
 	gameHandler.init(&startInfo, progress);
+	applyGameSettingsOverrides(gameHandler, header);
 	replayTranscriptDocuments(gameHandler, documents);
 	gameHandler.saveToFile(options.outputSave);
+	writeGameStateSave(gameHandler, options.outputGameStateSave);
 	return 0;
 }

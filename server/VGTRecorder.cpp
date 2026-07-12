@@ -28,6 +28,7 @@
 #include "../lib/mapObjects/CGObjectInstance.h"
 #include "../lib/mapObjects/army/CSimpleArmy.h"
 #include "../lib/networkPacks/NetPackVisitor.h"
+#include "../lib/serializer/CSaveFile.h"
 #include "../lib/serializer/JsonSerializer.h"
 #include "../lib/texts/MetaString.h"
 
@@ -608,6 +609,22 @@ std::string timerInfo(const TurnTimerInfo & value)
 		", unit: " + std::to_string(value.unitTimer) +
 		", accumulatingTurn: " + boolValue(value.accumulatingTurnTimer) +
 		", accumulatingUnit: " + boolValue(value.accumulatingUnitTimer) + " }";
+}
+
+std::string turnTimerState(const TurnTimerInfo & value)
+{
+	return "{ turn: " + std::to_string(value.turnTimer) +
+		", base: " + std::to_string(value.baseTimer) +
+		", battle: " + std::to_string(value.battleTimer) +
+		", unit: " + std::to_string(value.unitTimer) +
+		", accumulatingTurn: " + boolValue(value.accumulatingTurnTimer) +
+		", accumulatingUnit: " + boolValue(value.accumulatingUnitTimer) +
+		", active: " + boolValue(value.isActive) +
+		", battleMode: " + boolValue(value.isBattle) +
+		", movementPercent: " + std::to_string(value.remainingMovementPointsPercent) +
+		", turnStart: " + boolValue(value.isTurnStart) +
+		", turnEnded: " + boolValue(value.isTurnEnded) +
+		" }";
 }
 
 std::string extraOptions(const ExtraOptionsInfo & value)
@@ -1366,6 +1383,11 @@ public:
 		line.clear();
 	}
 
+	void visitSaveLocalState(SaveLocalState & pack) override
+	{
+		line = "localState: { player: " + color(pack.player) + ", data: " + jsonCompact(pack.data) + " }";
+	}
+
 	void visitGamePause(GamePause &) override
 	{
 		line.clear();
@@ -1418,9 +1440,9 @@ public:
 		line.clear();
 	}
 
-	void visitTurnTimeUpdate(TurnTimeUpdate &) override
+	void visitTurnTimeUpdate(TurnTimeUpdate & pack) override
 	{
-		line.clear();
+		line = "timer: { player: " + color(pack.player) + ", state: " + turnTimerState(pack.turnTimer) + " }";
 	}
 
 	void visitPlayerBlocked(PlayerBlocked &) override
@@ -2050,6 +2072,16 @@ void VGTRecorder::initializeFromEnvironment()
 			boost::filesystem::create_directories(savePath.parent_path());
 		baselineSaveEnabled = true;
 	}
+
+	const char * baselineGameStateSave = std::getenv("VCMI_VGT_BASELINE_GAMESTATE_SAVE");
+	if(baselineGameStateSave && !std::string(baselineGameStateSave).empty())
+	{
+		baselineGameStateSavePath = baselineGameStateSave;
+		const boost::filesystem::path savePath(baselineGameStateSavePath);
+		if(!savePath.parent_path().empty())
+			boost::filesystem::create_directories(savePath.parent_path());
+		baselineGameStateSaveEnabled = true;
+	}
 }
 
 void VGTRecorder::ensureHeader(const CGameState & gameState)
@@ -2089,9 +2121,16 @@ void VGTRecorder::ensureHeader(const CGameState & gameState)
 	output << "  simturns: " << simturnsInfo(startInfo->simturnsInfo) << "\n";
 	output << "  timer: " << timerInfo(startInfo->turnTimerInfo) << "\n";
 	output << "  extraOptions: " << extraOptions(startInfo->extraOptionsInfo) << "\n";
+	output << "  gameSettingsOverrides: " << jsonCompact(gameState.getMap().getGameSettingsOverrides()) << "\n";
 	output << "players:\n";
 	for(const auto & player : startInfo->playerInfos)
 		output << "  " << color(player.first) << ": " << playerSettings(player.second) << "\n";
+	if(const auto * initialStartInfo = gameState.getInitialStartInfo())
+	{
+		output << "initialPlayers:\n";
+		for(const auto & player : initialStartInfo->playerInfos)
+			output << "  " << color(player.first) << ": " << playerSettings(player.second) << "\n";
+	}
 	headerWritten = true;
 	output.flush();
 }
@@ -2146,23 +2185,47 @@ void VGTRecorder::writeActionLine(const CGameState & gameState, const std::strin
 
 void VGTRecorder::writeBaselineSave(CGameHandler & gameHandler)
 {
-	if(!baselineSaveEnabled)
+	if(!baselineSaveEnabled && !baselineGameStateSaveEnabled)
 		return;
 
-	try
+	if(baselineSaveEnabled)
 	{
-		const boost::filesystem::path targetPath(baselineSavePath);
-		boost::filesystem::path temporaryPath = targetPath;
-		temporaryPath += ".tmp";
+		try
+		{
+			const boost::filesystem::path targetPath(baselineSavePath);
+			boost::filesystem::path temporaryPath = targetPath;
+			temporaryPath += ".tmp";
 
-		gameHandler.saveToFile(temporaryPath.string());
-		if(boost::filesystem::exists(targetPath))
-			boost::filesystem::remove(targetPath);
-		boost::filesystem::rename(temporaryPath, targetPath);
+			gameHandler.saveToFile(temporaryPath.string());
+			if(boost::filesystem::exists(targetPath))
+				boost::filesystem::remove(targetPath);
+			boost::filesystem::rename(temporaryPath, targetPath);
+		}
+		catch(const std::exception & e)
+		{
+			logGlobal->error("Unable to write VGT baseline save '%s': %s", baselineSavePath, e.what());
+		}
 	}
-	catch(const std::exception & e)
+
+	if(baselineGameStateSaveEnabled)
 	{
-		logGlobal->error("Unable to write VGT baseline save '%s': %s", baselineSavePath, e.what());
+		try
+		{
+			const boost::filesystem::path targetPath(baselineGameStateSavePath);
+			boost::filesystem::path temporaryPath = targetPath;
+			temporaryPath += ".tmp";
+
+			CSaveFile save;
+			gameHandler.gameState().saveGame(save);
+			save.write(temporaryPath);
+			if(boost::filesystem::exists(targetPath))
+				boost::filesystem::remove(targetPath);
+			boost::filesystem::rename(temporaryPath, targetPath);
+		}
+		catch(const std::exception & e)
+		{
+			logGlobal->error("Unable to write VGT baseline game state save '%s': %s", baselineGameStateSavePath, e.what());
+		}
 	}
 }
 

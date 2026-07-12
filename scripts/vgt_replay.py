@@ -68,23 +68,29 @@ def header(documents: list[dict[str, Any]]) -> dict[str, Any]:
     settings = result.get("settings")
     if not isinstance(settings, dict):
         raise VGTError("header settings field is missing or invalid")
-    for field in ("start", "startTime", "difficulty", "randomSeed", "simturns", "timer", "extraOptions"):
+    for field in ("start", "startTime", "difficulty", "randomSeed", "simturns", "timer", "extraOptions", "gameSettingsOverrides"):
         if field not in settings:
             raise VGTError(f"header settings.{field} is missing")
-    for field in ("simturns", "timer", "extraOptions"):
+    for field in ("simturns", "timer", "extraOptions", "gameSettingsOverrides"):
         if not isinstance(settings[field], dict):
             raise VGTError(f"header settings.{field} must be a mapping")
+    def validate_players(players: Any, field_name: str) -> None:
+        if not isinstance(players, dict) or not players:
+            raise VGTError(f"header {field_name} field is missing or invalid")
+        for color, player in players.items():
+            if not isinstance(player, dict):
+                raise VGTError(f"header {field_name}.{color} must be a mapping")
+            for field in ("controller", "faction", "hero", "heroPortrait", "heroNameTextId", "startingBonus", "handicap", "name", "connections", "computerOnly"):
+                if field not in player:
+                    raise VGTError(f"header {field_name}.{color}.{field} is missing")
+            if not isinstance(player["handicap"], dict):
+                raise VGTError(f"header {field_name}.{color}.handicap must be a mapping")
+
     players = result.get("players")
-    if not isinstance(players, dict) or not players:
-        raise VGTError("header players field is missing or invalid")
-    for color, player in players.items():
-        if not isinstance(player, dict):
-            raise VGTError(f"header players.{color} must be a mapping")
-        for field in ("controller", "faction", "hero", "heroPortrait", "heroNameTextId", "startingBonus", "handicap", "name", "connections", "computerOnly"):
-            if field not in player:
-                raise VGTError(f"header players.{color}.{field} is missing")
-        if not isinstance(player["handicap"], dict):
-            raise VGTError(f"header players.{color}.handicap must be a mapping")
+    validate_players(players, "players")
+    initial_players = result.get("initialPlayers")
+    if initial_players is not None:
+        validate_players(initial_players, "initialPlayers")
     return result
 
 
@@ -190,6 +196,11 @@ def command_replay(args: argparse.Namespace) -> int:
         "--vgt-replay-save",
         str(args.output_save),
     ]
+    if args.output_game_state_save:
+        command.extend([
+            "--vgt-replay-game-state-save",
+            str(args.output_game_state_save),
+        ])
     try:
         completed = subprocess.run(command, check=False)
     finally:
@@ -216,6 +227,7 @@ def build_parser() -> argparse.ArgumentParser:
     replay.add_argument("--normalized-json", type=Path, help="keep the normalized JSON passed to the engine")
     replay.add_argument("--engine-binary", type=Path, required=True, help="path to the VCMI executable with VGT replay support")
     replay.add_argument("--output-save", type=Path, required=True, help="save file to write after replay")
+    replay.add_argument("--output-game-state-save", type=Path, help="game-state-only save file to write after replay")
     replay.add_argument("--header-only", action="store_true", help="rebuild only the initialized state from the transcript header")
     replay.set_defaults(func=command_replay)
     return parser

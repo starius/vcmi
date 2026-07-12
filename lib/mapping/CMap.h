@@ -285,6 +285,8 @@ public:
 
 	void overrideGameSettings(const JsonNode & input);
 	void overrideGameSetting(EGameSettings option, const JsonNode & input);
+	void updateGameSettingsOverrides(const JsonNode & input);
+	JsonNode getGameSettingsOverrides() const;
 	const IGameSettings & getSettings() const;
 
 	void saveCompatibilityStoreAllocatedArtifactID();
