@@ -129,9 +129,15 @@
         "PriorityEvaluator::evaluateArmyLossRatio",
         "PriorityEvaluator::evaluateSkillReward",
         "PriorityEvaluator::evaluateConquestValue",
+        "HeroExchangeEvaluator",
+        "ArmyUpgradeEvaluator",
+        "ExplorePointEvaluator",
+        "StayAtTownManaRecoveryEvaluator",
+        "ExchangeSwapTownHeroesContextBuilder",
+        "DismissHeroContextBuilder",
         "RewardEvaluator"
       ],
-      "notes": "Priority-tier scoring formulas are ported against Lua EvaluationContext snapshots. Native object-specific context builders and most RewardEvaluator routines remain pending."
+      "notes": "Priority-tier scoring formulas are ported against Lua EvaluationContext snapshots. Simple context builders are ported for hero exchange, army upgrade, exploration point, stay-at-town mana recovery, exchange/swap-town defence, and dismiss hero. ExecuteHeroChain, defend-town, cluster, adventure-spell, and build-structure context builders remain pending."
     },
     {
       "cpp": "AI/Nullkiller2/Engine/PriorityEvaluator.cpp",

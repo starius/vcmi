@@ -3,6 +3,7 @@
 
 local AbstractGoal = require("Goals.AbstractGoal")
 local RewardEvaluator = require("Engine.RewardEvaluator")
+local State = require("Engine.State")
 
 local PriorityEvaluator = {}
 
@@ -102,6 +103,51 @@ local function maxPurchasableCount(needed, income)
 	return result
 end
 
+local function call(object, name, ...)
+	if object and type(object[name]) == "function" then
+		return object[name](object, ...)
+	end
+	return nil
+end
+
+local function heroRole(aiNk, hero)
+	return call(aiNk and aiNk.heroManager, "getHeroRoleOrDefaultInefficient", hero)
+		or call(aiNk and aiNk.heroManager, "getHeroRoleOrDefault", hero)
+		or hero and hero.role
+		or PriorityEvaluator.HeroRole.SCOUT
+end
+
+local function armyStrength(object)
+	return call(object, "getArmyStrength")
+		or call(object, "getTotalStrength")
+		or object and (object.armyStrength or object.totalStrength or object.strength)
+		or 0
+end
+
+local function movementPointsRemaining(hero)
+	return call(hero, "movementPointsRemaining") or hero and (hero.movementPointsRemaining or hero.movementPoints) or 0
+end
+
+local function movementPointsLimit(hero)
+	return call(hero, "movementPointsLimit") or hero and (hero.movementPointsLimit or hero.movementLimit) or 1
+end
+
+local function pathMovementCost(path)
+	return call(path, "movementCost") or path and path.movementCost or 0
+end
+
+local function pathDanger(path)
+	return call(path, "getTotalDanger") or path and (path.totalDanger or path.danger) or 0
+end
+
+local function mageGuildLevel(town)
+	return call(town, "mageGuildLevel") or town and (town.mageGuildLevel or town.mageGuild or 0) or 0
+end
+
+local function addMovementByRole(context, role, movementCost)
+	context.movementCostByRole[role] = (context.movementCostByRole[role] or 0) + movementCost
+end
+
 PriorityEvaluator.EvaluationContext = {}
 PriorityEvaluator.EvaluationContext.__index = PriorityEvaluator.EvaluationContext
 
@@ -159,6 +205,124 @@ local function applyContextSnapshot(context, snapshot)
 	end
 end
 
+local function buildHeroExchangeContext(context, task, aiNk)
+	if task.goalType ~= AbstractGoal.EGoals.HERO_EXCHANGE then
+		return
+	end
+
+	local exchangePath = task.exchangePath or {}
+	local giverRole = heroRole(aiNk, exchangePath.targetHero)
+	local additionalArmyStrength = call(task, "getReinforcementArmyStrength", aiNk)
+		or task.reinforcementArmyStrength
+		or exchangePath.reinforcementArmyStrength
+		or 0
+	local targetStrength = armyStrength(task.hero)
+	local additionalArmyRatio = targetStrength > 0 and additionalArmyStrength / targetStrength or 0
+
+	context:addNonCriticalStrategicalValue(additionalArmyRatio)
+	context.armyGrowth = additionalArmyStrength
+	context.movementCost = pathMovementCost(exchangePath)
+	context.danger = pathDanger(exchangePath)
+	context.heroRole = giverRole
+	context.isExchange = true
+end
+
+local function buildArmyUpgradeContext(context, task)
+	if task.goalType ~= AbstractGoal.EGoals.ARMY_UPGRADE then
+		return
+	end
+
+	local additionalArmyStrength = call(task, "getUpgradeValue") or task.upgradeValue or 0
+	context.armyGrowth = additionalArmyStrength / 5.0
+	context.isArmyUpgrade = true
+end
+
+local function buildExplorePointContext(context, task)
+	if task.goalType ~= AbstractGoal.EGoals.EXPLORATION_POINT then
+		return
+	end
+
+	local tilesDiscovered = task.value or 0
+	context:addNonCriticalStrategicalValue(0.03 * tilesDiscovered)
+
+	if task.explorePriority then
+		context.explorePriority = task.explorePriority
+	elseif tilesDiscovered >= 20 then
+		context.explorePriority = 1
+	elseif tilesDiscovered >= 10 then
+		context.explorePriority = 2
+	else
+		context.explorePriority = 3
+	end
+end
+
+local function buildStayAtTownContext(context, task)
+	if task.goalType ~= AbstractGoal.EGoals.STAY_AT_TOWN then
+		return
+	end
+
+	local hero = task.hero
+	if hero and movementPointsRemaining(hero) < 100 then
+		return
+	end
+
+	if mageGuildLevel(task.town) > 0 then
+		context.armyReward = context.armyReward + context.evaluator:getManaRecoveryArmyReward(hero)
+	end
+
+	if isAlmostZero(context.armyReward) then
+		context.isDefend = true
+	else
+		local movementCost = call(task, "getMovementWasted") or task.movementWasted or 0
+		local role = heroRole(nil, hero)
+		context.movementCost = context.movementCost + movementCost
+		addMovementByRole(context, role, movementCost)
+	end
+end
+
+local function buildExchangeSwapTownHeroesContext(context, task, aiNk)
+	if task.goalType ~= AbstractGoal.EGoals.EXCHANGE_SWAP_TOWN_HEROES then
+		return
+	end
+
+	local garrisonHero = call(task, "getGarrisonHero") or task.garrisonHero
+	local lockingReason = call(task, "getLockingReason") or task.lockingReason
+	if garrisonHero and lockingReason == State.HeroLockedReason.DEFENCE then
+		local role = heroRole(aiNk, garrisonHero)
+		local limit = movementPointsLimit(garrisonHero)
+		local mpLeft = limit > 0 and movementPointsRemaining(garrisonHero) / limit or 0
+
+		context.movementCost = context.movementCost + mpLeft
+		addMovementByRole(context, role, mpLeft)
+		context.heroRole = role
+		context.isDefend = true
+		context.armyInvolvement = armyStrength(garrisonHero)
+	end
+end
+
+local function buildDismissHeroContext(context, task, aiNk)
+	if task.goalType ~= AbstractGoal.EGoals.DISMISS_HERO then
+		return
+	end
+
+	local dismissedHero = task.hero
+	local role = heroRole(aiNk, dismissedHero)
+	local mpLeft = movementPointsRemaining(dismissedHero)
+
+	context.movementCost = context.movementCost + mpLeft
+	addMovementByRole(context, role, mpLeft)
+	context.goldCost = context.goldCost + RewardEvaluator.HERO_GOLD_COST + RewardEvaluator.getArmyCost(dismissedHero)
+end
+
+local function buildContextForSubgoal(context, task, aiNk)
+	buildHeroExchangeContext(context, task, aiNk)
+	buildArmyUpgradeContext(context, task)
+	buildExplorePointContext(context, task)
+	buildStayAtTownContext(context, task)
+	buildExchangeSwapTownHeroesContext(context, task, aiNk)
+	buildDismissHeroContext(context, task, aiNk)
+end
+
 function PriorityEvaluator.buildEvaluationContext(goal, aiNk)
 	local parts = {}
 	local context = PriorityEvaluator.EvaluationContext.new(aiNk)
@@ -172,6 +336,7 @@ function PriorityEvaluator.buildEvaluationContext(goal, aiNk)
 	for _, subgoal in ipairs(parts) do
 		context.goldCost = context.goldCost + (subgoal.goldCost or 0)
 		context.buildingCost = addResources(context.buildingCost, subgoal.buildingCost)
+		buildContextForSubgoal(context, subgoal, aiNk)
 		applyContextSnapshot(context, subgoal.evaluationContext)
 	end
 
