@@ -97,6 +97,37 @@ local function pathInfoAccessible(value)
 	return value.accessible or value.accessibility
 end
 
+local function pathInfoReachable(value)
+	if type(value) ~= "table" then
+		return false
+	end
+	if type(value.reachable) == "function" then
+		return value:reachable()
+	end
+	if value.reachable ~= nil then
+		return value.reachable == true
+	end
+	local accessible = pathInfoAccessible(value)
+	return accessible == true or accessible == "ACCESSIBLE"
+end
+
+local function pathInfoCost(value)
+	if type(value) ~= "table" then
+		return nil
+	end
+	if type(value.getCost) == "function" then
+		return value:getCost()
+	end
+	return value.cost or value.pathCost
+end
+
+local function pathInfoAction(value)
+	if type(value) ~= "table" then
+		return nil
+	end
+	return value.action or value.nodeAction
+end
+
 local function normalizedActionName(action)
 	if type(action) ~= "table" then
 		return ""
@@ -457,6 +488,19 @@ local function lockBlockedHero(adapter, blockedIndexes, hero, parentIndex)
 	end
 end
 
+local function objectGraphAllowed(adapter)
+	if adapter.nullkiller and type(adapter.nullkiller.isObjectGraphAllowed) == "function" then
+		return adapter.nullkiller:isObjectGraphAllowed() == true
+	end
+	if adapter.host and type(adapter.host.isObjectGraphAllowed) == "function" then
+		return adapter.host:isObjectGraphAllowed() == true
+	end
+	if adapter.host and adapter.host.objectGraphAllowed ~= nil then
+		return adapter.host.objectGraphAllowed == true
+	end
+	return false
+end
+
 local function recoverStaleDimensionDoorAction(adapter, hero)
 	if not hero or objectID(hero) == nil then
 		return {
@@ -540,14 +584,51 @@ local function executeSpecialAction(adapter, hero, coord, action)
 	error("Path special action is not implemented by Lua Nullkiller2 yet.", 3)
 end
 
-local function executePathNode(adapter, path, node, blockedIndexes, cxxIndex)
+local function objectGraphShortcut(adapter, path, nodes, luaIndex, node, hero)
+	if node.specialAction or luaIndex <= 1 or not objectGraphAllowed(adapter) then
+		return luaIndex, node
+	end
+
+	local chainMask = node.chainMask
+	if luaIndex < #nodes and nodes[luaIndex + 1] then
+		chainMask = nodes[luaIndex + 1].chainMask
+	end
+
+	for nextLuaIndex = luaIndex - 1, 1, -1 do
+		local nextNode = nodes[nextLuaIndex]
+		if not nextNode or nextNode.specialAction or nextNode.chainMask ~= chainMask then
+			break
+		end
+
+		local targetNode = pathInfo(adapter, hero, nodeCoord(path, nextNode), nextNode)
+		local targetCost = pathInfoCost(targetNode)
+		if not pathInfoReachable(targetNode) or targetCost == nil or targetCost > (nextNode.cost or 0) then
+			break
+		end
+
+		luaIndex = nextLuaIndex
+		node = nextNode
+
+		local action = pathInfoAction(targetNode)
+		if action == "BATTLE" or action == "TELEPORT_BATTLE" then
+			break
+		end
+	end
+
+	return luaIndex, node
+end
+
+local function executePathNode(adapter, path, nodes, luaIndex, blockedIndexes)
+	local node = nodes[luaIndex] or {}
 	local hero = node.targetHero or path and path.targetHero
 	local coord = nodeCoord(path, node)
+	local cxxIndex = luaIndex - 1
 
 	if blockedIndexes[cxxIndex] then
 		lockBlockedHero(adapter, blockedIndexes, hero, node.parentIndex)
 		return {
 			ok = true,
+			nextLuaIndex = luaIndex,
 			blocked = true
 		}
 	end
@@ -576,9 +657,15 @@ local function executePathNode(adapter, path, node, blockedIndexes, cxxIndex)
 
 			if tileEquals(coord, visitablePos(hero)) then
 				return {
-					ok = true
+					ok = true,
+					nextLuaIndex = luaIndex
 				}
 			end
+		else
+			local shortcutLuaIndex
+			shortcutLuaIndex, node = objectGraphShortcut(adapter, path, nodes, luaIndex, node, hero)
+			luaIndex = shortcutLuaIndex
+			coord = nodeCoord(path, node)
 		end
 
 		if (node.turns or node.turn or 0) == 0 and not tileEquals(coord, visitablePos(hero)) then
@@ -603,7 +690,8 @@ local function executePathNode(adapter, path, node, blockedIndexes, cxxIndex)
 
 	if tileEquals(coord, visitablePos(hero)) then
 		return {
-			ok = true
+			ok = true,
+			nextLuaIndex = luaIndex
 		}
 	end
 
@@ -617,6 +705,7 @@ local function executePathNode(adapter, path, node, blockedIndexes, cxxIndex)
 	lockBlockedHero(adapter, blockedIndexes, hero, node.parentIndex)
 	return {
 		ok = true,
+		nextLuaIndex = luaIndex,
 		blocked = true
 	}
 end
@@ -636,12 +725,15 @@ function HostCommands:executeHeroChain(path, objid)
 		objid = objid
 	}
 
-	for luaIndex = #nodes, 1, -1 do
-		local nodeResult = executePathNode(self, path, nodes[luaIndex] or {}, blockedIndexes, luaIndex - 1)
+	local luaIndex = #nodes
+	while luaIndex >= 1 do
+		local nodeResult = executePathNode(self, path, nodes, luaIndex, blockedIndexes)
 		if nodeResult.ok == false then
 			return nodeResult
 		end
 		result = nodeResult
+		luaIndex = nodeResult.nextLuaIndex or luaIndex
+		luaIndex = luaIndex - 1
 	end
 
 	result.state = "executeHeroChain"

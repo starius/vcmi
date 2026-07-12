@@ -162,6 +162,51 @@ assert(chainCalled[3].payload.x == 2)
 assert(chainCalled[4].name == "moveHeroToTile")
 assert(chainCalled[4].payload.hero == 102)
 
+local objectGraphCalled = {}
+local objectGraphAdapter = HostCommands.new({
+	objectGraphAllowed = true,
+	command = function(_, name, payload)
+		table.insert(objectGraphCalled, { name = name, payload = payload })
+		return { ok = true, executed = true }
+	end
+})
+local objectGraphHero = {
+	id = 109,
+	movementPointsRemaining = 1000,
+	visitablePos = { x = 0, y = 0, z = 0 }
+}
+objectGraphAdapter:executeHeroChain({
+	targetHero = objectGraphHero,
+	nodes = {
+		{
+			targetHero = objectGraphHero,
+			coord = { x = 1, y = 1, z = 0 },
+			chainMask = 77,
+			cost = 10,
+			livePathInfo = { reachable = true, cost = 9, action = "NORMAL" }
+		},
+		{
+			targetHero = objectGraphHero,
+			coord = { x = 2, y = 2, z = 0 },
+			chainMask = 77,
+			cost = 20,
+			livePathInfo = { reachable = true, cost = 19, action = "NORMAL" }
+		},
+		{
+			targetHero = objectGraphHero,
+			coord = { x = 3, y = 3, z = 0 },
+			chainMask = 77,
+			cost = 30
+		}
+	}
+}, 110)
+assert(#objectGraphCalled == 2)
+assert(objectGraphCalled[1].name == "setActive")
+assert(objectGraphCalled[1].payload.x == 3)
+assert(objectGraphCalled[2].name == "moveHeroToTile")
+assert(objectGraphCalled[2].payload.x == 1)
+assert(objectGraphHero.visitablePos.x == 1)
+
 local staleCalled = {}
 local staleAdapter = HostCommands.new({
 	command = function(_, name, payload)
