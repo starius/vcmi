@@ -37,28 +37,41 @@ std::string vgtExactFloat(float value)
 	return stream.str();
 }
 
-const JsonNode & vgtRequireField(const JsonNode & node, const char * field)
+const JsonNode * vgtFindField(const JsonNode & node, const char * field)
 {
 	if(!node.isStruct())
-		throw std::runtime_error(std::string("VGT statistics parent is not a mapping while reading: ") + field);
+		return nullptr;
 
 	const auto iter = node.Struct().find(field);
 	if(iter == node.Struct().end() || iter->second.isNull())
-		throw std::runtime_error(std::string("Missing VGT statistics field: ") + field);
-	return iter->second;
+		return nullptr;
+	return &iter->second;
 }
 
 float vgtParseExactFloat(const JsonNode & node, const char * field)
 {
-	const auto & child = vgtRequireField(node, field);
-	if(!child.isString())
+	const auto * child = vgtFindField(node, field);
+	if(!child)
+		return 0.0f;
+
+	if(!child->isString())
 		throw std::runtime_error(std::string("VGT statistics exact float field is not a string: ") + field);
 
 	size_t parsed = 0;
-	float result = std::stof(child.String(), &parsed);
-	if(parsed != child.String().size())
+	float result = std::stof(child->String(), &parsed);
+	if(parsed != child->String().size())
 		throw std::runtime_error(std::string("Unable to parse VGT statistics exact float field: ") + field);
 	return result;
+}
+
+bool hasMines(const std::map<EGameResID, int> & mines)
+{
+	for(const auto & [resource, count] : mines)
+	{
+		if(count != 0)
+			return true;
+	}
+	return false;
 }
 }
 
@@ -156,61 +169,64 @@ void StatisticDataSetEntry::serializeJson(JsonSerializeFormat & handler)
 	handler.serializeBool("isHuman", isHuman);
 	handler.serializeEnum("status", status, {"ingame", "loser", "winner"});
 	resources.serializeJson(handler, "resources");
-	handler.serializeInt("numberHeroes", numberHeroes);
-	handler.serializeInt("numberTowns", numberTowns);
-	handler.serializeInt("numberArtifacts", numberArtifacts);
-	handler.serializeInt("numberDwellings", numberDwellings);
-	handler.serializeInt("armyStrength", armyStrength);
-	handler.serializeInt("totalExperience", totalExperience);
-	handler.serializeInt("income", income);
-	handler.serializeFloat("mapExploredRatio", mapExploredRatio);
-	handler.serializeFloat("obeliskVisitedRatio", obeliskVisitedRatio);
-	handler.serializeFloat("townBuiltRatio", townBuiltRatio);
+	handler.serializeInt("numberHeroes", numberHeroes, 0);
+	handler.serializeInt("numberTowns", numberTowns, 0);
+	handler.serializeInt("numberArtifacts", numberArtifacts, 0);
+	handler.serializeInt("numberDwellings", numberDwellings, 0);
+	handler.serializeInt("armyStrength", armyStrength, 0);
+	handler.serializeInt("totalExperience", totalExperience, 0);
+	handler.serializeInt("income", income, 0);
+	handler.serializeFloat("mapExploredRatio", mapExploredRatio, 0.0);
+	handler.serializeFloat("obeliskVisitedRatio", obeliskVisitedRatio, 0.0);
+	handler.serializeFloat("townBuiltRatio", townBuiltRatio, 0.0);
 	handler.serializeBool("hasGrail", hasGrail);
+	if(!handler.saving || hasMines(numMines))
 	{
 		auto zonesData = handler.enterStruct("numMines");
 		for(auto & idx : LIBRARY->resourceTypeHandler->getAllObjects())
 			handler.serializeInt(idx.toResource()->getJsonKey(), numMines[idx], 0);
 	}
-	handler.serializeInt("score", score);
-	handler.serializeInt("maxHeroLevel", maxHeroLevel);
-	handler.serializeInt("numBattlesNeutral", numBattlesNeutral);
-	handler.serializeInt("numBattlesPlayer", numBattlesPlayer);
-	handler.serializeInt("numWinBattlesNeutral", numWinBattlesNeutral);
-	handler.serializeInt("numWinBattlesPlayer", numWinBattlesPlayer);
-	handler.serializeInt("numHeroSurrendered", numHeroSurrendered);
-	handler.serializeInt("numHeroEscaped", numHeroEscaped);
+	handler.serializeInt("score", score, 0);
+	handler.serializeInt("maxHeroLevel", maxHeroLevel, 0);
+	handler.serializeInt("numBattlesNeutral", numBattlesNeutral, 0);
+	handler.serializeInt("numBattlesPlayer", numBattlesPlayer, 0);
+	handler.serializeInt("numWinBattlesNeutral", numWinBattlesNeutral, 0);
+	handler.serializeInt("numWinBattlesPlayer", numWinBattlesPlayer, 0);
+	handler.serializeInt("numHeroSurrendered", numHeroSurrendered, 0);
+	handler.serializeInt("numHeroEscaped", numHeroEscaped, 0);
 	spentResourcesForArmy.serializeJson(handler, "spentResourcesForArmy");
 	spentResourcesForBuildings.serializeJson(handler, "spentResourcesForBuildings");
 	tradeVolume.serializeJson(handler, "tradeVolume");
 	handler.serializeBool("eventCapturedTown", eventCapturedTown);
 	handler.serializeBool("eventDefeatedStrongestHero", eventDefeatedStrongestHero);
-	handler.serializeInt("movementPointsUsed", movementPointsUsed);
+	handler.serializeInt("movementPointsUsed", movementPointsUsed, 0);
 }
 
 void StatisticDataSet::PlayerAccumulatedValueStorage::serializeJson(JsonSerializeFormat & handler)
 {
-	handler.serializeInt("numBattlesNeutral", numBattlesNeutral);
-	handler.serializeInt("numBattlesPlayer", numBattlesPlayer);
-	handler.serializeInt("numWinBattlesNeutral", numWinBattlesNeutral);
-	handler.serializeInt("numWinBattlesPlayer", numWinBattlesPlayer);
-	handler.serializeInt("numHeroSurrendered", numHeroSurrendered);
-	handler.serializeInt("numHeroEscaped", numHeroEscaped);
+	handler.serializeInt("numBattlesNeutral", numBattlesNeutral, 0);
+	handler.serializeInt("numBattlesPlayer", numBattlesPlayer, 0);
+	handler.serializeInt("numWinBattlesNeutral", numWinBattlesNeutral, 0);
+	handler.serializeInt("numWinBattlesPlayer", numWinBattlesPlayer, 0);
+	handler.serializeInt("numHeroSurrendered", numHeroSurrendered, 0);
+	handler.serializeInt("numHeroEscaped", numHeroEscaped, 0);
 	spentResourcesForArmy.serializeJson(handler, "spentResourcesForArmy");
 	spentResourcesForBuildings.serializeJson(handler, "spentResourcesForBuildings");
 	tradeVolume.serializeJson(handler, "tradeVolume");
-	handler.serializeInt("movementPointsUsed", movementPointsUsed);
-	handler.serializeInt("lastCapturedTownDay", lastCapturedTownDay);
-	handler.serializeInt("lastDefeatedStrongestHeroDay", lastDefeatedStrongestHeroDay);
+	handler.serializeInt("movementPointsUsed", movementPointsUsed, 0);
+	handler.serializeInt("lastCapturedTownDay", lastCapturedTownDay, 0);
+	handler.serializeInt("lastDefeatedStrongestHeroDay", lastDefeatedStrongestHeroDay, 0);
 }
 
 void StatisticDataSet::serializeJson(JsonSerializeFormat & handler)
 {
+	if(!handler.saving || !data.empty())
 	{
 		auto eventsHandler = handler.enterArray("data");
 		eventsHandler.syncSize(data, JsonNode::JsonType::DATA_VECTOR);
 		eventsHandler.serializeStruct(data);
 	}
+	if(!handler.saving || !accumulatedValues.empty())
 	{
 		auto eventsHandler = handler.enterStruct("accumulatedValues");
 		for(auto & val : accumulatedValues)
@@ -226,15 +242,21 @@ JsonNode StatisticDataSet::toVGTJson() const
 
 	JsonNode exactFloats;
 	exactFloats.Vector();
+	bool hasExactFloats = false;
 	for(const auto & entry : data)
 	{
 		JsonNode exactEntry;
-		exactEntry["mapExploredRatio"].String() = vgtExactFloat(entry.mapExploredRatio);
-		exactEntry["obeliskVisitedRatio"].String() = vgtExactFloat(entry.obeliskVisitedRatio);
-		exactEntry["townBuiltRatio"].String() = vgtExactFloat(entry.townBuiltRatio);
+		if(entry.mapExploredRatio != 0.0f)
+			exactEntry["mapExploredRatio"].String() = vgtExactFloat(entry.mapExploredRatio);
+		if(entry.obeliskVisitedRatio != 0.0f)
+			exactEntry["obeliskVisitedRatio"].String() = vgtExactFloat(entry.obeliskVisitedRatio);
+		if(entry.townBuiltRatio != 0.0f)
+			exactEntry["townBuiltRatio"].String() = vgtExactFloat(entry.townBuiltRatio);
+		hasExactFloats = hasExactFloats || !exactEntry.Struct().empty();
 		exactFloats.Vector().push_back(exactEntry);
 	}
-	result["exactFloats"] = exactFloats;
+	if(hasExactFloats)
+		result["exactFloats"] = exactFloats;
 	return result;
 }
 
