@@ -9,7 +9,6 @@ The target is a compact YAML transcript that can be read by a human, parsed by n
 - The file is YAML 1.2, not a custom DSL.
 - The file is append-friendly. New turns or world phases can be appended to the end.
 - The file contains no binary payloads, no save snapshots, and no state checkpoint hashes.
-- Exact traditional-save replay may append a final structured `continuation` document with small engine continuation state that is not a material timeline event.
 - The header contains a required hash of the referenced map file, so replay can fail early if the map changed.
 - The map-file hash is an input-integrity check, not a replay checkpoint. It is the only required hash in the first version.
 - Records use identifiers instead of enum numbers.
@@ -17,40 +16,16 @@ The target is a compact YAML transcript that can be read by a human, parsed by n
 - Only material events are recorded. Do not record acknowledgements, duplicate network delivery, timer ticks, internal implementation noise, or random draws that never realize into game state or a decision.
 - Every actor decision is recorded: human, AI, neutral/world, battle AI, query answer, retreat/surrender choice, and scripted choice where applicable.
 - Every authoritative material effect is recorded, including effects nobody could see yet, such as neutral growth or week-start spawned monsters in fog.
-- In the material event stream, randomness is recorded only as realized facts near the event that consumed it. Internal RNG state is not a timeline event. If exact traditional-save continuation is enabled, the final `continuation` document may carry RNG continuation state so a replayed save can keep playing identically.
-- Countdown timer ticks are out of scope for the first readable transcript. If the engine persists a turn-timer state packet as part of save state, the transcript may record that packet as a compact `timer` effect; it is not a clock tick stream.
+- In the material event stream, randomness is recorded only as realized facts near the event that consumed it. Internal RNG state is not a timeline event. Replay advances RNG by feeding recorded decisions through normal server logic.
+- Countdown timer ticks are not recorded. Timer state is recorded only when a timer forces a gameplay action, or as a compact start/end snapshot on the turn end record for analysis.
 
 ## Self-Sufficiency Boundary
 
 The transcript names the map, content set, settings, map game-setting overrides, players, and all events. It does not embed the map, but it must identify the exact map file with a cryptographic hash.
 
-A replay/player tool starts from the declared map and content, verifies the map hash, initializes the game from the declared settings, restores small deterministic initialization state such as the map object-name counter, then applies VGT events. For generated random maps, the writer must save the generated map as a normal map file, hash that saved file, and reference it from the transcript. The transcript may also record the random-map generator options preserved by normal save files, but replay still loads the saved map file instead of generating a new one.
+A replay/player tool starts from the declared map and content, verifies the map hash, initializes the game from the declared settings, restores small deterministic initialization state such as the map object-name counter, starts the normal server flow, then compiles VGT decision records back into server requests. Effect records are audit/readability records; they are checked against recomputed server results when a checker supports that comparison, but they are not the replay source of truth. For generated random maps, the writer must save the generated map as a normal map file, hash that saved file, and reference it from the transcript. The transcript may also record the random-map generator options preserved by normal save files, but replay still loads the saved map file instead of generating a new one.
 
 This keeps the transcript readable while detecting the most dangerous external input drift: the map file. Mod/content hashing can be added later if needed, but it is not required for the first implementation.
-
-## Exact Replay Continuation
-
-The material event stream is sufficient to rebuild the visible game state. A traditional VCMI save also contains handler state that is not naturally expressed as user-facing events, such as the next query id, hero-pool generators, randomizer continuation state, and accumulated statistics. To support byte-for-byte comparison against a traditional save and to let a replayed save continue deterministically, the recorder may append one final document:
-
-```yaml
----
-continuation:
-  nextQuery: "query/214"
-  heroPool:
-    red: "1338189132"
-    blue: "563674087"
-  randomizer:
-    global: "1722862872"
-    allocatedArtifacts:
-      "core:spellBook": 10
-  statistics:
-    accumulatedValues:
-      red: { movementPointsUsed: 87447 }
-    exactFloats:
-      - { mapExploredRatio: "0x1.5d06e6p-4", obeliskVisitedRatio: "0x0p+0", townBuiltRatio: "0x1.4c1bacp-4" }
-```
-
-This document is structured text, not a binary blob or checkpoint. Analysis tools can ignore it when they only need the human-readable timeline. Exact replay tools should apply it after all material events and before writing a traditional save.
 
 ## YAML Stream Shape
 
@@ -97,7 +72,7 @@ actions:
   - resources: { player: red, change: [{ resource: "core:gold", from: 2500, to: 3000 }], source: object/resource/gold/at-12-10-0 }
   - remove: { object: object/resource/gold/at-12-10-0, reason: collected }
   - decision: { actor: ai/red/Nullkiller2, kind: endTurn }
-  - turnEnd: { player: red }
+  - turnEnd: { player: red, timer: { start: { turn: 120000 }, end: { turn: 91784 } } }
 ---
 world: { day: 8, phase: weekStart }
 events:
@@ -150,7 +125,7 @@ Do not include packet type IDs, record counters, connection IDs, request serials
 
 ## Decisions And Effects
 
-The transcript records both decisions and effects.
+The transcript records both decisions and effects. Decisions are authoritative for replay. Effects explain and audit what became true.
 
 Decision records answer "what did an actor choose?"
 
@@ -176,6 +151,22 @@ A decision may be followed by zero, one, or many effects. Some world effects hav
 ```
 
 Rejected or illegal decisions are not required for state replay, but are valuable for AI debugging. They can be enabled as an analysis option.
+
+Timer-forced choices are decisions whose actor is the clock, not a player or AI:
+
+```yaml
+- decision: { actor: timer/red, kind: endTurn }
+- battle:
+    id: 2
+    events:
+      - decision: { actor: timer/red, kind: battleAction, battle: 2, action: { side: attacker, stack: stack/1, creature: core/pikeman, action: defend } }
+```
+
+Timer updates used only for UI display are not transcript records. At turn end, the recorder may include a compact timer snapshot for analysis:
+
+```yaml
+- turnEnd: { player: red, timer: { start: { turn: 120000, base: 300000 }, end: { base: 276442, ended: true } } }
+```
 
 ## Event Coverage
 
@@ -341,14 +332,16 @@ No raw fallback is allowed in either mode.
 The future player tool should:
 
 1. Load map/content/settings from the header.
-2. Apply VGT events from the beginning.
-3. Build its own external cache for fast seeking. The cache is not part of VGT.
-4. Render the timeline and battle blocks.
-5. Allow branching into live play from a reconstructed state.
+2. Start the normal server flow.
+3. Compile each VGT decision into the corresponding server request and feed it to the server.
+4. Compare recorded effects with recomputed effects where an audit checker supports that record type.
+5. Build its own external cache for fast seeking. The cache is not part of VGT.
+6. Render the timeline and battle blocks.
+7. Allow branching into live play from a reconstructed state.
 
 Because VGT contains no snapshots, jumping to the middle requires replay from the start or using a cache built by the tool. That is acceptable for the text format.
 
-Decision replay through normal mechanics is useful for debugging, but it is not sufficient for exact reconstruction unless every RNG draw is reproduced. The authoritative replay path must apply recorded material effects. Decisions explain what an actor requested; effects state what actually became true, including realized random outcomes such as a wandering monster joining instead of starting a battle.
+Decision replay through normal mechanics is the authoritative reconstruction path. Effects state what actually became true, including realized random outcomes such as a wandering monster joining instead of starting a battle, but they are not used to advance server state during normal replay.
 
 ## Open Questions
 
