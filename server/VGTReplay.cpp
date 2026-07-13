@@ -380,6 +380,37 @@ ui8 decodeArrangeMode(const std::string & value)
 	throw std::runtime_error("Unsupported VGT arrange mode: " + value);
 }
 
+EMarketMode decodeMarketMode(const std::string & value)
+{
+	if(value == "resource-resource") return EMarketMode::RESOURCE_RESOURCE;
+	if(value == "resource-player") return EMarketMode::RESOURCE_PLAYER;
+	if(value == "creature-resource") return EMarketMode::CREATURE_RESOURCE;
+	if(value == "resource-artifact") return EMarketMode::RESOURCE_ARTIFACT;
+	if(value == "artifact-resource") return EMarketMode::ARTIFACT_RESOURCE;
+	if(value == "artifact-experience") return EMarketMode::ARTIFACT_EXP;
+	if(value == "creature-experience") return EMarketMode::CREATURE_EXP;
+	if(value == "creature-undead") return EMarketMode::CREATURE_UNDEAD;
+	if(value == "resource-skill") return EMarketMode::RESOURCE_SKILL;
+	throw std::runtime_error("Unsupported VGT market mode: " + value);
+}
+
+EArmyFormation decodeArmyFormation(const std::string & value)
+{
+	if(value == "loose") return EArmyFormation::LOOSE;
+	if(value == "tight") return EArmyFormation::TIGHT;
+	throw std::runtime_error("Unsupported VGT army formation: " + value);
+}
+
+ManageBackpackArtifacts::ManageCmd decodeBackpackManageCommand(const std::string & value)
+{
+	if(value == "scrollLeft") return ManageBackpackArtifacts::ManageCmd::SCROLL_LEFT;
+	if(value == "scrollRight") return ManageBackpackArtifacts::ManageCmd::SCROLL_RIGHT;
+	if(value == "sortBySlot") return ManageBackpackArtifacts::ManageCmd::SORT_BY_SLOT;
+	if(value == "sortByClass") return ManageBackpackArtifacts::ManageCmd::SORT_BY_CLASS;
+	if(value == "sortByCost") return ManageBackpackArtifacts::ManageCmd::SORT_BY_COST;
+	throw std::runtime_error("Unsupported VGT backpack command: " + value);
+}
+
 ChangeValueMode decodeChangeMode(const std::string & value)
 {
 	if(value == "absolute")
@@ -922,8 +953,21 @@ ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::str
 
 std::optional<PlayerColor> tryPlayerFromActor(const std::string & actor)
 {
-	const std::string prefix = "player/";
-	const std::string value = actor.starts_with(prefix) ? actor.substr(prefix.size()) : actor;
+	std::string value = actor;
+	for(const std::string prefix : {"player/", "timer/"})
+	{
+		if(value.starts_with(prefix))
+		{
+			value.erase(0, prefix.size());
+			break;
+		}
+	}
+	if(value.starts_with("ai/") || value.starts_with("battleAI/") || value.starts_with("human/"))
+	{
+		const auto parts = splitAlias(value);
+		if(parts.size() >= 2)
+			value = parts[1];
+	}
 	if(value == "world")
 		return std::nullopt;
 
@@ -963,7 +1007,7 @@ QueryID decodeQuery(const JsonNode & node)
 	throw std::runtime_error("Unsupported VGT query alias type");
 }
 
-bool isRealQueryAlias(const JsonNode & node)
+[[maybe_unused]] bool isRealQueryAlias(const JsonNode & node)
 {
 	if(node.isNumber())
 		return true;
@@ -1049,6 +1093,109 @@ ArtifactLocation decodeArtifactLocation(CGameHandler & gameHandler, const JsonNo
 	if(const auto * creatureSlot = findNullableField(node, "creatureSlot"))
 		result.creature = decodeOptionalSlot(*creatureSlot);
 	result.slot = decodeArtifactPosition(requireField(node, "slot"));
+	return result;
+}
+
+bool optionalBool(const JsonNode & node, const char * field, bool defaultValue)
+{
+	if(const auto * value = findField(node, field))
+	{
+		if(!value->isBool())
+			throw std::runtime_error(std::string("VGT replay field is not a bool: ") + field);
+		return value->Bool();
+	}
+	return defaultValue;
+}
+
+std::vector<ui32> decodeUnsignedList(const JsonNode & node)
+{
+	if(!node.isVector())
+		throw std::runtime_error("VGT replay numeric list must be a list");
+
+	std::vector<ui32> result;
+	result.reserve(node.Vector().size());
+	for(const auto & entry : node.Vector())
+	{
+		if(!entry.isNumber())
+			throw std::runtime_error("VGT replay numeric list entry is not a number");
+		result.push_back(static_cast<ui32>(entry.Integer()));
+	}
+	return result;
+}
+
+std::vector<TradeItemSell> decodeMarketSellItems(const JsonNode & node, EMarketMode mode)
+{
+	if(!node.isVector())
+		throw std::runtime_error("VGT replay market sell list must be a list");
+
+	std::vector<TradeItemSell> result;
+	result.reserve(node.Vector().size());
+	for(const auto & entry : node.Vector())
+	{
+		if(!entry.isNumber())
+			throw std::runtime_error("VGT replay market sell entry is not a number");
+		const auto value = static_cast<int32_t>(entry.Integer());
+		switch(mode)
+		{
+			case EMarketMode::RESOURCE_RESOURCE:
+			case EMarketMode::RESOURCE_PLAYER:
+			case EMarketMode::RESOURCE_ARTIFACT:
+			case EMarketMode::RESOURCE_SKILL:
+				result.emplace_back(GameResID(value));
+				break;
+			case EMarketMode::CREATURE_RESOURCE:
+			case EMarketMode::CREATURE_UNDEAD:
+			case EMarketMode::CREATURE_EXP:
+				result.emplace_back(SlotID(value));
+				break;
+			case EMarketMode::ARTIFACT_RESOURCE:
+			case EMarketMode::ARTIFACT_EXP:
+				result.emplace_back(ArtifactInstanceID(value));
+				break;
+			case EMarketMode::MARKET_AFTER_LAST_PLACEHOLDER:
+				throw std::runtime_error("VGT replay market sell mode is invalid");
+		}
+	}
+	return result;
+}
+
+std::vector<TradeItemBuy> decodeMarketBuyItems(const JsonNode & node, EMarketMode mode)
+{
+	if(!node.isVector())
+		throw std::runtime_error("VGT replay market buy list must be a list");
+
+	std::vector<TradeItemBuy> result;
+	result.reserve(node.Vector().size());
+	for(const auto & entry : node.Vector())
+	{
+		if(!entry.isNumber())
+			throw std::runtime_error("VGT replay market buy entry is not a number");
+		const auto value = static_cast<int32_t>(entry.Integer());
+		switch(mode)
+		{
+			case EMarketMode::RESOURCE_RESOURCE:
+			case EMarketMode::CREATURE_RESOURCE:
+			case EMarketMode::ARTIFACT_RESOURCE:
+				result.emplace_back(GameResID(value));
+				break;
+			case EMarketMode::RESOURCE_PLAYER:
+				result.emplace_back(PlayerColor(value));
+				break;
+			case EMarketMode::RESOURCE_ARTIFACT:
+				result.emplace_back(ArtifactID(value));
+				break;
+			case EMarketMode::RESOURCE_SKILL:
+				result.emplace_back(SecondarySkill(value));
+				break;
+			case EMarketMode::CREATURE_UNDEAD:
+			case EMarketMode::CREATURE_EXP:
+			case EMarketMode::ARTIFACT_EXP:
+				result.emplace_back(GameResID(value));
+				break;
+			case EMarketMode::MARKET_AFTER_LAST_PLACEHOLDER:
+				throw std::runtime_error("VGT replay market buy mode is invalid");
+		}
+	}
 	return result;
 }
 
@@ -2124,11 +2271,49 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 		return;
 	}
 
+	if(kind == "castleTeleportHero")
+	{
+		CastleTeleportHero pack;
+		pack.hid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "hero"));
+		pack.dest = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "destination"));
+		pack.source = static_cast<si8>(requireInteger(decision, "source"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
 	if(kind == "buildStructure")
 	{
 		BuildStructure pack;
 		pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "town"));
 		pack.bid = decodeBuilding(requireString(decision, "building"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "visitTownBuilding")
+	{
+		VisitTownBuilding pack;
+		pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "town"));
+		pack.bid = decodeBuilding(requireString(decision, "building"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "razeStructure")
+	{
+		RazeStructure pack;
+		pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "town"));
+		pack.bid = decodeBuilding(requireString(decision, "building"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "spellResearch")
+	{
+		SpellResearch pack;
+		pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "town"));
+		pack.spellAtSlot = decodeSpell(requireString(decision, "spell"));
+		pack.accepted = requireBool(decision, "accepted");
 		replayPack(gameHandler, pack, player);
 		return;
 	}
@@ -2145,6 +2330,24 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 		return;
 	}
 
+	if(kind == "dismissHero")
+	{
+		DismissHero pack;
+		pack.hid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "hero"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "hireHero")
+	{
+		HireHero pack;
+		pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "town"));
+		pack.hid = decodeHeroType(requireString(decision, "hero"));
+		pack.nhid = decodeHeroType(requireString(decision, "nextHero"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
 	if(kind == "arrangeStacks")
 	{
 		const auto & from = requireField(decision, "from");
@@ -2157,6 +2360,232 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 		pack.id2 = resolveObjectAlias(gameHandler.gameState(), requireString(to, "army"));
 		pack.p2 = decodeSlot(requireField(to, "slot"));
 		pack.val = static_cast<si32>(requireInteger(decision, "count"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "bulkMoveArmy")
+	{
+		const auto & from = requireField(decision, "from");
+		BulkMoveArmy pack;
+		pack.srcArmy = resolveObjectAlias(gameHandler.gameState(), requireString(from, "army"));
+		pack.srcSlot = decodeSlot(requireField(from, "slot"));
+		pack.destArmy = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "to"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "bulkSplitStack")
+	{
+		const auto & source = requireField(decision, "source");
+		BulkSplitStack pack;
+		pack.srcOwner = resolveObjectAlias(gameHandler.gameState(), requireString(source, "army"));
+		pack.src = decodeSlot(requireField(source, "slot"));
+		pack.amount = static_cast<si32>(requireInteger(decision, "amount"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "bulkMergeStacks")
+	{
+		const auto & source = requireField(decision, "source");
+		BulkMergeStacks pack;
+		pack.srcOwner = resolveObjectAlias(gameHandler.gameState(), requireString(source, "army"));
+		pack.src = decodeSlot(requireField(source, "slot"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "bulkSplitAndRebalanceStack")
+	{
+		const auto & source = requireField(decision, "source");
+		BulkSplitAndRebalanceStack pack;
+		pack.srcOwner = resolveObjectAlias(gameHandler.gameState(), requireString(source, "army"));
+		pack.src = decodeSlot(requireField(source, "slot"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "disbandCreature")
+	{
+		DisbandCreature pack;
+		pack.id = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "army"));
+		pack.pos = decodeSlot(requireField(decision, "slot"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "upgradeCreature")
+	{
+		UpgradeCreature pack;
+		pack.id = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "army"));
+		pack.pos = decodeSlot(requireField(decision, "slot"));
+		pack.cid = decodeCreature(requireString(decision, "creature"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "swapTownHeroes")
+	{
+		GarrisonHeroSwap pack;
+		pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "town"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "exchangeArtifacts")
+	{
+		ExchangeArtifacts pack;
+		pack.src = decodeArtifactLocation(gameHandler, requireField(decision, "from"));
+		pack.dst = decodeArtifactLocation(gameHandler, requireField(decision, "to"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "bulkExchangeArtifacts")
+	{
+		BulkExchangeArtifacts pack;
+		pack.srcHero = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "from"));
+		pack.dstHero = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "to"));
+		pack.swap = requireBool(decision, "swap");
+		pack.equipped = requireBool(decision, "equipped");
+		pack.backpack = requireBool(decision, "backpack");
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "manageBackpackArtifacts")
+	{
+		ManageBackpackArtifacts pack;
+		pack.artHolder = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "holder"));
+		pack.cmd = decodeBackpackManageCommand(requireString(decision, "command"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "manageEquippedArtifacts")
+	{
+		ManageEquippedArtifacts pack;
+		pack.artHolder = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "holder"));
+		pack.costumeIdx = static_cast<uint32_t>(requireInteger(decision, "costume"));
+		pack.saveCostume = optionalBool(decision, "save", false);
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "assembleArtifacts")
+	{
+		AssembleArtifacts pack;
+		pack.heroID = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "hero"));
+		pack.artifactSlot = decodeArtifactPosition(requireField(decision, "slot"));
+		pack.assemble = requireBool(decision, "assemble");
+		pack.assembleTo = decodeArtifact(requireString(decision, "artifact"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "eraseArtifact")
+	{
+		EraseArtifactByClient pack;
+		pack.al = decodeArtifactLocation(gameHandler, requireField(decision, "location"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "buyArtifact")
+	{
+		BuyArtifact pack;
+		pack.hid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "hero"));
+		pack.aid = decodeArtifact(requireString(decision, "artifact"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "trade")
+	{
+		TradeOnMarketplace pack;
+		pack.marketId = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "market"));
+		pack.heroId = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "hero"));
+		pack.mode = decodeMarketMode(requireString(decision, "mode"));
+		pack.r1 = decodeMarketSellItems(requireField(decision, "sell"), pack.mode);
+		pack.r2 = decodeMarketBuyItems(requireField(decision, "buy"), pack.mode);
+		pack.val = decodeUnsignedList(requireField(decision, "amount"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "setFormation")
+	{
+		SetFormation pack;
+		pack.hid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "hero"));
+		pack.formation = decodeArmyFormation(requireString(decision, "formation"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "setTactics")
+	{
+		SetTactics pack;
+		pack.hid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "hero"));
+		pack.enabled = requireBool(decision, "enabled");
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "setTownName")
+	{
+		SetTownName pack;
+		pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "town"));
+		pack.name = requireString(decision, "name");
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "buildBoat")
+	{
+		BuildBoat pack;
+		pack.objid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "object"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "dig")
+	{
+		DigWithHero pack;
+		pack.id = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "hero"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "castAdventureSpell")
+	{
+		CastAdvSpell pack;
+		pack.hid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "hero"));
+		pack.sid = decodeSpell(requireString(decision, "spell"));
+		pack.pos = decodePosition(requireField(decision, "position"));
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "pauseTimer")
+	{
+		GamePause pack;
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "ready")
+	{
+		AdvInterfaceReady pack;
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "playerMessage")
+	{
+		PlayerMessage pack;
+		pack.text = requireString(decision, "text");
+		pack.currObj = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "object"));
 		replayPack(gameHandler, pack, player);
 		return;
 	}
@@ -2178,7 +2607,11 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 
 	if(kind == "battleAction")
 	{
-		throw std::runtime_error("VGT battle decision replay is not implemented yet; replay must apply recorded battle effects instead");
+		MakeAction pack;
+		pack.battleID = decodeBattleAlias(requireField(decision, "battle"));
+		pack.ba = decodeBattleAction(requireField(decision, "action"));
+		replayPack(gameHandler, pack, player);
+		return;
 	}
 
 	throw std::runtime_error("Unsupported VGT decision kind: " + kind);
@@ -2300,7 +2733,7 @@ void applyBattleEffect(CGameHandler & gameHandler, const JsonNode & node, const 
 
 bool shouldSynthesizeDisabledTimerState(CGameHandler & gameHandler);
 
-std::set<PlayerColor> collectBattleDecisionPlayers(const JsonNode & events)
+[[maybe_unused]] std::set<PlayerColor> collectBattleDecisionPlayers(const JsonNode & events)
 {
 	std::set<PlayerColor> result;
 	for(const JsonNode & record : events.Vector())
@@ -2319,7 +2752,7 @@ std::set<PlayerColor> collectBattleDecisionPlayers(const JsonNode & events)
 	return result;
 }
 
-void synthesizeDisabledTimerBattleStart(CGameHandler & gameHandler, const std::set<PlayerColor> & players)
+[[maybe_unused]] void synthesizeDisabledTimerBattleStart(CGameHandler & gameHandler, const std::set<PlayerColor> & players)
 {
 	if(!shouldSynthesizeDisabledTimerState(gameHandler))
 		return;
@@ -2338,20 +2771,19 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node)
 	if(!events.isVector())
 		throw std::runtime_error("VGT battle block events field is not a list");
 
-	const auto battlePlayers = collectBattleDecisionPlayers(events);
-
 	for(const JsonNode & record : events.Vector())
 	{
 		if(!record.isStruct())
 			throw std::runtime_error("VGT battle block event is not a mapping");
-		if(hasField(record, "event"))
+		if(record.Struct().size() == 1 && record.Struct().begin()->first == "decision")
 		{
-			if(requireString(record, "event") == "start")
-				synthesizeDisabledTimerBattleStart(gameHandler, battlePlayers);
-			applyBattleEffect(gameHandler, record, battleID);
+			JsonNode decision = record.Struct().begin()->second;
+			if(!hasField(decision, "battle"))
+				decision["battle"].String() = battleID;
+			replayDecision(gameHandler, decision);
 			continue;
 		}
-		if(record.Struct().size() == 1 && record.Struct().begin()->first == "decision")
+		if(hasField(record, "event"))
 			continue;
 		throw std::runtime_error("Unsupported VGT battle block event");
 	}
@@ -2397,7 +2829,7 @@ void synthesizeDisabledTimerTurnEnd(CGameHandler & gameHandler, PlayerColor play
 	gameHandler.turnTimerHandler->onEndTurn(player);
 }
 
-void synthesizeDisabledTimerGameplayStart(CGameHandler & gameHandler)
+[[maybe_unused]] void synthesizeDisabledTimerGameplayStart(CGameHandler & gameHandler)
 {
 	if(!shouldSynthesizeDisabledTimerState(gameHandler))
 		return;
@@ -2406,7 +2838,7 @@ void synthesizeDisabledTimerGameplayStart(CGameHandler & gameHandler)
 		gameHandler.turnTimerHandler->onGameplayStart(player);
 }
 
-void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, const JsonNode & node)
+[[maybe_unused]] void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, const JsonNode & node)
 {
 	if(kind == "decision" || kind == "query" || kind == "info")
 		return;
@@ -2909,7 +3341,7 @@ bool isArmyCreatureOnlyRecord(const JsonNode & node)
 		!hasField(node, "mode") && !hasField(node, "count") && !hasField(node, "insert") && !hasField(node, "erase") && !hasField(node, "move") && !hasField(node, "swap");
 }
 
-bool tryReplayArmyInsertPair(CGameHandler & gameHandler, const JsonNode & currentRecord, const JsonNode & nextRecord)
+[[maybe_unused]] bool tryReplayArmyInsertPair(CGameHandler & gameHandler, const JsonNode & currentRecord, const JsonNode & nextRecord)
 {
 	if(!currentRecord.isStruct() || currentRecord.Struct().size() != 1 || !nextRecord.isStruct() || nextRecord.Struct().size() != 1)
 		return false;
@@ -2949,7 +3381,7 @@ void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & docu
 	{
 		const JsonNode & document = documents.Vector()[documentIndex];
 		if(hasField(document, "continuation"))
-			continue;
+			throw std::runtime_error("VGT continuation state is no longer supported");
 
 		const JsonNode * records = nullptr;
 		const auto actionsIter = document.Struct().find("actions");
@@ -2967,183 +3399,26 @@ void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & docu
 			if(!record.isStruct() || record.Struct().size() != 1)
 				throw std::runtime_error("VGT replay record is not a one-key mapping");
 
-			if(recordIndex + 1 < records->Vector().size() && tryReplayArmyInsertPair(gameHandler, record, records->Vector()[recordIndex + 1]))
-			{
-				++recordIndex;
-				continue;
-			}
-
 			const auto & entry = *record.Struct().begin();
-			applyEffectRecord(gameHandler, entry.first, entry.second);
-		}
-	}
-}
-
-void rebuildTurnOrderStateFromTranscript(CGameHandler & gameHandler, const JsonNode & documents)
-{
-	std::set<PlayerColor> awaiting;
-	std::set<PlayerColor> acting;
-	std::set<PlayerColor> acted;
-
-	for(const auto & [player, state] : gameHandler.gameState().players)
-		awaiting.insert(player);
-
-	auto removePlayer = [&](PlayerColor player)
-	{
-		awaiting.erase(player);
-		acting.erase(player);
-		acted.erase(player);
-	};
-
-	for(size_t documentIndex = 1; documentIndex < documents.Vector().size(); ++documentIndex)
-	{
-		const JsonNode & document = documents.Vector()[documentIndex];
-		if(hasField(document, "continuation"))
-			continue;
-
-		const JsonNode * records = nullptr;
-		if(const auto actionsIter = document.Struct().find("actions"); actionsIter != document.Struct().end())
-			records = &actionsIter->second;
-		if(!records)
-		{
-			if(const auto eventsIter = document.Struct().find("events"); eventsIter != document.Struct().end())
-				records = &eventsIter->second;
-		}
-		if(!records || !records->isVector())
-			continue;
-
-		for(const auto & record : records->Vector())
-		{
-			if(!record.isStruct() || record.Struct().size() != 1)
-				continue;
-
-			const auto & entry = *record.Struct().begin();
-			if(entry.first == "playerEnd")
+			if(entry.first == "decision")
 			{
-				removePlayer(decodePlayerColor(requireString(entry.second, "player")));
+				replayDecision(gameHandler, entry.second);
 				continue;
 			}
-			if(entry.first == "turnStart")
+			if(entry.first == "battle")
 			{
-				const auto player = decodePlayerColor(requireString(entry.second, "player"));
-				if(!awaiting.count(player) && acted.count(player) && acting.empty())
-				{
-					awaiting = acted;
-					acted.clear();
-				}
-				awaiting.erase(player);
-				acting.insert(player);
+				applyBattleBlock(gameHandler, entry.second);
 				continue;
 			}
-			if(entry.first == "turnEnd")
+			if(entry.first == "localState")
 			{
-				const auto player = decodePlayerColor(requireString(entry.second, "player"));
-				acting.erase(player);
-				acted.insert(player);
-			}
-		}
-	}
-
-	gameHandler.turnOrder->replaceStateForReplay(awaiting, acting, acted);
-}
-
-bool isRealQueryAlias(const JsonNode & node, const char * field)
-{
-	if(!hasField(node, field))
-		return false;
-
-	return isRealQueryAlias(requireField(node, field));
-}
-
-int countBattleQueries(const JsonNode & node)
-{
-	if(!hasField(node, "events"))
-		return isRealQueryAlias(node, "query") ? 1 : 0;
-
-	const JsonNode & events = requireField(node, "events");
-	if(!events.isVector())
-		return 0;
-
-	int result = 0;
-	for(const auto & event : events.Vector())
-	{
-		if(event.isStruct() && isRealQueryAlias(event, "query"))
-			++result;
-	}
-	return result;
-}
-
-int countQueryProducingRecord(const std::string & kind, const JsonNode & node)
-{
-	if(kind == "move")
-		return 1;
-	if(kind == "visit" && requireBool(node, "start"))
-		return 1;
-	if(kind == "query")
-		return 1;
-	if(kind == "levelUp")
-		return 1;
-	if(kind == "turnStart" && isRealQueryAlias(node, "query"))
-		return 1;
-	if(kind == "battle")
-		return countBattleQueries(node);
-	return 0;
-}
-
-void rebuildNextQueryIDFromTranscript(CGameHandler & gameHandler, const JsonNode & documents)
-{
-	int queryObjectsCreated = 0;
-	for(size_t documentIndex = 1; documentIndex < documents.Vector().size(); ++documentIndex)
-	{
-		const JsonNode & document = documents.Vector()[documentIndex];
-		if(hasField(document, "continuation"))
-			continue;
-
-		const JsonNode * records = nullptr;
-		if(const auto actionsIter = document.Struct().find("actions"); actionsIter != document.Struct().end())
-			records = &actionsIter->second;
-		if(!records)
-		{
-			if(const auto eventsIter = document.Struct().find("events"); eventsIter != document.Struct().end())
-				records = &eventsIter->second;
-		}
-		if(!records || !records->isVector())
-			continue;
-
-		for(const auto & record : records->Vector())
-		{
-			if(!record.isStruct() || record.Struct().size() != 1)
+				applyLocalState(gameHandler, entry.second);
 				continue;
-
-			const auto & entry = *record.Struct().begin();
-			queryObjectsCreated += countQueryProducingRecord(entry.first, entry.second);
+			}
+			if(entry.first == "unmodelled")
+				throw std::runtime_error("VGT replay encountered unmodelled material pack: " + requireString(entry.second, "pack"));
 		}
 	}
-	gameHandler.QID = QueryID(1 + queryObjectsCreated);
-}
-
-void applyContinuationState(CGameHandler & gameHandler, const JsonNode & documents)
-{
-	const JsonNode * continuation = nullptr;
-	for(size_t documentIndex = 1; documentIndex < documents.Vector().size(); ++documentIndex)
-	{
-		const JsonNode & document = documents.Vector()[documentIndex];
-		if(const JsonNode * node = findField(document, "continuation"))
-			continuation = node;
-	}
-
-	if(!continuation)
-		return;
-
-	gameHandler.randomizer->loadVGTJson(requireField(*continuation, "randomizer"));
-	gameHandler.heroPool->loadVGTJson(requireField(*continuation, "heroPool"));
-	if(const JsonNode * nextQuery = findField(*continuation, "nextQuery"))
-	{
-		gameHandler.QID = decodeQuery(*nextQuery);
-	}
-
-	gameHandler.statistics = std::make_unique<StatisticDataSet>();
-	gameHandler.statistics->loadVGTJson(requireField(*continuation, "statistics"));
 }
 
 void writeGameStateSave(const CGameHandler & gameHandler, const std::string & path)
@@ -3539,11 +3814,9 @@ int replayVGTJson(const VGTReplayOptions & options)
 	applyMapEngineState(gameHandler, header);
 	applyInitialState(gameHandler, header);
 	applyGameSettingsOverrides(gameHandler, header);
-	synthesizeDisabledTimerGameplayStart(gameHandler);
+	if(documents.Vector().size() > 1)
+		gameHandler.start(false);
 	replayTranscriptDocuments(gameHandler, documents);
-	rebuildTurnOrderStateFromTranscript(gameHandler, documents);
-	rebuildNextQueryIDFromTranscript(gameHandler, documents);
-	applyContinuationState(gameHandler, documents);
 	gameHandler.saveToFile(options.outputSave);
 	writeGameStateSave(gameHandler, options.outputGameStateSave);
 	return 0;

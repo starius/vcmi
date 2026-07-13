@@ -10,6 +10,7 @@
 #include "StdInc.h"
 #include "TurnTimerHandler.h"
 #include "CGameHandler.h"
+#include "VGTRecorder.h"
 #include "battles/BattleProcessor.h"
 #include "queries/QueriesProcessor.h"
 #include "processors/TurnOrderProcessor.h"
@@ -184,7 +185,10 @@ void TurnTimerHandler::onPlayerMakingTurn(PlayerColor player, int waitTime)
 			return;
 
 		if(endTurnAllowed[state->color] && !gameHandler.queries->topQuery(state->color)) //wait for replies to avoid pending queries
+		{
+			VGTRecorder::get().recordTimerEndTurn(gameHandler.gameState(), state->color);
 			gameHandler.turnOrder->onPlayerEndsTurn(state->color);
+		}
 	}
 }
 
@@ -350,6 +354,7 @@ void TurnTimerHandler::onBattleLoop(const BattleID & battleID, int waitTime)
 				doNothing.actionType = EActionType::DEFEND;
 				doNothing.stackNumber = stack->unitId();
 			}
+			VGTRecorder::get().recordTimerBattleAction(gameHandler.gameState(), player, battleID, doNothing);
 			gameHandler.battles->makePlayerBattleAction(battleID, player, doNothing);
 		}
 		else

@@ -11,10 +11,12 @@
 #include "../lib/constants/EntityIdentifiers.h"
 
 #include <fstream>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <string>
 
+class BattleAction;
 class CGameState;
 class CGameHandler;
 struct CPackForClient;
@@ -34,12 +36,13 @@ class VGTRecorder final
 	bool headerWritten = false;
 	bool documentOpen = false;
 	bool exitAfterAppliedState = false;
-	bool continuationWritten = false;
 	std::optional<int> randomSeed;
 	std::optional<int> exitAfterTurnEnds;
 	int observedTurnEnds = 0;
 	std::optional<PlayerColor> currentTurnPlayer;
 	std::optional<std::string> activeBattleBlock;
+	std::map<PlayerColor, std::string> latestTimerStates;
+	std::map<PlayerColor, std::string> turnStartTimerStates;
 
 	VGTRecorder() = default;
 
@@ -48,7 +51,6 @@ class VGTRecorder final
 	void startTurnDocument(const CGameState & gameState, PlayerColor player);
 	void startWorldDocument(const CGameState & gameState, const std::string & phase);
 	void writeActionLine(const CGameState & gameState, const std::string & line);
-	void writeContinuationState(CGameHandler & gameHandler);
 	void writeBaselineSave(CGameHandler & gameHandler);
 
 public:
@@ -59,5 +61,7 @@ public:
 
 	void recordDecision(const CGameState & gameState, CPackForServer & pack);
 	void recordEffect(const CGameState & gameState, CPackForClient & pack);
+	void recordTimerEndTurn(const CGameState & gameState, PlayerColor player);
+	void recordTimerBattleAction(const CGameState & gameState, PlayerColor player, BattleID battleID, const BattleAction & action);
 	void recordAppliedState(CGameHandler & gameHandler);
 };

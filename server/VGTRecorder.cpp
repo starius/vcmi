@@ -542,6 +542,29 @@ std::string marketMode(EMarketMode value)
 	return "unknown";
 }
 
+std::string armyFormation(EArmyFormation value)
+{
+	switch(value)
+	{
+		case EArmyFormation::LOOSE: return "loose";
+		case EArmyFormation::TIGHT: return "tight";
+	}
+	return "unknown";
+}
+
+std::string backpackManageCommand(ManageBackpackArtifacts::ManageCmd value)
+{
+	switch(value)
+	{
+		case ManageBackpackArtifacts::ManageCmd::SCROLL_LEFT: return "scrollLeft";
+		case ManageBackpackArtifacts::ManageCmd::SCROLL_RIGHT: return "scrollRight";
+		case ManageBackpackArtifacts::ManageCmd::SORT_BY_SLOT: return "sortBySlot";
+		case ManageBackpackArtifacts::ManageCmd::SORT_BY_CLASS: return "sortByClass";
+		case ManageBackpackArtifacts::ManageCmd::SORT_BY_COST: return "sortByCost";
+	}
+	return "unknown";
+}
+
 std::string openWindowMode(EOpenWindowMode value)
 {
 	switch(value)
@@ -809,6 +832,32 @@ std::string timerInfo(const TurnTimerInfo & value)
 		", unit: " + std::to_string(value.unitTimer) +
 		", accumulatingTurn: " + boolValue(value.accumulatingTurnTimer) +
 		", accumulatingUnit: " + boolValue(value.accumulatingUnitTimer) + " }";
+}
+
+std::string timerState(const TurnTimerInfo & value)
+{
+	std::vector<std::string> fields;
+	if(value.turnTimer != 0)
+		fields.push_back("turn: " + std::to_string(value.turnTimer));
+	if(value.baseTimer != 0)
+		fields.push_back("base: " + std::to_string(value.baseTimer));
+	if(value.battleTimer != 0)
+		fields.push_back("battle: " + std::to_string(value.battleTimer));
+	if(value.unitTimer != 0)
+		fields.push_back("unit: " + std::to_string(value.unitTimer));
+	if(!value.isActive)
+		fields.push_back("active: false");
+	if(value.isBattle)
+		fields.push_back("battleMode: true");
+	if(value.remainingMovementPointsPercent != 0)
+		fields.push_back("movement: " + std::to_string(value.remainingMovementPointsPercent));
+	if(value.isTurnStart)
+		fields.push_back("turnStart: true");
+	if(value.isTurnEnded)
+		fields.push_back("ended: true");
+	if(fields.empty())
+		return "none";
+	return "{ " + boost::algorithm::join(fields, ", ") + " }";
 }
 
 std::string calendarDate(const Calendar & calendar)
@@ -1715,11 +1764,41 @@ public:
 			", transit: " + std::string(pack.transit ? "true" : "false") + " }";
 	}
 
+	void visitCastleTeleportHero(CastleTeleportHero & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: castleTeleportHero, hero: " + heroAlias(gameState, pack.hid) +
+			", destination: " + objectAlias(gameState, pack.dest) +
+			", source: " + std::to_string(pack.source) + " }";
+	}
+
 	void visitBuildStructure(BuildStructure & pack) override
 	{
 		line = "decision: { actor: " + actorForPlayer(pack.player) +
 			", kind: buildStructure, town: " + objectAlias(gameState, pack.tid) +
 			", building: " + building(pack.bid) + " }";
+	}
+
+	void visitVisitTownBuilding(VisitTownBuilding & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: visitTownBuilding, town: " + objectAlias(gameState, pack.tid) +
+			", building: " + building(pack.bid) + " }";
+	}
+
+	void visitRazeStructure(RazeStructure & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: razeStructure, town: " + objectAlias(gameState, pack.tid) +
+			", building: " + building(pack.bid) + " }";
+	}
+
+	void visitSpellResearch(SpellResearch & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: spellResearch, town: " + objectAlias(gameState, pack.tid) +
+			", spell: " + spell(pack.spellAtSlot) +
+			", accepted: " + boolValue(pack.accepted) + " }";
 	}
 
 	void visitRecruitCreatures(RecruitCreatures & pack) override
@@ -1783,6 +1862,36 @@ public:
 			", count: " + std::to_string(pack.val) + " }";
 	}
 
+	void visitBulkMoveArmy(BulkMoveArmy & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: bulkMoveArmy, from: { army: " + objectAlias(gameState, pack.srcArmy) +
+			", slot: " + slot(pack.srcSlot) + " }" +
+			", to: " + objectAlias(gameState, pack.destArmy) + " }";
+	}
+
+	void visitBulkSplitStack(BulkSplitStack & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: bulkSplitStack, source: { army: " + objectAlias(gameState, pack.srcOwner) +
+			", slot: " + slot(pack.src) + " }" +
+			", amount: " + std::to_string(pack.amount) + " }";
+	}
+
+	void visitBulkMergeStacks(BulkMergeStacks & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: bulkMergeStacks, source: { army: " + objectAlias(gameState, pack.srcOwner) +
+			", slot: " + slot(pack.src) + " } }";
+	}
+
+	void visitBulkSplitAndRebalanceStack(BulkSplitAndRebalanceStack & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: bulkSplitAndRebalanceStack, source: { army: " + objectAlias(gameState, pack.srcOwner) +
+			", slot: " + slot(pack.src) + " } }";
+	}
+
 	void visitDisbandCreature(DisbandCreature & pack) override
 	{
 		line = "decision: { actor: " + actorForPlayer(pack.player) +
@@ -1811,6 +1920,48 @@ public:
 			", to: " + artifactLocation(gameState, pack.dst) + " }";
 	}
 
+	void visitBulkExchangeArtifacts(BulkExchangeArtifacts & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: bulkExchangeArtifacts, from: " + objectAlias(gameState, pack.srcHero) +
+			", to: " + objectAlias(gameState, pack.dstHero) +
+			", swap: " + boolValue(pack.swap) +
+			", equipped: " + boolValue(pack.equipped) +
+			", backpack: " + boolValue(pack.backpack) + " }";
+	}
+
+	void visitManageBackpackArtifacts(ManageBackpackArtifacts & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: manageBackpackArtifacts, holder: " + objectAlias(gameState, pack.artHolder) +
+			", command: " + backpackManageCommand(pack.cmd) + " }";
+	}
+
+	void visitManageEquippedArtifacts(ManageEquippedArtifacts & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: manageEquippedArtifacts, holder: " + objectAlias(gameState, pack.artHolder) +
+			", costume: " + std::to_string(pack.costumeIdx);
+		if(pack.saveCostume)
+			line += ", save: true";
+		line += " }";
+	}
+
+	void visitAssembleArtifacts(AssembleArtifacts & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: assembleArtifacts, hero: " + heroAlias(gameState, pack.heroID) +
+			", slot: " + artifactPosition(pack.artifactSlot) +
+			", assemble: " + boolValue(pack.assemble) +
+			", artifact: " + artifact(pack.assembleTo) + " }";
+	}
+
+	void visitEraseArtifactByClient(EraseArtifactByClient & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: eraseArtifact, location: " + artifactLocation(gameState, pack.al) + " }";
+	}
+
 	void visitBuyArtifact(BuyArtifact & pack) override
 	{
 		line = "decision: { actor: " + actorForPlayer(pack.player) +
@@ -1829,6 +1980,27 @@ public:
 			", amount: " + tradeAmounts(pack.val) + " }";
 	}
 
+	void visitSetFormation(SetFormation & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: setFormation, hero: " + heroAlias(gameState, pack.hid) +
+			", formation: " + armyFormation(pack.formation) + " }";
+	}
+
+	void visitSetTactics(SetTactics & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: setTactics, hero: " + heroAlias(gameState, pack.hid) +
+			", enabled: " + boolValue(pack.enabled) + " }";
+	}
+
+	void visitSetTownName(SetTownName & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: setTownName, town: " + objectAlias(gameState, pack.tid) +
+			", name: " + yamlString(pack.name) + " }";
+	}
+
 	void visitBuildBoat(BuildBoat & pack) override
 	{
 		line = "decision: { actor: " + actorForPlayer(pack.player) +
@@ -1845,9 +2017,9 @@ public:
 		line = "localState: { player: " + color(pack.player) + ", data: " + jsonCompact(pack.data) + " }";
 	}
 
-	void visitGamePause(GamePause &) override
+	void visitGamePause(GamePause & pack) override
 	{
-		line.clear();
+		line = "decision: { actor: " + actorForPlayer(pack.player) + ", kind: pauseTimer }";
 	}
 
 	void visitRequestStatistic(RequestStatistic &) override
@@ -1855,15 +2027,24 @@ public:
 		line.clear();
 	}
 
-	void visitAdvInterfaceReady(AdvInterfaceReady &) override
+	void visitPlayerMessage(PlayerMessage & pack) override
 	{
-		line.clear();
+		line = "decision: { actor: " + actorForPlayer(pack.player) +
+			", kind: playerMessage, text: " + yamlString(pack.text) +
+			", object: " + objectAlias(gameState, pack.currObj) + " }";
+	}
+
+	void visitAdvInterfaceReady(AdvInterfaceReady & pack) override
+	{
+		line = "decision: { actor: " + actorForPlayer(pack.player) + ", kind: ready }";
 	}
 };
 
 class EffectRecorder final : public ICPackVisitor
 {
 	const CGameState & gameState;
+	std::optional<std::string> turnStartTimer;
+	std::optional<std::string> turnEndTimer;
 	std::string line;
 
 	void unmodelled(CPackForClient & pack)
@@ -1872,8 +2053,13 @@ class EffectRecorder final : public ICPackVisitor
 	}
 
 public:
-	explicit EffectRecorder(const CGameState & gameState)
+	explicit EffectRecorder(
+		const CGameState & gameState,
+		std::optional<std::string> turnStartTimer = std::nullopt,
+		std::optional<std::string> turnEndTimer = std::nullopt)
 		: gameState(gameState)
+		, turnStartTimer(std::move(turnStartTimer))
+		, turnEndTimer(std::move(turnEndTimer))
 	{
 	}
 
@@ -1914,7 +2100,13 @@ public:
 
 	void visitPlayerEndsTurn(PlayerEndsTurn & pack) override
 	{
-		line = "turnEnd: { player: " + color(pack.player) + " }";
+		line = "turnEnd: { player: " + color(pack.player);
+		if(turnStartTimer || turnEndTimer)
+		{
+			line += ", timer: { start: " + turnStartTimer.value_or("none") +
+				", end: " + turnEndTimer.value_or("none") + " }";
+		}
+		line += " }";
 	}
 
 	void visitPlayerEndsGame(PlayerEndsGame & pack) override
@@ -2705,27 +2897,6 @@ void VGTRecorder::writeActionLine(const CGameState & gameState, const std::strin
 	output.flush();
 }
 
-void VGTRecorder::writeContinuationState(CGameHandler & gameHandler)
-{
-	if(continuationWritten || !enabled || !output)
-		return;
-
-	JsonNode continuation;
-	continuation["nextQuery"].String() = query(gameHandler.QID);
-	continuation["randomizer"] = gameHandler.randomizer->toVGTJson();
-	continuation["heroPool"] = gameHandler.heroPool->toVGTJson();
-	continuation["statistics"] = gameHandler.statistics->toVGTJson();
-
-	activeBattleBlock.reset();
-	documentOpen = false;
-	currentTurnPlayer.reset();
-	output << "---\n";
-	output << "continuation:";
-	writeJsonYamlBlock(output, continuation, 2);
-	output.flush();
-	continuationWritten = true;
-}
-
 void VGTRecorder::writeBaselineSave(CGameHandler & gameHandler)
 {
 	if(!baselineSaveEnabled && !baselineGameStateSaveEnabled)
@@ -2787,6 +2958,38 @@ void VGTRecorder::recordDecision(const CGameState & gameState, CPackForServer & 
 	writeActionLine(gameState, recorder.result());
 }
 
+void VGTRecorder::recordTimerEndTurn(const CGameState & gameState, PlayerColor player)
+{
+	std::scoped_lock lock(outputMutex);
+	initializeFromEnvironment();
+	if(!enabled)
+		return;
+
+	ensureHeader(gameState);
+	if(!enabled)
+		return;
+
+	writeActionLine(gameState, "decision: { actor: timer/" + color(player) + ", kind: endTurn }");
+}
+
+void VGTRecorder::recordTimerBattleAction(const CGameState & gameState, PlayerColor player, BattleID battleID, const BattleAction & action)
+{
+	std::scoped_lock lock(outputMutex);
+	initializeFromEnvironment();
+	if(!enabled)
+		return;
+
+	ensureHeader(gameState);
+	if(!enabled)
+		return;
+
+	writeActionLine(
+		gameState,
+		"decision: { actor: timer/" + color(player) +
+			", kind: battleAction, battle: " + battleAlias(battleID) +
+			", action: " + battleAction(gameState, battleID, action) + " }");
+}
+
 void VGTRecorder::recordEffect(const CGameState & gameState, CPackForClient & pack)
 {
 	std::scoped_lock lock(outputMutex);
@@ -2798,14 +3001,36 @@ void VGTRecorder::recordEffect(const CGameState & gameState, CPackForClient & pa
 	if(!enabled)
 		return;
 
+	if(auto * timer = dynamic_cast<TurnTimeUpdate *>(&pack))
+	{
+		latestTimerStates[timer->player] = timerState(timer->turnTimer);
+		return;
+	}
+
+	std::optional<std::string> turnStartTimer;
+	std::optional<std::string> turnEndTimer;
+
 	if(auto * start = dynamic_cast<PlayerStartsTurn *>(&pack))
+	{
+		if(auto it = latestTimerStates.find(start->player); it != latestTimerStates.end())
+			turnStartTimerStates[start->player] = it->second;
 		startTurnDocument(gameState, start->player);
+	}
 	else if(dynamic_cast<NewTurn *>(&pack))
 		startWorldDocument(gameState, "newTurn");
+	else if(auto * end = dynamic_cast<PlayerEndsTurn *>(&pack))
+	{
+		if(auto it = turnStartTimerStates.find(end->player); it != turnStartTimerStates.end() && it->second != "none")
+			turnStartTimer = it->second;
+		if(auto it = latestTimerStates.find(end->player); it != latestTimerStates.end() && it->second != "none")
+			turnEndTimer = it->second;
+	}
 
-	EffectRecorder recorder(gameState);
+	EffectRecorder recorder(gameState, turnStartTimer, turnEndTimer);
 	pack.visit(recorder);
 	writeActionLine(gameState, recorder.result());
+	if(auto * end = dynamic_cast<PlayerEndsTurn *>(&pack))
+		turnStartTimerStates.erase(end->player);
 	if(exitAfterTurnEnds && dynamic_cast<PlayerEndsTurn *>(&pack))
 	{
 		++observedTurnEnds;
@@ -2818,8 +3043,6 @@ void VGTRecorder::recordAppliedState(CGameHandler & gameHandler)
 {
 	std::scoped_lock lock(outputMutex);
 	initializeFromEnvironment();
-	if(exitAfterAppliedState)
-		writeContinuationState(gameHandler);
 	writeBaselineSave(gameHandler);
 	if(exitAfterAppliedState)
 	{
