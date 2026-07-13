@@ -22,6 +22,8 @@ namespace battle
 class DLL_LINKAGE BattleAction
 {
 public:
+	static constexpr int32_t INVALID_UNIT_ID = -1000;
+
 	BattleSide side; //who made this action
 	ui32 stackNumber; //stack ID, -1 left hero, -2 right hero,
 	EActionType actionType; //use ActionType enum for values

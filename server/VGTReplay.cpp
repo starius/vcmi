@@ -244,6 +244,21 @@ PlayerColor decodeColor(const std::string & value)
 	return decodePlayerColor(value);
 }
 
+std::string colorAlias(PlayerColor value)
+{
+	if(value == PlayerColor::CANNOT_DETERMINE)
+		return "cannotDetermine";
+	if(value == PlayerColor::UNFLAGGABLE)
+		return "unflaggable";
+	if(value == PlayerColor::NEUTRAL)
+		return "neutral";
+	if(value == PlayerColor::SPECTATOR)
+		return "spectator";
+	if(!value.isValidPlayer())
+		return "invalid";
+	return value.toString();
+}
+
 std::string normalizeScopedIdentifier(std::string value)
 {
 	std::replace(value.begin(), value.end(), '/', ':');
@@ -898,7 +913,7 @@ ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::str
 
 				if(!expectedType.empty() && objectAliasType(object->ID) != expectedType)
 					continue;
-				if(expectedOwner && object->tempOwner.toString() != *expectedOwner)
+				if(expectedOwner && colorAlias(object->tempOwner) != *expectedOwner)
 					continue;
 				if(expectedName)
 				{
@@ -917,7 +932,7 @@ ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::str
 					continue;
 				if(!expectedType.empty() && objectAliasType(object->ID) != expectedType)
 					continue;
-				if(expectedOwner && object->tempOwner.toString() != *expectedOwner)
+				if(expectedOwner && colorAlias(object->tempOwner) != *expectedOwner)
 					continue;
 
 				std::string objectName = object->instanceName.empty() ? object->getObjectName() : object->instanceName;
@@ -939,7 +954,7 @@ ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::str
 		{
 			if(!object)
 				continue;
-			if(object->tempOwner.toString() != owner)
+			if(colorAlias(object->tempOwner) != owner)
 				continue;
 
 			std::string objectName = object->instanceName.empty() ? object->getObjectName() : object->instanceName;
@@ -1350,7 +1365,7 @@ std::string objectDebugSummary(const CGameState & gameState, ObjectInstanceID ob
 	parts.push_back("id=" + std::to_string(objectID.getNum()));
 	parts.push_back("type=" + MapObjectID::encode(object->ID.getNum()));
 	parts.push_back("subtype=" + std::to_string(object->subID.getNum()));
-	parts.push_back("owner=" + object->tempOwner.toString());
+	parts.push_back("owner=" + colorAlias(object->tempOwner));
 	parts.push_back("name=" + object->instanceName);
 	parts.push_back("pos=" + object->visitablePos().toString());
 
@@ -1530,7 +1545,7 @@ BattleResultAccepted::HeroBattleResults decodeBattleHeroResult(const CGameState 
 		for(const auto & target : targets->Vector())
 			{
 				BattleAction::DestinationInfo destination;
-				destination.unitValue = -1;
+				destination.unitValue = BattleAction::INVALID_UNIT_ID;
 				destination.hexValue = BattleHex();
 				if(target.isStruct())
 				{
@@ -2250,8 +2265,32 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 
 [[maybe_unused]] void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 {
-	const PlayerColor player = playerFromActor(requireString(decision, "actor"));
+	const std::string actor = requireString(decision, "actor");
 	const std::string kind = requireString(decision, "kind");
+
+	if(kind == "battleAction")
+	{
+		MakeAction pack;
+		pack.battleID = decodeBattleAlias(requireField(decision, "battle"));
+		pack.ba = decodeBattleAction(requireField(decision, "action"));
+		if(const auto player = tryPlayerFromActor(actor))
+			replayPack(gameHandler, pack, *player);
+		else if(actor == "world")
+		{
+			const auto * battle = gameHandler.gameState().getBattle(pack.battleID);
+			if(!battle)
+				throw std::runtime_error("VGT replay world battle action references missing battle: " + battleAliasText(requireField(decision, "battle")));
+
+			const auto * active = battle->battleActiveUnit();
+			const PlayerColor owner = active ? battle->battleGetOwner(active) : PlayerColor::UNFLAGGABLE;
+			gameHandler.battles->makePlayerBattleAction(pack.battleID, owner, pack.ba);
+		}
+		else
+			throw std::runtime_error("Unsupported VGT actor: " + actor);
+		return;
+	}
+
+	const PlayerColor player = playerFromActor(actor);
 
 	if(kind == "endTurn")
 	{
@@ -2601,15 +2640,6 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 			pack.reply = std::nullopt;
 		else
 			pack.reply = static_cast<int32_t>(answerIter->second.Integer());
-		replayPack(gameHandler, pack, player);
-		return;
-	}
-
-	if(kind == "battleAction")
-	{
-		MakeAction pack;
-		pack.battleID = decodeBattleAlias(requireField(decision, "battle"));
-		pack.ba = decodeBattleAction(requireField(decision, "action"));
 		replayPack(gameHandler, pack, player);
 		return;
 	}
@@ -3600,7 +3630,7 @@ void writeGameStateSummary(const CGameState & gameState, std::ostream & output)
 		output << "hero id=" << heroID.getNum()
 			<< " name=" << hero->instanceName
 			<< " type=" << HeroTypeID::encode(hero->getHeroTypeID().getNum())
-			<< " owner=" << hero->tempOwner.toString()
+			<< " owner=" << colorAlias(hero->tempOwner)
 			<< " pos=" << hero->visitablePos().toString()
 			<< " mana=" << hero->mana
 			<< " movement=" << hero->movementPointsRemaining()
@@ -3613,7 +3643,7 @@ void writeGameStateSummary(const CGameState & gameState, std::ostream & output)
 	{
 		output << "town id=" << town->id.getNum()
 			<< " name=" << town->getNameTranslated()
-			<< " owner=" << town->tempOwner.toString()
+			<< " owner=" << colorAlias(town->tempOwner)
 			<< " pos=" << town->visitablePos().toString()
 			<< " built=" << town->built
 			<< " destroyed=" << town->destroyed
@@ -3634,7 +3664,7 @@ void writeGameStateSummary(const CGameState & gameState, std::ostream & output)
 		output << "creature id=" << creature->id.getNum()
 			<< " name=" << creature->instanceName
 			<< " type=" << CreatureID::encode(creature->getCreatureID().getNum())
-			<< " owner=" << creature->tempOwner.toString()
+			<< " owner=" << colorAlias(creature->tempOwner)
 			<< " pos=" << creature->visitablePos().toString()
 			<< " character=" << static_cast<int>(creature->initialCharacter)
 			<< " aggression=" << static_cast<int>(creature->agression)
@@ -3664,7 +3694,7 @@ void writeGameStateSummary(const CGameState & gameState, std::ostream & output)
 			<< " name=" << object->instanceName
 			<< " type=" << MapObjectID::encode(object->ID.getNum())
 			<< " subtype=" << object->subID.getNum()
-			<< " owner=" << object->tempOwner.toString()
+			<< " owner=" << colorAlias(object->tempOwner)
 			<< " pos=" << object->visitablePos().toString()
 			<< " blockVisit=" << object->blockVisit
 			<< " removable=" << object->removable

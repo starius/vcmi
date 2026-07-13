@@ -13,8 +13,6 @@
 #include "Unit.h"
 #include "CBattleInfoCallback.h"
 
-static const int32_t INVALID_UNIT_ID = -1000;
-
 BattleAction::BattleAction():
 	side(BattleSide::NONE),
 	stackNumber(-1),
@@ -150,7 +148,7 @@ std::string BattleAction::toString() const
 
 	for(const DestinationInfo & info : target)
 	{
-		if(info.unitValue == INVALID_UNIT_ID)
+		if(info.unitValue == BattleAction::INVALID_UNIT_ID)
 		{
 			targetStream << info.hexValue;
 		}
@@ -172,7 +170,7 @@ void BattleAction::aimToHex(const BattleHex & destination)
 {
 	DestinationInfo info;
 	info.hexValue = destination;
-	info.unitValue = INVALID_UNIT_ID;
+	info.unitValue = BattleAction::INVALID_UNIT_ID;
 
 	target.push_back(info);
 }
@@ -192,7 +190,7 @@ battle::Target BattleAction::getTarget(const CBattleInfoCallback * cb) const
 
 	for(const auto & destination : target)
 	{
-		if(destination.unitValue == INVALID_UNIT_ID)
+		if(destination.unitValue == BattleAction::INVALID_UNIT_ID)
 			ret.emplace_back(destination.hexValue);
 		else
 			ret.emplace_back(cb->battleGetUnitByID(destination.unitValue));
