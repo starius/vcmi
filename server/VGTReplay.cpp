@@ -2559,11 +2559,13 @@ void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, con
 		pack.specialWeek = decodeWeekType(requireString(node, "week"));
 		pack.creatureid = decodeCreature(requireString(node, "creature"));
 
-		const auto & income = requireField(node, "income");
-		if(!income.isVector())
-			throw std::runtime_error("VGT replay newTurn income must be a list");
-		for(const auto & entry : income.Vector())
-			pack.playerIncome[decodePlayerColor(requireString(entry, "player"))] = decodeResources(requireField(entry, "resources"));
+		if(const auto * income = findField(node, "income"))
+		{
+			if(!income->isVector())
+				throw std::runtime_error("VGT replay newTurn income must be a list");
+			for(const auto & entry : income->Vector())
+				pack.playerIncome[decodePlayerColor(requireString(entry, "player"))] = decodeResources(requireField(entry, "resources"));
+		}
 
 		if(const auto * movement = findField(node, "movement"))
 			pack.heroesMovement = decodeNewTurnMovement(gameHandler.gameState(), *movement);

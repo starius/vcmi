@@ -2219,22 +2219,21 @@ public:
 			", start: " + std::string(pack.starting ? "true" : "false") + " }";
 	}
 
-	void visitNewTurn(NewTurn & pack) override
-	{
-		line = "newTurn: { day: " + std::to_string(pack.day) +
-			", week: " + weekType(pack.specialWeek) +
-			", creature: " + creature(pack.creatureid) +
-			", income: [";
-
-		bool first = true;
-		for(const auto & entry : pack.playerIncome)
+		void visitNewTurn(NewTurn & pack) override
 		{
-			if(!first)
-				line += ", ";
-			first = false;
-			line += "{ player: " + color(entry.first) + ", resources: " + resources(entry.second) + " }";
-		}
-		line += "] }";
+			std::vector<std::string> incomeEntries;
+			for(const auto & entry : pack.playerIncome)
+			{
+				if(entry.second.nonZero())
+					incomeEntries.push_back("{ player: " + color(entry.first) + ", resources: " + resources(entry.second) + " }");
+			}
+
+			line = "newTurn: { day: " + std::to_string(pack.day) +
+				", week: " + weekType(pack.specialWeek) +
+				", creature: " + creature(pack.creatureid);
+			if(!incomeEntries.empty())
+				line += ", income: " + flowList(incomeEntries);
+			line += " }";
 
 		if(!pack.heroesMovement.empty())
 			line.insert(line.size() - 2, ", movement: " + newTurnMovement(gameState, pack.heroesMovement));
