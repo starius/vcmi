@@ -826,7 +826,7 @@ std::optional<int3> positionFromAlias(const std::string & alias)
 
 ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::string & alias)
 {
-	if(alias == "object/none")
+	if(alias == "none" || alias == "object/none")
 		return ObjectInstanceID::NONE;
 	if(alias.starts_with("object/id-"))
 		return ObjectInstanceID(std::stoi(alias.substr(std::string("object/id-").size())));
@@ -920,22 +920,105 @@ ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::str
 	throw std::runtime_error("Unable to resolve VGT object alias: " + alias);
 }
 
-PlayerColor playerFromActor(const std::string & actor)
+std::optional<PlayerColor> tryPlayerFromActor(const std::string & actor)
 {
 	const std::string prefix = "player/";
-	if(!actor.starts_with(prefix))
-		throw std::runtime_error("Unsupported VGT actor: " + actor);
-	return decodePlayerColor(actor.substr(prefix.size()));
+	const std::string value = actor.starts_with(prefix) ? actor.substr(prefix.size()) : actor;
+	if(value == "world")
+		return std::nullopt;
+
+	const auto decoded = PlayerColor::decode(value);
+	if(decoded < 0 || decoded >= PlayerColor::PLAYER_LIMIT_I)
+		return std::nullopt;
+	return PlayerColor(decoded);
+}
+
+PlayerColor playerFromActor(const std::string & actor)
+{
+	if(const auto player = tryPlayerFromActor(actor))
+		return *player;
+
+	throw std::runtime_error("Unsupported VGT actor: " + actor);
 }
 
 QueryID decodeQuery(const std::string & value)
 {
 	const std::string prefix = "query/";
-	if(!value.starts_with(prefix))
-		throw std::runtime_error("Unsupported VGT query alias: " + value);
-	if(value == "query/none")
+	std::string alias = value;
+	if(alias.starts_with(prefix))
+		alias.erase(0, prefix.size());
+	if(alias == "none")
 		return QueryID::NONE;
-	return QueryID(std::stoi(value.substr(prefix.size())));
+	if(alias == "client")
+		return QueryID::CLIENT;
+	return QueryID(std::stoi(alias));
+}
+
+QueryID decodeQuery(const JsonNode & node)
+{
+	if(node.isNumber())
+		return QueryID(static_cast<int>(node.Integer()));
+	if(node.isString())
+		return decodeQuery(node.String());
+	throw std::runtime_error("Unsupported VGT query alias type");
+}
+
+bool isRealQueryAlias(const JsonNode & node)
+{
+	if(node.isNumber())
+		return true;
+	if(!node.isString())
+		throw std::runtime_error("Unsupported VGT query alias type");
+
+	const auto queryID = decodeQuery(node.String());
+	return queryID != QueryID::NONE && queryID != QueryID::CLIENT;
+}
+
+std::string scalarAliasText(const JsonNode & node, const std::string & label)
+{
+	if(node.isNumber())
+		return std::to_string(node.Integer());
+	if(node.isString())
+		return node.String();
+
+	throw std::runtime_error("Unsupported VGT " + label + " alias type");
+}
+
+std::string battleAliasText(const JsonNode & node)
+{
+	return scalarAliasText(node, "battle");
+}
+
+int64_t decodePrefixedIntegerAlias(const std::string & value, const std::string & prefix, const std::string & label)
+{
+	if(value.starts_with(prefix))
+		return std::stoll(value.substr(prefix.size()));
+	return std::stoll(value);
+}
+
+int64_t decodePrefixedIntegerAlias(const JsonNode & node, const std::string & prefix, const std::string & label)
+{
+	if(node.isNumber())
+		return node.Integer();
+	if(node.isString())
+		return decodePrefixedIntegerAlias(node.String(), prefix, label);
+
+	throw std::runtime_error("Unsupported VGT " + label + " alias type");
+}
+
+int64_t decodeStackAlias(const JsonNode & node)
+{
+	return decodePrefixedIntegerAlias(node, "stack/", "stack");
+}
+
+BattleID decodeBattleAlias(const std::string & value)
+{
+	return BattleID(static_cast<int>(decodePrefixedIntegerAlias(value, "battle/", "battle")));
+}
+
+BattleID decodeBattleAlias(const JsonNode & node)
+{
+	return BattleID(static_cast<int>(decodePrefixedIntegerAlias(node, "battle/", "battle")));
 }
 
 SlotID decodeSlot(const JsonNode & node)
@@ -1246,22 +1329,6 @@ ObjPropertyID decodeObjPropertyValue(const CGameState & gameState, ObjProperty p
 	}
 }
 
-int64_t decodeStackAlias(const std::string & value)
-{
-	const std::string prefix = "stack/";
-	if(!value.starts_with(prefix))
-		throw std::runtime_error("Unsupported VGT stack alias: " + value);
-	return std::stoll(value.substr(prefix.size()));
-}
-
-[[maybe_unused]] BattleID decodeBattleAlias(const std::string & value)
-{
-	const std::string prefix = "battle/";
-	if(!value.starts_with(prefix))
-	throw std::runtime_error("Unsupported VGT battle alias: " + value);
-	return BattleID(std::stoi(value.substr(prefix.size())));
-}
-
 GiveBonus::VariantType decodeBonusTarget(const CGameState & gameState, GiveBonus::ETarget targetKind, std::string value)
 {
 	switch(targetKind)
@@ -1297,7 +1364,7 @@ BattleResultAccepted::HeroBattleResults decodeBattleHeroResult(const CGameState 
 {
 	BattleAction result;
 	result.side = decodeBattleSide(requireString(node, "side"));
-	result.stackNumber = static_cast<ui32>(decodeStackAlias(requireString(node, "stack")));
+	result.stackNumber = static_cast<ui32>(decodeStackAlias(requireField(node, "stack")));
 	result.actionType = decodeActionType(requireString(node, "action"));
 	result.spell = SpellID::NONE;
 	if(const auto * spellNode = findField(node, "spell"))
@@ -1314,15 +1381,15 @@ BattleResultAccepted::HeroBattleResults decodeBattleHeroResult(const CGameState 
 			throw std::runtime_error("VGT replay battle action target must be a list");
 
 		for(const auto & target : targets->Vector())
-		{
-			BattleAction::DestinationInfo destination;
-			destination.unitValue = -1;
-			destination.hexValue = BattleHex();
-			if(target.isStruct())
 			{
-				const auto unitIter = target.Struct().find("unit");
-				if(unitIter != target.Struct().end() && unitIter->second.isString())
-					destination.unitValue = static_cast<int32_t>(decodeStackAlias(unitIter->second.String()));
+				BattleAction::DestinationInfo destination;
+				destination.unitValue = -1;
+				destination.hexValue = BattleHex();
+				if(target.isStruct())
+				{
+					const auto unitIter = target.Struct().find("unit");
+					if(unitIter != target.Struct().end() && (unitIter->second.isString() || unitIter->second.isNumber()))
+						destination.unitValue = static_cast<int32_t>(decodeStackAlias(unitIter->second));
 
 				const auto hexIter = target.Struct().find("hex");
 				if(hexIter != target.Struct().end() && hexIter->second.isNumber())
@@ -2097,7 +2164,7 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 	if(kind == "queryAnswer")
 	{
 		QueryReply pack;
-		pack.qid = decodeQuery(requireString(decision, "query"));
+		pack.qid = decodeQuery(requireField(decision, "query"));
 		const auto answerIter = decision.Struct().find("answer");
 		if(answerIter == decision.Struct().end())
 			throw std::runtime_error("Missing VGT replay query answer");
@@ -2194,7 +2261,7 @@ void applyArmyEffect(CGameHandler & gameHandler, const JsonNode & node)
 BattleID decodeBattleRecordID(const JsonNode & node, const std::optional<std::string> & parentBattleID)
 {
 	if(hasField(node, "id"))
-		return decodeBattleAlias(requireString(node, "id"));
+		return decodeBattleAlias(requireField(node, "id"));
 	if(parentBattleID)
 		return decodeBattleAlias(*parentBattleID);
 	throw std::runtime_error("VGT battle record has no battle id");
@@ -2246,8 +2313,8 @@ std::set<PlayerColor> collectBattleDecisionPlayers(const JsonNode & events)
 			continue;
 
 		const std::string actor = requireString(entry.second, "actor");
-		if(actor.starts_with("player/"))
-			result.insert(playerFromActor(actor));
+		if(const auto player = tryPlayerFromActor(actor))
+			result.insert(*player);
 	}
 	return result;
 }
@@ -2266,7 +2333,7 @@ void synthesizeDisabledTimerBattleStart(CGameHandler & gameHandler, const std::s
 
 void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node)
 {
-	const std::string battleID = requireString(node, "id");
+	const std::string battleID = battleAliasText(requireField(node, "id"));
 	const JsonNode & events = requireField(node, "events");
 	if(!events.isVector())
 		throw std::runtime_error("VGT battle block events field is not a list");
@@ -2515,7 +2582,7 @@ void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, con
 	{
 		PlayerStartsTurn pack;
 		pack.player = decodePlayerColor(requireString(node, "player"));
-		pack.queryID = decodeQuery(requireString(node, "query"));
+		pack.queryID = decodeQuery(requireField(node, "query"));
 		applyEffectPack(gameHandler, pack);
 		synthesizeDisabledTimerTurnStart(gameHandler, pack.player);
 		return;
@@ -2788,7 +2855,7 @@ void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, con
 		pack.heroId = resolveObjectAlias(gameHandler.gameState(), requireString(node, "hero"));
 		pack.primskill = decodePrimarySkill(requireString(node, "primary"));
 		pack.skills = decodeSecondarySkillList(requireField(node, "choices"));
-		pack.queryID = decodeQuery(requireString(node, "query"));
+		pack.queryID = decodeQuery(requireField(node, "query"));
 		applyEffectPack(gameHandler, pack);
 		return;
 	}
@@ -2983,8 +3050,7 @@ bool isRealQueryAlias(const JsonNode & node, const char * field)
 	if(!hasField(node, field))
 		return false;
 
-	const auto value = requireString(node, field);
-	return value != "query/none" && value != "query/client";
+	return isRealQueryAlias(requireField(node, field));
 }
 
 int countBattleQueries(const JsonNode & node)
@@ -3071,9 +3137,7 @@ void applyContinuationState(CGameHandler & gameHandler, const JsonNode & documen
 	gameHandler.heroPool->loadVGTJson(requireField(*continuation, "heroPool"));
 	if(const JsonNode * nextQuery = findField(*continuation, "nextQuery"))
 	{
-		if(!nextQuery->isString())
-			throw std::runtime_error("VGT continuation nextQuery field is not a string");
-		gameHandler.QID = decodeQuery(nextQuery->String());
+		gameHandler.QID = decodeQuery(*nextQuery);
 	}
 
 	gameHandler.statistics = std::make_unique<StatisticDataSet>();
