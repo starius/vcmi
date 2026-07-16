@@ -120,7 +120,7 @@ StatisticDataSetEntry StatisticDataSet::createEntry(const PlayerState * ps, cons
 	scenarioHighScores.isCampaign = false;
 
 	data.map = gs->getMap().name.toString();
-	data.timestamp = std::time(nullptr);
+	data.timestamp = gs->getStartInfo()->startTime;
 	data.day = gs->getCalendar().getCurrentDay();
 	data.player = ps->color;
 	data.playerName = gs->getStartInfo()->playerInfos.at(ps->color).name;
