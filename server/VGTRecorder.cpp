@@ -235,6 +235,11 @@ std::string pos(const int3 & value)
 	return "[" + std::to_string(value.x) + ", " + std::to_string(value.y) + ", " + std::to_string(value.z) + "]";
 }
 
+std::string pos2D(const int3 & value)
+{
+	return "[" + std::to_string(value.x) + ", " + std::to_string(value.y) + "]";
+}
+
 std::string path(const std::vector<int3> & value)
 {
 	std::vector<std::string> result;
@@ -2981,6 +2986,8 @@ void VGTRecorder::flushPendingMove(const CGameState & gameState)
 		", hero: " + pendingMove->hero;
 	if(pendingMove->route.size() == 1)
 		line += ", to: " + pendingMove->route.front();
+	else if(pendingMove->z)
+		line += ", route: " + flowList(pendingMove->route2D) + ", z: " + std::to_string(*pendingMove->z);
 	else
 		line += ", route: " + flowList(pendingMove->route);
 	if(pendingMove->transit)
@@ -3084,8 +3091,12 @@ void VGTRecorder::recordDecision(const CGameState & gameState, CPackForServer & 
 		if(pendingMove && (pendingMove->actor != actor || pendingMove->hero != hero || pendingMove->transit != move->transit))
 			flushPendingMove(gameState);
 		if(!pendingMove)
-			pendingMove = PendingMove{actor, hero, {}, move->transit};
-		pendingMove->route.push_back(pos(move->path.front()));
+			pendingMove = PendingMove{actor, hero, {}, {}, move->path.front().z, move->transit};
+		const auto & destination = move->path.front();
+		if(pendingMove->z && *pendingMove->z != destination.z)
+			pendingMove->z.reset();
+		pendingMove->route.push_back(pos(destination));
+		pendingMove->route2D.push_back(pos2D(destination));
 		return;
 	}
 	flushPendingMove(gameState);

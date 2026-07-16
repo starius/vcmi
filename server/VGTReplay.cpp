@@ -846,6 +846,28 @@ std::vector<int3> decodePath(const JsonNode & node)
 	return result;
 }
 
+std::vector<int3> decodeMoveRoute(const JsonNode & decision)
+{
+	const auto & route = requireField(decision, "route");
+	const auto * z = findField(decision, "z");
+	if(!z)
+		return decodePath(route);
+	if(!route.isVector())
+		throw std::runtime_error("VGT replay route must be a list");
+
+	std::vector<int3> result;
+	for(const auto & entry : route.Vector())
+	{
+		if(!entry.isVector() || entry.Vector().size() != 2)
+			throw std::runtime_error("VGT replay route with shared z must contain two-value positions");
+		result.emplace_back(
+			static_cast<int>(entry.Vector()[0].Integer()),
+			static_cast<int>(entry.Vector()[1].Integer()),
+			static_cast<int>(z->Integer()));
+	}
+	return result;
+}
+
 FowTilesType decodeFowRuns(const JsonNode & node)
 {
 	if(node.isNull())
@@ -2451,7 +2473,7 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 		pack.layer = EPathfindingLayer::AUTO;
 		if(const auto * route = findField(decision, "route"))
 		{
-			for(const auto & destination : decodePath(*route))
+			for(const auto & destination : decodeMoveRoute(decision))
 			{
 				pack.path = {destination};
 				replayPack(gameHandler, pack, player);

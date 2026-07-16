@@ -30,6 +30,8 @@ class VGTRecorder final
 		std::string actor;
 		std::string hero;
 		std::vector<std::string> route;
+		std::vector<std::string> route2D;
+		std::optional<int> z;
 		bool transit = false;
 	};
 
