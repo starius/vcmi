@@ -2430,9 +2430,21 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 	{
 		MoveHero pack;
 		pack.hid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "hero"));
-		pack.path = decodePath(requireField(decision, "path"));
-		pack.transit = requireBool(decision, "transit");
+		pack.transit = optionalBool(decision, "transit", false);
 		pack.layer = EPathfindingLayer::AUTO;
+		if(const auto * route = findField(decision, "route"))
+		{
+			for(const auto & destination : decodePath(*route))
+			{
+				pack.path = {destination};
+				replayPack(gameHandler, pack, player);
+			}
+			return;
+		}
+		if(const auto * destination = findField(decision, "to"))
+			pack.path = {decodePosition(*destination)};
+		else
+			pack.path = decodePath(requireField(decision, "path"));
 		replayPack(gameHandler, pack, player);
 		return;
 	}

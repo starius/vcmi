@@ -2929,6 +2929,24 @@ void VGTRecorder::writeActionLine(const CGameState & gameState, const std::strin
 	output.flush();
 }
 
+void VGTRecorder::flushPendingMove(const CGameState & gameState)
+{
+	if(!pendingMove)
+		return;
+
+	std::string line = "moveHero: { actor: " + pendingMove->actor +
+		", hero: " + pendingMove->hero;
+	if(pendingMove->route.size() == 1)
+		line += ", to: " + pendingMove->route.front();
+	else
+		line += ", route: " + flowList(pendingMove->route);
+	if(pendingMove->transit)
+		line += ", transit: true";
+	line += " }";
+	pendingMove.reset();
+	writeActionLine(gameState, line);
+}
+
 void VGTRecorder::writeBaselineSave(CGameHandler & gameHandler)
 {
 	if(!baselineSaveEnabled && !baselineGameStateSaveEnabled)
@@ -3016,6 +3034,18 @@ void VGTRecorder::recordDecision(const CGameState & gameState, CPackForServer & 
 	ensureHeader(gameState);
 	if(!enabled)
 		return;
+	if(auto * move = dynamic_cast<MoveHero *>(&pack); move && move->path.size() == 1)
+	{
+		const std::string actor = actorForPlayer(move->player);
+		const std::string hero = heroAlias(gameState, move->hid);
+		if(pendingMove && (pendingMove->actor != actor || pendingMove->hero != hero || pendingMove->transit != move->transit))
+			flushPendingMove(gameState);
+		if(!pendingMove)
+			pendingMove = PendingMove{actor, hero, {}, move->transit};
+		pendingMove->route.push_back(pos(move->path.front()));
+		return;
+	}
+	flushPendingMove(gameState);
 	DecisionRecorder recorder(gameState);
 	pack.visit(recorder);
 	writeActionLine(gameState, readableDecisionRecord(recorder.result()));
@@ -3032,6 +3062,7 @@ void VGTRecorder::recordTimerEndTurn(const CGameState & gameState, PlayerColor p
 	if(!enabled)
 		return;
 
+	flushPendingMove(gameState);
 	writeActionLine(gameState, "endTurn: { actor: timer/" + color(player) + " }");
 }
 
@@ -3046,6 +3077,7 @@ void VGTRecorder::recordTimerBattleAction(const CGameState & gameState, PlayerCo
 	if(!enabled)
 		return;
 
+	flushPendingMove(gameState);
 	writeActionLine(
 		gameState,
 		"battleAction: { actor: timer/" + color(player) +
@@ -3071,18 +3103,25 @@ void VGTRecorder::recordEffect(const CGameState & gameState, CPackForClient & pa
 		latestTimerStates[timer->player] = timerState(timer->turnTimer);
 		return;
 	}
+	const auto * move = dynamic_cast<TryMoveHero *>(&pack);
+	if(move && move->result == TryMoveHero::SUCCESS)
+		return;
 
 	std::optional<std::string> turnStartTimer;
 	std::optional<std::string> turnEndTimer;
 
 	if(auto * start = dynamic_cast<PlayerStartsTurn *>(&pack))
 	{
+		flushPendingMove(gameState);
 		if(auto it = latestTimerStates.find(start->player); it != latestTimerStates.end())
 			turnStartTimerStates[start->player] = it->second;
 		startTurnDocument(gameState, start->player);
 	}
 	else if(dynamic_cast<NewTurn *>(&pack))
+	{
+		flushPendingMove(gameState);
 		startWorldDocument(gameState, "newTurn");
+	}
 	else if(auto * end = dynamic_cast<PlayerEndsTurn *>(&pack))
 	{
 		if(auto it = turnStartTimerStates.find(end->player); it != turnStartTimerStates.end() && it->second != "none")
@@ -3093,7 +3132,11 @@ void VGTRecorder::recordEffect(const CGameState & gameState, CPackForClient & pa
 
 	EffectRecorder recorder(gameState, turnStartTimer, turnEndTimer);
 	pack.visit(recorder);
-	writeActionLine(gameState, recorder.result());
+	if(!recorder.result().empty())
+	{
+		flushPendingMove(gameState);
+		writeActionLine(gameState, recorder.result());
+	}
 	if(auto * end = dynamic_cast<PlayerEndsTurn *>(&pack))
 		turnStartTimerStates.erase(end->player);
 	if(exitAfterTurnEnds && dynamic_cast<PlayerEndsTurn *>(&pack))

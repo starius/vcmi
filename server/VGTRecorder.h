@@ -15,6 +15,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <vector>
 
 class BattleAction;
 class CGameState;
@@ -24,6 +25,14 @@ struct CPackForServer;
 
 class VGTRecorder final
 {
+	struct PendingMove
+	{
+		std::string actor;
+		std::string hero;
+		std::vector<std::string> route;
+		bool transit = false;
+	};
+
 	std::ofstream output;
 	mutable std::mutex outputMutex;
 	std::string outputPath;
@@ -45,6 +54,7 @@ class VGTRecorder final
 	std::optional<PlayerColor> currentTurnPlayer;
 	std::optional<PlayerColor> pendingTurnStatePlayer;
 	std::optional<std::string> activeBattleBlock;
+	std::optional<PendingMove> pendingMove;
 	std::map<PlayerColor, std::string> latestTimerStates;
 	std::map<PlayerColor, std::string> turnStartTimerStates;
 
@@ -55,6 +65,7 @@ class VGTRecorder final
 	void startTurnDocument(const CGameState & gameState, PlayerColor player);
 	void startWorldDocument(const CGameState & gameState, const std::string & phase);
 	void writeActionLine(const CGameState & gameState, const std::string & line);
+	void flushPendingMove(const CGameState & gameState);
 	void writeBaselineSave(CGameHandler & gameHandler);
 	void writeTurnState(CGameHandler & gameHandler);
 

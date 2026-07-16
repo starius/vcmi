@@ -14,6 +14,9 @@ The target is a compact YAML transcript that can be read by a human, parsed by n
 - Records use identifiers instead of enum numbers.
 - Records use full readable field names. Avoid VGT-specific abbreviations.
 - Only material events are recorded. Do not record acknowledgements, duplicate network delivery, timer ticks, internal implementation noise, or random draws that never realize into game state or a decision.
+- Consecutive successful one-tile movement requests are written as one `moveHero`
+  route. Replay expands the route back into the original one-tile server requests.
+  A blocking visit or any other non-success result ends the route and remains explicit.
 - Every actor decision is recorded: human, AI, neutral/world, battle AI, query answer, retreat/surrender choice, and scripted choice where applicable.
 - Every authoritative material effect is recorded, including effects nobody could see yet, such as neutral growth or week-start spawned monsters in fog.
 - In the material event stream, randomness is recorded only as realized facts near the event that consumed it. Internal RNG state is not a timeline event. Replay advances RNG by feeding recorded decisions through normal server logic.
