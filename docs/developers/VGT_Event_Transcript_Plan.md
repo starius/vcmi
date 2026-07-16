@@ -248,6 +248,9 @@ Battles are nested under the action or world event that caused them. Battle deci
 ```
 
 Inside battle blocks, use `from`, `to`, and `at` for hexes. Do not write `fromHex` or `toHex`.
+Battle decisions follow the same verb-keyed style as adventure actions: `wait`,
+`defend`, `shoot`, `walkAndAttack`, `heroSpell`, and the other battle action names
+are direct record keys. The enclosing battle supplies the battle identifier.
 
 ## Fog And Hidden State
 

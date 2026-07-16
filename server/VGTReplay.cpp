@@ -2961,6 +2961,28 @@ bool isDecisionKind(const std::string & kind)
 	return decisionKinds.contains(kind);
 }
 
+bool isBattleActionKind(const std::string & kind)
+{
+	static const std::set<std::string> actionKinds = {
+		"badMorale",
+		"catapult",
+		"defend",
+		"endTactics",
+		"heroSpell",
+		"monsterSpell",
+		"none",
+		"retreat",
+		"shoot",
+		"stackHeal",
+		"surrender",
+		"wait",
+		"walk",
+		"walkAndAttack",
+		"walkAndCast",
+	};
+	return actionKinds.contains(kind);
+}
+
 void replayReadableDecision(CGameHandler & gameHandler, const std::string & kind, const JsonNode & node, const std::optional<std::string> & battleID = std::nullopt)
 {
 	if(!node.isStruct())
@@ -2970,6 +2992,24 @@ void replayReadableDecision(CGameHandler & gameHandler, const std::string & kind
 	decision["kind"].String() = kind;
 	if(battleID && !hasField(decision, "battle"))
 		decision["battle"].String() = *battleID;
+	replayDecision(gameHandler, decision);
+}
+
+void replayReadableBattleAction(CGameHandler & gameHandler, const std::string & kind, const JsonNode & node, const std::string & battleID)
+{
+	if(!node.isStruct())
+		throw std::runtime_error("VGT " + kind + " battle action is not a mapping");
+
+	JsonNode action = node;
+	const std::string actor = requireString(action, "actor");
+	action.Struct().erase("actor");
+	action["action"].String() = kind;
+
+	JsonNode decision;
+	decision["actor"].String() = actor;
+	decision["kind"].String() = "battleAction";
+	decision["battle"].String() = battleID;
+	decision["action"] = action;
 	replayDecision(gameHandler, decision);
 }
 
@@ -3029,6 +3069,12 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node)
 		{
 			const auto & entry = *record.Struct().begin();
 			replayReadableDecision(gameHandler, entry.first, entry.second, battleID);
+			continue;
+		}
+		if(record.Struct().size() == 1 && isBattleActionKind(record.Struct().begin()->first))
+		{
+			const auto & entry = *record.Struct().begin();
+			replayReadableBattleAction(gameHandler, entry.first, entry.second, battleID);
 			continue;
 		}
 		if(hasField(record, "event"))

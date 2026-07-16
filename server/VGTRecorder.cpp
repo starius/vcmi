@@ -152,6 +152,33 @@ std::string readableDecisionRecord(const std::string & line)
 	return kind + ": { actor: " + actor + fields + " }";
 }
 
+std::string flattenBattleActionRecord(const std::string & line)
+{
+	const std::string prefix = "battleAction: { actor: ";
+	const std::string outerActionMarker = ", action: { ";
+	if(!line.starts_with(prefix) || !line.ends_with(" } }"))
+		return line;
+
+	const size_t actorEnd = line.find(outerActionMarker, prefix.size());
+	if(actorEnd == std::string::npos)
+		return line;
+	const std::string actor = line.substr(prefix.size(), actorEnd - prefix.size());
+	const size_t innerStart = actorEnd + outerActionMarker.size();
+	const std::string inner = line.substr(innerStart, line.size() - innerStart - 4);
+	const std::string actionMarker = ", action: ";
+	const size_t actionStart = inner.find(actionMarker);
+	if(actionStart == std::string::npos)
+		return line;
+	const size_t kindStart = actionStart + actionMarker.size();
+	const size_t fieldsAfterKind = inner.find(", ", kindStart);
+	const size_t kindEnd = fieldsAfterKind == std::string::npos ? inner.size() : fieldsAfterKind;
+	const std::string kind = inner.substr(kindStart, kindEnd - kindStart);
+	std::string fields = inner.substr(0, actionStart);
+	if(fieldsAfterKind != std::string::npos)
+		fields += inner.substr(fieldsAfterKind);
+	return kind + ": { actor: " + actor + ", " + fields + " }";
+}
+
 std::optional<BattleBlockRecord> battleBlockRecord(const std::string & line)
 {
 	const std::string battlePrefix = "battle: { id: ";
@@ -184,6 +211,8 @@ std::optional<BattleBlockRecord> battleBlockRecord(const std::string & line)
 	result.battleID = line.substr(battleIDStart, battleIDEnd - battleIDStart);
 	result.record = line;
 	result.record.erase(battleFieldStart, battleIDEnd - battleFieldStart);
+	if(readableDecision)
+		result.record = flattenBattleActionRecord(result.record);
 	return result;
 }
 
