@@ -928,12 +928,22 @@ std::string sanitizedAliasName(std::string name)
 		if(!std::isalnum(static_cast<unsigned char>(character)))
 			character = '-';
 	}
+	name.erase(std::unique(name.begin(), name.end(), [](char left, char right)
+	{
+		return left == '-' && right == '-';
+	}), name.end());
 
 	while(!name.empty() && name.front() == '-')
 		name.erase(name.begin());
 	while(!name.empty() && name.back() == '-')
 		name.pop_back();
 	return name;
+}
+
+bool matchesAliasName(const CGObjectInstance & object, const std::string & expected)
+{
+	return sanitizedAliasName(object.getObjectName()) == expected ||
+		sanitizedAliasName(object.instanceName) == expected;
 }
 
 std::string objectAliasType(MapObjectID id)
@@ -997,6 +1007,16 @@ ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::str
 	const auto parts = splitAlias(alias);
 	if(const auto position = positionFromAlias(alias))
 	{
+		if(parts.size() >= 4 && parts[0] == "town")
+		{
+			for(const auto * town : gameState.getMap().getObjects<CGTownInstance>())
+			{
+				if(town->visitablePos() == *position && colorAlias(town->tempOwner) == parts[1] && matchesAliasName(*town, parts[2]))
+					return town->id;
+			}
+			throw std::runtime_error("Unable to resolve named VGT town alias: " + alias);
+		}
+
 		std::string expectedType;
 		std::optional<std::string> expectedOwner;
 		std::optional<std::string> expectedName;
@@ -1034,8 +1054,7 @@ ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::str
 					continue;
 				if(expectedName)
 				{
-					std::string objectName = object->instanceName.empty() ? object->getObjectName() : object->instanceName;
-					if(sanitizedAliasName(objectName) != *expectedName)
+					if(!matchesAliasName(*object, *expectedName))
 						continue;
 				}
 				return object->id;
@@ -1052,8 +1071,7 @@ ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::str
 				if(expectedOwner && colorAlias(object->tempOwner) != *expectedOwner)
 					continue;
 
-				std::string objectName = object->instanceName.empty() ? object->getObjectName() : object->instanceName;
-				if(sanitizedAliasName(objectName) == *expectedName)
+				if(matchesAliasName(*object, *expectedName))
 					return object->id;
 			}
 
@@ -1084,8 +1102,7 @@ ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::str
 				continue;
 			}
 
-			std::string objectName = object->instanceName.empty() ? object->getObjectName() : object->instanceName;
-			if(sanitizedAliasName(objectName) == name)
+			if(matchesAliasName(*object, name))
 				return object->id;
 		}
 	}

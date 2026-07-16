@@ -33,6 +33,7 @@
 #include "../lib/mapObjects/CGObjectInstance.h"
 #include "../lib/mapObjects/CGCreature.h"
 #include "../lib/mapObjects/CGHeroInstance.h"
+#include "../lib/mapObjects/CGTownInstance.h"
 #include "../lib/mapObjects/army/CArmedInstance.h"
 #include "../lib/mapObjects/army/CSimpleArmy.h"
 #include "../lib/networkPacks/NetPackVisitor.h"
@@ -238,6 +239,24 @@ std::string stackAlias(int stackID)
 	return std::to_string(stackID);
 }
 
+std::string heroAlias(const CGameState & gameState, ObjectInstanceID id);
+
+std::string sanitizedAliasName(std::string name)
+{
+	boost::algorithm::to_lower(name);
+	for(char & ch : name)
+	{
+		if(!std::isalnum(static_cast<unsigned char>(ch)))
+			ch = '-';
+	}
+	name.erase(std::unique(name.begin(), name.end(), [](char left, char right)
+	{
+		return left == '-' && right == '-';
+	}), name.end());
+	boost::algorithm::trim_if(name, boost::is_any_of("-"));
+	return name;
+}
+
 std::string objectAlias(const CGameState & gameState, ObjectInstanceID id)
 {
 	if(id == ObjectInstanceID::NONE)
@@ -246,6 +265,8 @@ std::string objectAlias(const CGameState & gameState, ObjectInstanceID id)
 	const auto * object = gameState.getMap().getObject(id);
 	if(!object)
 		return "object/id-" + std::to_string(id.getNum());
+	if(dynamic_cast<const CGHeroInstance *>(object))
+		return heroAlias(gameState, id);
 
 	std::string type = MapObjectID::encode(object->ID.getNum());
 	if(type.empty())
@@ -256,20 +277,16 @@ std::string objectAlias(const CGameState & gameState, ObjectInstanceID id)
 	if(object->tempOwner.isValidPlayer())
 		owner = "/" + object->tempOwner.toString();
 
-	std::string name = object->instanceName;
+	std::string name = sanitizedAliasName(object->getObjectName());
 	if(name.empty())
-		name = object->getObjectName();
-	boost::algorithm::to_lower(name);
-	for(char & ch : name)
-	{
-		if(!std::isalnum(static_cast<unsigned char>(ch)))
-			ch = '-';
-	}
-	boost::algorithm::trim_if(name, boost::is_any_of("-"));
+		name = sanitizedAliasName(object->instanceName);
 	if(name.empty())
 		name = "id-" + std::to_string(id.getNum());
+	if(dynamic_cast<const CGTownInstance *>(object))
+		type = "town";
 
-	return "object/" + type + owner + "/" + name + "/at-" +
+	const std::string prefix = type == "town" ? "" : "object/";
+	return prefix + type + owner + "/" + name + "/at-" +
 		std::to_string(object->visitablePos().x) + "-" +
 		std::to_string(object->visitablePos().y) + "-" +
 		std::to_string(object->visitablePos().z);
@@ -285,14 +302,9 @@ std::string heroAlias(const CGameState & gameState, ObjectInstanceID id)
 	if(const auto * hero = dynamic_cast<const CGHeroInstance *>(object); hero && hero->getHeroTypeID().hasValue())
 		return "hero/" + owner + "/" + transcriptIdentifier(HeroTypeID::encode(hero->getHeroTypeID().getNum()));
 
-	std::string name = object->instanceName.empty() ? object->getObjectName() : object->instanceName;
-	boost::algorithm::to_lower(name);
-	for(char & ch : name)
-	{
-		if(!std::isalnum(static_cast<unsigned char>(ch)))
-			ch = '-';
-	}
-	boost::algorithm::trim_if(name, boost::is_any_of("-"));
+	std::string name = sanitizedAliasName(object->getObjectName());
+	if(name.empty())
+		name = sanitizedAliasName(object->instanceName);
 	if(name.empty())
 		name = "id-" + std::to_string(id.getNum());
 
