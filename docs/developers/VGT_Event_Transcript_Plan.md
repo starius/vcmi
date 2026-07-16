@@ -4,6 +4,43 @@ This document restarts the readable VCMI Game Transcript work from a text-first 
 
 The target is a compact YAML transcript that can be read by a human, parsed by normal YAML tooling, and used by a future recorded-game player to reconstruct a game timeline, inspect decisions, scroll through game history, and branch into playable state for any side after replaying the text events.
 
+## Current implementation
+
+VGT 4 is the current writer format. It contains a header followed by turn and world
+documents made from semantic actions and material outcomes. It has no continuation
+documents, embedded saves, checkpoints, packet payloads, or state hashes. VGT 3
+transcripts remain replay-compatible.
+
+Enable readable capture and the optional exact-replay debug oracle with:
+
+```bash
+VCMI_VGT_TEXT=/tmp/game.vgt \
+VCMI_VGT_TURN_STATE_DIR=/tmp/game.turn-states \
+vcmiclient [game options]
+```
+
+`game.turn-states` contains a full server save after every applied player turn, named
+in chronological order, for example
+`turn-000001-day-0001-red.vsgm1`. It is deliberately separate from the portable
+transcript and should not be distributed as part of a VGT recording.
+
+Validate the YAML, replay its semantic actions, and compare every reconstructed turn
+save byte-for-byte with:
+
+```bash
+python3 scripts/vgt_replay.py replay /tmp/game.vgt \
+  --engine-binary build/bin/vcmiserver \
+  --output-save /tmp/replayed.vsgm1 \
+  --resource-root /path/to/vcmi-data \
+  --expected-turn-states /tmp/game.turn-states \
+  --output-turn-states /tmp/replayed.turn-states \
+  --strict
+```
+
+The first mismatch stops replay and reports both sizes, the first differing byte
+offset, and the expected and reconstructed byte values. The output archive is optional
+and is useful only for diagnosing a mismatch.
+
 ## Principles
 
 - The file is YAML 1.2, not a custom DSL.
