@@ -17,6 +17,11 @@ The target is a compact YAML transcript that can be read by a human, parsed by n
 - Consecutive successful one-tile movement requests are written as one `moveHero`
   route. Replay expands the route back into the original one-tile server requests.
   A blocking visit or any other non-success result ends the route and remains explicit.
+- Turn documents and `endTurn` actions already express ordinary turn boundaries, so
+  duplicate turn-start/end effects are omitted unless they carry a query or timer
+  state. Visit-end sentinels, duplicate town-visit notifications, visitor bookkeeping,
+  and internal reward-selection flags are also derived implementation state and are
+  omitted from the readable transcript.
 - Every actor decision is recorded: human, AI, neutral/world, battle AI, query answer, retreat/surrender choice, and scripted choice where applicable.
 - Every authoritative material effect is recorded, including effects nobody could see yet, such as neutral growth or week-start spawned monsters in fog.
 - In the material event stream, randomness is recorded only as realized facts near the event that consumed it. Internal RNG state is not a timeline event. Replay advances RNG by feeding recorded decisions through normal server logic.

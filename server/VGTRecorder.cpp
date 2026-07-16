@@ -2131,18 +2131,22 @@ public:
 
 	void visitPlayerStartsTurn(PlayerStartsTurn & pack) override
 	{
-		line = "turnStart: { player: " + color(pack.player) + ", query: " + query(pack.queryID) + " }";
+		if(pack.queryID == QueryID::NONE)
+			line.clear();
+		else
+			line = "turnStart: { player: " + color(pack.player) + ", query: " + query(pack.queryID) + " }";
 	}
 
 	void visitPlayerEndsTurn(PlayerEndsTurn & pack) override
 	{
-		line = "turnEnd: { player: " + color(pack.player);
-		if(turnStartTimer || turnEndTimer)
+		if(!turnStartTimer && !turnEndTimer)
 		{
-			line += ", timer: { start: " + turnStartTimer.value_or("none") +
-				", end: " + turnEndTimer.value_or("none") + " }";
+			line.clear();
+			return;
 		}
-		line += " }";
+		line = "turnEnd: { player: " + color(pack.player) +
+			", timer: { start: " + turnStartTimer.value_or("none") +
+			", end: " + turnEndTimer.value_or("none") + " } }";
 	}
 
 	void visitPlayerEndsGame(PlayerEndsGame & pack) override
@@ -2190,9 +2194,7 @@ public:
 
 	void visitHeroVisitCastle(HeroVisitCastle & pack) override
 	{
-		line = "townVisit: { town: " + objectAlias(gameState, pack.tid) +
-			", hero: " + heroAlias(gameState, pack.hid) +
-			", start: " + std::string(pack.start() ? "true" : "false") + " }";
+		line.clear();
 	}
 
 	void visitChangeSpells(ChangeSpells & pack) override
@@ -2442,9 +2444,13 @@ public:
 
 	void visitHeroVisit(HeroVisit & pack) override
 	{
+		if(!pack.starting)
+		{
+			line.clear();
+			return;
+		}
 		line = "visit: { hero: " + heroAlias(gameState, pack.heroId) +
-			", object: " + objectAlias(gameState, pack.objId) +
-			", start: " + std::string(pack.starting ? "true" : "false") + " }";
+			", object: " + objectAlias(gameState, pack.objId) + " }";
 	}
 
 		void visitNewTurn(NewTurn & pack) override
@@ -2475,8 +2481,14 @@ public:
 
 	void visitSetObjectProperty(SetObjectProperty & pack) override
 	{
+		const std::string property = objectProperty(pack.what);
+		if(property == "rewardCleared" || property == "rewardSelect" || property == "seerHutVisited")
+		{
+			line.clear();
+			return;
+		}
 		line = "objectProperty: { object: " + objectAlias(gameState, pack.id) +
-			", property: " + objectProperty(pack.what) +
+			", property: " + property +
 			", value: " + objectPropertyValue(gameState, pack) + " }";
 	}
 
@@ -2489,17 +2501,7 @@ public:
 
 	void visitChangeObjectVisitors(ChangeObjectVisitors & pack) override
 	{
-		std::string visitMode = "clear";
-		switch(pack.mode)
-		{
-			case ChangeObjectVisitors::VISITOR_ADD_HERO: visitMode = "addHero"; break;
-			case ChangeObjectVisitors::VISITOR_ADD_PLAYER: visitMode = "addPlayer"; break;
-			case ChangeObjectVisitors::VISITOR_SCOUTED: visitMode = "scouted"; break;
-			case ChangeObjectVisitors::VISITOR_CLEAR: visitMode = "clear"; break;
-		}
-		line = "objectVisitors: { object: " + objectAlias(gameState, pack.object) +
-			", hero: " + objectAlias(gameState, pack.hero) +
-			", mode: " + visitMode + " }";
+		line.clear();
 	}
 
 	void visitHeroLevelUp(HeroLevelUp & pack) override
@@ -3121,12 +3123,17 @@ void VGTRecorder::recordEffect(const CGameState & gameState, CPackForClient & pa
 
 	std::optional<std::string> turnStartTimer;
 	std::optional<std::string> turnEndTimer;
+	const auto * startInfo = gameState.getStartInfo();
+	const bool timersEnabled = startInfo && startInfo->turnTimerInfo.isEnabled();
 
 	if(auto * start = dynamic_cast<PlayerStartsTurn *>(&pack))
 	{
 		flushPendingMove(gameState);
-		if(auto it = latestTimerStates.find(start->player); it != latestTimerStates.end())
-			turnStartTimerStates[start->player] = it->second;
+		if(timersEnabled)
+		{
+			if(auto it = latestTimerStates.find(start->player); it != latestTimerStates.end())
+				turnStartTimerStates[start->player] = it->second;
+		}
 		startTurnDocument(gameState, start->player);
 	}
 	else if(dynamic_cast<NewTurn *>(&pack))
@@ -3136,10 +3143,13 @@ void VGTRecorder::recordEffect(const CGameState & gameState, CPackForClient & pa
 	}
 	else if(auto * end = dynamic_cast<PlayerEndsTurn *>(&pack))
 	{
-		if(auto it = turnStartTimerStates.find(end->player); it != turnStartTimerStates.end() && it->second != "none")
-			turnStartTimer = it->second;
-		if(auto it = latestTimerStates.find(end->player); it != latestTimerStates.end() && it->second != "none")
-			turnEndTimer = it->second;
+		if(timersEnabled)
+		{
+			if(auto it = turnStartTimerStates.find(end->player); it != turnStartTimerStates.end() && it->second != "none")
+				turnStartTimer = it->second;
+			if(auto it = latestTimerStates.find(end->player); it != latestTimerStates.end() && it->second != "none")
+				turnEndTimer = it->second;
+		}
 	}
 
 	EffectRecorder recorder(gameState, turnStartTimer, turnEndTimer);
