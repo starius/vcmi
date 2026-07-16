@@ -270,7 +270,10 @@ Enable it with an environment variable or local debug option at first, for examp
 For deterministic replay diagnostics, `VCMI_VGT_TURN_STATE_DIR=/path/game.turn-states`
 writes a full server save immediately after every applied player turn end. Files use a
 stable chronological name such as `turn-000001-day-0001-red.vsgm1`. These saves are
-an external debug oracle and are not part of the portable VGT format.
+an external debug oracle and are not part of the portable VGT format. Pass the archive
+to `scripts/vgt_replay.py replay --expected-turn-states game.turn-states` to compare
+every reconstructed save byte-for-byte. `--output-turn-states` optionally keeps the
+reconstructed saves for diagnosis.
 
 ### 2. Alias Registry
 

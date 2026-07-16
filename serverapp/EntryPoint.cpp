@@ -239,6 +239,8 @@ static void handleCommandOptions(int argc, const char * argv[], boost::program_o
 	("vgt-replay-json", boost::program_options::value<std::string>(), "Replay a normalized VGT transcript JSON file")
 	("vgt-replay-save", boost::program_options::value<std::string>(), "Write replayed state to this save file")
 	("vgt-replay-game-state-save", boost::program_options::value<std::string>(), "Write replayed game state only to this save file")
+	("vgt-replay-expected-turn-states", boost::program_options::value<std::string>(), "Compare every replayed turn state with this directory")
+	("vgt-replay-turn-states", boost::program_options::value<std::string>(), "Write every replayed turn state to this directory")
 	("vgt-dump-game-state-save", boost::program_options::value<std::string>(), "Write a VGT game state save summary for diagnostics")
 	("vgt-dump-output", boost::program_options::value<std::string>(), "Path for --vgt-dump-game-state-save output")
 	("vgt-normalize-game-state-save", boost::program_options::value<std::string>(), "Load and rewrite a VGT game state save for diagnostics")
@@ -322,6 +324,10 @@ int main(int argc, const char * argv[])
 		replayOptions.outputSave = opts["vgt-replay-save"].as<std::string>();
 		if(opts.count("vgt-replay-game-state-save"))
 			replayOptions.outputGameStateSave = opts["vgt-replay-game-state-save"].as<std::string>();
+		if(opts.count("vgt-replay-expected-turn-states"))
+			replayOptions.expectedTurnStateDirectory = opts["vgt-replay-expected-turn-states"].as<std::string>();
+		if(opts.count("vgt-replay-turn-states"))
+			replayOptions.outputTurnStateDirectory = opts["vgt-replay-turn-states"].as<std::string>();
 		const int replayResult = replayVGTJson(replayOptions);
 
 		logConfigurator.deconfigure();

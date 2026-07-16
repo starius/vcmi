@@ -15,6 +15,8 @@ struct VGTReplayOptions
 	std::string inputJson;
 	std::string outputSave;
 	std::string outputGameStateSave;
+	std::string expectedTurnStateDirectory;
+	std::string outputTurnStateDirectory;
 };
 
 struct VGTGameStateSummaryOptions

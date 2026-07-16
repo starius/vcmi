@@ -55,6 +55,7 @@
 #include <boost/filesystem.hpp>
 #include <cctype>
 #include <fstream>
+#include <iomanip>
 #include <limits>
 #include <sstream>
 
@@ -64,8 +65,122 @@ class ReplayGameServer : public IGameServer
 {
 	CGameHandler * gameHandler = nullptr;
 	EServerState state = EServerState::GAMEPLAY;
+	std::string expectedTurnStateDirectory;
+	std::string outputTurnStateDirectory;
+	int replayedTurnStates = 0;
+
+	std::string turnStateFileName(PlayerColor player) const
+	{
+		std::ostringstream result;
+		result << "turn-" << std::setfill('0') << std::setw(6) << replayedTurnStates
+			<< "-day-" << std::setw(4) << gameHandler->gameState().getCalendar().getCurrentDay()
+			<< "-" << player.toString() << ".vsgm1";
+		return result.str();
+	}
+
+	std::vector<std::byte> serializeTurnState() const
+	{
+		CSaveFile save;
+		gameHandler->gameState().saveGame(save);
+		save.save(*gameHandler);
+		return save.currentContent();
+	}
+
+	std::vector<std::byte> readTurnState(const boost::filesystem::path & path) const
+	{
+		std::ifstream input(path.string(), std::ios::binary | std::ios::ate);
+		if(!input)
+			throw std::runtime_error("Missing expected VGT turn state: " + path.string());
+
+		const auto size = input.tellg();
+		if(size < 0)
+			throw std::runtime_error("Unable to determine VGT turn state size: " + path.string());
+		std::vector<std::byte> result(static_cast<size_t>(size));
+		input.seekg(0);
+		input.read(reinterpret_cast<char *>(result.data()), size);
+		if(!input)
+			throw std::runtime_error("Unable to read expected VGT turn state: " + path.string());
+		return result;
+	}
+
+	void writeTurnState(const boost::filesystem::path & path, const std::vector<std::byte> & data) const
+	{
+		if(!path.parent_path().empty())
+			boost::filesystem::create_directories(path.parent_path());
+		std::ofstream output(path.string(), std::ios::binary | std::ios::trunc);
+		output.write(reinterpret_cast<const char *>(data.data()), data.size());
+		if(!output)
+			throw std::runtime_error("Unable to write replayed VGT turn state: " + path.string());
+	}
+
+	void processTurnState(PlayerColor player)
+	{
+		++replayedTurnStates;
+		const std::string fileName = turnStateFileName(player);
+		const auto actual = serializeTurnState();
+
+		if(!outputTurnStateDirectory.empty())
+			writeTurnState(boost::filesystem::path(outputTurnStateDirectory) / fileName, actual);
+		if(expectedTurnStateDirectory.empty())
+			return;
+
+		const boost::filesystem::path expectedPath = boost::filesystem::path(expectedTurnStateDirectory) / fileName;
+		const auto expected = readTurnState(expectedPath);
+		if(actual == expected)
+		{
+			logGlobal->info("VGT turn state matches '%s'", expectedPath.string());
+			return;
+		}
+
+		const size_t commonSize = std::min(actual.size(), expected.size());
+		size_t firstDifference = 0;
+		while(firstDifference < commonSize && actual[firstDifference] == expected[firstDifference])
+			++firstDifference;
+
+		std::ostringstream message;
+		message << "VGT turn state mismatch: " << expectedPath.string()
+			<< ", expected size " << expected.size()
+			<< ", replayed size " << actual.size()
+			<< ", first differing byte " << firstDifference;
+		if(firstDifference < commonSize)
+		{
+			message << " (expected " << std::to_integer<unsigned>(expected[firstDifference])
+				<< ", replayed " << std::to_integer<unsigned>(actual[firstDifference]) << ")";
+		}
+		throw std::runtime_error(message.str());
+	}
 
 public:
+	void configureTurnStates(const std::string & expectedDirectory, const std::string & outputDirectory)
+	{
+		expectedTurnStateDirectory = expectedDirectory;
+		outputTurnStateDirectory = outputDirectory;
+	}
+
+	void verifyTurnStatesComplete() const
+	{
+		if(expectedTurnStateDirectory.empty())
+			return;
+
+		const boost::filesystem::path directory(expectedTurnStateDirectory);
+		if(!boost::filesystem::is_directory(directory))
+			throw std::runtime_error("Expected VGT turn-state directory does not exist: " + directory.string());
+
+		int expectedFiles = 0;
+		for(const auto & entry : boost::filesystem::directory_iterator(directory))
+		{
+			const std::string fileName = entry.path().filename().string();
+			if(boost::filesystem::is_regular_file(entry.path()) && fileName.starts_with("turn-") && fileName.ends_with(".vsgm1"))
+				++expectedFiles;
+		}
+		if(expectedFiles != replayedTurnStates)
+		{
+			throw std::runtime_error(
+				"VGT turn-state count mismatch: expected directory contains " + std::to_string(expectedFiles) +
+				", replay produced " + std::to_string(replayedTurnStates));
+		}
+	}
+
 	void attach(CGameHandler & handler)
 	{
 		gameHandler = &handler;
@@ -101,6 +216,8 @@ public:
 		if(!gameHandler || !gameHandler->gs)
 			throw std::runtime_error("VGT replay cannot apply a pack before game state initialization");
 		gameHandler->gs->apply(pack);
+		if(auto * end = dynamic_cast<PlayerEndsTurn *>(&pack))
+			processTurnState(end->player);
 	}
 
 	void sendPack(CPackForClient &, GameConnectionID) override
@@ -3836,6 +3953,7 @@ int replayVGTJson(const VGTReplayOptions & options)
 	StartInfo startInfo = decodeStartInfo(header);
 
 	ReplayGameServer replayServer;
+	replayServer.configureTurnStates(options.expectedTurnStateDirectory, options.outputTurnStateDirectory);
 	CGameHandler gameHandler(replayServer);
 	replayServer.attach(gameHandler);
 
@@ -3847,6 +3965,7 @@ int replayVGTJson(const VGTReplayOptions & options)
 	if(documents.Vector().size() > 1)
 		gameHandler.start(false);
 	replayTranscriptDocuments(gameHandler, documents);
+	replayServer.verifyTurnStatesComplete();
 	gameHandler.saveToFile(options.outputSave);
 	writeGameStateSave(gameHandler, options.outputGameStateSave);
 	return 0;

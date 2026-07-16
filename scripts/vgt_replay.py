@@ -213,6 +213,16 @@ def command_replay(args: argparse.Namespace) -> int:
             "--vgt-replay-game-state-save",
             str(args.output_game_state_save),
         ])
+    if args.expected_turn_states:
+        command.extend([
+            "--vgt-replay-expected-turn-states",
+            str(args.expected_turn_states),
+        ])
+    if args.output_turn_states:
+        command.extend([
+            "--vgt-replay-turn-states",
+            str(args.output_turn_states),
+        ])
     try:
         completed = subprocess.run(command, check=False)
     finally:
@@ -240,6 +250,8 @@ def build_parser() -> argparse.ArgumentParser:
     replay.add_argument("--engine-binary", type=Path, required=True, help="path to the VCMI executable with VGT replay support")
     replay.add_argument("--output-save", type=Path, required=True, help="save file to write after replay")
     replay.add_argument("--output-game-state-save", type=Path, help="game-state-only save file to write after replay")
+    replay.add_argument("--expected-turn-states", type=Path, help="directory of recorded turn-state saves to compare byte-for-byte")
+    replay.add_argument("--output-turn-states", type=Path, help="directory in which to write replayed turn-state saves")
     replay.add_argument("--header-only", action="store_true", help="rebuild only the initialized state from the transcript header")
     replay.set_defaults(func=command_replay)
     return parser
