@@ -1067,12 +1067,22 @@ ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::str
 	{
 		const auto owner = parts[1];
 		const auto name = parts[2];
+		std::optional<HeroTypeID> expectedHeroType;
+		if(parts.size() >= 4)
+			expectedHeroType = decodeHeroType(joinAliasParts(parts, 2, parts.size()));
 		for(const auto & object : gameState.getMap().getObjects())
 		{
 			if(!object)
 				continue;
 			if(colorAlias(object->tempOwner) != owner)
 				continue;
+			if(expectedHeroType)
+			{
+				const auto * hero = dynamic_cast<const CGHeroInstance *>(object);
+				if(hero && hero->getHeroTypeID() == *expectedHeroType)
+					return object->id;
+				continue;
+			}
 
 			std::string objectName = object->instanceName.empty() ? object->getObjectName() : object->instanceName;
 			if(sanitizedAliasName(objectName) == name)

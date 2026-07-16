@@ -261,6 +261,9 @@ std::string heroAlias(const CGameState & gameState, ObjectInstanceID id)
 		return objectAlias(gameState, id);
 
 	std::string owner = object->tempOwner.isValidPlayer() ? object->tempOwner.toString() : "neutral";
+	if(const auto * hero = dynamic_cast<const CGHeroInstance *>(object); hero && hero->getHeroTypeID().hasValue())
+		return "hero/" + owner + "/" + transcriptIdentifier(HeroTypeID::encode(hero->getHeroTypeID().getNum()));
+
 	std::string name = object->instanceName.empty() ? object->getObjectName() : object->instanceName;
 	boost::algorithm::to_lower(name);
 	for(char & ch : name)
