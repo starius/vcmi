@@ -11,6 +11,9 @@ documents made from semantic actions and material outcomes. It has no continuati
 documents, embedded saves, checkpoints, packet payloads, or state hashes. VGT 4 is
 the only supported transcript version while the format is being stabilized.
 
+The reviewed next-stage readability and compression changes are specified separately
+in [`VGT_Readability_Compression_Refinement_Plan.md`](VGT_Readability_Compression_Refinement_Plan.md).
+
 Enable readable capture and the optional exact-replay debug oracle with:
 
 ```bash
