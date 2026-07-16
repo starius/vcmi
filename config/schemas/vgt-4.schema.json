@@ -43,11 +43,6 @@
 			"prefixItems": [{ "type": "integer" }, { "type": "integer" }, { "type": "integer" }],
 			"items": false
 		},
-		"path3D": {
-			"type": "array",
-			"items": { "$ref": "#/$defs/position3D" },
-			"description": "An ordered adventure-map path with a level on every point."
-		},
 		"resourceValues": {
 			"type": "array",
 			"items": {
@@ -168,7 +163,7 @@
 		"header": {
 			"type": "object",
 			"description": "The first YAML document. It contains everything needed to initialize deterministic replay from the referenced map.",
-			"required": ["vgt", "format", "engine", "map", "settings", "players", "initialState"],
+			"required": ["vgt", "format", "engine", "map", "settings", "players", "initialPlayers", "initialState"],
 			"properties": {
 				"vgt": { "const": 4 },
 				"format": { "const": "VCMI readable event transcript" },
@@ -189,7 +184,7 @@
 				},
 				"settings": {
 					"type": "object",
-					"required": ["start", "startTime", "difficulty", "simturns", "timer", "extraOptions", "gameSettingsOverrides"],
+					"required": ["start", "startTime", "difficulty", "randomSeed", "simturns", "timer", "extraOptions", "gameSettingsOverrides"],
 					"properties": {
 						"start": { "enum": ["newGame", "loadGame", "campaign", "invalid", "unknown"] },
 						"startTime": { "type": "integer", "description": "Recorded initialization timestamp. It is input data, not the transcript wall-clock time." },
@@ -229,12 +224,10 @@
 		"actorOnly": { "type":"object", "required":["actor"], "properties":{"actor":{"$ref":"#/$defs/actor"}}, "additionalProperties":false },
 		"heroAction": { "type":"object", "required":["actor","hero"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
 		"moveHero": {
-			"description": "A hero movement decision. New writers compact same-level multi-step routes to [x,y] points plus one z. Legacy [x,y,z] routes remain valid.",
+			"description": "A hero movement decision. Multi-step routes contain [x,y] points and one shared z map level. Teleports are separate actions/effects and cannot be embedded in an ordinary route.",
 			"oneOf": [
 				{ "type":"object", "required":["actor","hero","to"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"to":{"$ref":"#/$defs/position3D"},"transit":{"type":"boolean"}}, "additionalProperties":false },
-				{ "type":"object", "required":["actor","hero","route","z"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"route":{"type":"array","minItems":2,"items":{"$ref":"#/$defs/position2D"}},"z":{"type":"integer"},"transit":{"type":"boolean"}}, "additionalProperties":false },
-				{ "type":"object", "required":["actor","hero","route"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"route":{"type":"array","minItems":2,"items":{"$ref":"#/$defs/position3D"}},"transit":{"type":"boolean"}}, "additionalProperties":false },
-				{ "type":"object", "required":["actor","hero","path","transit"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"path":{"$ref":"#/$defs/path3D"},"transit":{"type":"boolean"}}, "additionalProperties":false }
+				{ "type":"object", "required":["actor","hero","route","z"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"route":{"type":"array","minItems":2,"items":{"$ref":"#/$defs/position2D"}},"z":{"type":"integer"},"transit":{"type":"boolean"}}, "additionalProperties":false }
 			]
 		},
 		"armySlot": { "type":"object", "required":["army","slot"], "properties":{"army":{"$ref":"#/$defs/identifier"},"slot":{"type":"integer"}}, "additionalProperties":false },
@@ -266,13 +259,6 @@
 		"setTownNameAction": { "type":"object", "required":["actor","town","name"], "properties":{"actor":{"$ref":"#/$defs/actor"},"town":{"$ref":"#/$defs/identifier"},"name":{"type":"string"}}, "additionalProperties":false },
 		"buildBoatAction": { "type":"object", "required":["actor","object"], "properties":{"actor":{"$ref":"#/$defs/actor"},"object":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
 		"playerMessageAction": { "type":"object", "required":["actor","text","object"], "properties":{"actor":{"$ref":"#/$defs/actor"},"text":{"type":"string"},"object":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
-		"decision": {
-			"type": "object",
-			"description": "A VGT 3 compatibility decision. VGT 4 writers use the action verb as the record key, but replay accepts this form.",
-			"required": ["actor", "kind"],
-			"properties": { "actor":{"$ref":"#/$defs/actor"}, "kind":{"type":"string"} },
-			"additionalProperties": true
-		},
 		"battleTarget": { "type":"object", "minProperties":1, "properties":{"unit":{"type":"integer"},"hex":{"type":"integer"}}, "additionalProperties":false },
 		"battleDecision": {
 			"type":"object", "required":["actor","side","stack"],
@@ -312,7 +298,7 @@
 			"type":"object",
 			"description":"Payload shared by the statically named audit/effect record variants. The record key is the discriminator. Open fields are explicitly embedded domain JSON or fields whose type varies by the discriminated record.",
 			"properties": {
-				"actor":{"$ref":"#/$defs/actor","description":"Actor responsible for a local-state or compatibility event."},
+				"actor":{"$ref":"#/$defs/actor","description":"Actor responsible for a local-state event."},
 				"player":{"$ref":"#/$defs/playerColor","description":"Player whose state changed or who owns a query."},
 				"query":{"$ref":"#/$defs/queryId","description":"Query associated with a turn, dialog, or level-up."},
 				"timer":{"type":"object","description":"Turn timer start/end snapshots."},
@@ -360,7 +346,7 @@
 				"exchangeArtifacts":{"$ref":"#/$defs/exchangeArtifactsAction"}, "bulkExchangeArtifacts":{"$ref":"#/$defs/bulkExchangeArtifactsAction"}, "manageBackpackArtifacts":{"$ref":"#/$defs/manageBackpackArtifactsAction"}, "manageEquippedArtifacts":{"$ref":"#/$defs/manageEquippedArtifactsAction"},
 				"assembleArtifacts":{"$ref":"#/$defs/assembleArtifactsAction"}, "eraseArtifact":{"$ref":"#/$defs/eraseArtifactAction"}, "buyArtifact":{"$ref":"#/$defs/buyArtifactAction"}, "trade":{"$ref":"#/$defs/tradeAction"},
 				"setFormation":{"$ref":"#/$defs/setFormationAction"}, "setTactics":{"$ref":"#/$defs/setTacticsAction"}, "setTownName":{"$ref":"#/$defs/setTownNameAction"}, "buildBoat":{"$ref":"#/$defs/buildBoatAction"}, "playerMessage":{"$ref":"#/$defs/playerMessageAction"},
-				"decision":{"$ref":"#/$defs/decision"}, "localState":{"$ref":"#/$defs/typedObject"},
+				"localState":{"$ref":"#/$defs/typedObject"},
 				"turnStart":{"$ref":"#/$defs/typedObject"}, "turnEnd":{"$ref":"#/$defs/typedObject"}, "playerEnd":{"$ref":"#/$defs/typedObject"}, "resources":{"$ref":"#/$defs/typedObject"},
 				"primarySkill":{"$ref":"#/$defs/typedObject"}, "experience":{"$ref":"#/$defs/typedObject"}, "stackExperience":{"$ref":"#/$defs/typedObject"}, "secondarySkill":{"$ref":"#/$defs/typedObject"},
 				"spells":{"$ref":"#/$defs/typedObject"}, "mana":{"$ref":"#/$defs/typedObject"}, "movementPoints":{"$ref":"#/$defs/typedObject"}, "visibility":{"$ref":"#/$defs/typedObject"},

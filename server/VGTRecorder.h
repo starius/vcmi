@@ -31,7 +31,7 @@ class VGTRecorder final
 		std::string hero;
 		std::vector<std::string> route;
 		std::vector<std::string> route2D;
-		std::optional<int> z;
+		int z = 0;
 		bool transit = false;
 	};
 

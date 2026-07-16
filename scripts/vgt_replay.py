@@ -40,23 +40,62 @@ def load_documents(path: Path) -> list[dict[str, Any]]:
 
 def iter_records(documents: list[dict[str, Any]]):
     for document_index, document in enumerate(documents[1:], start=1):
-        if "continuation" in document:
-            raise VGTError(f"document {document_index} uses removed continuation state")
-        records = document.get("actions", document.get("events"))
-        if records is None:
-            raise VGTError(f"document {document_index} has neither actions nor events")
+        if set(document) == {"turn", "actions"}:
+            records = document["actions"]
+        elif set(document) == {"world", "events"}:
+            records = document["events"]
+        else:
+            raise VGTError(f"document {document_index} is neither a current turn nor world document")
         if not isinstance(records, list):
             raise VGTError(f"document {document_index} records field is not a list")
         for record_index, record in enumerate(records):
             if not isinstance(record, dict) or len(record) != 1:
                 raise VGTError(f"document {document_index} record {record_index} is not a one-key mapping")
+            if "decision" in record:
+                raise VGTError(f"document {document_index} record {record_index} uses the removed generic decision wrapper")
+            if "moveHero" in record:
+                validate_move_hero(record["moveHero"], document_index, record_index)
+            if "battle" in record:
+                validate_battle_block(record["battle"], document_index, record_index)
             yield document_index, record_index, record
+
+
+def validate_move_hero(value: Any, document_index: int, record_index: int) -> None:
+    if not isinstance(value, dict):
+        raise VGTError(f"document {document_index} record {record_index} moveHero payload is not a mapping")
+    if "path" in value:
+        raise VGTError(f"document {document_index} record {record_index} uses the removed moveHero path field")
+    if "route" not in value:
+        return
+    route = value["route"]
+    if type(value.get("z")) is not int:
+        raise VGTError(f"document {document_index} record {record_index} moveHero route has no integer z")
+    if not isinstance(route, list) or len(route) < 2 or any(
+        not isinstance(point, list)
+        or len(point) != 2
+        or any(type(coordinate) is not int for coordinate in point)
+        for point in route
+    ):
+        raise VGTError(f"document {document_index} record {record_index} moveHero route must contain only [x, y] points")
+
+
+def validate_battle_block(value: Any, document_index: int, record_index: int) -> None:
+    if not isinstance(value, dict) or not isinstance(value.get("events"), list):
+        return
+    for battle_index, event in enumerate(value["events"]):
+        if isinstance(event, dict) and "decision" in event:
+            raise VGTError(
+                f"document {document_index} record {record_index} battle event {battle_index} "
+                "uses the removed generic decision wrapper"
+            )
 
 
 def header(documents: list[dict[str, Any]]) -> dict[str, Any]:
     result = documents[0]
-    if result.get("vgt") not in (3, 4):
+    if result.get("vgt") != 4:
         raise VGTError(f"unsupported VGT version: {result.get('vgt')!r}")
+    if result.get("format") != "VCMI readable event transcript":
+        raise VGTError(f"unsupported VGT format name: {result.get('format')!r}")
     map_info = result.get("map")
     if not isinstance(map_info, dict):
         raise VGTError("header map field is missing or invalid")
@@ -70,7 +109,7 @@ def header(documents: list[dict[str, Any]]) -> dict[str, Any]:
     settings = result.get("settings")
     if not isinstance(settings, dict):
         raise VGTError("header settings field is missing or invalid")
-    for field in ("start", "startTime", "difficulty", "simturns", "timer", "extraOptions", "gameSettingsOverrides"):
+    for field in ("start", "startTime", "difficulty", "randomSeed", "simturns", "timer", "extraOptions", "gameSettingsOverrides"):
         if field not in settings:
             raise VGTError(f"header settings.{field} is missing")
     for field in ("simturns", "extraOptions", "gameSettingsOverrides"):
@@ -92,9 +131,7 @@ def header(documents: list[dict[str, Any]]) -> dict[str, Any]:
 
     players = result.get("players")
     validate_players(players, "players")
-    initial_players = result.get("initialPlayers")
-    if initial_players is not None:
-        validate_players(initial_players, "initialPlayers")
+    validate_players(result.get("initialPlayers"), "initialPlayers")
     return result
 
 
@@ -129,9 +166,6 @@ def validate_map_hash(map_info: dict[str, Any], roots: list[Path]) -> Path:
 
 def summarize(documents: list[dict[str, Any]]) -> collections.Counter[str]:
     counter: collections.Counter[str] = collections.Counter()
-    for document in documents[1:]:
-        if "continuation" in document:
-            raise VGTError("transcript uses removed continuation state")
     for _, _, record in iter_records(documents):
         key = next(iter(record))
         value = record[key]

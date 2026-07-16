@@ -8,8 +8,8 @@ The target is a compact YAML transcript that can be read by a human, parsed by n
 
 VGT 4 is the current writer format. It contains a header followed by turn and world
 documents made from semantic actions and material outcomes. It has no continuation
-documents, embedded saves, checkpoints, packet payloads, or state hashes. VGT 3
-transcripts remain replay-compatible.
+documents, embedded saves, checkpoints, packet payloads, or state hashes. VGT 4 is
+the only supported transcript version while the format is being stabilized.
 
 Enable readable capture and the optional exact-replay debug oracle with:
 
@@ -149,7 +149,7 @@ Use numeric values only for naturally numeric facts: coordinates, battle hexes, 
 Most actions are one-key mappings in flow style:
 
 ```yaml
-- resources: { player: red, change: [{ resource: "core:gold", from: 5000, to: 2500 }] }
+- resources: { player: red, mode: relative, values: [{ gold: -2500 }] }
 ```
 
 Use block style for nested structures:
@@ -166,14 +166,13 @@ Do not include packet type IDs, record counters, connection IDs, request serials
 
 The transcript records both decisions and effects. Decisions are authoritative for replay. Effects explain and audit what became true.
 
-Action records answer "what did an actor choose?" VGT 4 uses the action verb as the
-record key so readers do not have to scan through a generic `decision` wrapper. The
-replayer continues to accept the VGT 3 `decision: { kind: ... }` spelling.
+Action records answer "what did an actor choose?" The action verb is the record key
+so readers do not have to scan through a generic `decision` wrapper.
 
 ```yaml
-- moveHero: { actor: ai/red/Nullkiller2, hero: hero/red/orrin, destination: [12, 10, 0], reason: visit }
-- queryAnswer: { actor: human/blue, query: query/blue/levelUp/valeska/day4, answer: "core:archery" }
-- melee: { actor: battleAI/red/BattleAI, stack: stack/attacker/0, target: stack/defender/2 }
+- moveHero: { actor: red, hero: hero/red/core/orrin, to: [12, 10, 0] }
+- queryAnswer: { actor: blue, query: 7, answer: 1 }
+- buildStructure: { actor: red, town: town/red/castle/at-8-10-0, building: core/townHall }
 ```
 
 Consecutive one-tile moves by the same hero are written as a route. When every
@@ -183,26 +182,23 @@ point is on one map level, write `z` once and use two-value route points:
 - moveHero: { actor: teal, hero: hero/teal/core/yog, route: [[32, 4], [33, 5], [34, 6]], z: 1 }
 ```
 
-If a route changes levels, every point remains `[x, y, z]` and there is no shared
-`z`. A single destination remains `to: [x, y, z]`. Replay accepts both the compact
-VGT 4 route and the earlier three-value route spelling.
+Ordinary movement cannot change map levels. Gates, monoliths, whirlpools, and
+teleport spells end the current route and produce their own action/effect before a
+new route begins on the destination level. A single destination remains
+`to: [x, y, z]`.
 
 Effect records answer "what became true in game state?"
 
 ```yaml
-- hero: { id: hero/red/orrin, path: [[10, 10, 0], [11, 10, 0], [12, 10, 0]], movement: [1560, 1360] }
-- resources: { player: red, change: [{ resource: "core:gold", from: 2500, to: 3000 }] }
-- army: { owner: hero/red/orrin, slot: 0, creature: "core:pikeman", count: [41, 37], reason: casualties }
+- move: { hero: hero/red/core/orrin, from: [11, 10, 0], to: [12, 10, 0], result: success, movement: 1360 }
+- resources: { player: red, mode: relative, values: [{ gold: 500 }] }
+- army: { owner: hero/red/core/orrin, slot: 0, mode: absolute, count: 37 }
 ```
 
-A decision may be followed by zero, one, or many effects. Some world effects have no player decision. Some rejected decisions have no material effect and should be recorded only if useful for analysis:
-
-```yaml
-- recruitHero: { actor: ai/red/Nullkiller2, town: town/red/castle, hero: "core:sorsha" }
-- rejected: { decision: recruitHero, reason: insufficientGold }
-```
-
-Rejected or illegal decisions are not required for state replay, but are valuable for AI debugging. They can be enabled as an analysis option.
+A decision may be followed by zero, one, or many effects. Some world effects have no
+player decision. Rejected or illegal requests are not part of the current portable
+format because they do not change replay state; a separate AI debug trace may record
+them if needed.
 
 Timer-forced choices are decisions whose actor is the clock, not a player or AI:
 

@@ -197,9 +197,8 @@ std::optional<BattleBlockRecord> battleBlockRecord(const std::string & line)
 
 	const std::string battleDecisionMarker = ", battle: ";
 	const size_t battleFieldStart = line.find(battleDecisionMarker);
-	const bool legacyDecision = line.starts_with("decision: { ") && line.find("kind: battleAction") != std::string::npos;
 	const bool readableDecision = line.starts_with("battleAction: { ");
-	if((!legacyDecision && !readableDecision) || battleFieldStart == std::string::npos)
+	if(!readableDecision || battleFieldStart == std::string::npos)
 		return std::nullopt;
 
 	const size_t battleIDStart = battleFieldStart + battleDecisionMarker.size();
@@ -238,15 +237,6 @@ std::string pos(const int3 & value)
 std::string pos2D(const int3 & value)
 {
 	return "[" + std::to_string(value.x) + ", " + std::to_string(value.y) + "]";
-}
-
-std::string path(const std::vector<int3> & value)
-{
-	std::vector<std::string> result;
-	result.reserve(value.size());
-	for(const auto & tile : value)
-		result.push_back(pos(tile));
-	return flowList(result);
 }
 
 std::string color(PlayerColor value)
@@ -1828,10 +1818,7 @@ public:
 
 	void visitMoveHero(MoveHero & pack) override
 	{
-		line = "decision: { actor: " + actorForPlayer(pack.player) +
-			", kind: moveHero, hero: " + heroAlias(gameState, pack.hid) +
-			", path: " + path(pack.path) +
-			", transit: " + std::string(pack.transit ? "true" : "false") + " }";
+		unmodelled(pack);
 	}
 
 	void visitCastleTeleportHero(CastleTeleportHero & pack) override
@@ -2872,6 +2859,19 @@ void VGTRecorder::ensureHeader(const CGameState & gameState)
 		enabled = false;
 		return;
 	}
+	const auto * initialStartInfo = gameState.getInitialStartInfo();
+	if(!initialStartInfo)
+	{
+		logGlobal->error("Unable to write VGT transcript '%s': missing initial game settings", outputPath);
+		enabled = false;
+		return;
+	}
+	if(!randomSeed)
+	{
+		logGlobal->error("Unable to write VGT transcript '%s': missing random seed", outputPath);
+		enabled = false;
+		return;
+	}
 
 	const auto hash = mapHash(*startInfo);
 	if(!hash)
@@ -2893,14 +2893,13 @@ void VGTRecorder::ensureHeader(const CGameState & gameState)
 	output << "  objectNameCounter: " << gameState.getMap().getUniqueInstanceNameCounter() << "\n";
 	if(startInfo->mapGenOptions)
 		output << "  generator: " << randomMapGenerator(*startInfo->mapGenOptions) << "\n";
-	if(const auto * initialStartInfo = gameState.getInitialStartInfo(); initialStartInfo && initialStartInfo->mapGenOptions)
+	if(initialStartInfo->mapGenOptions)
 		output << "  initialGenerator: " << randomMapGenerator(*initialStartInfo->mapGenOptions) << "\n";
 	output << "settings:\n";
 	output << "  start: " << startMode(startInfo->mode) << "\n";
 	output << "  startTime: " << static_cast<int64_t>(startInfo->startTime) << "\n";
 	output << "  difficulty: " << difficulty(startInfo->difficulty) << "\n";
-	if(randomSeed)
-		output << "  randomSeed: " << *randomSeed << "\n";
+	output << "  randomSeed: " << *randomSeed << "\n";
 	output << "  simturns: " << simturnsInfo(startInfo->simturnsInfo) << "\n";
 	output << "  timer: " << timerInfo(startInfo->turnTimerInfo) << "\n";
 	output << "  extraOptions: " << extraOptions(startInfo->extraOptionsInfo) << "\n";
@@ -2908,12 +2907,9 @@ void VGTRecorder::ensureHeader(const CGameState & gameState)
 	output << "players:\n";
 	for(const auto & player : startInfo->playerInfos)
 		output << "  " << color(player.first) << ": " << playerSettings(player.second) << "\n";
-	if(const auto * initialStartInfo = gameState.getInitialStartInfo())
-	{
-		output << "initialPlayers:\n";
-		for(const auto & player : initialStartInfo->playerInfos)
-			output << "  " << color(player.first) << ": " << playerSettings(player.second) << "\n";
-	}
+	output << "initialPlayers:\n";
+	for(const auto & player : initialStartInfo->playerInfos)
+		output << "  " << color(player.first) << ": " << playerSettings(player.second) << "\n";
 	output << "initialState: " << initialState(gameState) << "\n";
 	headerWritten = true;
 	output.flush();
@@ -2986,10 +2982,8 @@ void VGTRecorder::flushPendingMove(const CGameState & gameState)
 		", hero: " + pendingMove->hero;
 	if(pendingMove->route.size() == 1)
 		line += ", to: " + pendingMove->route.front();
-	else if(pendingMove->z)
-		line += ", route: " + flowList(pendingMove->route2D) + ", z: " + std::to_string(*pendingMove->z);
 	else
-		line += ", route: " + flowList(pendingMove->route);
+		line += ", route: " + flowList(pendingMove->route2D) + ", z: " + std::to_string(pendingMove->z);
 	if(pendingMove->transit)
 		line += ", transit: true";
 	line += " }";
@@ -3084,19 +3078,30 @@ void VGTRecorder::recordDecision(const CGameState & gameState, CPackForServer & 
 	ensureHeader(gameState);
 	if(!enabled)
 		return;
-	if(auto * move = dynamic_cast<MoveHero *>(&pack); move && move->path.size() == 1)
+	if(auto * move = dynamic_cast<MoveHero *>(&pack); move && !move->path.empty())
 	{
 		const std::string actor = actorForPlayer(move->player);
 		const std::string hero = heroAlias(gameState, move->hid);
-		if(pendingMove && (pendingMove->actor != actor || pendingMove->hero != hero || pendingMove->transit != move->transit))
+		const int routeZ = move->path.front().z;
+		const bool sameLevel = std::all_of(move->path.begin(), move->path.end(), [routeZ](const int3 & destination)
+		{
+			return destination.z == routeZ;
+		});
+		if(!sameLevel)
+		{
 			flushPendingMove(gameState);
-		if(!pendingMove)
-			pendingMove = PendingMove{actor, hero, {}, {}, move->path.front().z, move->transit};
-		const auto & destination = move->path.front();
-		if(pendingMove->z && *pendingMove->z != destination.z)
-			pendingMove->z.reset();
-		pendingMove->route.push_back(pos(destination));
-		pendingMove->route2D.push_back(pos2D(destination));
+			writeActionLine(gameState, "unmodelled: { stream: decision, pack: MoveHero, material: true }");
+			return;
+		}
+		if(pendingMove && (pendingMove->actor != actor || pendingMove->hero != hero || pendingMove->z != routeZ || pendingMove->transit != move->transit))
+			flushPendingMove(gameState);
+		for(const auto & destination : move->path)
+		{
+			if(!pendingMove)
+				pendingMove = PendingMove{actor, hero, {}, {}, routeZ, move->transit};
+			pendingMove->route.push_back(pos(destination));
+			pendingMove->route2D.push_back(pos2D(destination));
+		}
 		return;
 	}
 	flushPendingMove(gameState);

@@ -835,23 +835,10 @@ int3 decodePosition(const JsonNode & node)
 		static_cast<int>(node.Vector()[2].Integer()));
 }
 
-std::vector<int3> decodePath(const JsonNode & node)
-{
-	if(!node.isVector())
-		throw std::runtime_error("VGT replay path must be a list");
-
-	std::vector<int3> result;
-	for(const auto & entry : node.Vector())
-		result.push_back(decodePosition(entry));
-	return result;
-}
-
 std::vector<int3> decodeMoveRoute(const JsonNode & decision)
 {
 	const auto & route = requireField(decision, "route");
-	const auto * z = findField(decision, "z");
-	if(!z)
-		return decodePath(route);
+	const int z = static_cast<int>(requireInteger(decision, "z"));
 	if(!route.isVector())
 		throw std::runtime_error("VGT replay route must be a list");
 
@@ -863,7 +850,7 @@ std::vector<int3> decodeMoveRoute(const JsonNode & decision)
 		result.emplace_back(
 			static_cast<int>(entry.Vector()[0].Integer()),
 			static_cast<int>(entry.Vector()[1].Integer()),
-			static_cast<int>(z->Integer()));
+			z);
 	}
 	return result;
 }
@@ -2035,13 +2022,10 @@ std::map<PlayerColor, PlayerSettings> decodePlayerSettingsMap(const JsonNode & n
 	return result;
 }
 
-std::map<PlayerColor, PlayerSettings> decodeGeneratedMapInitializationPlayerSettings(const JsonNode & players, const JsonNode * initialPlayers)
+std::map<PlayerColor, PlayerSettings> decodeGeneratedMapInitializationPlayerSettings(const JsonNode & players, const JsonNode & initialPlayers)
 {
 	auto result = decodePlayerSettingsMap(players);
-	if(!initialPlayers)
-		return result;
-
-	const auto initial = decodePlayerSettingsMap(*initialPlayers);
+	const auto initial = decodePlayerSettingsMap(initialPlayers);
 	for(const auto & [color, settings] : initial)
 	{
 		auto iter = result.find(color);
@@ -2128,7 +2112,7 @@ StartInfo decodeStartInfo(const JsonNode & header)
 	const auto & map = requireField(header, "map");
 	const auto & settingsNode = requireField(header, "settings");
 	const auto & players = requireField(header, "players");
-	const auto initialPlayersIter = header.Struct().find("initialPlayers");
+	const auto & initialPlayers = requireField(header, "initialPlayers");
 	const auto generatedMapFile = isGeneratedMapFile(map);
 
 	result.mode = decodeStartMode(requireString(settingsNode, "start"));
@@ -2140,9 +2124,9 @@ StartInfo decodeStartInfo(const JsonNode & header)
 	result.turnTimerInfo = decodeTimer(requireField(settingsNode, "timer"));
 	result.extraOptionsInfo = decodeExtraOptions(requireField(settingsNode, "extraOptions"));
 	if(generatedMapFile)
-		result.playerInfos = decodeGeneratedMapInitializationPlayerSettings(players, initialPlayersIter == header.Struct().end() ? nullptr : &initialPlayersIter->second);
+		result.playerInfos = decodeGeneratedMapInitializationPlayerSettings(players, initialPlayers);
 	else
-		result.playerInfos = decodePlayerSettingsMap(initialPlayersIter == header.Struct().end() ? players : initialPlayersIter->second);
+		result.playerInfos = decodePlayerSettingsMap(initialPlayers);
 	if(generatedMapFile)
 		result.mapGenOptions = decodeRandomMapGenerator(requireField(map, "generator"));
 	return result;
@@ -2159,9 +2143,7 @@ void setReplaySeed(const JsonNode & header)
 void applyGameSettingsOverrides(CGameHandler & gameHandler, const JsonNode & header)
 {
 	const auto & settingsNode = requireField(header, "settings");
-	const auto iter = settingsNode.Struct().find("gameSettingsOverrides");
-	if(iter == settingsNode.Struct().end())
-		return;
+	const auto & expectedOverrides = requireField(settingsNode, "gameSettingsOverrides");
 
 	const auto actualOverrides = gameHandler.gs->getMap().getGameSettingsOverrides();
 	const auto isEmptyOverrides = [](const JsonNode & node)
@@ -2169,10 +2151,10 @@ void applyGameSettingsOverrides(CGameHandler & gameHandler, const JsonNode & hea
 		return node.isNull() || (node.isStruct() && node.Struct().empty());
 	};
 
-	if(isEmptyOverrides(actualOverrides) && isEmptyOverrides(iter->second))
+	if(isEmptyOverrides(actualOverrides) && isEmptyOverrides(expectedOverrides))
 		return;
 
-	if(actualOverrides.toCompactString() != iter->second.toCompactString())
+	if(actualOverrides.toCompactString() != expectedOverrides.toCompactString())
 		throw std::runtime_error("VGT replay game settings overrides do not match loaded map");
 }
 
@@ -2185,8 +2167,7 @@ void applyMapEngineState(CGameHandler & gameHandler, const JsonNode & header)
 			startInfo->playerInfos = decodePlayerSettingsMap(requireField(header, "players"));
 		if(auto * initialStartInfo = gameHandler.gs->getInitialStartInfo())
 		{
-			if(const auto * initialPlayers = findField(header, "initialPlayers"))
-				initialStartInfo->playerInfos = decodePlayerSettingsMap(*initialPlayers);
+			initialStartInfo->playerInfos = decodePlayerSettingsMap(requireField(header, "initialPlayers"));
 			initialStartInfo->fileURI.clear();
 			initialStartInfo->mapname.clear();
 		}
@@ -2203,14 +2184,11 @@ void applyMapEngineState(CGameHandler & gameHandler, const JsonNode & header)
 			initialStartInfo->mapGenOptions = decodeRandomMapGenerator(*initialGeneratorNode);
 	}
 
-	const auto * counterNode = findField(mapNode, "objectNameCounter");
-	if(!counterNode)
-		return;
-
-	if(!counterNode->isNumber())
+	const auto & counterNode = requireField(mapNode, "objectNameCounter");
+	if(!counterNode.isNumber())
 		throw std::runtime_error("VGT replay map objectNameCounter is not numeric");
 
-	const auto counter = counterNode->Integer();
+	const auto counter = counterNode.Integer();
 	if(counter < std::numeric_limits<si32>::min() || counter > std::numeric_limits<si32>::max())
 		throw std::runtime_error("VGT replay map objectNameCounter is out of range");
 
@@ -2387,17 +2365,12 @@ void applyInitialHeroArmyState(CGameHandler & gameHandler, const JsonNode & node
 
 void applyInitialState(CGameHandler & gameHandler, const JsonNode & header)
 {
-	const auto * initialStateNode = findField(header, "initialState");
-	if(!initialStateNode)
-		return;
-
-	const auto * heroesNode = findField(*initialStateNode, "heroes");
-	if(!heroesNode)
-		return;
-	if(!heroesNode->isVector())
+	const auto & initialStateNode = requireField(header, "initialState");
+	const auto & heroesNode = requireField(initialStateNode, "heroes");
+	if(!heroesNode.isVector())
 		throw std::runtime_error("VGT initialState.heroes must be a list");
 
-	for(const auto & heroNode : heroesNode->Vector())
+	for(const auto & heroNode : heroesNode.Vector())
 		applyInitialHeroArmyState(gameHandler, heroNode);
 }
 
@@ -2471,7 +2444,7 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 		pack.hid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "hero"));
 		pack.transit = optionalBool(decision, "transit", false);
 		pack.layer = EPathfindingLayer::AUTO;
-		if(const auto * route = findField(decision, "route"))
+		if(hasField(decision, "route"))
 		{
 			for(const auto & destination : decodeMoveRoute(decision))
 			{
@@ -2483,7 +2456,7 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 		if(const auto * destination = findField(decision, "to"))
 			pack.path = {decodePosition(*destination)};
 		else
-			pack.path = decodePath(requireField(decision, "path"));
+			throw std::runtime_error("VGT moveHero action must contain either to or route");
 		replayPack(gameHandler, pack, player);
 		return;
 	}
@@ -2944,7 +2917,6 @@ bool isDecisionKind(const std::string & kind)
 	static const std::set<std::string> decisionKinds = {
 		"arrangeStacks",
 		"assembleArtifacts",
-		"battleAction",
 		"buildBoat",
 		"buildStructure",
 		"bulkExchangeArtifacts",
@@ -3005,6 +2977,49 @@ bool isBattleActionKind(const std::string & kind)
 	return actionKinds.contains(kind);
 }
 
+bool isEffectKind(const std::string & kind)
+{
+	static const std::set<std::string> effectKinds = {
+		"adventureSpell",
+		"army",
+		"artifact",
+		"artifacts",
+		"availableArtifacts",
+		"availableCreatures",
+		"availableHero",
+		"bonus",
+		"experience",
+		"heroOwner",
+		"heroRecruited",
+		"info",
+		"levelUp",
+		"mana",
+		"move",
+		"movementPoints",
+		"newObject",
+		"newTurn",
+		"objectPosition",
+		"objectProperty",
+		"playerEnd",
+		"primarySkill",
+		"query",
+		"quest",
+		"remove",
+		"resources",
+		"rewardable",
+		"secondarySkill",
+		"spells",
+		"stackExperience",
+		"town",
+		"townHeroes",
+		"turnEnd",
+		"turnStart",
+		"visibility",
+		"visit",
+	};
+	return effectKinds.contains(kind);
+}
+
 void replayReadableDecision(CGameHandler & gameHandler, const std::string & kind, const JsonNode & node, const std::optional<std::string> & battleID = std::nullopt)
 {
 	if(!node.isStruct())
@@ -3037,25 +3052,6 @@ void replayReadableBattleAction(CGameHandler & gameHandler, const std::string & 
 
 bool shouldSynthesizeDisabledTimerState(CGameHandler & gameHandler);
 
-[[maybe_unused]] std::set<PlayerColor> collectBattleDecisionPlayers(const JsonNode & events)
-{
-	std::set<PlayerColor> result;
-	for(const JsonNode & record : events.Vector())
-	{
-		if(!record.isStruct() || record.Struct().size() != 1)
-			continue;
-
-		const auto & entry = *record.Struct().begin();
-		if(entry.first != "decision")
-			continue;
-
-		const std::string actor = requireString(entry.second, "actor");
-		if(const auto player = tryPlayerFromActor(actor))
-			result.insert(*player);
-	}
-	return result;
-}
-
 [[maybe_unused]] void synthesizeDisabledTimerBattleStart(CGameHandler & gameHandler, const std::set<PlayerColor> & players)
 {
 	if(!shouldSynthesizeDisabledTimerState(gameHandler))
@@ -3079,20 +3075,6 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node)
 	{
 		if(!record.isStruct())
 			throw std::runtime_error("VGT battle block event is not a mapping");
-		if(record.Struct().size() == 1 && record.Struct().begin()->first == "decision")
-		{
-			JsonNode decision = record.Struct().begin()->second;
-			if(!hasField(decision, "battle"))
-				decision["battle"].String() = battleID;
-			replayDecision(gameHandler, decision);
-			continue;
-		}
-		if(record.Struct().size() == 1 && isDecisionKind(record.Struct().begin()->first))
-		{
-			const auto & entry = *record.Struct().begin();
-			replayReadableDecision(gameHandler, entry.first, entry.second, battleID);
-			continue;
-		}
 		if(record.Struct().size() == 1 && isBattleActionKind(record.Struct().begin()->first))
 		{
 			const auto & entry = *record.Struct().begin();
@@ -3156,7 +3138,7 @@ void synthesizeDisabledTimerTurnEnd(CGameHandler & gameHandler, PlayerColor play
 
 [[maybe_unused]] void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, const JsonNode & node)
 {
-	if(kind == "decision" || kind == "query" || kind == "info")
+	if(kind == "query" || kind == "info")
 		return;
 
 	if(kind == "battle")
@@ -3696,9 +3678,6 @@ void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & docu
 	for(size_t documentIndex = 1; documentIndex < documents.Vector().size(); ++documentIndex)
 	{
 		const JsonNode & document = documents.Vector()[documentIndex];
-		if(hasField(document, "continuation"))
-			throw std::runtime_error("VGT continuation state is no longer supported");
-
 		const JsonNode * records = nullptr;
 		const auto actionsIter = document.Struct().find("actions");
 		if(actionsIter != document.Struct().end())
@@ -3716,11 +3695,6 @@ void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & docu
 				throw std::runtime_error("VGT replay record is not a one-key mapping");
 
 			const auto & entry = *record.Struct().begin();
-			if(entry.first == "decision")
-			{
-				replayDecision(gameHandler, entry.second);
-				continue;
-			}
 			if(isDecisionKind(entry.first))
 			{
 				replayReadableDecision(gameHandler, entry.first, entry.second);
@@ -3738,6 +3712,8 @@ void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & docu
 			}
 			if(entry.first == "unmodelled")
 				throw std::runtime_error("VGT replay encountered unmodelled material pack: " + requireString(entry.second, "pack"));
+			if(!isEffectKind(entry.first))
+				throw std::runtime_error("Unsupported VGT record kind: " + entry.first);
 		}
 	}
 }
@@ -4123,6 +4099,10 @@ int replayVGTJson(const VGTReplayOptions & options)
 		throw std::runtime_error("VGT replay JSON must contain transcript documents");
 
 	const JsonNode & header = documents.Vector().front();
+	if(requireInteger(header, "vgt") != 4)
+		throw std::runtime_error("VGT replay only supports format version 4");
+	if(requireString(header, "format") != "VCMI readable event transcript")
+		throw std::runtime_error("VGT replay header has an unsupported format name");
 	setReplaySeed(header);
 	StartInfo startInfo = decodeStartInfo(header);
 
