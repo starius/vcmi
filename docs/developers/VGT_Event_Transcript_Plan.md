@@ -267,6 +267,11 @@ Add a text writer separate from the binary trace recorder. It should write a YAM
 
 Enable it with an environment variable or local debug option at first, for example `VCMI_VGT_TEXT=/path/game.vgt`.
 
+For deterministic replay diagnostics, `VCMI_VGT_TURN_STATE_DIR=/path/game.turn-states`
+writes a full server save immediately after every applied player turn end. Files use a
+stable chronological name such as `turn-000001-day-0001-red.vsgm1`. These saves are
+an external debug oracle and are not part of the portable VGT format.
+
 ### 2. Alias Registry
 
 Build a stable alias registry during game initialization:

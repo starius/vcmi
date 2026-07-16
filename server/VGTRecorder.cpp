@@ -2768,6 +2768,14 @@ void VGTRecorder::initializeFromEnvironment()
 		baselineGameStateSaveEnabled = true;
 	}
 
+	const char * turnStateDirectoryValue = std::getenv("VCMI_VGT_TURN_STATE_DIR");
+	if(turnStateDirectoryValue && !std::string(turnStateDirectoryValue).empty())
+	{
+		turnStateDirectory = turnStateDirectoryValue;
+		boost::filesystem::create_directories(turnStateDirectory);
+		turnStateArchiveEnabled = true;
+	}
+
 	const char * exitAfterTurnEndsValue = std::getenv("VCMI_VGT_EXIT_AFTER_TURN_ENDS");
 	if(exitAfterTurnEndsValue && !std::string(exitAfterTurnEndsValue).empty())
 	{
@@ -2943,6 +2951,37 @@ void VGTRecorder::writeBaselineSave(CGameHandler & gameHandler)
 	}
 }
 
+void VGTRecorder::writeTurnState(CGameHandler & gameHandler)
+{
+	if(!turnStateArchiveEnabled || !pendingTurnStatePlayer)
+		return;
+
+	try
+	{
+		++archivedTurnStates;
+		std::ostringstream fileName;
+		fileName << "turn-" << std::setfill('0') << std::setw(6) << archivedTurnStates
+			<< "-day-" << std::setw(4) << gameHandler.gameState().getCalendar().getCurrentDay()
+			<< "-" << pendingTurnStatePlayer->toString() << ".vsgm1";
+
+		const boost::filesystem::path targetPath = boost::filesystem::path(turnStateDirectory) / fileName.str();
+		boost::filesystem::path temporaryPath = targetPath;
+		temporaryPath += ".tmp";
+
+		gameHandler.saveToFile(temporaryPath.string());
+		if(boost::filesystem::exists(targetPath))
+			boost::filesystem::remove(targetPath);
+		boost::filesystem::rename(temporaryPath, targetPath);
+		logGlobal->info("Wrote VGT turn state '%s'", targetPath.string());
+	}
+	catch(const std::exception & e)
+	{
+		logGlobal->error("Unable to write VGT turn state: %s", e.what());
+	}
+
+	pendingTurnStatePlayer.reset();
+}
+
 void VGTRecorder::recordDecision(const CGameState & gameState, CPackForServer & pack)
 {
 	std::scoped_lock lock(outputMutex);
@@ -2994,6 +3033,8 @@ void VGTRecorder::recordEffect(const CGameState & gameState, CPackForClient & pa
 {
 	std::scoped_lock lock(outputMutex);
 	initializeFromEnvironment();
+	if(auto * end = dynamic_cast<PlayerEndsTurn *>(&pack); end && turnStateArchiveEnabled)
+		pendingTurnStatePlayer = end->player;
 	if(!enabled)
 		return;
 
@@ -3044,6 +3085,7 @@ void VGTRecorder::recordAppliedState(CGameHandler & gameHandler)
 	std::scoped_lock lock(outputMutex);
 	initializeFromEnvironment();
 	writeBaselineSave(gameHandler);
+	writeTurnState(gameHandler);
 	if(exitAfterAppliedState)
 	{
 		if(output)

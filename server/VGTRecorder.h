@@ -29,17 +29,21 @@ class VGTRecorder final
 	std::string outputPath;
 	std::string baselineSavePath;
 	std::string baselineGameStateSavePath;
+	std::string turnStateDirectory;
 	bool checkedEnvironment = false;
 	bool enabled = false;
 	bool baselineSaveEnabled = false;
 	bool baselineGameStateSaveEnabled = false;
+	bool turnStateArchiveEnabled = false;
 	bool headerWritten = false;
 	bool documentOpen = false;
 	bool exitAfterAppliedState = false;
 	std::optional<int> randomSeed;
 	std::optional<int> exitAfterTurnEnds;
 	int observedTurnEnds = 0;
+	int archivedTurnStates = 0;
 	std::optional<PlayerColor> currentTurnPlayer;
+	std::optional<PlayerColor> pendingTurnStatePlayer;
 	std::optional<std::string> activeBattleBlock;
 	std::map<PlayerColor, std::string> latestTimerStates;
 	std::map<PlayerColor, std::string> turnStartTimerStates;
@@ -52,6 +56,7 @@ class VGTRecorder final
 	void startWorldDocument(const CGameState & gameState, const std::string & phase);
 	void writeActionLine(const CGameState & gameState, const std::string & line);
 	void writeBaselineSave(CGameHandler & gameHandler);
+	void writeTurnState(CGameHandler & gameHandler);
 
 public:
 	static VGTRecorder & get();
