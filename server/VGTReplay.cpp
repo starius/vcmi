@@ -16,6 +16,7 @@
 #include "processors/HeroPoolProcessor.h"
 #include "processors/PlayerMessageProcessor.h"
 #include "processors/TurnOrderProcessor.h"
+#include "queries/QueriesProcessor.h"
 #include "TurnTimerHandler.h"
 
 #include "../lib/CPlayerState.h"
@@ -855,6 +856,50 @@ std::vector<int3> decodeMoveRoute(const JsonNode & decision)
 	return result;
 }
 
+int3 directionDelta(const std::string & direction)
+{
+	if(direction == "N") return int3(0, -1, 0);
+	if(direction == "NE") return int3(1, -1, 0);
+	if(direction == "E") return int3(1, 0, 0);
+	if(direction == "SE") return int3(1, 1, 0);
+	if(direction == "S") return int3(0, 1, 0);
+	if(direction == "SW") return int3(-1, 1, 0);
+	if(direction == "W") return int3(-1, 0, 0);
+	if(direction == "NW") return int3(-1, -1, 0);
+	throw std::runtime_error("Unsupported VGT movement direction: " + direction);
+}
+
+std::vector<int3> decodeMoveSteps(const int3 & start, const JsonNode & decision)
+{
+	const std::string encoded = requireString(decision, "steps");
+	std::stringstream stream(encoded);
+	std::string token;
+	int3 current = start;
+	std::vector<int3> result;
+	while(stream >> token)
+	{
+		int count = 1;
+		if(const auto marker = token.find('*'); marker != std::string::npos)
+		{
+			count = std::stoi(token.substr(marker + 1));
+			token.erase(marker);
+		}
+		if(count <= 0)
+			throw std::runtime_error("VGT movement run length must be positive");
+		const auto delta = directionDelta(token);
+		for(int index = 0; index < count; ++index)
+		{
+			current += delta;
+			result.push_back(current);
+		}
+	}
+	if(result.empty())
+		throw std::runtime_error("VGT movement steps must not be empty");
+	if(result.back() != decodePosition(requireField(decision, "to")))
+		throw std::runtime_error("VGT movement steps do not end at the declared destination");
+	return result;
+}
+
 FowTilesType decodeFowRuns(const JsonNode & node)
 {
 	if(node.isNull())
@@ -949,16 +994,13 @@ std::string sanitizedAliasName(std::string name)
 	return name;
 }
 
-bool matchesAliasName(const CGObjectInstance & object, const std::string & expected)
-{
-	return sanitizedAliasName(object.getObjectName()) == expected ||
-		sanitizedAliasName(object.instanceName) == expected;
-}
-
 std::string objectAliasType(MapObjectID id)
 {
 	auto type = MapObjectID::encode(id.getNum());
 	std::replace(type.begin(), type.end(), ':', '/');
+	const std::string corePrefix = "core/";
+	if(type.starts_with(corePrefix))
+		type.erase(0, corePrefix.size());
 	return type;
 }
 
@@ -972,148 +1014,90 @@ std::vector<std::string> splitAlias(const std::string & value)
 	return result;
 }
 
-std::string joinAliasParts(const std::vector<std::string> & parts, size_t first, size_t last)
-{
-	std::string result;
-	for(size_t index = first; index < last; ++index)
-	{
-		if(!result.empty())
-			result += "/";
-		result += parts[index];
-	}
-	return result;
-}
-
-bool isAliasOwnerSegment(const std::string & value)
-{
-	const auto color = PlayerColor::decode(value);
-	return color >= 0 && color < PlayerColor::PLAYER_LIMIT_I;
-}
-
 std::optional<int3> positionFromAlias(const std::string & alias)
 {
-	const auto marker = alias.rfind("/at-");
+	const auto marker = alias.rfind('@');
 	if(marker == std::string::npos)
 		return std::nullopt;
 
 	std::vector<int> values;
-	std::stringstream stream(alias.substr(marker + 4));
+	std::stringstream stream(alias.substr(marker + 1));
 	std::string token;
-	while(std::getline(stream, token, '-'))
+	while(std::getline(stream, token, '.'))
 		values.push_back(std::stoi(token));
-	if(values.size() != 3)
+	if(values.size() != 2 && values.size() != 3)
 		return std::nullopt;
-	return int3(values[0], values[1], values[2]);
+	return int3(values[0], values[1], values.size() == 3 ? values[2] : 0);
+}
+
+std::string objectLocation(const int3 & position)
+{
+	std::string result = "@" + std::to_string(position.x) + "." + std::to_string(position.y);
+	if(position.z != 0)
+		result += "." + std::to_string(position.z);
+	return result;
+}
+
+std::string canonicalObjectAlias(const CGObjectInstance & object)
+{
+	if(const auto * hero = dynamic_cast<const CGHeroInstance *>(&object))
+	{
+		const std::string owner = object.tempOwner.isValidPlayer() ? object.tempOwner.toString() : "neutral";
+		if(hero->getHeroTypeID().hasValue())
+		{
+			auto type = HeroTypeID::encode(hero->getHeroTypeID().getNum());
+			std::replace(type.begin(), type.end(), ':', '/');
+			const std::string corePrefix = "core/";
+			if(type.starts_with(corePrefix))
+				type.erase(0, corePrefix.size());
+			return owner + "/" + type;
+		}
+		std::string name = sanitizedAliasName(object.getObjectName());
+		if(name.empty())
+			name = sanitizedAliasName(object.instanceName);
+		if(name.empty())
+			name = "id-" + std::to_string(object.id.getNum());
+		return owner + "/" + name;
+	}
+
+	std::string type = dynamic_cast<const CGTownInstance *>(&object) ? "town" : objectAliasType(object.ID);
+	if(type.empty())
+		type = "unknown";
+	std::string result = type;
+	if(object.tempOwner.isValidPlayer())
+		result += "/" + object.tempOwner.toString();
+	std::string name = sanitizedAliasName(object.getObjectName());
+	if(name.empty())
+		name = sanitizedAliasName(object.instanceName);
+	if(name.empty())
+		name = "id-" + std::to_string(object.id.getNum());
+	const auto typeName = type.substr(type.rfind('/') == std::string::npos ? 0 : type.rfind('/') + 1);
+	if(name != sanitizedAliasName(typeName))
+		result += "/" + name;
+	return result + objectLocation(object.visitablePos());
 }
 
 ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::string & alias)
 {
-	if(alias == "none" || alias == "object/none")
+	if(alias == "none")
 		return ObjectInstanceID::NONE;
-	if(alias.starts_with("object/id-"))
-		return ObjectInstanceID(std::stoi(alias.substr(std::string("object/id-").size())));
+	if(alias.starts_with("id-"))
+		return ObjectInstanceID(std::stoi(alias.substr(std::string("id-").size())));
 
-	const auto parts = splitAlias(alias);
 	if(const auto position = positionFromAlias(alias))
 	{
-		if(parts.size() >= 4 && parts[0] == "town")
-		{
-			for(const auto * town : gameState.getMap().getObjects<CGTownInstance>())
-			{
-				if(town->visitablePos() == *position && colorAlias(town->tempOwner) == parts[1] && matchesAliasName(*town, parts[2]))
-					return town->id;
-			}
-			throw std::runtime_error("Unable to resolve named VGT town alias: " + alias);
-		}
-
-		std::string expectedType;
-		std::optional<std::string> expectedOwner;
-		std::optional<std::string> expectedName;
-		if(parts.size() >= 4 && parts[0] == "object")
-		{
-			const std::string positionPart = "at-" + std::to_string(position->x) + "-" + std::to_string(position->y) + "-" + std::to_string(position->z);
-			auto positionPartIter = std::find(parts.begin() + 1, parts.end(), positionPart);
-			if(positionPartIter != parts.end() && positionPartIter - parts.begin() >= 3)
-			{
-				const auto positionPartIndex = static_cast<size_t>(positionPartIter - parts.begin());
-				const auto nameIndex = positionPartIndex - 1;
-				size_t typeEnd = nameIndex;
-				expectedName = parts[nameIndex];
-				if(nameIndex > 2 && isAliasOwnerSegment(parts[nameIndex - 1]))
-				{
-					expectedOwner = parts[nameIndex - 1];
-					typeEnd = nameIndex - 1;
-				}
-				expectedType = joinAliasParts(parts, 1, typeEnd);
-				std::replace(expectedType.begin(), expectedType.end(), ':', '/');
-			}
-		}
-
-		std::optional<ObjectInstanceID> positionOnlyMatch;
 		for(const auto & object : gameState.getMap().getObjects())
 		{
-			if(object && object->visitablePos() == *position)
-			{
-				if(!positionOnlyMatch)
-					positionOnlyMatch = object->id;
-
-				if(!expectedType.empty() && objectAliasType(object->ID) != expectedType)
-					continue;
-				if(expectedOwner && colorAlias(object->tempOwner) != *expectedOwner)
-					continue;
-				if(expectedName)
-				{
-					if(!matchesAliasName(*object, *expectedName))
-						continue;
-				}
+			if(object && object->visitablePos() == *position && canonicalObjectAlias(*object) == alias)
 				return object->id;
-			}
 		}
-		if(expectedName)
-		{
-			for(const auto & object : gameState.getMap().getObjects())
-			{
-				if(!object)
-					continue;
-				if(!expectedType.empty() && objectAliasType(object->ID) != expectedType)
-					continue;
-				if(expectedOwner && colorAlias(object->tempOwner) != *expectedOwner)
-					continue;
-
-				if(matchesAliasName(*object, *expectedName))
-					return object->id;
-			}
-
-			throw std::runtime_error("Unable to resolve named VGT object alias: " + alias);
-		}
-		if(positionOnlyMatch)
-			return *positionOnlyMatch;
+		throw std::runtime_error("Unable to resolve positioned VGT object alias: " + alias);
 	}
 
-	if(parts.size() >= 3 && parts[0] == "hero")
+	for(const auto & object : gameState.getMap().getObjects())
 	{
-		const auto owner = parts[1];
-		const auto name = parts[2];
-		std::optional<HeroTypeID> expectedHeroType;
-		if(parts.size() >= 4)
-			expectedHeroType = decodeHeroType(joinAliasParts(parts, 2, parts.size()));
-		for(const auto & object : gameState.getMap().getObjects())
-		{
-			if(!object)
-				continue;
-			if(colorAlias(object->tempOwner) != owner)
-				continue;
-			if(expectedHeroType)
-			{
-				const auto * hero = dynamic_cast<const CGHeroInstance *>(object);
-				if(hero && hero->getHeroTypeID() == *expectedHeroType)
-					return object->id;
-				continue;
-			}
-
-			if(matchesAliasName(*object, name))
-				return object->id;
-		}
+		if(object && dynamic_cast<const CGHeroInstance *>(object) && canonicalObjectAlias(*object) == alias)
+			return object->id;
 	}
 
 	throw std::runtime_error("Unable to resolve VGT object alias: " + alias);
@@ -1718,33 +1702,14 @@ BattleResultAccepted::HeroBattleResults decodeBattleHeroResult(const CGameState 
 
 ResourceSet decodeResources(const JsonNode & values)
 {
-	if(!values.isVector())
-		throw std::runtime_error("VGT replay resources field is not a list");
-
+	if(!values.isStruct())
+		throw std::runtime_error("VGT replay resources field is not a mapping");
 	ResourceSet result;
-	for(const auto & entry : values.Vector())
+	for(const auto & [identifier, amount] : values.Struct())
 	{
-		if(!entry.isStruct())
-			throw std::runtime_error("VGT replay resource entry is not a mapping");
-
-		if(hasField(entry, "resource"))
-		{
-			const auto resource = decodeResource(requireString(entry, "resource"));
-			if(resource != GameResID::NONE)
-				result[resource] = static_cast<TResource>(requireInteger(entry, "amount"));
-			continue;
-		}
-
-		for(const auto & compactEntry : entry.Struct())
-		{
-			const auto resource = decodeResource(compactEntry.first);
-			if(resource != GameResID::NONE)
-			{
-				if(!compactEntry.second.isNumber())
-					throw std::runtime_error("VGT replay compact resource amount is not a number: " + compactEntry.first);
-				result[resource] = static_cast<TResource>(compactEntry.second.Integer());
-			}
-		}
+		const auto resource = decodeResource(identifier);
+		if(resource != GameResID::NONE)
+			result[resource] = static_cast<TResource>(amount.Integer());
 	}
 	return result;
 }
@@ -2438,12 +2403,24 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 		return;
 	}
 
-	if(kind == "moveHero")
+	if(kind == "move")
 	{
 		MoveHero pack;
 		pack.hid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "hero"));
 		pack.transit = optionalBool(decision, "transit", false);
 		pack.layer = EPathfindingLayer::AUTO;
+		if(hasField(decision, "steps"))
+		{
+			const auto * hero = gameHandler.gameState().getHero(pack.hid);
+			if(!hero)
+				throw std::runtime_error("VGT move action references a missing hero");
+			for(const auto & destination : decodeMoveSteps(hero->anchorPos(), decision))
+			{
+				pack.path = {destination};
+				replayPack(gameHandler, pack, player);
+			}
+			return;
+		}
 		if(hasField(decision, "route"))
 		{
 			for(const auto & destination : decodeMoveRoute(decision))
@@ -2456,7 +2433,7 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 		if(const auto * destination = findField(decision, "to"))
 			pack.path = {decodePosition(*destination)};
 		else
-			throw std::runtime_error("VGT moveHero action must contain either to or route");
+			throw std::runtime_error("VGT move action must contain to, route, or steps");
 		replayPack(gameHandler, pack, player);
 		return;
 	}
@@ -2471,7 +2448,7 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 		return;
 	}
 
-	if(kind == "buildStructure")
+	if(kind == "build")
 	{
 		BuildStructure pack;
 		pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "town"));
@@ -2508,15 +2485,37 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 		return;
 	}
 
-	if(kind == "recruitCreatures")
+	if(kind == "recruit")
 	{
-		RecruitCreatures pack;
-		pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "source"));
-		pack.dst = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "destination"));
-		pack.crid = decodeCreature(requireString(decision, "creature"));
-		pack.amount = static_cast<ui32>(requireInteger(decision, "amount"));
-		pack.level = static_cast<si32>(requireInteger(decision, "level"));
-		replayPack(gameHandler, pack, player);
+		const auto source = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "at"));
+		const auto destination = findField(decision, "to")
+			? resolveObjectAlias(gameHandler.gameState(), requireString(decision, "to"))
+			: source;
+		const auto & units = requireField(decision, "units");
+		auto recruit = [&](const std::string & creatureIdentifier, int64_t count)
+		{
+			RecruitCreatures pack;
+			pack.tid = source;
+			pack.dst = destination;
+			pack.crid = decodeCreature(creatureIdentifier);
+			pack.amount = static_cast<ui32>(count);
+			pack.level = -1;
+			replayPack(gameHandler, pack, player);
+		};
+		if(units.isStruct())
+		{
+			if(units.Struct().size() != 1)
+				throw std::runtime_error("Compact VGT recruitment must contain exactly one creature");
+			const auto & unit = *units.Struct().begin();
+			recruit(unit.first, unit.second.Integer());
+		}
+		else if(units.isVector())
+		{
+			for(const auto & unit : units.Vector())
+				recruit(requireString(unit, "creature"), requireInteger(unit, "count"));
+		}
+		else
+			throw std::runtime_error("VGT recruitment units must be a mapping or ordered list");
 		return;
 	}
 
@@ -2795,6 +2794,25 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 		return;
 	}
 
+	if(kind == "encounter")
+	{
+		const auto * choice = findField(decision, "choice");
+		if(!choice)
+			return;
+		const auto topQuery = gameHandler.queries->topQuery(player);
+		if(!topQuery)
+			throw std::runtime_error("VGT encounter has no active decision query");
+		QueryReply pack;
+		pack.qid = topQuery->queryID;
+		const auto & value = requireField(*choice, "value");
+		if(value.isNull())
+			pack.reply = std::nullopt;
+		else
+			pack.reply = static_cast<int32_t>(value.Integer());
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
 	throw std::runtime_error("Unsupported VGT decision kind: " + kind);
 }
 
@@ -2917,8 +2935,8 @@ bool isDecisionKind(const std::string & kind)
 	static const std::set<std::string> decisionKinds = {
 		"arrangeStacks",
 		"assembleArtifacts",
+		"build",
 		"buildBoat",
-		"buildStructure",
 		"bulkExchangeArtifacts",
 		"bulkMergeStacks",
 		"bulkMoveArmy",
@@ -2931,18 +2949,19 @@ bool isDecisionKind(const std::string & kind)
 		"disbandCreature",
 		"dismissHero",
 		"endTurn",
+		"encounter",
 		"eraseArtifact",
 		"exchangeArtifacts",
 		"hireHero",
 		"manageBackpackArtifacts",
 		"manageEquippedArtifacts",
-		"moveHero",
+		"move",
 		"pauseTimer",
 		"playerMessage",
 		"queryAnswer",
 		"razeStructure",
 		"ready",
-		"recruitCreatures",
+		"recruit",
 		"setFormation",
 		"setTactics",
 		"setTownName",
@@ -2984,55 +3003,80 @@ bool isEffectKind(const std::string & kind)
 		"army",
 		"artifact",
 		"artifacts",
+		"available",
 		"availableArtifacts",
-		"availableCreatures",
 		"availableHero",
 		"bonus",
+		"capture",
 		"experience",
+		"growth",
 		"heroOwner",
 		"heroRecruited",
-		"info",
+		"income",
 		"levelUp",
 		"mana",
-		"move",
-		"movementPoints",
 		"newObject",
-		"newTurn",
 		"objectPosition",
-		"objectProperty",
 		"playerEnd",
-		"primarySkill",
 		"query",
 		"quest",
 		"remove",
+		"refresh",
 		"resources",
-		"rewardable",
-		"secondarySkill",
+		"setExperience",
+		"setMana",
+		"setMovement",
+		"setResources",
+		"setSkills",
+		"skills",
 		"spells",
 		"stackExperience",
+		"story",
 		"town",
 		"townHeroes",
 		"turnEnd",
 		"turnStart",
-		"visibility",
 		"visit",
+		"week",
 	};
 	return effectKinds.contains(kind);
 }
 
-void replayReadableDecision(CGameHandler & gameHandler, const std::string & kind, const JsonNode & node, const std::optional<std::string> & battleID = std::nullopt)
+void replayReadableDecision(
+	CGameHandler & gameHandler,
+	const std::string & kind,
+	const JsonNode & node,
+	const std::optional<std::string> & battleID = std::nullopt,
+	const std::optional<std::string> & defaultActor = std::nullopt)
 {
 	if(!node.isStruct())
 		throw std::runtime_error("VGT " + kind + " action is not a mapping");
 
 	JsonNode decision = node;
 	decision["kind"].String() = kind;
+	if(defaultActor && !hasField(decision, "actor"))
+		decision["actor"].String() = *defaultActor;
 	if(battleID && !hasField(decision, "battle"))
 		decision["battle"].String() = *battleID;
 	replayDecision(gameHandler, decision);
 }
 
-void replayReadableBattleAction(CGameHandler & gameHandler, const std::string & kind, const JsonNode & node, const std::string & battleID)
+int rosterStack(const std::map<std::string, int> & roster, const std::string & unit)
+{
+	if(unit == "hero")
+		return -1;
+	const auto position = roster.find(unit);
+	if(position == roster.end())
+		throw std::runtime_error("Unknown VGT battle unit: " + unit);
+	return position->second;
+}
+
+void replayReadableBattleAction(
+	CGameHandler & gameHandler,
+	const std::string & kind,
+	const JsonNode & node,
+	const std::string & battleID,
+	const std::map<std::string, int> & roster)
 {
 	if(!node.isStruct())
 		throw std::runtime_error("VGT " + kind + " battle action is not a mapping");
@@ -3040,6 +3084,21 @@ void replayReadableBattleAction(CGameHandler & gameHandler, const std::string & 
 	JsonNode action = node;
 	const std::string actor = requireString(action, "actor");
 	action.Struct().erase("actor");
+	if(const auto * unit = findField(action, "unit"))
+	{
+		action["stack"].Integer() = rosterStack(roster, unit->String());
+		action.Struct().erase("unit");
+	}
+	if(auto targets = action.Struct().find("target"); targets != action.Struct().end() && targets->second.isVector())
+	{
+		for(auto & target : targets->second.Vector())
+		{
+			if(const auto * unit = findField(target, "unit"))
+			{
+				target["unit"].Integer() = rosterStack(roster, unit->String());
+			}
+		}
+	}
 	action["action"].String() = kind;
 
 	JsonNode decision;
@@ -3067,6 +3126,14 @@ bool shouldSynthesizeDisabledTimerState(CGameHandler & gameHandler);
 void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node)
 {
 	const std::string battleID = battleAliasText(requireField(node, "id"));
+	std::map<std::string, int> roster;
+	if(const auto * units = findField(node, "units"))
+	{
+		if(!units->isStruct())
+			throw std::runtime_error("VGT battle units field is not a mapping");
+		for(const auto & [name, value] : units->Struct())
+			roster[name] = static_cast<int>(requireInteger(value, "stack"));
+	}
 	const JsonNode & events = requireField(node, "events");
 	if(!events.isVector())
 		throw std::runtime_error("VGT battle block events field is not a list");
@@ -3075,13 +3142,38 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node)
 	{
 		if(!record.isStruct())
 			throw std::runtime_error("VGT battle block event is not a mapping");
+		if(record.Struct().size() == 1 && record.Struct().begin()->first == "wait")
+		{
+			std::vector<std::string> units;
+			const auto & waits = record.Struct().begin()->second;
+			if(waits.isString())
+				units.push_back(waits.String());
+			else if(waits.isVector())
+			{
+				for(const auto & unit : waits.Vector())
+					units.push_back(unit.String());
+			}
+			else
+				throw std::runtime_error("VGT battle wait batch must be a unit or list of units");
+			for(const auto & unit : units)
+			{
+				JsonNode action;
+				action["actor"].String() = "world";
+				action["side"].String() = unit.starts_with("defender/") ? "defender" : "attacker";
+				action["unit"].String() = unit;
+				replayReadableBattleAction(gameHandler, "wait", action, battleID, roster);
+			}
+			continue;
+		}
 		if(record.Struct().size() == 1 && isBattleActionKind(record.Struct().begin()->first))
 		{
 			const auto & entry = *record.Struct().begin();
-			replayReadableBattleAction(gameHandler, entry.first, entry.second, battleID);
+			replayReadableBattleAction(gameHandler, entry.first, entry.second, battleID, roster);
 			continue;
 		}
-		if(hasField(record, "event"))
+		if(hasField(record, "event") || hasField(record, "attack"))
+			continue;
+		if(record.Struct().size() == 1 && isEffectKind(record.Struct().begin()->first))
 			continue;
 		throw std::runtime_error("Unsupported VGT battle block event");
 	}
@@ -3678,6 +3770,9 @@ void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & docu
 	for(size_t documentIndex = 1; documentIndex < documents.Vector().size(); ++documentIndex)
 	{
 		const JsonNode & document = documents.Vector()[documentIndex];
+		std::optional<std::string> defaultActor;
+		if(const auto * turn = findField(document, "turn"))
+			defaultActor = requireString(*turn, "player");
 		const JsonNode * records = nullptr;
 		const auto actionsIter = document.Struct().find("actions");
 		if(actionsIter != document.Struct().end())
@@ -3691,13 +3786,37 @@ void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & docu
 		for(size_t recordIndex = 0; recordIndex < records->Vector().size(); ++recordIndex)
 		{
 			const auto & record = records->Vector()[recordIndex];
-			if(!record.isStruct() || record.Struct().size() != 1)
+			if(!record.isStruct())
+				throw std::runtime_error("VGT replay record is not a mapping");
+			if(hasField(record, "at") && hasField(record, "build"))
+			{
+				JsonNode action;
+				action["town"].String() = requireString(record, "at");
+				const auto & build = requireField(record, "build");
+				if(!build.isString())
+					throw std::runtime_error("Contextual VGT build must name one building");
+				action["building"].String() = build.String();
+				if(const auto * cost = findField(record, "cost"))
+					action["cost"] = *cost;
+				replayReadableDecision(gameHandler, "build", action, std::nullopt, defaultActor);
+				continue;
+			}
+			if(hasField(record, "with") && hasField(record, "move"))
+			{
+				JsonNode action = requireField(record, "move");
+				if(!action.isStruct())
+					throw std::runtime_error("Contextual VGT move must be a mapping");
+				action["hero"].String() = requireString(record, "with");
+				replayReadableDecision(gameHandler, "move", action, std::nullopt, defaultActor);
+				continue;
+			}
+			if(record.Struct().size() != 1)
 				throw std::runtime_error("VGT replay record is not a one-key mapping");
 
 			const auto & entry = *record.Struct().begin();
 			if(isDecisionKind(entry.first))
 			{
-				replayReadableDecision(gameHandler, entry.first, entry.second);
+				replayReadableDecision(gameHandler, entry.first, entry.second, std::nullopt, defaultActor);
 				continue;
 			}
 			if(entry.first == "battle")

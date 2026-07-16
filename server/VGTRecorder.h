@@ -11,6 +11,8 @@
 #include "../lib/constants/EntityIdentifiers.h"
 
 #include <fstream>
+#include <array>
+#include <cstdint>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -29,10 +31,53 @@ class VGTRecorder final
 	{
 		std::string actor;
 		std::string hero;
-		std::vector<std::string> route;
-		std::vector<std::string> route2D;
+		std::array<int, 3> start = {};
+		std::vector<std::array<int, 3>> route;
 		int z = 0;
 		bool transit = false;
+	};
+
+	struct PendingRecruit
+	{
+		struct Unit
+		{
+			std::string creature;
+			uint32_t count = 0;
+			int slot = -1;
+		};
+
+		std::string actor;
+		std::string source;
+		std::string destination;
+		std::vector<Unit> units;
+		std::map<std::string, int64_t> paid;
+		std::map<std::string, int64_t> remaining;
+	};
+
+	struct PendingEncounter
+	{
+		std::string actor;
+		std::string hero;
+		std::string object;
+		int query = -1;
+		bool selection = false;
+		bool cancel = false;
+		bool answered = false;
+		std::optional<int32_t> answer;
+		std::optional<std::string> text;
+		std::vector<std::string> outcomes;
+	};
+
+	struct PendingBattle
+	{
+		std::string id;
+		std::string attacker;
+		std::string defender;
+		std::vector<std::string> units;
+		std::vector<std::string> events;
+		std::vector<std::string> outcome;
+		std::vector<std::string> aftermath;
+		bool ended = false;
 	};
 
 	std::ofstream output;
@@ -55,8 +100,12 @@ class VGTRecorder final
 	int archivedTurnStates = 0;
 	std::optional<PlayerColor> currentTurnPlayer;
 	std::optional<PlayerColor> pendingTurnStatePlayer;
-	std::optional<std::string> activeBattleBlock;
+	std::optional<PendingBattle> pendingBattle;
+	std::map<std::string, std::string> lastBattleDecisions;
 	std::optional<PendingMove> pendingMove;
+	std::optional<PendingRecruit> pendingRecruit;
+	std::optional<PendingEncounter> pendingEncounter;
+	bool suppressDerivedEffects = false;
 	std::map<PlayerColor, std::string> latestTimerStates;
 	std::map<PlayerColor, std::string> turnStartTimerStates;
 
@@ -68,6 +117,9 @@ class VGTRecorder final
 	void startWorldDocument(const CGameState & gameState, const std::string & phase);
 	void writeActionLine(const CGameState & gameState, const std::string & line);
 	void flushPendingMove(const CGameState & gameState);
+	void flushPendingRecruit(const CGameState & gameState);
+	void flushPendingEncounter(const CGameState & gameState);
+	void flushPendingBattle();
 	void writeBaselineSave(CGameHandler & gameHandler);
 	void writeTurnState(CGameHandler & gameHandler);
 

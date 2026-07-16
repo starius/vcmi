@@ -125,6 +125,8 @@ public:
 
 	/// Returns true if current string is empty
 	bool empty() const;
+	/// Returns true when the message contains literal or non-core authored text worth preserving in a transcript.
+	bool hasCustomText() const;
 
 	bool operator == (const MetaString & other) const;
 

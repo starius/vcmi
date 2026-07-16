@@ -2,7 +2,10 @@
 
 This document restarts the readable VCMI Game Transcript work from a text-first direction. It keeps the useful parts of the previous VGT readable format, but rejects binary packet dumps, save snapshots, state checkpoint hashes, record counters, and raw compatibility blobs. The map-file hash is still required because the external map file is part of the transcript input.
 
-The target is a compact YAML transcript that can be read by a human, parsed by normal YAML tooling, and used by a future recorded-game player to reconstruct a game timeline, inspect decisions, scroll through game history, and branch into playable state for any side after replaying the text events.
+The result is a compact YAML transcript that can be read by a human, parsed by
+normal YAML tooling, and replayed through the normal server request path to
+reconstruct game state. It is also suitable for timeline inspection and later UI
+work such as scrolling through history or branching into live play.
 
 ## Current implementation
 
@@ -11,8 +14,9 @@ documents made from semantic actions and material outcomes. It has no continuati
 documents, embedded saves, checkpoints, packet payloads, or state hashes. VGT 4 is
 the only supported transcript version while the format is being stabilized.
 
-The reviewed next-stage readability and compression changes are specified separately
-in [`VGT_Readability_Compression_Refinement_Plan.md`](VGT_Readability_Compression_Refinement_Plan.md).
+The reviewed readability and compression changes are implemented. Their rationale,
+exact expansion rules, and validation record are kept in
+[`VGT_Readability_Compression_Refinement_Plan.md`](VGT_Readability_Compression_Refinement_Plan.md).
 
 Enable readable capture and the optional exact-replay debug oracle with:
 
@@ -54,9 +58,11 @@ and is useful only for diagnosing a mismatch.
 - Records use identifiers instead of enum numbers.
 - Records use full readable field names. Avoid VGT-specific abbreviations.
 - Only material events are recorded. Do not record acknowledgements, duplicate network delivery, timer ticks, internal implementation noise, or random draws that never realize into game state or a decision.
-- Consecutive successful one-tile movement requests are written as one `moveHero`
-  route. Replay expands the route back into the original one-tile server requests.
-  A blocking visit or any other non-success result ends the route and remains explicit.
+- Consecutive successful one-tile movement requests are written as one `move`
+  transaction. A short route uses `[x, y]` points and one `z`; a long ordinary route
+  uses run-length compass `steps` plus its exact three-dimensional destination.
+  Replay expands either form into the original one-tile server requests. A blocking
+  visit, teleport, embark/disembark, or other semantic transition ends the route.
 - Turn documents and `endTurn` actions already express ordinary turn boundaries, so
   duplicate turn-start/end effects are omitted unless they carry a query or timer
   state. Visit-end sentinels, duplicate town-visit notifications, visitor bookkeeping,
@@ -105,45 +111,56 @@ settings:
   extraOptions: { cheatsAllowed: false, unlimitedReplay: false }
   gameSettingsOverrides: {}
 players:
-  red: { controller: ai, faction: core/conflux, hero: core/grindan, heroPortrait: core/grindan, heroNameTextId: "", startingBonus: random, handicap: { resources: [], incomePercent: 100, growthPercent: 100 }, name: "Computer", connections: [], computerOnly: false }
+  red: { controller: ai, faction: conflux, hero: grindan, heroPortrait: grindan, heroNameTextId: "", startingBonus: random, handicap: { resources: {}, incomePercent: 100, growthPercent: 100 }, name: "Computer", connections: [], computerOnly: false }
 initialPlayers:
-  red: { controller: ai, faction: random, hero: random, heroPortrait: random, heroNameTextId: "", startingBonus: random, handicap: { resources: [], incomePercent: 100, growthPercent: 100 }, name: "Computer", connections: [], computerOnly: false }
+  red: { controller: ai, faction: random, hero: random, heroPortrait: random, heroNameTextId: "", startingBonus: random, handicap: { resources: {}, incomePercent: 100, growthPercent: 100 }, name: "Computer", connections: [], computerOnly: false }
 initialState: { heroes: [] }
 ---
 turn: { date: 1/1/1, player: red }
 actions:
-  - buildStructure: { actor: red, town: town/red/castle/at-8-10-0, building: core/townHall }
-  - resources: { player: red, mode: relative, values: [{ gold: -2500 }] }
-  - moveHero: { actor: red, hero: hero/red/core/orrin, route: [[11, 10], [12, 10]], z: 0 }
-  - visit: { hero: hero/red/core/orrin, object: object/core/resource/gold/at-12-10-0 }
-  - endTurn: { actor: red }
+  - build: { town: town/red/castle@8.10, building: townHall, cost: { gold: 2500 } }
+  - move: { hero: red/orrin, route: [[11, 10], [12, 10]], z: 0 }
+  - encounter:
+      hero: red/orrin
+      with: resource/gold@12.10
+      outcome:
+        - resources: { red: { gold: +500 } }
+        - remove: { object: resource/gold@12.10, initiator: red }
+  - endTurn: {}
 ---
-world: { date: 1/1/1, phase: newTurn }
+world: { date: 1/1/2, phase: newDay }
 events:
-  - newTurn: { day: 2, week: normal, creature: none }
+  - income: { red: { gold: 500 } }
+  - refresh: { red/orrin: { movement: 1560, mana: 12 } }
+  - week: { type: firstWeek }
 ```
 
 `players` is the resolved setup after lobby and map random choices have been realized. It is the primary human-readable roster. `initialPlayers` is the original setup passed into game initialization. It preserves choices such as `random` so a replay can rebuild VCMI's `initialOpts` and traditional save files exactly.
 
 ## Identifiers
 
-Use slash aliases for game objects because these are hierarchy-like references, not domain names:
+Use compact slash aliases for game objects because these are hierarchy-like
+references, not domain names. The core content namespace is implicit, heroes omit
+the redundant `hero/` kind, and surface object locations omit `z = 0`:
 
-- `hero/red/orrin`
-- `town/blue/capitol`
-- `object/mine/ore/at-18-42-0`
-- `object/monster/imp/at-44-19-0`
-- `battle/dragonUtopia/at-70-33-0`
-- `stack/attacker/0`
-- `query/red/levelUp/orrin/day12`
+- `red/orrin`
+- `town/blue/capitol-castle@8.10`
+- `mine/ore-pit@18.42`
+- `monster/imps@44.19`
+- `monster/imps@44.19.1` (underground)
+- `attacker/marksmen` (battle-local)
 
-Use mod-qualified identifiers for game content:
+Queries remain numeric because their server-assigned number is the exact replay
+operand; the surrounding record supplies their semantic kind.
 
-- `"core:gold"`
-- `"core:orrin"`
-- `"core:pikeman"`
-- `"core:earthMagic"`
-- `"core:townHall"`
+Core content names are bare. Non-core content keeps its mod namespace:
+
+- `gold`
+- `orrin`
+- `pikeman`
+- `earthMagic`
+- `townHall`
+- `myMod/customCreature`
 
 Use numeric values only for naturally numeric facts: coordinates, battle hexes, stack counts, resource amounts, damage, experience, movement points, and slot numbers where no stable name exists.
 
@@ -159,7 +176,9 @@ Use block style for nested structures:
 
 ```yaml
 - battle:
-    id: battle/dragonUtopia/at-70-33-0
+    id: 12
+    attacker: red/orrin
+    defender: dragonUtopia/dragon-utopia@70.33
     ...
 ```
 
@@ -173,29 +192,37 @@ Action records answer "what did an actor choose?" The action verb is the record 
 so readers do not have to scan through a generic `decision` wrapper.
 
 ```yaml
-- moveHero: { actor: red, hero: hero/red/core/orrin, to: [12, 10, 0] }
+- move: { hero: red/orrin, to: [12, 10, 0] }
 - queryAnswer: { actor: blue, query: 7, answer: 1 }
-- buildStructure: { actor: red, town: town/red/castle/at-8-10-0, building: core/townHall }
+- build: { town: town/red/castle@8.10, building: townHall, cost: { gold: 2500 } }
 ```
 
-Consecutive one-tile moves by the same hero are written as a route. When every
-point is on one map level, write `z` once and use two-value route points:
+The enclosing turn supplies the actor, so `actor` is omitted for the active player.
+Consecutive one-tile moves by the same hero are written as a route. Every route
+point has exactly two coordinates; the one map level is written once:
 
 ```yaml
-- moveHero: { actor: teal, hero: hero/teal/core/yog, route: [[32, 4], [33, 5], [34, 6]], z: 1 }
+- move: { hero: teal/yog, route: [[32, 4], [33, 5], [34, 6]], z: 1 }
+```
+
+Long ordinary routes use run-length compass directions, with their exact destination
+as a check:
+
+```yaml
+- move: { hero: teal/yog, to: [41, 8, 1], steps: "SE E SE E*3 NE N NE" }
 ```
 
 Ordinary movement cannot change map levels. Gates, monoliths, whirlpools, and
-teleport spells end the current route and produce their own action/effect before a
-new route begins on the destination level. A single destination remains
-`to: [x, y, z]`.
+teleport spells end the current route; their encounter/query records explain the
+transition before a new route begins on the destination level. A single destination
+remains `to: [x, y, z]`. There is no `[x, y, z]` route-point variant.
 
 Effect records answer "what became true in game state?"
 
 ```yaml
-- move: { hero: hero/red/core/orrin, from: [11, 10, 0], to: [12, 10, 0], result: success, movement: 1360 }
-- resources: { player: red, mode: relative, values: [{ gold: 500 }] }
-- army: { owner: hero/red/core/orrin, slot: 0, mode: absolute, count: 37 }
+- resources: { red: { gold: +500 } }
+- skills: { red/orrin: { attack: +1 } }
+- setMovement: { red/orrin: 1360 }
 ```
 
 A decision may be followed by zero, one, or many effects. Some world effects have no
@@ -210,7 +237,7 @@ Timer-forced choices are decisions whose actor is the clock, not a player or AI:
 - battle:
     id: 2
     events:
-      - battleAction: { actor: timer/red, battle: 2, action: { side: attacker, stack: stack/1, creature: core/pikeman, action: defend } }
+      - defend: { actor: timer/red, side: attacker, unit: attacker/pikemen }
 ```
 
 Timer updates used only for UI display are not transcript records. At turn end, the recorder may include a compact timer snapshot for analysis:
@@ -239,21 +266,16 @@ The first complete text format must cover these material effects:
 - all battle setup, decisions, actions, damage, deaths, spell effects, morale/luck outcomes, obstacle changes, round changes, active stack changes, and battle result
 - world events, timed events, creature growth, spawned monsters, generated dwellings/resources, and any hidden effect that changes future state
 
-The first implementation may support a subset, but the writer must know when the transcript is incomplete. Strict mode should stop on an unmodelled material state change instead of emitting opaque data.
+The writer must know when the transcript is incomplete. Strict validation rejects an
+`unmodelled` material record instead of accepting opaque data; the review corpus is
+accepted only when it contains none.
 
 ## Randomness
 
-Record realized random facts near the material event they affect. Do not record RNG state or unused draws.
-
-Examples:
-
-```yaml
-- random: { consumer: weekCreature, result: "core:imp" }
-- random: { consumer: townSpellResearch, town: town/red/castle, level: 3, offered: ["core:fireball", "core:forceField"] }
-- hit: { attacker: stack/attacker/0, defender: stack/defender/2, damage: 173, killed: 8, roll: { kind: damage, range: [12, 24], value: 19 }, luck: good }
-```
-
-If the random result is fully described by the effect, a separate `random` record is optional. For analysis, include it when it explains luck versus decision quality.
+Record realized random facts in the semantic event they affect. Do not record RNG
+state, unused draws, or a generic `random` record. For example, a week record names
+the selected creature, a spell-research decision names the offered/selected spell,
+and an attack exchange carries `luck: good` when luck materially changed it.
 
 ## Battles
 
@@ -261,37 +283,42 @@ Battles are nested under the action or world event that caused them. Battle deci
 
 ```yaml
 - battle:
-    id: battle/monster/at-12-10-0
-    position: [12, 10, 0]
-    field: "core:grass"
-    attacker: hero/red/orrin
-    defender: object/monster/pikeman/at-12-10-0
-    setup:
-      - side: { name: attacker, player: red, hero: hero/red/orrin }
-      - stack: { id: stack/attacker/0, side: attacker, creature: "core:marksman", count: 42, at: 42 }
-      - stack: { id: stack/defender/0, side: defender, creature: "core:pikeman", count: 38, at: 87 }
-    rounds:
-      - round: 1
-        actions:
-          - shoot: { actor: battleAI/red/BattleAI, stack: stack/attacker/0, target: stack/defender/0 }
-          - shot: { stack: stack/attacker/0, target: stack/defender/0 }
-          - hit: { attacker: stack/attacker/0, defender: stack/defender/0, damage: 94, killed: 7, remaining: 31, luck: none }
-          - active: { stack: stack/defender/0 }
-          - wait: { actor: neutralAI, stack: stack/defender/0 }
-          - wait: { stack: stack/defender/0 }
-    result:
+    id: 3
+    attacker: red/orrin
+    defender: monster/pikemen@12.10
+    units:
+      attacker/marksmen: { stack: 0, owner: red, count: 42 }
+      defender/pikemen: { stack: 4, owner: neutral, count: 38 }
+    events:
+      - { event: start }
+      - { event: nextRound }
+      - wait: [defender/pikemen]
+      - shoot: { actor: red, side: attacker, unit: attacker/marksmen, target: [{ unit: defender/pikemen }] }
+      - attack:
+          by: attacker/marksmen
+          target: defender/pikemen
+          damage: 94
+          killed: 7
+          left: { units: 31, hp: 5, at: 87 }
+    outcome:
+      result: normal
+      winnerSide: attacker
       winner: red
-      outcome: win
-      experience: [{ hero: hero/red/orrin, amount: 390 }]
-      losses:
-        attacker: []
-        defender: [{ creature: "core:pikeman", count: 38 }]
+      loser: neutral
+      experience: { red/orrin: 390 }
+      casualties: { defender: { pikeman: 38 } }
+      removeDefender: true
 ```
 
 Inside battle blocks, use `from`, `to`, and `at` for hexes. Do not write `fromHex` or `toHex`.
 Battle decisions follow the same verb-keyed style as adventure actions: `wait`,
 `defend`, `shoot`, `walkAndAttack`, `heroSpell`, and the other battle action names
-are direct record keys. The enclosing battle supplies the battle identifier.
+are direct record keys. The enclosing battle supplies the battle identifier. Raw
+stack IDs appear only once in `units`; duplicate creature stacks receive stable
+final ordinal segments such as `defender/pikemen/1` and `defender/pikemen/2`.
+Exactly redundant accepted-action echoes are omitted, immediate retaliation is
+nested in the initiating `attack`, and all resolution/cleanup facts are consolidated
+under one `outcome`.
 
 ## Fog And Hidden State
 
@@ -300,13 +327,17 @@ Fog changes are relevant because a recorded-game player must reproduce what each
 Preferred forms:
 
 ```yaml
-- visibility: { player: red, reveal: { rectangles: [[[10, 10, 0], [16, 16, 0]]], reason: hero/red/orrin } }
+- visibility: { player: red, reveal: { rectangles: [[[10, 10, 0], [16, 16, 0]]], reason: red/orrin } }
 - visibility: { player: blue, reveal: { runs: [{ y: 44, z: 0, x: [12, 18] }, { y: 45, z: 0, x: [13, 17] }] } }
 ```
 
 Do not emit one event per tile. A single visibility action may contain many rectangles or runs.
 
-## Implementation Plan
+## Implementation Architecture
+
+The following sections are the implemented architecture and retained design
+checklist. The writer, aliases, decision/effect capture, strict checker, semantic
+replayer, and byte-exact turn oracle all exist in the referenced source files.
 
 ### 1. Writer Skeleton
 
@@ -375,7 +406,7 @@ Initial high-value codecs:
 World events are not a special replay mode. They are the same applied effects grouped under:
 
 ```yaml
-world: { day: 8, phase: weekStart }
+world: { date: 1/2/1, phase: newDay }
 ```
 
 This captures invisible spawns and growth because they still produce material state effects.
@@ -384,14 +415,17 @@ This captures invisible spawns and growth because they still produce material st
 
 The writer must not silently omit material changes.
 
-- Strict mode: stop recording and report the first unmodelled material pack.
-- Exploratory mode: write `unmodelled: { pack: PackName, material: true }` and mark the document `complete: false` in the next header/update document.
+- The recorder writes `unmodelled: { stream: effect, pack: PackName, material: true }`
+  when it encounters an unknown material pack, making incompleteness visible.
+- `scripts/vgt_replay.py check --strict` and `replay --strict` reject the first such
+  record. Release/acceptance recordings always use strict mode.
 
-No raw fallback is allowed in either mode.
+No raw fallback is allowed.
 
 ### 7. Replay/Player Tool Shape
 
-The future player tool should:
+The replayer does the following; timeline rendering and interactive branching are
+separate UI work:
 
 1. Load map/content/settings from the header.
 2. Start the normal server flow.
@@ -399,32 +433,24 @@ The future player tool should:
 4. Compare recorded effects with recomputed effects where an audit checker supports that record type.
 5. Build its own external cache for fast seeking. The cache is not part of VGT.
 6. Render the timeline and battle blocks.
-7. Allow branching into live play from a reconstructed state.
+7. Leave the reconstructed save available as the basis for later interactive
+   branching.
 
 Because VGT contains no snapshots, jumping to the middle requires replay from the start or using a cache built by the tool. That is acceptable for the text format.
 
 Decision replay through normal mechanics is the authoritative reconstruction path. Effects state what actually became true, including realized random outcomes such as a wandering monster joining instead of starting a battle, but they are not used to advance server state during normal replay.
 
-## Open Questions
+## Stabilization Boundary
 
-- How much initial alias data should be written versus derived from the map at replay time?
-- Which `InfoWindow`/dialog records are material and which are only UI narration?
-- Should rejected AI decisions be enabled by default or only in debug transcripts?
-- How should modded packs register their text codecs?
-- How aggressive should fog compaction be before it becomes hard to read?
-- Which world/random events need explicit `random` records when the material effect already contains the result?
-
-## First Milestone
-
-The first useful milestone is not full game coverage. It is a small complete game where every material event has a text codec:
-
-- two AI players
-- normal adventure movement
-- resource pickup
-- town building
-- one neutral battle
-- one level-up choice
-- one week transition with a realized random result
-- victory/loss if it happens
-
-The acceptance test is a generated VGT file that contains no raw/binary fields and can be replayed by a prototype interpreter into the same visible game timeline.
+- VGT 4 is the only accepted text grammar; the checker rejects legacy record names,
+  identifier prefixes, and three-coordinate route points.
+- Standard generated `InfoWindow` prose is omitted. Literal/non-core authored text
+  is retained only as encounter or story narrative; semantic outcomes stay even
+  when their UI message is dropped.
+- Unknown material decisions/effects are fatal in strict validation. There is no raw
+  compatibility fallback.
+- The portable file remains events-only. Full saves belong in the sibling
+  `game.turn-states/` debug directory and are used only as a byte-exact oracle.
+- The schema and TypeScript model are the source for parser/code-generation work;
+  future format additions must extend their closed record unions at the same time as
+  the writer and replayer.

@@ -122,6 +122,22 @@ bool MetaString::empty() const
 	return message.empty() || toString().empty();
 }
 
+bool MetaString::hasCustomText() const
+{
+	for(const auto & textID : stringsTextID)
+	{
+		const bool engineText = textID.starts_with("core.") ||
+			textID.starts_with("vcmi.") ||
+			textID.find(".core.") != std::string::npos;
+		if(!engineText)
+			return true;
+	}
+	return std::any_of(message.begin(), message.end(), [](EMessage entry)
+	{
+		return entry == EMessage::APPEND_RAW_STRING;
+	});
+}
+
 std::string MetaString::getLocalString(const std::pair<EMetaText, ui32> & txt) const
 {
 	EMetaText type = txt.first;

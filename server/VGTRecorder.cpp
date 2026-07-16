@@ -19,7 +19,9 @@
 #include "../lib/StartInfo.h"
 #include "../lib/VCMIDirs.h"
 #include "../lib/CStack.h"
+#include "../lib/CBonusTypeHandler.h"
 #include "../lib/battle/BattleAction.h"
+#include "../lib/battle/Unit.h"
 #include "../lib/bonuses/Bonus.h"
 #include "../lib/callback/Calendar.h"
 #include "../lib/callback/GameRandomizer.h"
@@ -32,6 +34,7 @@
 #include "../lib/mapping/CMap.h"
 #include "../lib/mapObjects/CGObjectInstance.h"
 #include "../lib/mapObjects/CGCreature.h"
+#include "../lib/mapObjects/CGDwelling.h"
 #include "../lib/mapObjects/CGHeroInstance.h"
 #include "../lib/mapObjects/CGTownInstance.h"
 #include "../lib/mapObjects/army/CArmedInstance.h"
@@ -123,6 +126,9 @@ std::string yamlIdentifier(const std::string & value)
 std::string transcriptIdentifier(std::string identifier)
 {
 	boost::algorithm::replace_all(identifier, ":", "/");
+	const std::string corePrefix = "core/";
+	if(identifier.starts_with(corePrefix))
+		identifier.erase(0, corePrefix.size());
 	return yamlIdentifier(identifier);
 }
 
@@ -132,7 +138,7 @@ struct BattleBlockRecord
 	std::string record;
 };
 
-std::string readableDecisionRecord(const std::string & line)
+std::string readableDecisionRecord(const std::string & line, const std::optional<PlayerColor> & defaultActor)
 {
 	const std::string prefix = "decision: { actor: ";
 	const std::string kindMarker = ", kind: ";
@@ -149,6 +155,12 @@ std::string readableDecisionRecord(const std::string & line)
 	const std::string actor = line.substr(prefix.size(), actorEnd - prefix.size());
 	const std::string kind = line.substr(kindStart, kindEnd - kindStart);
 	const std::string fields = fieldsStart == std::string::npos ? "" : line.substr(fieldsStart, line.size() - fieldsStart - 2);
+	if(defaultActor && actor == defaultActor->toString() && kind != "battleAction")
+	{
+		if(fields.empty())
+			return kind + ": {}";
+		return kind + ": { " + fields.substr(2) + " }";
+	}
 	return kind + ": { actor: " + actor + fields + " }";
 }
 
@@ -234,9 +246,47 @@ std::string pos(const int3 & value)
 	return "[" + std::to_string(value.x) + ", " + std::to_string(value.y) + ", " + std::to_string(value.z) + "]";
 }
 
-std::string pos2D(const int3 & value)
+std::string directionName(int dx, int dy)
 {
-	return "[" + std::to_string(value.x) + ", " + std::to_string(value.y) + "]";
+	if(dx == 0 && dy == -1) return "N";
+	if(dx == 1 && dy == -1) return "NE";
+	if(dx == 1 && dy == 0) return "E";
+	if(dx == 1 && dy == 1) return "SE";
+	if(dx == 0 && dy == 1) return "S";
+	if(dx == -1 && dy == 1) return "SW";
+	if(dx == -1 && dy == 0) return "W";
+	if(dx == -1 && dy == -1) return "NW";
+	return {};
+}
+
+std::optional<std::string> encodedDirections(
+	const std::array<int, 3> & start,
+	const std::vector<std::array<int, 3>> & route)
+{
+	std::vector<std::string> directions;
+	std::array<int, 3> previous = start;
+	for(const auto & destination : route)
+	{
+		if(destination[2] != previous[2])
+			return std::nullopt;
+		const auto direction = directionName(destination[0] - previous[0], destination[1] - previous[1]);
+		if(direction.empty())
+			return std::nullopt;
+		directions.push_back(direction);
+		previous = destination;
+	}
+
+	std::vector<std::string> runs;
+	for(size_t index = 0; index < directions.size();)
+	{
+		size_t end = index + 1;
+		while(end < directions.size() && directions[end] == directions[index])
+			++end;
+		const size_t count = end - index;
+		runs.push_back(directions[index] + (count > 1 ? "*" + std::to_string(count) : ""));
+		index = end;
+	}
+	return boost::algorithm::join(runs, " ");
 }
 
 std::string color(PlayerColor value)
@@ -258,11 +308,6 @@ std::string battleAlias(BattleID battleID)
 	return std::to_string(battleID.getNum());
 }
 
-std::string stackAlias(int stackID)
-{
-	return std::to_string(stackID);
-}
-
 std::string heroAlias(const CGameState & gameState, ObjectInstanceID id);
 
 std::string sanitizedAliasName(std::string name)
@@ -281,6 +326,14 @@ std::string sanitizedAliasName(std::string name)
 	return name;
 }
 
+std::string objectLocation(const int3 & position)
+{
+	std::string result = "@" + std::to_string(position.x) + "." + std::to_string(position.y);
+	if(position.z != 0)
+		result += "." + std::to_string(position.z);
+	return result;
+}
+
 std::string objectAlias(const CGameState & gameState, ObjectInstanceID id)
 {
 	if(id == ObjectInstanceID::NONE)
@@ -288,14 +341,13 @@ std::string objectAlias(const CGameState & gameState, ObjectInstanceID id)
 
 	const auto * object = gameState.getMap().getObject(id);
 	if(!object)
-		return "object/id-" + std::to_string(id.getNum());
+		return "id-" + std::to_string(id.getNum());
 	if(dynamic_cast<const CGHeroInstance *>(object))
 		return heroAlias(gameState, id);
 
-	std::string type = MapObjectID::encode(object->ID.getNum());
+	std::string type = transcriptIdentifier(MapObjectID::encode(object->ID.getNum()));
 	if(type.empty())
-		type = "object";
-	boost::algorithm::replace_all(type, ":", "/");
+		type = "unknown";
 
 	std::string owner;
 	if(object->tempOwner.isValidPlayer())
@@ -309,11 +361,11 @@ std::string objectAlias(const CGameState & gameState, ObjectInstanceID id)
 	if(dynamic_cast<const CGTownInstance *>(object))
 		type = "town";
 
-	const std::string prefix = type == "town" ? "" : "object/";
-	return prefix + type + owner + "/" + name + "/at-" +
-		std::to_string(object->visitablePos().x) + "-" +
-		std::to_string(object->visitablePos().y) + "-" +
-		std::to_string(object->visitablePos().z);
+	std::string result = type + owner;
+	const auto typeName = type.substr(type.rfind('/') == std::string::npos ? 0 : type.rfind('/') + 1);
+	if(name != sanitizedAliasName(typeName))
+		result += "/" + name;
+	return result + objectLocation(object->visitablePos());
 }
 
 std::string heroAlias(const CGameState & gameState, ObjectInstanceID id)
@@ -324,7 +376,7 @@ std::string heroAlias(const CGameState & gameState, ObjectInstanceID id)
 
 	std::string owner = object->tempOwner.isValidPlayer() ? object->tempOwner.toString() : "neutral";
 	if(const auto * hero = dynamic_cast<const CGHeroInstance *>(object); hero && hero->getHeroTypeID().hasValue())
-		return "hero/" + owner + "/" + transcriptIdentifier(HeroTypeID::encode(hero->getHeroTypeID().getNum()));
+		return owner + "/" + transcriptIdentifier(HeroTypeID::encode(hero->getHeroTypeID().getNum()));
 
 	std::string name = sanitizedAliasName(object->getObjectName());
 	if(name.empty())
@@ -332,7 +384,7 @@ std::string heroAlias(const CGameState & gameState, ObjectInstanceID id)
 	if(name.empty())
 		name = "id-" + std::to_string(id.getNum());
 
-	return "hero/" + owner + "/" + name;
+	return owner + "/" + name;
 }
 
 std::string actorForPlayer(PlayerColor player)
@@ -771,60 +823,6 @@ std::string movementResult(TryMoveHero::EResult result)
 	return "unknown";
 }
 
-std::string objectProperty(ObjProperty property)
-{
-	switch(property)
-	{
-		case ObjProperty::INVALID: return "invalid";
-		case ObjProperty::OWNER: return "owner";
-		case ObjProperty::UNUSED: return "unused";
-		case ObjProperty::PRIMARY_STACK_COUNT: return "primaryStackCount";
-		case ObjProperty::VISITORS: return "visitors";
-		case ObjProperty::VISITED: return "visited";
-		case ObjProperty::ID: return "id";
-		case ObjProperty::AVAILABLE_CREATURE: return "availableCreature";
-		case ObjProperty::MONSTER_COUNT: return "monsterCount";
-		case ObjProperty::MONSTER_POWER: return "monsterPower";
-		case ObjProperty::MONSTER_EXP: return "monsterExperience";
-		case ObjProperty::MONSTER_RESTORE_TYPE: return "monsterRestoreType";
-		case ObjProperty::MONSTER_REFUSED_JOIN: return "monsterRefusedJoin";
-		case ObjProperty::STRUCTURE_ADD_VISITING_HERO: return "structureAddVisitingHero";
-		case ObjProperty::STRUCTURE_CLEAR_VISITORS: return "structureClearVisitors";
-		case ObjProperty::STRUCTURE_ADD_GARRISONED_HERO: return "structureAddGarrisonedHero";
-		case ObjProperty::BONUS_VALUE_FIRST: return "bonusValueFirst";
-		case ObjProperty::BONUS_VALUE_SECOND: return "bonusValueSecond";
-		case ObjProperty::SEERHUT_VISITED: return "seerHutVisited";
-		case ObjProperty::SEERHUT_COMPLETE: return "seerHutComplete";
-		case ObjProperty::OBELISK_VISITED: return "obeliskVisited";
-		case ObjProperty::BANK_DAYCOUNTER: return "bankDayCounter";
-		case ObjProperty::BANK_CLEAR: return "bankClear";
-		case ObjProperty::REWARD_SELECT: return "rewardSelect";
-		case ObjProperty::REWARD_CLEARED: return "rewardCleared";
-	}
-	return "unknown";
-}
-
-std::string objectPropertyValue(const CGameState & gameState, const SetObjectProperty & pack)
-{
-	switch(pack.what)
-	{
-		case ObjProperty::OWNER:
-		case ObjProperty::VISITED:
-		case ObjProperty::SEERHUT_VISITED:
-			return color(pack.identifier.as<PlayerColor>());
-		case ObjProperty::VISITORS:
-			return objectAlias(gameState, pack.identifier.as<ObjectInstanceID>());
-		case ObjProperty::ID:
-			return transcriptIdentifier(MapObjectID::encode(pack.identifier.as<MapObjectID>().getNum()));
-		case ObjProperty::AVAILABLE_CREATURE:
-			return creature(pack.identifier.as<CreatureID>());
-		case ObjProperty::OBELISK_VISITED:
-			return std::to_string(pack.identifier.as<TeamID>().getNum());
-		default:
-			return std::to_string(pack.identifier.getNum());
-	}
-}
-
 std::string packetTypeName(CPack & pack)
 {
 	std::string name = boost::core::demangle(typeid(pack).name());
@@ -833,16 +831,29 @@ std::string packetTypeName(CPack & pack)
 	return name;
 }
 
-std::string resources(const ResourceSet & values, bool includeZeroes = false)
+std::string signedInteger(int64_t value)
+{
+	return value > 0 ? "+" + std::to_string(value) : std::to_string(value);
+}
+
+std::string resourceMap(const ResourceSet & values, bool showPositiveSign = false)
 {
 	std::vector<std::string> entries;
-	for(size_t i = 0; i < values.size(); ++i)
+	for(size_t index = 0; index < values.size(); ++index)
 	{
-		if(!includeZeroes && values[i] == 0)
-			continue;
-		entries.push_back("{ " + resourceKey(GameResID(static_cast<int>(i))) + ": " + std::to_string(values[i]) + " }");
+		if(values[index] != 0)
+			entries.push_back(resourceKey(GameResID(static_cast<int>(index))) + ": " +
+				(showPositiveSign ? signedInteger(values[index]) : std::to_string(values[index])));
 	}
-	return flowList(entries);
+	return "{ " + boost::algorithm::join(entries, ", ") + " }";
+}
+
+std::string namedIntegerMap(const std::map<std::string, int64_t> & values)
+{
+	std::vector<std::string> entries;
+	for(const auto & [name, value] : values)
+		entries.push_back(yamlKey(name) + ": " + std::to_string(value));
+	return "{ " + boost::algorithm::join(entries, ", ") + " }";
 }
 
 std::string startingBonus(PlayerStartingBonus value)
@@ -867,7 +878,7 @@ std::string connectionList(const std::set<PlayerConnectionID> & values)
 
 std::string handicap(const Handicap & value)
 {
-	return "{ resources: " + resources(value.startBonus) +
+	return "{ resources: " + resourceMap(value.startBonus) +
 		", incomePercent: " + std::to_string(value.percentIncome) +
 		", growthPercent: " + std::to_string(value.percentGrowth) + " }";
 }
@@ -1089,15 +1100,52 @@ std::string artifactsList(const std::vector<ArtifactID> & artifacts)
 	return flowList(entries);
 }
 
-std::string availableCreatures(const std::vector<std::pair<ui32, std::vector<CreatureID>>> & creatures)
+std::string sparseCreaturePools(const std::vector<std::pair<ui32, std::vector<CreatureID>>> & pools)
 {
-	std::vector<std::string> entries;
-	for(const auto & entry : creatures)
+	std::vector<std::string> creatures;
+	std::vector<std::string> shared;
+	for(const auto & pool : pools)
 	{
-		entries.push_back("{ available: " + std::to_string(entry.first) +
-			", creatures: " + creaturesList(entry.second) + " }");
+		if(pool.second.empty())
+			continue;
+		if(pool.second.size() == 1)
+			creatures.push_back(creature(pool.second.front()) + ": " + std::to_string(pool.first));
+		else
+			shared.push_back("{ creatures: " + creaturesList(pool.second) + ", count: " + std::to_string(pool.first) + " }");
 	}
-	return flowList(entries);
+	std::vector<std::string> fields;
+	if(!creatures.empty())
+		fields.insert(fields.end(), creatures.begin(), creatures.end());
+	if(!shared.empty())
+		fields.push_back("shared: " + flowList(shared));
+	return "{ " + boost::algorithm::join(fields, ", ") + " }";
+}
+
+std::string creatureGrowth(const CGameState & gameState, const SetAvailableCreatures & value)
+{
+	const auto * dwelling = dynamic_cast<const CGDwelling *>(gameState.getMap().getObject(value.tid));
+	std::vector<std::string> creatures;
+	std::vector<std::string> shared;
+	for(size_t index = 0; index < value.creatures.size(); ++index)
+	{
+		const auto & pool = value.creatures[index];
+		if(pool.second.empty())
+			continue;
+		const int64_t previous = dwelling && index < dwelling->creatures.size() ? dwelling->creatures[index].first : 0;
+		const int64_t delta = static_cast<int64_t>(pool.first) - previous;
+		if(delta == 0)
+			continue;
+		if(pool.second.size() == 1)
+			creatures.push_back(creature(pool.second.front()) + ": " + signedInteger(delta));
+		else
+			shared.push_back("{ creatures: " + creaturesList(pool.second) + ", count: " + signedInteger(delta) + " }");
+	}
+	std::vector<std::string> fields;
+	if(!creatures.empty())
+		fields.insert(fields.end(), creatures.begin(), creatures.end());
+	if(!shared.empty())
+		fields.push_back("shared: " + flowList(shared));
+	return "{ " + boost::algorithm::join(fields, ", ") + " }";
 }
 
 std::string stackExperienceValues(const std::map<SlotID, si64> & values)
@@ -1106,66 +1154,6 @@ std::string stackExperienceValues(const std::map<SlotID, si64> & values)
 	for(const auto & entry : values)
 		entries.push_back("{ slot: " + slot(entry.first) + ", amount: " + std::to_string(entry.second) + " }");
 	return flowList(entries);
-}
-
-std::string newTurnMovement(const CGameState & gameState, const std::vector<SetMovePoints> & values)
-{
-	std::vector<std::string> entries;
-	for(const auto & entry : values)
-	{
-		entries.push_back("{ hero: " + heroAlias(gameState, entry.hid) +
-			", value: " + std::to_string(entry.val) + " }");
-	}
-	return flowList(entries);
-}
-
-std::string newTurnMana(const CGameState & gameState, const std::vector<SetMana> & values)
-{
-	std::vector<std::string> entries;
-	for(const auto & entry : values)
-	{
-		entries.push_back("{ hero: " + heroAlias(gameState, entry.hid) +
-			", mode: " + mode(entry.mode) +
-			", value: " + std::to_string(entry.val) + " }");
-	}
-	return flowList(entries);
-}
-
-std::string newTurnAvailableCreatures(const CGameState & gameState, const std::vector<SetAvailableCreatures> & values)
-{
-	std::vector<std::string> entries;
-	for(const auto & entry : values)
-	{
-		entries.push_back("{ object: " + objectAlias(gameState, entry.tid) +
-			", levels: " + availableCreatures(entry.creatures) + " }");
-	}
-	return flowList(entries);
-}
-
-std::string rumorType(RumorState::ERumorType type)
-{
-	switch(type)
-	{
-		case RumorState::TYPE_NONE: return "none";
-		case RumorState::TYPE_RAND: return "random";
-		case RumorState::TYPE_SPECIAL: return "special";
-		case RumorState::TYPE_MAP: return "map";
-	}
-	return "unknown";
-}
-
-std::string rumorState(const RumorState & rumor)
-{
-	std::vector<std::string> last;
-	for(const auto & entry : rumor.last)
-	{
-		last.push_back("{ type: " + rumorType(entry.first) +
-			", id: " + std::to_string(entry.second.first) +
-			", extra: " + std::to_string(entry.second.second) + " }");
-	}
-
-	return "{ type: " + rumorType(rumor.type) +
-		", last: " + flowList(last) + " }";
 }
 
 std::string fowTiles(const FowTilesType & tiles)
@@ -1221,17 +1209,185 @@ std::string battleStackCreature(const CGameState & gameState, BattleID battleID,
 	return creature(stack->creatureId());
 }
 
+std::string pluralizedBattleCreature(CreatureID creatureID)
+{
+	std::string identifier = CreatureID::encode(creatureID.getNum());
+	boost::algorithm::replace_all(identifier, ":", "/");
+	const std::string corePrefix = "core/";
+	if(identifier.starts_with(corePrefix))
+		identifier.erase(0, corePrefix.size());
+
+	std::string result;
+	for(const char character : identifier)
+	{
+		if(std::isupper(static_cast<unsigned char>(character)))
+		{
+			result += '-';
+			result += static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+		}
+		else
+			result += character;
+	}
+	const auto slash = result.rfind('/');
+	std::string prefix = slash == std::string::npos ? "" : result.substr(0, slash + 1);
+	std::string name = slash == std::string::npos ? result : result.substr(slash + 1);
+	if(name.ends_with("shaman"))
+		name += 's';
+	else if(name.ends_with("man"))
+		name.replace(name.size() - 3, 3, "men");
+	else if(name.ends_with("elf"))
+		name.replace(name.size() - 3, 3, "elves");
+	else if(name.ends_with("dwarf"))
+		name.replace(name.size() - 5, 5, "dwarves");
+	else if(name == "cyclops")
+		name = "cyclopes";
+	else if(name == "efreet")
+		name = "efreeti";
+	else if(name == "pegasus")
+		name = "pegasi";
+	else if(name.ends_with("y") && name.size() > 1 && std::string("aeiou").find(name[name.size() - 2]) == std::string::npos)
+		name.replace(name.size() - 1, 1, "ies");
+	else if(name.ends_with("s") || name.ends_with("x") || name.ends_with("z") || name.ends_with("ch") || name.ends_with("sh"))
+		name += "es";
+	else
+		name += "s";
+	return prefix + name;
+}
+
+using BattleUnitAliases = std::map<int, std::map<int, std::string>>;
+BattleUnitAliases battleUnitAliases;
+
+std::string battleUnitBase(BattleSide side, CreatureID creatureID)
+{
+	return battleSide(side) + "/" + pluralizedBattleCreature(creatureID);
+}
+
+void resetBattleUnitAliases(const CGameState & gameState, BattleID battleID)
+{
+	auto & aliases = battleUnitAliases[battleID.getNum()];
+	aliases.clear();
+	const auto * battle = gameState.getBattle(battleID);
+	if(!battle)
+		return;
+
+	std::map<std::string, std::vector<int>> groups;
+	for(const auto * stack : battle->battleGetAllStacks(true))
+	{
+		if(stack)
+			groups[battleUnitBase(stack->unitSide(), stack->creatureId())].push_back(static_cast<int>(stack->unitId()));
+	}
+	for(auto & [base, stackIDs] : groups)
+	{
+		std::sort(stackIDs.begin(), stackIDs.end());
+		for(size_t index = 0; index < stackIDs.size(); ++index)
+			aliases[stackIDs[index]] = base + (stackIDs.size() == 1 ? "" : "/" + std::to_string(index + 1));
+	}
+}
+
+std::string registerBattleUnitAlias(BattleID battleID, int stackID, BattleSide side, CreatureID creatureID)
+{
+	auto & aliases = battleUnitAliases[battleID.getNum()];
+	if(const auto existing = aliases.find(stackID); existing != aliases.end())
+		return existing->second;
+
+	const std::string base = battleUnitBase(side, creatureID);
+	int nextOrdinal = 1;
+	bool baseInUse = false;
+	for(const auto & [ignoredID, alias] : aliases)
+	{
+		if(alias == base)
+		{
+			baseInUse = true;
+			nextOrdinal = std::max(nextOrdinal, 2);
+		}
+		else if(alias.starts_with(base + "/"))
+		{
+			baseInUse = true;
+			try
+			{
+				nextOrdinal = std::max(nextOrdinal, std::stoi(alias.substr(base.size() + 1)) + 1);
+			}
+			catch(const std::exception &)
+			{
+				nextOrdinal = std::max(nextOrdinal, 2);
+			}
+		}
+	}
+	const std::string alias = baseInUse ? base + "/" + std::to_string(nextOrdinal) : base;
+	aliases[stackID] = alias;
+	return alias;
+}
+
+std::string battleUnitAlias(const CGameState & gameState, BattleID battleID, int stackID)
+{
+	if(stackID < 0)
+		return "hero";
+	if(!battleUnitAliases.contains(battleID.getNum()))
+		resetBattleUnitAliases(gameState, battleID);
+	if(const auto & aliases = battleUnitAliases[battleID.getNum()]; aliases.contains(stackID))
+		return aliases.at(stackID);
+	const auto * battle = gameState.getBattle(battleID);
+	if(!battle)
+		return "unit-" + std::to_string(stackID);
+	const auto * stack = battle->battleGetStackByID(stackID, false);
+	if(!stack)
+		return "unit-" + std::to_string(stackID);
+	return registerBattleUnitAlias(battleID, stackID, stack->unitSide(), stack->creatureId());
+}
+
+std::vector<std::string> battleRoster(const CGameState & gameState, BattleID battleID)
+{
+	std::vector<std::string> result;
+	const auto * battle = gameState.getBattle(battleID);
+	if(!battle)
+		return result;
+	resetBattleUnitAliases(gameState, battleID);
+	for(const auto * stack : battle->battleGetAllStacks(true))
+	{
+		if(!stack)
+			continue;
+		result.push_back(yamlKey(battleUnitAlias(gameState, battleID, static_cast<int>(stack->unitId()))) +
+			": { stack: " + std::to_string(stack->unitId()) +
+			", owner: " + color(battle->battleGetOwner(stack)) +
+			", count: " + std::to_string(stack->getCount()) + " }");
+	}
+	return result;
+}
+
+std::string battleParticipant(const CGameState & gameState, BattleID battleID, BattleSide side)
+{
+	const auto * battle = gameState.getBattle(battleID);
+	if(!battle)
+		return battleSide(side);
+	if(const auto * hero = battle->battleGetFightingHero(side))
+		return heroAlias(gameState, hero->id);
+	if(const auto * army = battle->battleGetArmyObject(side))
+		return objectAlias(gameState, army->id);
+	return battleSide(side);
+}
+
+std::string battleCasualties(const std::map<CreatureID, si32> & casualties)
+{
+	std::vector<std::string> entries;
+	for(const auto & [creatureID, count] : casualties)
+	{
+		if(count > 0)
+			entries.push_back(creature(creatureID) + ": " + std::to_string(count));
+	}
+	return "{ " + boost::algorithm::join(entries, ", ") + " }";
+}
+
 void addBattleStackCreature(std::vector<std::string> & fields, const std::string & label, const CGameState & gameState, BattleID battleID, int stackID)
 {
 	if(const auto value = battleStackCreature(gameState, battleID, stackID); !value.empty())
 		fields.push_back(label + ": " + value);
 }
 
-std::string battleTarget(const BattleAction::DestinationInfo & target)
+std::string battleTarget(const CGameState & gameState, BattleID battleID, const BattleAction::DestinationInfo & target)
 {
 	std::vector<std::string> fields;
 	if(target.unitValue >= 0)
-		fields.push_back("unit: " + stackAlias(target.unitValue));
+		fields.push_back("unit: " + yamlIdentifier(battleUnitAlias(gameState, battleID, target.unitValue)));
 	if(target.hexValue.isValid())
 		fields.push_back("hex: " + std::to_string(target.hexValue.toInt()));
 	return "{ " + boost::algorithm::join(fields, ", ") + " }";
@@ -1241,12 +1397,11 @@ std::string battleAction(const CGameState & gameState, BattleID battleID, const 
 {
 	std::vector<std::string> targets;
 	for(const auto & target : action.target)
-		targets.push_back(battleTarget(target));
+		targets.push_back(battleTarget(gameState, battleID, target));
 
 	std::vector<std::string> fields;
 	fields.push_back("side: " + battleSide(action.side));
-	fields.push_back("stack: " + stackAlias(static_cast<int>(action.stackNumber)));
-	addBattleStackCreature(fields, "creature", gameState, battleID, static_cast<int>(action.stackNumber));
+	fields.push_back("unit: " + yamlIdentifier(battleUnitAlias(gameState, battleID, static_cast<int>(action.stackNumber))));
 	fields.push_back("action: " + actionType(action.actionType));
 	if(action.spell != SpellID::NONE)
 		fields.push_back("spell: " + spell(action.spell));
@@ -1257,7 +1412,7 @@ std::string battleAction(const CGameState & gameState, BattleID battleID, const 
 
 std::string battleUnitState(const UnitChanges & change);
 
-std::string battleUnitChanges(const std::vector<UnitChanges> & changes)
+std::string battleUnitChanges(const CGameState & gameState, BattleID battleID, const std::vector<UnitChanges> & changes)
 {
 	std::vector<std::string> result;
 	for(const auto & change : changes)
@@ -1270,7 +1425,7 @@ std::string battleUnitChanges(const std::vector<UnitChanges> & changes)
 			case BattleChanges::EOperation::REMOVE: operation = "remove"; break;
 		}
 
-		result.push_back("{ stack: " + stackAlias(change.id) +
+		result.push_back("{ unit: " + yamlIdentifier(battleUnitAlias(gameState, battleID, change.id)) +
 			", operation: " + operation +
 			", healthDelta: " + std::to_string(change.healthDelta) +
 			", state: " + battleUnitState(change) + " }");
@@ -1338,9 +1493,9 @@ std::string battleUnitState(const UnitChanges & change)
 std::string battleStackAttacked(const CGameState & gameState, BattleID battleID, const BattleStackAttacked & attack)
 {
 	std::vector<std::string> fields;
-	fields.push_back("target: " + stackAlias(attack.stackAttacked));
+	fields.push_back("target: " + yamlIdentifier(battleUnitAlias(gameState, battleID, attack.stackAttacked)));
 	addBattleStackCreature(fields, "targetCreature", gameState, battleID, attack.stackAttacked);
-	fields.push_back("attacker: " + stackAlias(attack.attackerID));
+	fields.push_back("attacker: " + yamlIdentifier(battleUnitAlias(gameState, battleID, attack.attackerID)));
 	addBattleStackCreature(fields, "attackerCreature", gameState, battleID, attack.attackerID);
 	fields.push_back("damage: " + std::to_string(attack.damageAmount));
 	fields.push_back("killed: " + std::to_string(attack.killedAmount));
@@ -1350,6 +1505,22 @@ std::string battleStackAttacked(const CGameState & gameState, BattleID battleID,
 	if(!attack.newState.data.isNull())
 		fields.push_back("state: " + battleUnitState(attack.newState));
 	return "{ " + boost::algorithm::join(fields, ", ") + " }";
+}
+
+std::string battleLeft(const UnitChanges & change)
+{
+	const JsonNode & state = change.data["state"];
+	if(state.isNull() || !state.isStruct())
+		return {};
+	std::vector<std::string> fields;
+	const JsonNode & health = state["health"];
+	if(!health.isNull() && health.isStruct())
+	{
+		appendJsonInteger(fields, health, "fullUnits", "units");
+		appendJsonInteger(fields, health, "firstHPleft", "hp");
+	}
+	appendJsonInteger(fields, state, "position", "at");
+	return fields.empty() ? "" : "{ " + boost::algorithm::join(fields, ", ") + " }";
 }
 
 std::string battleStackAttacks(const CGameState & gameState, BattleID battleID, const std::vector<BattleStackAttacked> & attacks)
@@ -1538,17 +1709,26 @@ std::string gameSettingsOverrides(const JsonNode & node)
 	return node.isNull() ? "{}" : jsonCompact(node);
 }
 
-std::string rewardableConfiguration(Rewardable::Configuration & configuration)
+std::string lowerCamelEnum(std::string value)
 {
-	JsonNode node;
-	JsonSerializer handler(nullptr, node);
-	configuration.serializeJson(handler);
-	return jsonCompact(node);
-}
-
-std::string bonusValue(const Bonus & value)
-{
-	return jsonCompact(value.toJsonNode());
+	std::string result;
+	bool capitalize = false;
+	for(const char character : value)
+	{
+		if(character == '_')
+		{
+			capitalize = true;
+			continue;
+		}
+		if(capitalize)
+		{
+			result += static_cast<char>(std::toupper(static_cast<unsigned char>(character)));
+			capitalize = false;
+		}
+		else
+			result += static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+	}
+	return result;
 }
 
 std::string bonusTargetKind(GiveBonus::ETarget value)
@@ -1577,6 +1757,42 @@ std::string bonusTarget(const CGameState & gameState, const GiveBonus & pack)
 			return heroAlias(gameState, pack.id.as<ObjectInstanceID>()) + "/commander";
 	}
 	return "unknown";
+}
+
+std::string semanticBonus(const CGameState & gameState, const GiveBonus & pack)
+{
+	const Bonus & bonus = pack.bonus;
+	std::vector<std::string> fields;
+	fields.push_back("targetKind: " + bonusTargetKind(pack.who));
+	fields.push_back("target: " + bonusTarget(gameState, pack));
+	fields.push_back("type: " + lowerCamelEnum(LIBRARY->bth->bonusToString(bonus.type)));
+	fields.push_back("value: " + signedInteger(bonus.val));
+
+	std::vector<std::string> durations;
+	for(const auto & [name, value] : bonusDurationMap)
+	{
+		if(name != "UNITL_BEING_ATTACKED" && (bonus.duration & value) != 0)
+			durations.push_back(lowerCamelEnum(name));
+	}
+	if(durations.size() == 1)
+		fields.push_back("duration: " + durations.front());
+	else if(!durations.empty())
+		fields.push_back("duration: " + flowList(durations));
+	if(bonus.sid != BonusSourceID())
+		fields.push_back("source: " + transcriptIdentifier(bonus.sid.toString()));
+	if(bonus.source != BonusSource::OTHER)
+		fields.push_back("sourceKind: " + lowerCamelEnum(vstd::findKey(bonusSourceMap, bonus.source)));
+	if(bonus.subtype != BonusSubtypeID())
+		fields.push_back("subtype: " + yamlString(bonus.subtype.toString()));
+	if(bonus.turnsRemain)
+		fields.push_back("turns: " + std::to_string(bonus.turnsRemain));
+	if(bonus.valType != BonusValueType::ADDITIVE_VALUE)
+		fields.push_back("valueKind: " + lowerCamelEnum(vstd::findKey(bonusValueMap, bonus.valType)));
+	if(!bonus.stacking.empty())
+		fields.push_back("stacking: " + yamlString(bonus.stacking));
+	if(bonus.description.hasCustomText())
+		fields.push_back("text: " + yamlString(bonus.description.toString()));
+	return "{ " + boost::algorithm::join(fields, ", ") + " }";
 }
 
 std::string marketSellItems(const std::vector<TradeItemSell> & values)
@@ -2179,24 +2395,23 @@ public:
 
 	void visitSetResources(SetResources & pack) override
 	{
-		line = "resources: { player: " + color(pack.player) +
-			", mode: " + mode(pack.mode) +
-			", values: " + resources(pack.res, pack.mode == ChangeValueMode::ABSOLUTE) + " }";
+		const std::string key = pack.mode == ChangeValueMode::ABSOLUTE ? "setResources" : "resources";
+		line = key + ": { " + color(pack.player) + ": " +
+			resourceMap(pack.res, pack.mode != ChangeValueMode::ABSOLUTE) + " }";
 	}
 
 	void visitSetPrimarySkill(SetPrimarySkill & pack) override
 	{
-		line = "primarySkill: { hero: " + heroAlias(gameState, pack.id) +
-			", skill: " + primarySkill(pack.which) +
-			", mode: " + mode(pack.mode) +
-			", value: " + std::to_string(pack.val) + " }";
+		const std::string key = pack.mode == ChangeValueMode::ABSOLUTE ? "setSkills" : "skills";
+		line = key + ": { " + heroAlias(gameState, pack.id) + ": { " + primarySkill(pack.which) + ": " +
+			(pack.mode == ChangeValueMode::ABSOLUTE ? std::to_string(pack.val) : signedInteger(pack.val)) + " } }";
 	}
 
 	void visitSetHeroExperience(SetHeroExperience & pack) override
 	{
-		line = "experience: { hero: " + heroAlias(gameState, pack.id) +
-			", mode: " + mode(pack.mode) +
-			", value: " + std::to_string(pack.val) + " }";
+		const std::string key = pack.mode == ChangeValueMode::ABSOLUTE ? "setExperience" : "experience";
+		line = key + ": { " + heroAlias(gameState, pack.id) + ": " +
+			(pack.mode == ChangeValueMode::ABSOLUTE ? std::to_string(pack.val) : signedInteger(pack.val)) + " }";
 	}
 
 	void visitGiveStackExperience(GiveStackExperience & pack) override
@@ -2207,10 +2422,9 @@ public:
 
 	void visitSetSecSkill(SetSecSkill & pack) override
 	{
-		line = "secondarySkill: { hero: " + heroAlias(gameState, pack.id) +
-			", skill: " + secondarySkill(pack.which) +
-			", mode: " + mode(pack.mode) +
-			", value: " + std::to_string(pack.val) + " }";
+		const std::string key = pack.mode == ChangeValueMode::ABSOLUTE ? "setSkills" : "skills";
+		line = key + ": { " + heroAlias(gameState, pack.id) + ": { " + secondarySkill(pack.which) + ": " +
+			(pack.mode == ChangeValueMode::ABSOLUTE ? std::to_string(pack.val) : signedInteger(pack.val)) + " } }";
 	}
 
 	void visitHeroVisitCastle(HeroVisitCastle & pack) override
@@ -2227,15 +2441,14 @@ public:
 
 	void visitSetMana(SetMana & pack) override
 	{
-		line = "mana: { hero: " + heroAlias(gameState, pack.hid) +
-			", mode: " + mode(pack.mode) +
-			", value: " + std::to_string(pack.val) + " }";
+		const std::string key = pack.mode == ChangeValueMode::ABSOLUTE ? "setMana" : "mana";
+		line = key + ": { " + heroAlias(gameState, pack.hid) + ": " +
+			(pack.mode == ChangeValueMode::ABSOLUTE ? std::to_string(pack.val) : signedInteger(pack.val)) + " }";
 	}
 
 	void visitSetMovePoints(SetMovePoints & pack) override
 	{
-		line = "movementPoints: { hero: " + heroAlias(gameState, pack.hid) +
-			", value: " + std::to_string(pack.val) + " }";
+		line = "setMovement: { " + heroAlias(gameState, pack.hid) + ": " + std::to_string(pack.val) + " }";
 	}
 
 	void visitFoWChange(FoWChange & pack) override
@@ -2299,8 +2512,7 @@ public:
 
 	void visitSetAvailableCreatures(SetAvailableCreatures & pack) override
 	{
-		line = "availableCreatures: { object: " + objectAlias(gameState, pack.tid) +
-			", levels: " + availableCreatures(pack.creatures) + " }";
+		line = "available: { " + objectAlias(gameState, pack.tid) + ": " + sparseCreaturePools(pack.creatures) + " }";
 	}
 
 	void visitSetHeroesInTown(SetHeroesInTown & pack) override
@@ -2344,9 +2556,7 @@ public:
 
 	void visitGiveBonus(GiveBonus & pack) override
 	{
-		line = "bonus: { targetKind: " + bonusTargetKind(pack.who) +
-			", target: " + bonusTarget(gameState, pack) +
-			", value: " + bonusValue(pack.bonus) + " }";
+		line = "bonus: " + semanticBonus(gameState, pack);
 	}
 
 	void visitNewObject(NewObject & pack) override
@@ -2358,7 +2568,7 @@ public:
 			return;
 		}
 
-		line = "newObject: { id: object/id-" + std::to_string(object->id.getNum()) +
+		line = "newObject: { id: id-" + std::to_string(object->id.getNum()) +
 			", name: " + yamlString(object->instanceName) +
 			", type: " + transcriptIdentifier(MapObjectID::encode(object->ID.getNum())) +
 			", subtype: " + std::to_string(object->subID.getNum()) +
@@ -2474,50 +2684,88 @@ public:
 			", object: " + objectAlias(gameState, pack.objId) + " }";
 	}
 
-		void visitNewTurn(NewTurn & pack) override
+	void visitNewTurn(NewTurn & pack) override
+	{
+		std::vector<std::string> records;
+		std::vector<std::string> income;
+		for(const auto & [player, values] : pack.playerIncome)
 		{
-			std::vector<std::string> incomeEntries;
-			for(const auto & entry : pack.playerIncome)
-			{
-				if(entry.second.nonZero())
-					incomeEntries.push_back("{ player: " + color(entry.first) + ", resources: " + resources(entry.second) + " }");
-			}
+			if(values.nonZero())
+				income.push_back(color(player) + ": " + resourceMap(values));
+		}
+		if(!income.empty())
+			records.push_back("income: { " + boost::algorithm::join(income, ", ") + " }");
 
-			line = "newTurn: { day: " + std::to_string(pack.day) +
-				", week: " + weekType(pack.specialWeek) +
-				", creature: " + creature(pack.creatureid);
-			if(!incomeEntries.empty())
-				line += ", income: " + flowList(incomeEntries);
-			line += " }";
+		std::map<std::string, std::vector<std::string>> refresh;
+		for(const auto & movement : pack.heroesMovement)
+			refresh[heroAlias(gameState, movement.hid)].push_back("movement: " + std::to_string(movement.val));
+		for(const auto & manaValue : pack.heroesMana)
+			refresh[heroAlias(gameState, manaValue.hid)].push_back("mana: " + std::to_string(manaValue.val));
+		if(!refresh.empty())
+		{
+			std::vector<std::string> entries;
+			for(const auto & [hero, values] : refresh)
+				entries.push_back(hero + ": { " + boost::algorithm::join(values, ", ") + " }");
+			records.push_back("refresh: { " + boost::algorithm::join(entries, ", ") + " }");
+		}
 
-		if(!pack.heroesMovement.empty())
-			line.insert(line.size() - 2, ", movement: " + newTurnMovement(gameState, pack.heroesMovement));
-		if(!pack.heroesMana.empty())
-			line.insert(line.size() - 2, ", mana: " + newTurnMana(gameState, pack.heroesMana));
 		if(!pack.availableCreatures.empty())
-			line.insert(line.size() - 2, ", availableCreatures: " + newTurnAvailableCreatures(gameState, pack.availableCreatures));
-		if(pack.newRumor)
-			line.insert(line.size() - 2, ", rumor: " + rumorState(*pack.newRumor));
+		{
+			std::vector<std::string> entries;
+			for(const auto & availability : pack.availableCreatures)
+			{
+				const auto pools = pack.day <= 1
+					? sparseCreaturePools(availability.creatures)
+					: creatureGrowth(gameState, availability);
+				if(pools != "{  }")
+					entries.push_back(objectAlias(gameState, availability.tid) + ": " + pools);
+			}
+			if(!entries.empty())
+				records.push_back(std::string(pack.day <= 1 ? "available: { " : "growth: { ") +
+					boost::algorithm::join(entries, ", ") + " }");
+		}
+
+		if(pack.specialWeek != EWeekType::NORMAL || pack.creatureid != CreatureID::NONE)
+		{
+			std::string week = "week: { type: " + weekType(pack.specialWeek);
+			if(pack.creatureid != CreatureID::NONE)
+				week += ", creature: " + creature(pack.creatureid);
+			week += " }";
+			records.push_back(week);
+		}
+
+		line = boost::algorithm::join(records, "\n  - ");
 	}
 
 	void visitSetObjectProperty(SetObjectProperty & pack) override
 	{
-		const std::string property = objectProperty(pack.what);
-		if(property == "rewardCleared" || property == "rewardSelect" || property == "seerHutVisited")
+		if(pack.what == ObjProperty::OWNER)
 		{
-			line.clear();
+			line = "capture: { object: " + objectAlias(gameState, pack.id) +
+				", owner: " + color(pack.identifier.as<PlayerColor>()) + " }";
 			return;
 		}
-		line = "objectProperty: { object: " + objectAlias(gameState, pack.id) +
-			", property: " + property +
-			", value: " + objectPropertyValue(gameState, pack) + " }";
+		line.clear();
 	}
 
 	void visitSetRewardableConfiguration(SetRewardableConfiguration & pack) override
 	{
-		line = "rewardable: { object: " + objectAlias(gameState, pack.objectID) +
-			", building: " + building(pack.buildingID) +
-			", configuration: " + rewardableConfiguration(pack.configuration) + " }";
+		ResourceSet reward;
+		std::optional<std::string> narrative;
+		for(const auto & info : pack.configuration.info)
+		{
+			if(info.visitType != Rewardable::EEventType::EVENT_FIRST_VISIT)
+				continue;
+			reward += info.reward.resources;
+			if(info.message.hasCustomText())
+				narrative = info.message.toString();
+		}
+		line = "refresh: { object: " + objectAlias(gameState, pack.objectID);
+		if(!reward.empty())
+			line += ", reward: " + resourceMap(reward);
+		if(narrative)
+			line += ", text: " + yamlString(*narrative);
+		line += " }";
 	}
 
 	void visitChangeObjectVisitors(ChangeObjectVisitors & pack) override
@@ -2540,9 +2788,7 @@ public:
 
 	void visitInfoWindow(InfoWindow & pack) override
 	{
-		line = "info: { player: " + color(pack.player) +
-			", text: " + yamlString(pack.text.toString()) +
-			", components: " + std::to_string(pack.components.size()) + " }";
+		line.clear();
 	}
 
 	void visitBattleStart(BattleStart & pack) override
@@ -2595,8 +2841,7 @@ public:
 		std::vector<std::string> fields;
 		fields.push_back("id: " + battleAlias(pack.battleID));
 		fields.push_back("event: move");
-		fields.push_back("stack: " + stackAlias(pack.stack));
-		addBattleStackCreature(fields, "creature", gameState, pack.battleID, pack.stack);
+		fields.push_back("unit: " + yamlIdentifier(battleUnitAlias(gameState, pack.battleID, pack.stack)));
 		fields.push_back("path: " + flowList(tiles));
 		fields.push_back("distance: " + std::to_string(pack.distance));
 		if(pack.teleporting)
@@ -2607,16 +2852,36 @@ public:
 	void visitBattleUnitsChanged(BattleUnitsChanged & pack) override
 	{
 		line = "battle: { id: " + battleAlias(pack.battleID) +
-			", event: unitsChanged, changes: " + battleUnitChanges(pack.changedStacks) + " }";
+			", event: unitsChanged, changes: " + battleUnitChanges(gameState, pack.battleID, pack.changedStacks) + " }";
 	}
 
 	void visitBattleAttack(BattleAttack & pack) override
 	{
+		if(pack.bsa.size() == 1)
+		{
+			const auto & result = pack.bsa.front();
+			std::vector<std::string> fields;
+			fields.push_back("by: " + yamlIdentifier(battleUnitAlias(gameState, pack.battleID, pack.stackAttacking)));
+			fields.push_back("target: " + yamlIdentifier(battleUnitAlias(gameState, pack.battleID, result.stackAttacked)));
+			fields.push_back("damage: " + std::to_string(result.damageAmount));
+			fields.push_back("killed: " + std::to_string(result.killedAmount));
+			if(const auto left = battleLeft(result.newState); !left.empty())
+				fields.push_back("left: " + left);
+			if(pack.counter()) fields.push_back("retaliation: true");
+			if(pack.shot()) fields.push_back("ranged: true");
+			if(pack.lucky()) fields.push_back("luck: good");
+			if(pack.unlucky()) fields.push_back("luck: bad");
+			if(pack.deathBlow()) fields.push_back("deathBlow: true");
+			if(pack.spellLike()) fields.push_back("spellLike: true");
+			if(pack.lifeDrain()) fields.push_back("lifeDrain: true");
+			line = "battle: { id: " + battleAlias(pack.battleID) +
+				", attack: { " + boost::algorithm::join(fields, ", ") + " } }";
+			return;
+		}
 		std::vector<std::string> fields;
 		fields.push_back("id: " + battleAlias(pack.battleID));
 		fields.push_back("event: attack");
-		fields.push_back("attacker: " + stackAlias(pack.stackAttacking));
-		addBattleStackCreature(fields, "creature", gameState, pack.battleID, pack.stackAttacking);
+		fields.push_back("attacker: " + yamlIdentifier(battleUnitAlias(gameState, pack.battleID, pack.stackAttacking)));
 		fields.push_back("to: " + std::to_string(pack.tile.toInt()));
 		fields.push_back("flags: " + std::to_string(pack.flags));
 		fields.push_back("attacks: " + battleStackAttacks(gameState, pack.battleID, pack.bsa));
@@ -2640,7 +2905,7 @@ public:
 			", event: spellCast, side: " + battleSide(pack.side) +
 			", spell: " + spell(pack.spellID) +
 			", at: " + std::to_string(pack.tile.toInt()) +
-			", casterStack: " + std::to_string(pack.casterStack) +
+			", caster: " + yamlIdentifier(battleUnitAlias(gameState, pack.battleID, pack.casterStack)) +
 			", hero: " + std::string(pack.castByHero ? "true" : "false") + " }";
 	}
 
@@ -2664,14 +2929,14 @@ public:
 			", event: catapult, part: " + std::to_string(static_cast<int>(pack.attackedPart)) +
 			", tile: " + std::to_string(pack.destinationTile) +
 			", damage: " + std::to_string(pack.damageDealt) +
-			", killedTowerShooter: " + std::to_string(pack.killedTowerShooter) +
-			", attacker: " + std::to_string(pack.attacker) + " }";
+			", killedTowerShooter: " + (pack.killedTowerShooter < 0 ? "none" : yamlIdentifier(battleUnitAlias(gameState, pack.battleID, pack.killedTowerShooter))) +
+			", attacker: " + (pack.attacker < 0 ? "spell" : yamlIdentifier(battleUnitAlias(gameState, pack.battleID, pack.attacker))) + " }";
 	}
 
 	void visitBattleTriggerEffect(BattleTriggerEffect & pack) override
 	{
 		line = "battle: { id: " + battleAlias(pack.battleID) +
-			", event: triggerEffect, stack: " + stackAlias(pack.stackID) +
+			", event: triggerEffect, unit: " + yamlIdentifier(battleUnitAlias(gameState, pack.battleID, pack.stackID)) +
 			", effect: " + std::to_string(static_cast<int>(pack.effect)) +
 			", value: " + std::to_string(pack.val) +
 			", info: " + std::to_string(pack.additionalInfo) + " }";
@@ -2680,7 +2945,7 @@ public:
 	void visitBattleSetStackProperty(BattleSetStackProperty & pack) override
 	{
 		line = "battle: { id: " + battleAlias(pack.battleID) +
-			", event: stackProperty, stack: " + stackAlias(pack.stackID) +
+			", event: stackProperty, unit: " + yamlIdentifier(battleUnitAlias(gameState, pack.battleID, pack.stackID)) +
 			", property: " + battleStackProperty(pack.which) +
 			", value: " + std::to_string(pack.val) +
 			", absolute: " + std::string(pack.absolute ? "true" : "false") + " }";
@@ -2921,13 +3186,13 @@ void VGTRecorder::startTurnDocument(const CGameState & gameState, PlayerColor pl
 	if(!enabled)
 		return;
 
+	flushPendingBattle();
 	const auto calendar = gameState.getCalendar();
 	output << "---\n";
 	output << "turn: { date: " << calendarDate(calendar) << ", player: " << color(player) << " }\n";
 	output << "actions:\n";
 	documentOpen = true;
 	currentTurnPlayer = player;
-	activeBattleBlock.reset();
 }
 
 void VGTRecorder::startWorldDocument(const CGameState & gameState, const std::string & phase)
@@ -2936,13 +3201,95 @@ void VGTRecorder::startWorldDocument(const CGameState & gameState, const std::st
 	if(!enabled)
 		return;
 
-	const auto calendar = phase == "newTurn" ? gameState.getCalendar().nextDay() : gameState.getCalendar();
+	flushPendingBattle();
+	const auto calendar = phase == "newDay" ? gameState.getCalendar().nextDay() : gameState.getCalendar();
 	output << "---\n";
 	output << "world: { date: " << calendarDate(calendar) << ", phase: " << phase << " }\n";
 	output << "events:\n";
 	documentOpen = true;
 	currentTurnPlayer.reset();
-	activeBattleBlock.reset();
+}
+
+void VGTRecorder::flushPendingBattle()
+{
+	if(!pendingBattle)
+		return;
+
+	output << "  - battle:\n";
+	output << "      id: " << pendingBattle->id << "\n";
+	if(!pendingBattle->attacker.empty())
+		output << "      attacker: " << pendingBattle->attacker << "\n";
+	if(!pendingBattle->defender.empty())
+		output << "      defender: " << pendingBattle->defender << "\n";
+	if(!pendingBattle->units.empty())
+	{
+		output << "      units:\n";
+		for(const auto & unit : pendingBattle->units)
+			output << "        " << unit << "\n";
+	}
+	output << "      events:\n";
+	for(size_t index = 0; index < pendingBattle->events.size();)
+	{
+		const std::string attackPrefix = "{ attack: { ";
+		if(pendingBattle->events[index].starts_with(attackPrefix) && pendingBattle->events[index].ends_with(" } }"))
+		{
+			auto attack = pendingBattle->events[index].substr(attackPrefix.size(), pendingBattle->events[index].size() - attackPrefix.size() - 4);
+			if(index + 1 < pendingBattle->events.size() && pendingBattle->events[index + 1].starts_with(attackPrefix) &&
+				pendingBattle->events[index + 1].find(", retaliation: true") != std::string::npos)
+			{
+				auto retaliation = pendingBattle->events[index + 1].substr(
+					attackPrefix.size(), pendingBattle->events[index + 1].size() - attackPrefix.size() - 4);
+				boost::algorithm::erase_first(retaliation, ", retaliation: true");
+				if(const auto damage = retaliation.find("damage: "); damage != std::string::npos)
+					retaliation.erase(0, damage);
+				attack += ", retaliation: { " + retaliation + " }";
+				++index;
+			}
+			else
+				boost::algorithm::replace_all(attack, ", retaliation: true", ", counterattack: true");
+			output << "        - attack: { " << attack << " }\n";
+			++index;
+			continue;
+		}
+		if(pendingBattle->events[index].starts_with("wait: { "))
+		{
+			std::vector<std::string> units;
+			size_t end = index;
+			while(end < pendingBattle->events.size() && pendingBattle->events[end].starts_with("wait: { "))
+			{
+				const auto marker = pendingBattle->events[end].find("unit: ");
+				if(marker == std::string::npos)
+					break;
+				const auto valueStart = marker + std::string("unit: ").size();
+				const auto valueEnd = pendingBattle->events[end].find_first_of(", }", valueStart);
+				units.push_back(pendingBattle->events[end].substr(valueStart, valueEnd - valueStart));
+				++end;
+			}
+			if(!units.empty())
+			{
+				output << "        - wait: " << (units.size() == 1 ? units.front() : flowList(units)) << "\n";
+				index = end;
+				continue;
+			}
+		}
+		output << "        - " << pendingBattle->events[index] << "\n";
+		++index;
+	}
+	if(!pendingBattle->outcome.empty() || !pendingBattle->aftermath.empty())
+	{
+		output << "      outcome:\n";
+		for(const auto & field : pendingBattle->outcome)
+			output << "        " << field << "\n";
+		if(!pendingBattle->aftermath.empty())
+		{
+			output << "        aftermath:\n";
+			for(const auto & record : pendingBattle->aftermath)
+				output << "          - { " << record << " }\n";
+		}
+	}
+	output.flush();
+	battleUnitAliases.erase(std::stoi(pendingBattle->id));
+	pendingBattle.reset();
 }
 
 void VGTRecorder::writeActionLine(const CGameState & gameState, const std::string & line)
@@ -2956,19 +3303,36 @@ void VGTRecorder::writeActionLine(const CGameState & gameState, const std::strin
 
 	if(const auto battleRecord = battleBlockRecord(line))
 	{
-		if(activeBattleBlock != battleRecord->battleID)
+		if(!pendingBattle || pendingBattle->id != battleRecord->battleID)
 		{
-			output << "  - battle:\n";
-			output << "      id: " << battleRecord->battleID << "\n";
-			output << "      events:\n";
-			activeBattleBlock = battleRecord->battleID;
+			flushPendingBattle();
+			pendingBattle = PendingBattle{
+				battleRecord->battleID,
+				battleParticipant(gameState, BattleID(std::stoi(battleRecord->battleID)), BattleSide::ATTACKER),
+				battleParticipant(gameState, BattleID(std::stoi(battleRecord->battleID)), BattleSide::DEFENDER),
+				battleRoster(gameState, BattleID(std::stoi(battleRecord->battleID))),
+				{}, {}, {}, false};
 		}
-		output << "        - " << battleRecord->record << "\n";
-		output.flush();
+		if(pendingBattle->units.empty())
+		{
+			pendingBattle->units = battleRoster(gameState, BattleID(std::stoi(battleRecord->battleID)));
+			pendingBattle->attacker = battleParticipant(
+				gameState, BattleID(std::stoi(battleRecord->battleID)), BattleSide::ATTACKER);
+			pendingBattle->defender = battleParticipant(
+				gameState, BattleID(std::stoi(battleRecord->battleID)), BattleSide::DEFENDER);
+		}
+		pendingBattle->events.push_back(battleRecord->record);
 		return;
 	}
 
-	activeBattleBlock.reset();
+	if(pendingBattle)
+	{
+		if(pendingBattle->ended)
+			pendingBattle->aftermath.push_back(line);
+		else
+			pendingBattle->events.push_back("{ " + line + " }");
+		return;
+	}
 	output << "  - " << line << "\n";
 	output.flush();
 }
@@ -2978,16 +3342,128 @@ void VGTRecorder::flushPendingMove(const CGameState & gameState)
 	if(!pendingMove)
 		return;
 
-	std::string line = "moveHero: { actor: " + pendingMove->actor +
-		", hero: " + pendingMove->hero;
+	std::string line = "move: { ";
+	if(!currentTurnPlayer || pendingMove->actor != currentTurnPlayer->toString())
+		line += "actor: " + pendingMove->actor + ", ";
+	line += "hero: " + pendingMove->hero;
 	if(pendingMove->route.size() == 1)
-		line += ", to: " + pendingMove->route.front();
+	{
+		const auto & destination = pendingMove->route.front();
+		line += ", to: [" + std::to_string(destination[0]) + ", " + std::to_string(destination[1]) + ", " + std::to_string(destination[2]) + "]";
+	}
+	else if(pendingMove->route.size() >= 4)
+	{
+		const auto directions = encodedDirections(pendingMove->start, pendingMove->route);
+		if(directions)
+		{
+			const auto & destination = pendingMove->route.back();
+			line += ", to: [" + std::to_string(destination[0]) + ", " + std::to_string(destination[1]) + ", " + std::to_string(destination[2]) + "]";
+			line += ", steps: " + yamlString(*directions);
+		}
+		else
+		{
+			std::vector<std::string> route;
+			for(const auto & destination : pendingMove->route)
+				route.push_back("[" + std::to_string(destination[0]) + ", " + std::to_string(destination[1]) + "]");
+			line += ", route: " + flowList(route) + ", z: " + std::to_string(pendingMove->z);
+		}
+	}
 	else
-		line += ", route: " + flowList(pendingMove->route2D) + ", z: " + std::to_string(pendingMove->z);
+	{
+		std::vector<std::string> route;
+		for(const auto & destination : pendingMove->route)
+			route.push_back("[" + std::to_string(destination[0]) + ", " + std::to_string(destination[1]) + "]");
+		line += ", route: " + flowList(route) + ", z: " + std::to_string(pendingMove->z);
+	}
 	if(pendingMove->transit)
 		line += ", transit: true";
 	line += " }";
 	pendingMove.reset();
+	writeActionLine(gameState, line);
+}
+
+void VGTRecorder::flushPendingRecruit(const CGameState & gameState)
+{
+	if(!pendingRecruit)
+		return;
+
+	std::string line = "recruit: { ";
+	if(!currentTurnPlayer || pendingRecruit->actor != currentTurnPlayer->toString())
+		line += "actor: " + pendingRecruit->actor + ", ";
+	line += "at: " + pendingRecruit->source;
+	if(pendingRecruit->destination != pendingRecruit->source)
+		line += ", to: " + pendingRecruit->destination;
+	if(pendingRecruit->units.size() == 1 && pendingRecruit->units.front().slot >= 0)
+	{
+		const auto & unit = pendingRecruit->units.front();
+		line += ", units: { " + yamlKey(unit.creature) + ": " + std::to_string(unit.count) + " }";
+	}
+	else
+	{
+		std::vector<std::string> units;
+		for(const auto & unit : pendingRecruit->units)
+		{
+			std::string entry = "{ creature: " + unit.creature + ", count: " + std::to_string(unit.count);
+			if(unit.slot >= 0)
+				entry += ", slot: " + std::to_string(unit.slot);
+			entry += " }";
+			units.push_back(entry);
+		}
+		line += ", units: " + flowList(units);
+	}
+	if(!pendingRecruit->paid.empty())
+		line += ", paid: " + namedIntegerMap(pendingRecruit->paid);
+	if(pendingRecruit->units.size() > 1 && !pendingRecruit->remaining.empty())
+		line += ", remaining: " + namedIntegerMap(pendingRecruit->remaining);
+	line += " }";
+
+	pendingRecruit.reset();
+	suppressDerivedEffects = false;
+	writeActionLine(gameState, line);
+}
+
+void VGTRecorder::flushPendingEncounter(const CGameState & gameState)
+{
+	if(!pendingEncounter)
+		return;
+
+	if(!pendingEncounter->answered && pendingEncounter->outcomes.empty() && !pendingEncounter->text)
+	{
+		writeActionLine(gameState, "visit: { hero: " + pendingEncounter->hero + ", object: " + pendingEncounter->object + " }");
+		pendingEncounter.reset();
+		return;
+	}
+
+	std::string line = "encounter: { ";
+	if(!currentTurnPlayer || pendingEncounter->actor != currentTurnPlayer->toString())
+		line += "actor: " + pendingEncounter->actor + ", ";
+	line += "hero: " + pendingEncounter->hero + ", with: " + pendingEncounter->object;
+	if(pendingEncounter->answered)
+	{
+		const int32_t answer = pendingEncounter->answer.value_or(0);
+		std::string choiceName;
+		if(pendingEncounter->selection)
+			choiceName = "option" + std::to_string(answer);
+		else if(answer == 0)
+			choiceName = pendingEncounter->cancel ? "cancel" : "decline";
+		else if(answer == 1)
+			choiceName = "accept";
+		else
+			choiceName = "answer" + std::to_string(answer);
+		line += ", choice: { name: " + choiceName + ", value: " +
+			(pendingEncounter->answer ? std::to_string(answer) : "null") + " }";
+	}
+	if(pendingEncounter->text)
+		line += ", text: " + yamlString(*pendingEncounter->text);
+	if(!pendingEncounter->outcomes.empty())
+	{
+		std::vector<std::string> outcomes;
+		for(const auto & outcome : pendingEncounter->outcomes)
+			outcomes.push_back("{ " + outcome + " }");
+		line += ", outcome: " + flowList(outcomes);
+	}
+	line += " }";
+	pendingEncounter.reset();
 	writeActionLine(gameState, line);
 }
 
@@ -3078,8 +3554,20 @@ void VGTRecorder::recordDecision(const CGameState & gameState, CPackForServer & 
 	ensureHeader(gameState);
 	if(!enabled)
 		return;
+	if(auto * reply = dynamic_cast<QueryReply *>(&pack);
+		reply && pendingEncounter && pendingEncounter->query == reply->qid.getNum())
+	{
+		pendingEncounter->answered = true;
+		pendingEncounter->answer = reply->reply;
+		return;
+	}
+	flushPendingEncounter(gameState);
+	if(!dynamic_cast<MakeAction *>(&pack))
+		flushPendingBattle();
+	suppressDerivedEffects = false;
 	if(auto * move = dynamic_cast<MoveHero *>(&pack); move && !move->path.empty())
 	{
+		flushPendingRecruit(gameState);
 		const std::string actor = actorForPlayer(move->player);
 		const std::string hero = heroAlias(gameState, move->hid);
 		const int routeZ = move->path.front().z;
@@ -3098,16 +3586,79 @@ void VGTRecorder::recordDecision(const CGameState & gameState, CPackForServer & 
 		for(const auto & destination : move->path)
 		{
 			if(!pendingMove)
-				pendingMove = PendingMove{actor, hero, {}, {}, routeZ, move->transit};
-			pendingMove->route.push_back(pos(destination));
-			pendingMove->route2D.push_back(pos2D(destination));
+			{
+				std::array<int, 3> start = {destination.x, destination.y, destination.z};
+				if(const auto * heroObject = gameState.getMap().getObject(move->hid))
+				{
+					const auto position = heroObject->anchorPos();
+					start = {position.x, position.y, position.z};
+				}
+				pendingMove = PendingMove{actor, hero, start, {}, routeZ, move->transit};
+			}
+			pendingMove->route.push_back({destination.x, destination.y, destination.z});
 		}
 		return;
 	}
 	flushPendingMove(gameState);
+
+	if(auto * recruitPack = dynamic_cast<RecruitCreatures *>(&pack))
+	{
+		const std::string actor = actorForPlayer(recruitPack->player);
+		const std::string source = objectAlias(gameState, recruitPack->tid);
+		const std::string destination = objectAlias(gameState, recruitPack->dst);
+		if(pendingRecruit && (pendingRecruit->actor != actor || pendingRecruit->source != source || pendingRecruit->destination != destination))
+			flushPendingRecruit(gameState);
+		if(!pendingRecruit)
+			pendingRecruit = PendingRecruit{actor, source, destination, {}, {}, {}};
+
+		int destinationSlot = -1;
+		if(const auto * army = dynamic_cast<const CArmedInstance *>(gameState.getMap().getObject(recruitPack->dst)))
+			destinationSlot = army->getSlotFor(recruitPack->crid).getNum();
+		pendingRecruit->units.push_back({creature(recruitPack->crid), recruitPack->amount, destinationSlot});
+
+		if(const auto * recruited = recruitPack->crid.toCreature())
+		{
+			const auto cost = recruited->getFullRecruitCost() * static_cast<TResource>(recruitPack->amount);
+			for(size_t index = 0; index < cost.size(); ++index)
+			{
+				if(cost[index] != 0)
+					pendingRecruit->paid[GameResID::encode(static_cast<int>(index))] += cost[index];
+			}
+		}
+		if(const auto * dwelling = dynamic_cast<const CGDwelling *>(gameState.getMap().getObject(recruitPack->tid));
+			dwelling && recruitPack->level >= 0 && static_cast<size_t>(recruitPack->level) < dwelling->creatures.size())
+		{
+			const auto & pool = dwelling->creatures[recruitPack->level];
+			for(const auto creatureID : pool.second)
+				pendingRecruit->remaining[transcriptIdentifier(CreatureID::encode(creatureID.getNum()))] =
+					std::max<int64_t>(0, static_cast<int64_t>(pool.first) - recruitPack->amount);
+		}
+		suppressDerivedEffects = true;
+		return;
+	}
+
+	flushPendingRecruit(gameState);
+	if(auto * buildPack = dynamic_cast<BuildStructure *>(&pack))
+	{
+		std::string line = "build: { ";
+		const auto actor = actorForPlayer(buildPack->player);
+		if(!currentTurnPlayer || actor != currentTurnPlayer->toString())
+			line += "actor: " + actor + ", ";
+		line += "town: " + objectAlias(gameState, buildPack->tid) +
+			", building: " + building(buildPack->bid);
+		if(const auto * town = dynamic_cast<const CGTownInstance *>(gameState.getMap().getObject(buildPack->tid)))
+			line += ", cost: " + resourceMap(town->getBuildingCost(buildPack->bid));
+		line += " }";
+		writeActionLine(gameState, line);
+		suppressDerivedEffects = true;
+		return;
+	}
+
 	DecisionRecorder recorder(gameState);
 	pack.visit(recorder);
-	writeActionLine(gameState, readableDecisionRecord(recorder.result()));
+	if(auto * action = dynamic_cast<MakeAction *>(&pack))
+		lastBattleDecisions[battleAlias(action->battleID)] = battleAction(gameState, action->battleID, action->ba);
+	writeActionLine(gameState, readableDecisionRecord(recorder.result(), currentTurnPlayer));
 }
 
 void VGTRecorder::recordTimerEndTurn(const CGameState & gameState, PlayerColor player)
@@ -3122,6 +3673,8 @@ void VGTRecorder::recordTimerEndTurn(const CGameState & gameState, PlayerColor p
 		return;
 
 	flushPendingMove(gameState);
+	flushPendingRecruit(gameState);
+	flushPendingBattle();
 	writeActionLine(gameState, "endTurn: { actor: timer/" + color(player) + " }");
 }
 
@@ -3137,6 +3690,8 @@ void VGTRecorder::recordTimerBattleAction(const CGameState & gameState, PlayerCo
 		return;
 
 	flushPendingMove(gameState);
+	flushPendingRecruit(gameState);
+	lastBattleDecisions[battleAlias(battleID)] = battleAction(gameState, battleID, action);
 	writeActionLine(
 		gameState,
 		"battleAction: { actor: timer/" + color(player) +
@@ -3156,6 +3711,182 @@ void VGTRecorder::recordEffect(const CGameState & gameState, CPackForClient & pa
 	ensureHeader(gameState);
 	if(!enabled)
 		return;
+	if(auto * start = dynamic_cast<BattleStart *>(&pack))
+		resetBattleUnitAliases(gameState, start->battleID);
+	if(auto * changed = dynamic_cast<BattleUnitsChanged *>(&pack))
+	{
+		for(const auto & change : changed->changedStacks)
+		{
+			if(change.operation != BattleChanges::EOperation::ADD)
+				continue;
+			battle::UnitInfo info;
+			info.load(change.id, change.data);
+			const auto alias = registerBattleUnitAlias(changed->battleID, static_cast<int>(change.id), info.side, info.type);
+			if(pendingBattle && pendingBattle->id == battleAlias(changed->battleID))
+			{
+				const auto * battle = gameState.getBattle(changed->battleID);
+				const auto owner = battle ? battle->getSidePlayer(info.side) : PlayerColor::NEUTRAL;
+				pendingBattle->units.push_back(yamlKey(alias) + ": { stack: " + std::to_string(change.id) +
+					", owner: " + color(owner) + ", count: " + std::to_string(info.count) + " }");
+			}
+		}
+	}
+	if(auto * startAction = dynamic_cast<StartAction *>(&pack))
+	{
+		const std::string id = battleAlias(startAction->battleID);
+		const std::string accepted = battleAction(gameState, startAction->battleID, startAction->ba);
+		const auto requested = lastBattleDecisions.find(id);
+		if(requested != lastBattleDecisions.end() && requested->second == accepted)
+		{
+			lastBattleDecisions.erase(requested);
+			return;
+		}
+		lastBattleDecisions.erase(id);
+		writeActionLine(gameState, "battle: { id: " + id + ", event: acceptedAs, action: " + accepted + " }");
+		return;
+	}
+	if(auto * result = dynamic_cast<BattleResult *>(&pack); result && pendingBattle)
+	{
+		pendingBattle->outcome.push_back("result: " + battleResult(result->result));
+		pendingBattle->outcome.push_back("winnerSide: " + battleSide(result->winner));
+		std::vector<std::string> casualties;
+		for(const auto side : {BattleSide::ATTACKER, BattleSide::DEFENDER})
+		{
+			const auto & values = result->casualties[side];
+			if(!values.empty())
+				casualties.push_back(battleSide(side) + ": " + battleCasualties(values));
+		}
+		if(!casualties.empty())
+			pendingBattle->outcome.push_back("casualties: { " + boost::algorithm::join(casualties, ", ") + " }");
+		return;
+	}
+	if(auto * accepted = dynamic_cast<BattleResultAccepted *>(&pack); accepted && pendingBattle)
+	{
+		std::vector<std::string> experience;
+		for(const auto side : {BattleSide::ATTACKER, BattleSide::DEFENDER})
+		{
+			const auto & heroResult = accepted->heroResult[side];
+			if(heroResult.exp != 0 && heroResult.heroID != ObjectInstanceID::NONE)
+				experience.push_back(heroAlias(gameState, heroResult.heroID) + ": " + std::to_string(heroResult.exp));
+		}
+		if(!experience.empty())
+			pendingBattle->outcome.push_back("experience: { " + boost::algorithm::join(experience, ", ") + " }");
+		return;
+	}
+	if(auto * applied = dynamic_cast<BattleResultsApplied *>(&pack); applied && pendingBattle)
+	{
+		pendingBattle->outcome.push_back("winner: " + color(applied->victor));
+		pendingBattle->outcome.push_back("loser: " + color(applied->loser));
+		if(!applied->movingArtifacts.empty())
+			pendingBattle->outcome.push_back("artifactMoves: " + bulkArtifactMoves(gameState, applied->movingArtifacts));
+		if(!applied->learnedSpells.spells.empty())
+			pendingBattle->outcome.push_back("learnedSpells: { hero: " +
+				heroAlias(gameState, applied->learnedSpells.hid) + ", spells: " +
+				spellsList(applied->learnedSpells.spells) + " }");
+		if(!applied->growingArtifacts.empty())
+			pendingBattle->outcome.push_back("grownArtifacts: " + std::to_string(applied->growingArtifacts.size()));
+		if(!applied->dischargingArtifacts.empty())
+			pendingBattle->outcome.push_back("dischargedArtifacts: " + std::to_string(applied->dischargingArtifacts.size()));
+		if(applied->raisedStack.getId() != CreatureID::NONE && applied->raisedStack.getCount() > 0)
+			pendingBattle->outcome.push_back("raised: { creature: " + creature(applied->raisedStack.getId()) +
+				", count: " + std::to_string(applied->raisedStack.getCount()) + " }");
+		return;
+	}
+	if(auto * ended = dynamic_cast<BattleEnded *>(&pack); ended && pendingBattle)
+	{
+		if(std::none_of(pendingBattle->outcome.begin(), pendingBattle->outcome.end(), [](const std::string & field)
+		{
+			return field.starts_with("winner: ");
+		}))
+			pendingBattle->outcome.push_back("winner: " + color(ended->victor));
+		if(std::none_of(pendingBattle->outcome.begin(), pendingBattle->outcome.end(), [](const std::string & field)
+		{
+			return field.starts_with("loser: ");
+		}))
+			pendingBattle->outcome.push_back("loser: " + color(ended->loser));
+		pendingBattle->ended = true;
+		return;
+	}
+
+	if(dynamic_cast<BattleStart *>(&pack) && pendingEncounter)
+		flushPendingEncounter(gameState);
+	if(auto * visit = dynamic_cast<HeroVisit *>(&pack); visit && visit->starting)
+	{
+		flushPendingMove(gameState);
+		flushPendingEncounter(gameState);
+		PendingEncounter encounter;
+		encounter.hero = heroAlias(gameState, visit->heroId);
+		encounter.object = objectAlias(gameState, visit->objId);
+		if(const auto * hero = gameState.getHero(visit->heroId))
+			encounter.actor = actorForPlayer(hero->tempOwner);
+		else
+			encounter.actor = currentTurnPlayer ? currentTurnPlayer->toString() : "world";
+		pendingEncounter = std::move(encounter);
+		return;
+	}
+	if(auto * dialog = dynamic_cast<BlockingDialog *>(&pack); dialog && pendingEncounter)
+	{
+		pendingEncounter->query = dialog->queryID.getNum();
+		pendingEncounter->selection = dialog->selection();
+		pendingEncounter->cancel = dialog->cancel();
+		const bool standardMonsterPrompt = pendingEncounter->object.starts_with("monster/");
+		if(dialog->text.hasCustomText() && !standardMonsterPrompt)
+			pendingEncounter->text = dialog->text.toString();
+		return;
+	}
+	if(auto * info = dynamic_cast<InfoWindow *>(&pack))
+	{
+		const bool standardShrineText = pendingEncounter &&
+			pendingEncounter->object.starts_with("shrineOfMagicLevel");
+		if(info->text.hasCustomText() && !standardShrineText)
+		{
+			if(pendingEncounter)
+				pendingEncounter->text = info->text.toString();
+			else
+				writeActionLine(gameState, "story: { text: " + yamlString(info->text.toString()) + " }");
+		}
+		return;
+	}
+	if(auto * removed = dynamic_cast<RemoveObject *>(&pack); pendingBattle && pendingBattle->ended &&
+		removed && objectAlias(gameState, removed->objectID) == pendingBattle->defender)
+	{
+		pendingBattle->outcome.push_back("removeDefender: true");
+		return;
+	}
+
+	const bool documentBoundary = dynamic_cast<PlayerStartsTurn *>(&pack) ||
+		dynamic_cast<PlayerEndsTurn *>(&pack) || dynamic_cast<NewTurn *>(&pack);
+	if(documentBoundary)
+	{
+		flushPendingEncounter(gameState);
+		flushPendingBattle();
+	}
+	if(suppressDerivedEffects && !documentBoundary)
+		return;
+	if(pendingBattle && (
+		dynamic_cast<ChangeStackCount *>(&pack) ||
+		dynamic_cast<SetStackType *>(&pack) ||
+		dynamic_cast<EraseStack *>(&pack) ||
+		dynamic_cast<SwapStacks *>(&pack) ||
+		dynamic_cast<InsertNewStack *>(&pack) ||
+		dynamic_cast<RebalanceStacks *>(&pack) ||
+		dynamic_cast<GiveStackExperience *>(&pack) ||
+		dynamic_cast<SetHeroExperience *>(&pack)))
+		return;
+	if(!pendingEncounter && !pendingBattle && !documentBoundary && (
+		dynamic_cast<FoWChange *>(&pack) ||
+		dynamic_cast<NewStructures *>(&pack) ||
+		dynamic_cast<RazeStructures *>(&pack) ||
+		dynamic_cast<SetHeroesInTown *>(&pack) ||
+		dynamic_cast<SetAvailableHero *>(&pack) ||
+		dynamic_cast<SetAvailableArtifacts *>(&pack) ||
+		dynamic_cast<ChangeStackCount *>(&pack) ||
+		dynamic_cast<SetStackType *>(&pack) ||
+		dynamic_cast<EraseStack *>(&pack) ||
+		dynamic_cast<SwapStacks *>(&pack) ||
+		dynamic_cast<InsertNewStack *>(&pack) ||
+		dynamic_cast<RebalanceStacks *>(&pack)))
+		return;
 
 	if(auto * timer = dynamic_cast<TurnTimeUpdate *>(&pack))
 	{
@@ -3163,7 +3894,7 @@ void VGTRecorder::recordEffect(const CGameState & gameState, CPackForClient & pa
 		return;
 	}
 	const auto * move = dynamic_cast<TryMoveHero *>(&pack);
-	if(move && move->result == TryMoveHero::SUCCESS)
+	if(move)
 		return;
 
 	std::optional<std::string> turnStartTimer;
@@ -3174,6 +3905,7 @@ void VGTRecorder::recordEffect(const CGameState & gameState, CPackForClient & pa
 	if(auto * start = dynamic_cast<PlayerStartsTurn *>(&pack))
 	{
 		flushPendingMove(gameState);
+		flushPendingRecruit(gameState);
 		if(timersEnabled)
 		{
 			if(auto it = latestTimerStates.find(start->player); it != latestTimerStates.end())
@@ -3184,10 +3916,13 @@ void VGTRecorder::recordEffect(const CGameState & gameState, CPackForClient & pa
 	else if(dynamic_cast<NewTurn *>(&pack))
 	{
 		flushPendingMove(gameState);
-		startWorldDocument(gameState, "newTurn");
+		flushPendingRecruit(gameState);
+		startWorldDocument(gameState, "newDay");
 	}
 	else if(auto * end = dynamic_cast<PlayerEndsTurn *>(&pack))
 	{
+		flushPendingMove(gameState);
+		flushPendingRecruit(gameState);
 		if(timersEnabled)
 		{
 			if(auto it = turnStartTimerStates.find(end->player); it != turnStartTimerStates.end() && it->second != "none")
@@ -3201,6 +3936,11 @@ void VGTRecorder::recordEffect(const CGameState & gameState, CPackForClient & pa
 	pack.visit(recorder);
 	if(!recorder.result().empty())
 	{
+		if(pendingEncounter)
+		{
+			pendingEncounter->outcomes.push_back(recorder.result());
+			return;
+		}
 		flushPendingMove(gameState);
 		writeActionLine(gameState, recorder.result());
 	}

@@ -21,6 +21,22 @@ class VGTError(RuntimeError):
     pass
 
 
+LEGACY_RECORD_KEYS = {
+    "availableCreatures",
+    "buildStructure",
+    "moveHero",
+    "movementPoints",
+    "newTurn",
+    "objectProperty",
+    "primarySkill",
+    "recruitCreatures",
+    "rewardable",
+    "secondarySkill",
+}
+
+LEGACY_IDENTIFIER_PREFIXES = ("core/", "core:", "hero/", "object/")
+
+
 def load_documents(path: Path) -> list[dict[str, Any]]:
     try:
         with path.open("r", encoding="utf-8") as handle:
@@ -49,45 +65,119 @@ def iter_records(documents: list[dict[str, Any]]):
         if not isinstance(records, list):
             raise VGTError(f"document {document_index} records field is not a list")
         for record_index, record in enumerate(records):
-            if not isinstance(record, dict) or len(record) != 1:
-                raise VGTError(f"document {document_index} record {record_index} is not a one-key mapping")
+            if not isinstance(record, dict):
+                raise VGTError(f"document {document_index} record {record_index} is not a mapping")
+            contextual_build = "at" in record and "build" in record
+            contextual_move = "with" in record and "move" in record
+            if len(record) != 1 and not contextual_build and not contextual_move:
+                raise VGTError(
+                    f"document {document_index} record {record_index} is neither a one-key record nor a contextual scene"
+                )
             if "decision" in record:
                 raise VGTError(f"document {document_index} record {record_index} uses the removed generic decision wrapper")
-            if "moveHero" in record:
-                validate_move_hero(record["moveHero"], document_index, record_index)
+            removed = LEGACY_RECORD_KEYS.intersection(record)
+            if removed:
+                raise VGTError(
+                    f"document {document_index} record {record_index} uses removed record key {sorted(removed)[0]!r}"
+                )
+            validate_short_identifiers(record, document_index, record_index)
+            if contextual_move:
+                value = dict(record["move"])
+                value["hero"] = record["with"]
+                validate_move(value, document_index, record_index)
+            elif "move" in record:
+                validate_move(record["move"], document_index, record_index)
             if "battle" in record:
                 validate_battle_block(record["battle"], document_index, record_index)
             yield document_index, record_index, record
 
 
-def validate_move_hero(value: Any, document_index: int, record_index: int) -> None:
+def validate_short_identifiers(value: Any, document_index: int, record_index: int) -> None:
+    if isinstance(value, dict):
+        for child in value.values():
+            validate_short_identifiers(child, document_index, record_index)
+        return
+    if isinstance(value, list):
+        for child in value:
+            validate_short_identifiers(child, document_index, record_index)
+        return
+    if not isinstance(value, str):
+        return
+    if value.startswith(LEGACY_IDENTIFIER_PREFIXES) or "/at-" in value:
+        raise VGTError(
+            f"document {document_index} record {record_index} contains removed identifier spelling {value!r}"
+        )
+
+
+def validate_move(value: Any, document_index: int, record_index: int) -> None:
     if not isinstance(value, dict):
-        raise VGTError(f"document {document_index} record {record_index} moveHero payload is not a mapping")
+        raise VGTError(f"document {document_index} record {record_index} move payload is not a mapping")
     if "path" in value:
-        raise VGTError(f"document {document_index} record {record_index} uses the removed moveHero path field")
+        raise VGTError(f"document {document_index} record {record_index} uses the removed move path field")
+    forms = sum(field in value for field in ("route", "steps"))
+    if forms > 1:
+        raise VGTError(f"document {document_index} record {record_index} move mixes route and steps")
+    if "steps" in value:
+        if not isinstance(value["steps"], str) or not value["steps"].strip() or "to" not in value:
+            raise VGTError(f"document {document_index} record {record_index} encoded move needs non-empty steps and to")
+        for token in value["steps"].split():
+            direction, marker, count = token.partition("*")
+            if direction not in {"N", "NE", "E", "SE", "S", "SW", "W", "NW"}:
+                raise VGTError(f"document {document_index} record {record_index} has invalid direction {direction!r}")
+            if marker and (not count.isdigit() or int(count) < 2):
+                raise VGTError(f"document {document_index} record {record_index} has invalid run length {token!r}")
     if "route" not in value:
         return
     route = value["route"]
     if type(value.get("z")) is not int:
-        raise VGTError(f"document {document_index} record {record_index} moveHero route has no integer z")
+        raise VGTError(f"document {document_index} record {record_index} move route has no integer z")
     if not isinstance(route, list) or len(route) < 2 or any(
         not isinstance(point, list)
         or len(point) != 2
         or any(type(coordinate) is not int for coordinate in point)
         for point in route
     ):
-        raise VGTError(f"document {document_index} record {record_index} moveHero route must contain only [x, y] points")
+        raise VGTError(f"document {document_index} record {record_index} move route must contain only [x, y] points")
 
 
 def validate_battle_block(value: Any, document_index: int, record_index: int) -> None:
     if not isinstance(value, dict) or not isinstance(value.get("events"), list):
-        return
+        raise VGTError(f"document {document_index} record {record_index} battle has no event list")
+    units = value.get("units", {})
+    if not isinstance(units, dict):
+        raise VGTError(f"document {document_index} record {record_index} battle units is not a mapping")
+    for name, unit in units.items():
+        if not isinstance(name, str) or not name.startswith(("attacker/", "defender/")):
+            raise VGTError(f"document {document_index} record {record_index} has non-descriptive battle unit {name!r}")
+        if not isinstance(unit, dict) or type(unit.get("stack")) is not int:
+            raise VGTError(f"document {document_index} record {record_index} battle unit {name!r} has no raw stack id")
     for battle_index, event in enumerate(value["events"]):
         if isinstance(event, dict) and "decision" in event:
             raise VGTError(
                 f"document {document_index} record {record_index} battle event {battle_index} "
                 "uses the removed generic decision wrapper"
             )
+        if not isinstance(event, dict):
+            raise VGTError(
+                f"document {document_index} record {record_index} battle event {battle_index} is not a mapping"
+            )
+        if "startAction" in event or event.get("event") == "startAction":
+            raise VGTError(
+                f"document {document_index} record {record_index} battle event {battle_index} repeats startAction"
+            )
+        for removed_field in ("stack", "stackID", "stackId", "casterStack"):
+            if removed_field in event:
+                raise VGTError(
+                    f"document {document_index} record {record_index} battle event {battle_index} exposes raw {removed_field}"
+                )
+
+
+def record_key(record: dict[str, Any]) -> str:
+    if "at" in record and "build" in record:
+        return "build"
+    if "with" in record and "move" in record:
+        return "move"
+    return next(iter(record))
 
 
 def header(documents: list[dict[str, Any]]) -> dict[str, Any]:
@@ -167,8 +257,8 @@ def validate_map_hash(map_info: dict[str, Any], roots: list[Path]) -> Path:
 def summarize(documents: list[dict[str, Any]]) -> collections.Counter[str]:
     counter: collections.Counter[str] = collections.Counter()
     for _, _, record in iter_records(documents):
-        key = next(iter(record))
-        value = record[key]
+        key = record_key(record)
+        value = record.get(key)
         if key == "battle" and isinstance(value, dict) and isinstance(value.get("events"), list):
             counter[key] += len(value["events"])
         else:
@@ -228,14 +318,14 @@ def command_check(args: argparse.Namespace) -> int:
 
     if args.normalized_json:
         with args.normalized_json.open("w", encoding="utf-8") as handle:
-            json.dump(documents, handle, indent=2, sort_keys=True)
+            json.dump(documents, handle, indent=2, sort_keys=True, ensure_ascii=False)
             handle.write("\n")
     return 0
 
 
 def write_normalized_json(documents: list[dict[str, Any]], path: Path) -> None:
     with path.open("w", encoding="utf-8") as handle:
-        json.dump(documents, handle, indent=2, sort_keys=True)
+        json.dump(documents, handle, indent=2, sort_keys=True, ensure_ascii=False)
         handle.write("\n")
 
 

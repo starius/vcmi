@@ -2,19 +2,20 @@
 
 ## Status And Scope
 
-This document records the reviewed follow-up plan for making VGT more compact and
-more like a game story written by a human. It refines, but does not yet implement,
-the current VGT 4 format described in
+This document records the reviewed and implemented refinement that makes VGT more
+compact and more like a game story written by a human. It defines the current VGT 4
+format together with
 [`VGT_Event_Transcript_Plan.md`](VGT_Event_Transcript_Plan.md).
 
-All eighteen reviewed proposals are included. The examples in this document are
-proposed syntax, not syntax accepted by the current schema or replayer.
+All eighteen reviewed proposals are included. The examples are accepted current
+syntax unless explicitly labelled as the removed verbose shape.
 
-The default requirement is semantic losslessness: a refined record must expand into
+The default requirement is semantic losslessness: a compact record must expand into
 the same ordered decisions and independent material outcomes, or provide everything
 needed to issue the same server requests. Proposal 18 deliberately uses the narrower
 definition of replay losslessness: deterministic effects may be regenerated, but
-important human-readable outcomes remain in the transcript.
+important human-readable outcomes remain in the transcript. The strict checker,
+semantic replayer, and byte-exact turn-save oracle are the acceptance mechanisms.
 
 ## Agreed General Rules
 
@@ -62,7 +63,7 @@ important human-readable outcomes remain in the transcript.
 Group a player decision with the independent material results that explain it. Do
 not present a player action and its server effects as unrelated adjacent records.
 
-Current shape:
+Removed verbose shape:
 
 ```yaml
 - buildStructure: { actor: red, town: town/red/froisan-conflux/at-7-5-0, building: core/cityHall }
@@ -70,7 +71,7 @@ Current shape:
 - town: { id: town/red/froisan-conflux/at-7-5-0, build: [core/cityHall, core/extraTownHall, core/extraCityHall], builtThisTurn: 1 }
 ```
 
-Proposed shape after applying the identifier rules from proposal 3:
+Current shape after applying the identifier rules from proposal 3:
 
 ```yaml
 - build:
@@ -153,9 +154,12 @@ hero's known starting position. Retain the exact destination as a readable check
     steps: "SE E SE E*3 NE N NE"
 ```
 
-This expands exactly to the original tile sequence. Short routes may keep coordinate
-lists. A gate, monolith, whirlpool, spell teleport, embark, disembark, blocking visit,
-or level change ends the ordinary route and remains a separate semantic event.
+This expands exactly to the original tile sequence. Short routes may keep `[x, y]`
+coordinate lists with one sibling `z`; route points never have a three-coordinate
+variant. A gate, monolith, whirlpool, spell teleport, embark, disembark, blocking
+visit, or level change ends the ordinary route and remains a separate semantic
+event. The exact `to` check remains three-dimensional because it is one position,
+not a route point.
 
 ### 5. Signed Changes And Explicit Assignment Verbs
 
@@ -368,8 +372,8 @@ When one side has multiple stacks of the same creature, assign stable ordinals f
 the lifetime of the battle:
 
 ```text
-defender/stone-gargoyles#1
-defender/stone-gargoyles#2
+defender/stone-gargoyles/1
+defender/stone-gargoyles/2
 ```
 
 Raw stack IDs appear only in the roster. Summoned, cloned, transformed, and newly
@@ -479,7 +483,7 @@ Verbose shape:
 - army: { owner: town/red/froisan-conflux@7.5, slot: 2, insert: { creature: pixie, count: 2 } }
 ```
 
-Proposed compromise:
+Current replay-lossless compromise:
 
 ```yaml
 - recruit:
@@ -498,6 +502,9 @@ copy of every original effect packet. Exact per-turn save comparison remains the
 required proof that no game state was lost.
 
 ## Implementation Sequence
+
+All phases below are implemented. The numbered items are retained as the dependency
+order and review checklist, not as pending work.
 
 ### Phase 1: Grammar And Expansion Model
 
@@ -582,3 +589,18 @@ writer/replayer coverage, strict mode reports no unmodelled material changes acr
 the validation matrix, every saved turn matches byte-for-byte, and a reader can
 follow the main decisions and outcomes without understanding VCMI network packets or
 internal serialization structures.
+
+## Implementation Evidence
+
+The completed implementation was exercised with eight AI-versus-AI recordings: two
+authored land maps, two authored water/custom-narrative maps, and four generated maps
+covering small through extra-large sizes, two through eight active slots, teams,
+surface-only and two-level terrain, no water through islands, and 20 through 40
+player turns per game. All eight streams passed strict and JSON Schema validation.
+Semantic replay reconstructed all 250 recorded per-turn saves byte-for-byte.
+
+An exact four-turn before/after recording on the same map, setup, and random seed
+changed from 102,700 to 44,892 bytes (56.29% smaller), 14,833 to 6,565 words (55.74%
+fewer), and 776 to 492 lines (36.60% fewer). Deterministic `gzip -9` size changed
+from 9,514 to 6,273 bytes (34.07% smaller). The refined member matched all four
+turn-state saves exactly.
