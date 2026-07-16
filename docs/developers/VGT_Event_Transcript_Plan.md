@@ -76,54 +76,48 @@ This keeps the transcript readable while detecting the most dangerous external i
 
 Use a YAML multi-document stream. The header is the first document. Each following document is a turn, world phase, or battle-only phase. This is easier to append than a single large top-level list.
 
+The machine-readable definition is
+[`config/schemas/vgt-4.schema.json`](../../config/schemas/vgt-4.schema.json). It is a
+JSON Schema Draft 2020-12 document for the parsed YAML stream: load all YAML
+documents and present them to the schema as an array. This is the same normalized
+shape produced by `scripts/vgt_replay.py check --normalized-json`. JSON Schema
+`description` fields are the format's inline machine-readable documentation.
+
 ```yaml
 vgt: 4
 format: VCMI readable event transcript
-engine: { version: "1.8.0", build: "develop" }
+engine: { version: "1.8.0" }
 map:
-  uri: "Maps/RandomMaps/trace_giant_8ai.vmap"
-  name: "Coldshadow's Fantasy"
-  source: generated-map-file
+  uri: "Maps/Arrogance.h3m"
+  name: "Arrogance"
   hash: { algorithm: sha256, value: "8db3480a8b6f7e7a8c3d2a17f8c1b0c77a2b8b7c4f7f4ce0f1b5b83e7a3e0000" }
-  objectNameCounter: 5576
-  generator: { width: 252, height: 252, levels: 2, humanOrComputerPlayers: 8, teams: 0, computerOnlyPlayers: 0, computerOnlyTeams: 0, water: normal, monsters: normal, template: "8XM12", roads: ["core:dirtRoad", "core:gravelRoad", "core:cobblestoneRoad"], players: { red: { type: ai, faction: random, hero: random, team: 0 }, blue: { type: ai, faction: random, hero: random, team: 1 } } }
-  initialGenerator: { width: 252, height: 252, levels: 2, humanOrComputerPlayers: 8, teams: 0, computerOnlyPlayers: 0, computerOnlyTeams: 0, water: normal, monsters: normal, template: "8XM12", roads: ["core:dirtRoad", "core:gravelRoad", "core:cobblestoneRoad"], players: { red: { type: ai, faction: random, hero: random, team: none }, blue: { type: ai, faction: random, hero: random, team: none } } }
-content:
-  ruleset: sod
-  mods: [{ id: vcmi, version: "1.8.0" }, { id: core, version: "1.8.0" }]
+  objectNameCounter: 128
 settings:
   start: newGame
+  startTime: 1775000000
   difficulty: normal
+  randomSeed: 504122489
+  simturns: { requiredTurns: 0, optionalTurns: 0, allowHumanWithAI: false, ignoreAlliedContacts: false }
   timer: none
-  gameSettingsOverrides: { spells: { tomesGrantBannedSpells: true } }
+  extraOptions: { cheatsAllowed: false, unlimitedReplay: false }
+  gameSettingsOverrides: {}
 players:
-  red:  { controller: ai, adventureAI: Nullkiller2, battleAI: BattleAI, team: none }
-  blue: { controller: ai, adventureAI: Nullkiller2, battleAI: BattleAI, team: none }
+  red: { controller: ai, faction: core/conflux, hero: core/grindan, heroPortrait: core/grindan, heroNameTextId: "", startingBonus: random, handicap: { resources: [], incomePercent: 100, growthPercent: 100 }, name: "Computer", connections: [], computerOnly: false }
 initialPlayers:
-  red:  { controller: ai, faction: random, hero: random, startingBonus: random }
-  blue: { controller: ai, faction: random, hero: random, startingBonus: random }
-aliases:
-  hero/red/orrin: { type: "core:orrin", start: [10, 10, 0] }
-  town/red/castle: { type: "core:castle", start: [8, 10, 0] }
+  red: { controller: ai, faction: random, hero: random, heroPortrait: random, heroNameTextId: "", startingBonus: random, handicap: { resources: [], incomePercent: 100, growthPercent: 100 }, name: "Computer", connections: [], computerOnly: false }
+initialState: { heroes: [] }
 ---
-turn: { day: 1, player: red }
+turn: { date: 1/1/1, player: red }
 actions:
-  - buildStructure: { actor: ai/red/Nullkiller2, town: town/red/castle, building: "core:townHall" }
-  - town: { id: town/red/castle, build: "core:townHall", cost: [{ resource: "core:gold", amount: 2500 }] }
-  - resources: { player: red, change: [{ resource: "core:gold", from: 5000, to: 2500 }] }
-  - moveHero: { actor: ai/red/Nullkiller2, hero: hero/red/orrin, destination: [12, 10, 0], reason: visit }
-  - hero: { id: hero/red/orrin, path: [[10, 10, 0], [11, 10, 0], [12, 10, 0]], movement: [1560, 1360] }
-  - visit: { hero: hero/red/orrin, object: object/resource/gold/at-12-10-0 }
-  - resources: { player: red, change: [{ resource: "core:gold", from: 2500, to: 3000 }], source: object/resource/gold/at-12-10-0 }
-  - remove: { object: object/resource/gold/at-12-10-0, reason: collected }
-  - endTurn: { actor: ai/red/Nullkiller2 }
-  - turnEnd: { player: red, timer: { start: { turn: 120000 }, end: { turn: 91784 } } }
+  - buildStructure: { actor: red, town: town/red/castle/at-8-10-0, building: core/townHall }
+  - resources: { player: red, mode: relative, values: [{ gold: -2500 }] }
+  - moveHero: { actor: red, hero: hero/red/core/orrin, route: [[11, 10], [12, 10]], z: 0 }
+  - visit: { hero: hero/red/core/orrin, object: object/core/resource/gold/at-12-10-0 }
+  - endTurn: { actor: red }
 ---
-world: { day: 8, phase: weekStart }
+world: { date: 1/1/1, phase: newTurn }
 events:
-  - random: { consumer: weekCreature, result: "core:imp" }
-  - week: { kind: creature, creature: "core:imp" }
-  - spawn: { id: object/monster/imp/at-44-19-0, type: "core:imp", count: 34, position: [44, 19, 0], visibleTo: [] }
+  - newTurn: { day: 2, week: normal, creature: none }
 ```
 
 `players` is the resolved setup after lobby and map random choices have been realized. It is the primary human-readable roster. `initialPlayers` is the original setup passed into game initialization. It preserves choices such as `random` so a replay can rebuild VCMI's `initialOpts` and traditional save files exactly.
@@ -181,6 +175,17 @@ replayer continues to accept the VGT 3 `decision: { kind: ... }` spelling.
 - queryAnswer: { actor: human/blue, query: query/blue/levelUp/valeska/day4, answer: "core:archery" }
 - melee: { actor: battleAI/red/BattleAI, stack: stack/attacker/0, target: stack/defender/2 }
 ```
+
+Consecutive one-tile moves by the same hero are written as a route. When every
+point is on one map level, write `z` once and use two-value route points:
+
+```yaml
+- moveHero: { actor: teal, hero: hero/teal/core/yog, route: [[32, 4], [33, 5], [34, 6]], z: 1 }
+```
+
+If a route changes levels, every point remains `[x, y, z]` and there is no shared
+`z`. A single destination remains `to: [x, y, z]`. Replay accepts both the compact
+VGT 4 route and the earlier three-value route spelling.
 
 Effect records answer "what became true in game state?"
 

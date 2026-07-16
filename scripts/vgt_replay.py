@@ -70,7 +70,7 @@ def header(documents: list[dict[str, Any]]) -> dict[str, Any]:
     settings = result.get("settings")
     if not isinstance(settings, dict):
         raise VGTError("header settings field is missing or invalid")
-    for field in ("start", "startTime", "difficulty", "randomSeed", "simturns", "timer", "extraOptions", "gameSettingsOverrides"):
+    for field in ("start", "startTime", "difficulty", "simturns", "timer", "extraOptions", "gameSettingsOverrides"):
         if field not in settings:
             raise VGTError(f"header settings.{field} is missing")
     for field in ("simturns", "extraOptions", "gameSettingsOverrides"):
@@ -148,8 +148,32 @@ def fail_on_unmodelled(documents: list[dict[str, Any]]) -> None:
             raise VGTError(f"unmodelled record at document {document_index}, record {record_index}")
 
 
+def validate_schema(documents: list[dict[str, Any]], schema_path: Path) -> None:
+    try:
+        import jsonschema
+    except ImportError as exc:
+        raise VGTError("--schema requires the Python jsonschema package") from exc
+
+    try:
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        validator = jsonschema.validators.validator_for(schema)
+        validator.check_schema(schema)
+        validator(schema).validate(documents)
+    except OSError as exc:
+        raise VGTError(f"failed to read schema: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise VGTError(f"failed to parse schema JSON: {exc}") from exc
+    except jsonschema.SchemaError as exc:
+        raise VGTError(f"invalid schema: {exc.message}") from exc
+    except jsonschema.ValidationError as exc:
+        location = "".join(f"[{part!r}]" for part in exc.absolute_path)
+        raise VGTError(f"schema validation failed at transcript{location}: {exc.message}") from exc
+
+
 def command_check(args: argparse.Namespace) -> int:
     documents = load_documents(args.transcript)
+    if args.schema:
+        validate_schema(documents, args.schema)
     transcript_header = header(documents)
     if args.resource_root:
         validate_map_hash(transcript_header["map"], args.resource_root)
@@ -162,6 +186,8 @@ def command_check(args: argparse.Namespace) -> int:
     print(f"records: {total_records}")
     if args.resource_root:
         print("mapHash: ok")
+    if args.schema:
+        print("schema: ok")
     print("eventKeys:")
     for key, count in counts.most_common():
         print(f"  {key}: {count}")
@@ -181,6 +207,8 @@ def write_normalized_json(documents: list[dict[str, Any]], path: Path) -> None:
 
 def command_replay(args: argparse.Namespace) -> int:
     documents = load_documents(args.transcript)
+    if args.schema:
+        validate_schema(documents, args.schema)
     transcript_header = header(documents)
     if args.resource_root:
         validate_map_hash(transcript_header["map"], args.resource_root)
@@ -239,6 +267,7 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("transcript", type=Path)
     check.add_argument("--resource-root", action="append", type=Path, default=[], help="root used to resolve map.uri")
     check.add_argument("--strict", action="store_true", help="fail if the transcript contains unmodelled records")
+    check.add_argument("--schema", type=Path, help="validate the parsed YAML stream against a JSON Schema")
     check.add_argument("--normalized-json", type=Path, help="write parsed documents as normalized JSON")
     check.set_defaults(func=command_check)
 
@@ -246,6 +275,7 @@ def build_parser() -> argparse.ArgumentParser:
     replay.add_argument("transcript", type=Path)
     replay.add_argument("--resource-root", action="append", type=Path, default=[], help="root used to resolve map.uri")
     replay.add_argument("--strict", action="store_true", help="fail if the transcript contains unmodelled records")
+    replay.add_argument("--schema", type=Path, help="validate the parsed YAML stream against a JSON Schema")
     replay.add_argument("--normalized-json", type=Path, help="keep the normalized JSON passed to the engine")
     replay.add_argument("--engine-binary", type=Path, required=True, help="path to the VCMI executable with VGT replay support")
     replay.add_argument("--output-save", type=Path, required=True, help="save file to write after replay")

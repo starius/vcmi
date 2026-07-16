@@ -1,0 +1,379 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://vcmi.eu/schemas/vgt-4.schema.json",
+	"title": "VCMI Game Transcript version 4",
+	"description": "Schema for a VGT 4 YAML multi-document stream after parsing it into an array: the header is element zero and every later element is a turn or world document. Descriptions are the machine-readable documentation for fields and variants.",
+	"type": "array",
+	"minItems": 1,
+	"prefixItems": [
+		{ "$ref": "#/$defs/header" }
+	],
+	"items": { "$ref": "#/$defs/eventDocument" },
+	"$defs": {
+		"identifier": {
+			"type": "string",
+			"minLength": 1,
+			"description": "A readable VGT alias or a mod-qualified content identifier. Slashes identify hierarchy-like game objects; content identifiers are emitted with slash separators in transcripts."
+		},
+		"actor": {
+			"type": "string",
+			"minLength": 1,
+			"description": "The player, AI, world, neutral AI, or timer that chose an action."
+		},
+		"playerColor": {
+			"type": "string",
+			"description": "A VCMI player color or a special owner value such as neutral, unflaggable, or cannotDetermine."
+		},
+		"queryId": {
+			"oneOf": [
+				{ "type": "integer" },
+				{ "enum": ["none", "client"] }
+			],
+			"description": "A server query number, or one of the two non-numeric query sentinels."
+		},
+		"position2D": {
+			"type": "array",
+			"description": "An [x, y] adventure-map coordinate. It is only used where a sibling z field supplies the shared level.",
+			"prefixItems": [{ "type": "integer" }, { "type": "integer" }],
+			"items": false
+		},
+		"position3D": {
+			"type": "array",
+			"description": "An [x, y, z] adventure-map coordinate.",
+			"prefixItems": [{ "type": "integer" }, { "type": "integer" }, { "type": "integer" }],
+			"items": false
+		},
+		"path3D": {
+			"type": "array",
+			"items": { "$ref": "#/$defs/position3D" },
+			"description": "An ordered adventure-map path with a level on every point."
+		},
+		"resourceValues": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"minProperties": 1,
+				"maxProperties": 1,
+				"additionalProperties": { "type": "integer" }
+			},
+			"description": "Sparse resource values. Each one-key object maps a resource identifier to an amount."
+		},
+		"armyStack": {
+			"type": "object",
+			"required": ["slot", "creature", "count"],
+			"properties": {
+				"slot": { "type": "integer", "description": "Army slot number." },
+				"creature": { "$ref": "#/$defs/identifier" },
+				"count": { "type": "integer" }
+			},
+			"additionalProperties": false
+		},
+		"artifactLocation": {
+			"type": "object",
+			"required": ["holder", "slot"],
+			"properties": {
+				"holder": { "$ref": "#/$defs/identifier" },
+				"creatureSlot": { "type": "integer" },
+				"slot": { "oneOf": [{ "type": "integer" }, { "type": "string" }] }
+			},
+			"additionalProperties": false
+		},
+		"timerState": {
+			"oneOf": [
+				{ "const": "none" },
+				{
+					"type": "object",
+					"properties": {
+						"turn": { "type": "integer" }, "base": { "type": "integer" },
+						"battle": { "type": "integer" }, "unit": { "type": "integer" },
+						"active": { "type": "boolean" }, "battleMode": { "type": "boolean" },
+						"movement": { "type": "integer" }, "turnStart": { "type": "boolean" },
+						"ended": { "type": "boolean" }
+					},
+					"additionalProperties": false
+				}
+			]
+		},
+		"playerSettings": {
+			"type": "object",
+			"description": "Resolved or original lobby settings for one player slot.",
+			"required": ["controller", "faction", "hero", "heroPortrait", "heroNameTextId", "startingBonus", "handicap", "name", "connections", "computerOnly"],
+			"properties": {
+				"controller": { "enum": ["human", "ai"] },
+				"faction": { "$ref": "#/$defs/identifier" },
+				"hero": { "$ref": "#/$defs/identifier" },
+				"heroPortrait": { "$ref": "#/$defs/identifier" },
+				"heroNameTextId": { "type": "string" },
+				"startingBonus": { "enum": ["random", "artifact", "gold", "resource", "unknown"] },
+				"handicap": {
+					"type": "object",
+					"required": ["resources", "incomePercent", "growthPercent"],
+					"properties": {
+						"resources": { "$ref": "#/$defs/resourceValues" },
+						"incomePercent": { "type": "integer" },
+						"growthPercent": { "type": "integer" }
+					},
+					"additionalProperties": false
+				},
+				"name": { "type": "string" },
+				"connections": { "type": "array", "items": { "type": "integer" } },
+				"computerOnly": { "type": "boolean" }
+			},
+			"additionalProperties": false
+		},
+		"playerRoster": {
+			"type": "object",
+			"minProperties": 1,
+			"additionalProperties": { "$ref": "#/$defs/playerSettings" }
+		},
+		"generatorPlayer": {
+			"type": "object",
+			"required": ["type", "faction", "hero", "team"],
+			"properties": {
+				"type": { "enum": ["human", "ai", "computerOnly", "unknown"] },
+				"faction": { "$ref": "#/$defs/identifier" },
+				"hero": { "$ref": "#/$defs/identifier" },
+				"team": { "oneOf": [{ "type": "integer" }, { "const": "none" }] }
+			},
+			"additionalProperties": false
+		},
+		"mapGenerator": {
+			"type": "object",
+			"description": "Random-map settings retained for provenance. Replay loads the saved and hashed map file instead of regenerating it.",
+			"required": ["width", "height", "levels", "humanOrComputerPlayers", "teams", "computerOnlyPlayers", "computerOnlyTeams", "water", "monsters", "template", "roads", "players"],
+			"properties": {
+				"width": { "type": "integer" }, "height": { "type": "integer" }, "levels": { "type": "integer" },
+				"humanOrComputerPlayers": { "type": "integer" }, "teams": { "type": "integer" },
+				"computerOnlyPlayers": { "type": "integer" }, "computerOnlyTeams": { "type": "integer" },
+				"water": { "oneOf": [{ "enum": ["random", "none", "normal", "islands"] }, { "type": "integer" }] },
+				"monsters": { "oneOf": [{ "enum": ["random", "weak", "normal", "strong"] }, { "type": "integer" }] },
+				"template": { "type": "string" },
+				"roads": { "type": "array", "items": { "$ref": "#/$defs/identifier" } },
+				"players": { "type": "object", "additionalProperties": { "$ref": "#/$defs/generatorPlayer" } }
+			},
+			"additionalProperties": false
+		},
+		"initialHero": {
+			"type": "object",
+			"required": ["id", "type", "owner", "position", "experience", "mana", "movement", "artifacts", "army"],
+			"properties": {
+				"id": { "$ref": "#/$defs/identifier" }, "type": { "$ref": "#/$defs/identifier" },
+				"owner": { "$ref": "#/$defs/playerColor" }, "position": { "$ref": "#/$defs/position3D" },
+				"experience": { "type": "integer" }, "mana": { "type": "integer" }, "movement": { "type": "integer" },
+				"artifacts": { "type": "array", "items": { "type": "object", "required": ["position", "artifact", "instance"], "properties": { "position": { "oneOf": [{"type":"integer"},{"type":"string"}] }, "artifact": { "$ref": "#/$defs/identifier" }, "spell": { "$ref": "#/$defs/identifier" }, "instance": { "type": "integer" }, "locked": { "type": "boolean" } }, "additionalProperties": false } },
+				"army": { "type": "array", "items": { "$ref": "#/$defs/armyStack" } }
+			},
+			"additionalProperties": false
+		},
+		"header": {
+			"type": "object",
+			"description": "The first YAML document. It contains everything needed to initialize deterministic replay from the referenced map.",
+			"required": ["vgt", "format", "engine", "map", "settings", "players", "initialState"],
+			"properties": {
+				"vgt": { "const": 4 },
+				"format": { "const": "VCMI readable event transcript" },
+				"engine": { "type": "object", "required": ["version"], "properties": { "version": { "type": "string" } }, "additionalProperties": false },
+				"map": {
+					"type": "object",
+					"required": ["uri", "name", "hash", "objectNameCounter"],
+					"properties": {
+						"uri": { "type": "string", "description": "Map resource URI or path used by replay." },
+						"name": { "type": "string" },
+						"source": { "const": "generated-map-file" },
+						"hash": { "type": "object", "required": ["algorithm", "value"], "properties": { "algorithm": { "const": "sha256" }, "value": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" } }, "additionalProperties": false },
+						"objectNameCounter": { "type": "integer", "description": "Initial unique object-name counter, needed for deterministic runtime object aliases." },
+						"generator": { "$ref": "#/$defs/mapGenerator" },
+						"initialGenerator": { "$ref": "#/$defs/mapGenerator" }
+					},
+					"additionalProperties": false
+				},
+				"settings": {
+					"type": "object",
+					"required": ["start", "startTime", "difficulty", "simturns", "timer", "extraOptions", "gameSettingsOverrides"],
+					"properties": {
+						"start": { "enum": ["newGame", "loadGame", "campaign", "invalid", "unknown"] },
+						"startTime": { "type": "integer", "description": "Recorded initialization timestamp. It is input data, not the transcript wall-clock time." },
+						"difficulty": { "oneOf": [{ "type": "string" }, { "type": "integer" }] },
+						"randomSeed": { "type": "integer" },
+						"simturns": { "type": "object", "required": ["requiredTurns", "optionalTurns", "allowHumanWithAI", "ignoreAlliedContacts"], "properties": { "requiredTurns": {"type":"integer"}, "optionalTurns": {"type":"integer"}, "allowHumanWithAI": {"type":"boolean"}, "ignoreAlliedContacts": {"type":"boolean"} }, "additionalProperties": false },
+						"timer": { "oneOf": [{"const":"none"}, { "type":"object", "required":["enabled","turn","base","battle","unit","accumulatingTurn","accumulatingUnit"], "properties": { "enabled":{"type":"boolean"}, "turn":{"type":"integer"}, "base":{"type":"integer"}, "battle":{"type":"integer"}, "unit":{"type":"integer"}, "accumulatingTurn":{"type":"boolean"}, "accumulatingUnit":{"type":"boolean"} }, "additionalProperties":false }] },
+						"extraOptions": { "type":"object", "required":["cheatsAllowed","unlimitedReplay"], "properties": { "cheatsAllowed":{"type":"boolean"}, "unlimitedReplay":{"type":"boolean"} }, "additionalProperties":false },
+						"gameSettingsOverrides": { "type": "object", "description": "Open game-setting override tree; its keys are defined by the active ruleset and mods." }
+					},
+					"additionalProperties": false
+				},
+				"players": { "$ref": "#/$defs/playerRoster" },
+				"initialPlayers": { "$ref": "#/$defs/playerRoster" },
+				"initialState": { "type": "object", "required": ["heroes"], "properties": { "heroes": { "type": "array", "items": { "$ref": "#/$defs/initialHero" } } }, "additionalProperties": false }
+			},
+			"additionalProperties": false
+		},
+		"calendarDate": {
+			"oneOf": [{ "const": 0 }, { "type": "string", "pattern": "^[0-9]+/[0-9]+/[0-9]+$" }],
+			"description": "Calendar date as month/week/day-of-week; day zero is emitted as numeric zero."
+		},
+		"eventDocument": {
+			"oneOf": [
+				{
+					"type": "object", "required": ["turn", "actions"],
+					"properties": { "turn": { "type":"object", "required":["date","player"], "properties": { "date":{"$ref":"#/$defs/calendarDate"}, "player":{"$ref":"#/$defs/playerColor"} }, "additionalProperties":false }, "actions": { "type":"array", "items":{"$ref":"#/$defs/record"} } },
+					"additionalProperties": false
+				},
+				{
+					"type": "object", "required": ["world", "events"],
+					"properties": { "world": { "type":"object", "required":["date","phase"], "properties": { "date":{"$ref":"#/$defs/calendarDate"}, "phase":{"type":"string", "description":"Server world phase, currently startup or newTurn."} }, "additionalProperties":false }, "events": { "type":"array", "items":{"$ref":"#/$defs/record"} } },
+					"additionalProperties": false
+				}
+			]
+		},
+		"actorOnly": { "type":"object", "required":["actor"], "properties":{"actor":{"$ref":"#/$defs/actor"}}, "additionalProperties":false },
+		"heroAction": { "type":"object", "required":["actor","hero"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
+		"moveHero": {
+			"description": "A hero movement decision. New writers compact same-level multi-step routes to [x,y] points plus one z. Legacy [x,y,z] routes remain valid.",
+			"oneOf": [
+				{ "type":"object", "required":["actor","hero","to"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"to":{"$ref":"#/$defs/position3D"},"transit":{"type":"boolean"}}, "additionalProperties":false },
+				{ "type":"object", "required":["actor","hero","route","z"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"route":{"type":"array","minItems":2,"items":{"$ref":"#/$defs/position2D"}},"z":{"type":"integer"},"transit":{"type":"boolean"}}, "additionalProperties":false },
+				{ "type":"object", "required":["actor","hero","route"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"route":{"type":"array","minItems":2,"items":{"$ref":"#/$defs/position3D"}},"transit":{"type":"boolean"}}, "additionalProperties":false },
+				{ "type":"object", "required":["actor","hero","path","transit"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"path":{"$ref":"#/$defs/path3D"},"transit":{"type":"boolean"}}, "additionalProperties":false }
+			]
+		},
+		"armySlot": { "type":"object", "required":["army","slot"], "properties":{"army":{"$ref":"#/$defs/identifier"},"slot":{"type":"integer"}}, "additionalProperties":false },
+		"townBuildingAction": {
+			"type":"object", "required":["actor","town","building"],
+			"properties":{"actor":{"$ref":"#/$defs/actor"},"town":{"$ref":"#/$defs/identifier"},"building":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false,
+			"description":"Builds, visits, or razes one named structure in a town; the enclosing record key selects the operation."
+		},
+		"spellResearchAction": { "type":"object", "required":["actor","town","spell","accepted"], "properties":{"actor":{"$ref":"#/$defs/actor"},"town":{"$ref":"#/$defs/identifier"},"spell":{"$ref":"#/$defs/identifier"},"accepted":{"type":"boolean"}}, "additionalProperties":false },
+		"recruitCreaturesAction": { "type":"object", "required":["actor","source","destination","creature","amount","level"], "properties":{"actor":{"$ref":"#/$defs/actor"},"source":{"$ref":"#/$defs/identifier"},"destination":{"$ref":"#/$defs/identifier"},"creature":{"$ref":"#/$defs/identifier"},"amount":{"type":"integer"},"level":{"type":"integer"}}, "additionalProperties":false },
+		"hireHeroAction": { "type":"object", "required":["actor","town","hero","nextHero"], "properties":{"actor":{"$ref":"#/$defs/actor"},"town":{"$ref":"#/$defs/identifier"},"hero":{"$ref":"#/$defs/identifier"},"nextHero":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
+		"queryAnswerAction": { "type":"object", "required":["actor","query","answer"], "properties":{"actor":{"$ref":"#/$defs/actor"},"query":{"$ref":"#/$defs/queryId"},"answer":{"type":["integer","null"]}}, "additionalProperties":false },
+		"castAdventureSpellAction": { "type":"object", "required":["actor","hero","spell","position"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"spell":{"$ref":"#/$defs/identifier"},"position":{"$ref":"#/$defs/position3D"}}, "additionalProperties":false },
+		"arrangeStacksAction": { "type":"object", "required":["actor","mode","from","to","count"], "properties":{"actor":{"$ref":"#/$defs/actor"},"mode":{"enum":["swap","merge","split","unknown"]},"from":{"$ref":"#/$defs/armySlot"},"to":{"$ref":"#/$defs/armySlot"},"count":{"type":"integer"}}, "additionalProperties":false },
+		"bulkMoveArmyAction": { "type":"object", "required":["actor","from","to"], "properties":{"actor":{"$ref":"#/$defs/actor"},"from":{"$ref":"#/$defs/armySlot"},"to":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
+		"bulkStackAction": { "type":"object", "required":["actor","source"], "properties":{"actor":{"$ref":"#/$defs/actor"},"source":{"$ref":"#/$defs/armySlot"},"amount":{"type":"integer"}}, "additionalProperties":false },
+		"armyCreatureAction": { "type":"object", "required":["actor","army","slot"], "properties":{"actor":{"$ref":"#/$defs/actor"},"army":{"$ref":"#/$defs/identifier"},"slot":{"type":"integer"},"creature":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
+		"swapTownHeroesAction": { "type":"object", "required":["actor","town"], "properties":{"actor":{"$ref":"#/$defs/actor"},"town":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
+		"exchangeArtifactsAction": { "type":"object", "required":["actor","from","to"], "properties":{"actor":{"$ref":"#/$defs/actor"},"from":{"$ref":"#/$defs/artifactLocation"},"to":{"$ref":"#/$defs/artifactLocation"}}, "additionalProperties":false },
+		"bulkExchangeArtifactsAction": { "type":"object", "required":["actor","from","to","swap","equipped","backpack"], "properties":{"actor":{"$ref":"#/$defs/actor"},"from":{"$ref":"#/$defs/identifier"},"to":{"$ref":"#/$defs/identifier"},"swap":{"type":"boolean"},"equipped":{"type":"boolean"},"backpack":{"type":"boolean"}}, "additionalProperties":false },
+		"manageBackpackArtifactsAction": { "type":"object", "required":["actor","holder","command"], "properties":{"actor":{"$ref":"#/$defs/actor"},"holder":{"$ref":"#/$defs/identifier"},"command":{"enum":["scrollLeft","scrollRight","sortBySlot","sortByClass","sortByCost","unknown"]}}, "additionalProperties":false },
+		"manageEquippedArtifactsAction": { "type":"object", "required":["actor","holder","costume"], "properties":{"actor":{"$ref":"#/$defs/actor"},"holder":{"$ref":"#/$defs/identifier"},"costume":{"type":"integer"},"save":{"type":"boolean"}}, "additionalProperties":false },
+		"assembleArtifactsAction": { "type":"object", "required":["actor","hero","slot","assemble","artifact"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"slot":{"oneOf":[{"type":"integer"},{"type":"string"}]},"assemble":{"type":"boolean"},"artifact":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
+		"eraseArtifactAction": { "type":"object", "required":["actor","location"], "properties":{"actor":{"$ref":"#/$defs/actor"},"location":{"$ref":"#/$defs/artifactLocation"}}, "additionalProperties":false },
+		"buyArtifactAction": { "type":"object", "required":["actor","hero","artifact"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"artifact":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
+		"tradeAction": { "type":"object", "required":["actor","market","hero","mode","sell","buy","amount"], "properties":{"actor":{"$ref":"#/$defs/actor"},"market":{"$ref":"#/$defs/identifier"},"hero":{"$ref":"#/$defs/identifier"},"mode":{"type":"string"},"sell":{"type":"array","items":{"type":"integer"}},"buy":{"type":"array","items":{"type":"integer"}},"amount":{"type":"array","items":{"type":"integer"}}}, "additionalProperties":false },
+		"setFormationAction": { "type":"object", "required":["actor","hero","formation"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"formation":{"enum":["loose","tight","unknown"]}}, "additionalProperties":false },
+		"setTacticsAction": { "type":"object", "required":["actor","hero","enabled"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"enabled":{"type":"boolean"}}, "additionalProperties":false },
+		"setTownNameAction": { "type":"object", "required":["actor","town","name"], "properties":{"actor":{"$ref":"#/$defs/actor"},"town":{"$ref":"#/$defs/identifier"},"name":{"type":"string"}}, "additionalProperties":false },
+		"buildBoatAction": { "type":"object", "required":["actor","object"], "properties":{"actor":{"$ref":"#/$defs/actor"},"object":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
+		"playerMessageAction": { "type":"object", "required":["actor","text","object"], "properties":{"actor":{"$ref":"#/$defs/actor"},"text":{"type":"string"},"object":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
+		"decision": {
+			"type": "object",
+			"description": "A VGT 3 compatibility decision. VGT 4 writers use the action verb as the record key, but replay accepts this form.",
+			"required": ["actor", "kind"],
+			"properties": { "actor":{"$ref":"#/$defs/actor"}, "kind":{"type":"string"} },
+			"additionalProperties": true
+		},
+		"battleTarget": { "type":"object", "minProperties":1, "properties":{"unit":{"type":"integer"},"hex":{"type":"integer"}}, "additionalProperties":false },
+		"battleDecision": {
+			"type":"object", "required":["actor","side","stack"],
+			"properties":{"actor":{"$ref":"#/$defs/actor"},"side":{"enum":["attacker","defender","none","invalid","allKnowing","unknown"]},"stack":{"type":"integer"},"creature":{"$ref":"#/$defs/identifier"},"spell":{"$ref":"#/$defs/identifier"},"target":{"type":"array","items":{"$ref":"#/$defs/battleTarget"}}},
+			"additionalProperties":false
+		},
+		"battleEffect": {
+			"type":"object", "required":["event"],
+			"properties": {
+				"event":{"enum":["start","nextRound","result","resultAccepted","resultsApplied","move","unitsChanged","attack","startAction","spellCast","stackEffects","obstaclesChanged","catapult","triggerEffect","stackProperty","gate","injured","ended"]},
+				"result":{"type":"string"},"winner":{"type":"string"},"attacker":{},"defender":{},"query":{"$ref":"#/$defs/queryId"},"victor":{"$ref":"#/$defs/playerColor"},"loser":{"$ref":"#/$defs/playerColor"},
+				"artifactMoves":{"type":"array"},"grownArtifacts":{"type":"integer"},"dischargedArtifacts":{"type":"integer"},
+				"stack":{"type":"integer"},"creature":{"$ref":"#/$defs/identifier"},"path":{"type":"array","items":{"type":"integer"}},"distance":{"type":"integer"},"teleporting":{"type":"boolean"},
+				"changes":{"oneOf":[{"type":"integer"},{"type":"array"}]},"to":{"type":"integer"},"flags":{"type":"integer"},"attacks":{"type":"array"},"action":{"type":"object"},
+				"side":{"type":"string"},"spell":{"$ref":"#/$defs/identifier"},"at":{"type":"integer"},"casterStack":{"type":"integer"},"hero":{"type":"boolean"},
+				"add":{"type":"integer"},"update":{"type":"integer"},"remove":{"type":"integer"},"part":{"type":"integer"},"tile":{"type":"integer"},"damage":{"type":"integer"},"killedTowerShooter":{"type":"integer"},
+				"effect":{"type":"integer"},"value":{"type":"integer"},"info":{"type":"integer"},"property":{"type":"string"},"absolute":{"type":"boolean"},"state":{"type":"string"},"stacks":{"type":"array"}
+			},
+			"additionalProperties":false
+		},
+		"battleBlock": {
+			"type":"object", "required":["id","events"],
+			"properties":{"id":{"type":"integer"},"events":{"type":"array","items":{"oneOf":[{"$ref":"#/$defs/battleEffect"},{"$ref":"#/$defs/battleDecisionRecord"}]}}},
+			"additionalProperties":false
+		},
+		"battleDecisionRecord": {
+			"type":"object", "minProperties":1, "maxProperties":1,
+			"properties": {
+				"none":{"$ref":"#/$defs/battleDecision"},"endTactics":{"$ref":"#/$defs/battleDecision"},"retreat":{"$ref":"#/$defs/battleDecision"},"surrender":{"$ref":"#/$defs/battleDecision"},
+				"heroSpell":{"$ref":"#/$defs/battleDecision"},"walk":{"$ref":"#/$defs/battleDecision"},"wait":{"$ref":"#/$defs/battleDecision"},"defend":{"$ref":"#/$defs/battleDecision"},
+				"walkAndAttack":{"$ref":"#/$defs/battleDecision"},"shoot":{"$ref":"#/$defs/battleDecision"},"catapult":{"$ref":"#/$defs/battleDecision"},"monsterSpell":{"$ref":"#/$defs/battleDecision"},
+				"badMorale":{"$ref":"#/$defs/battleDecision"},"stackHeal":{"$ref":"#/$defs/battleDecision"},"walkAndCast":{"$ref":"#/$defs/battleDecision"}
+			},
+			"additionalProperties":false
+		},
+		"typedObject": {
+			"type":"object",
+			"description":"Payload shared by the statically named audit/effect record variants. The record key is the discriminator. Open fields are explicitly embedded domain JSON or fields whose type varies by the discriminated record.",
+			"properties": {
+				"actor":{"$ref":"#/$defs/actor","description":"Actor responsible for a local-state or compatibility event."},
+				"player":{"$ref":"#/$defs/playerColor","description":"Player whose state changed or who owns a query."},
+				"query":{"$ref":"#/$defs/queryId","description":"Query associated with a turn, dialog, or level-up."},
+				"timer":{"type":"object","description":"Turn timer start/end snapshots."},
+				"result":{"type":"string","description":"Victory/loss, movement, or other enumerated outcome."},
+				"silent":{"type":"boolean"}, "mode":{"type":"string","description":"Absolute/relative, learn/forget, or another operation mode selected by the record key."},
+				"values":{"type":"array"}, "value":{}, "data":{},
+				"hero":{"$ref":"#/$defs/identifier"}, "army":{"oneOf":[{"$ref":"#/$defs/identifier"},{"type":"array"}]}, "town":{"$ref":"#/$defs/identifier"}, "object":{"type":["string","null"],"description":"Object alias, or null for a failed/null object creation."},
+				"id":{"type":["string","integer"],"description":"Readable object alias or numeric runtime identifier, selected by the record kind."},
+				"skill":{"$ref":"#/$defs/identifier"}, "primary":{"$ref":"#/$defs/identifier"}, "choices":{"oneOf":[{"type":"array"},{"type":"integer"}]},
+				"spells":{"type":"array","items":{"$ref":"#/$defs/identifier"}}, "spell":{"$ref":"#/$defs/identifier"}, "caster":{"$ref":"#/$defs/identifier"},
+				"from":{}, "to":{}, "position":{"$ref":"#/$defs/position3D"}, "tile":{"$ref":"#/$defs/position3D"}, "attackedFrom":{"$ref":"#/$defs/position3D"},
+				"movement":{"description":"Movement points, or a list of per-hero new-turn movement values."}, "revealed":{"type":["object","array"]}, "runs":{"type":"array"},
+				"initiator":{"$ref":"#/$defs/playerColor"}, "property":{"type":"string"},
+				"build":{"type":"array","items":{"$ref":"#/$defs/identifier"}}, "raze":{"type":"array","items":{"$ref":"#/$defs/identifier"}}, "builtThisTurn":{"type":"integer"}, "destroyed":{"type":"integer"},
+				"levels":{"type":"array"}, "visiting":{"$ref":"#/$defs/identifier"}, "garrison":{"$ref":"#/$defs/identifier"},
+				"slot":{"description":"Numeric army slot or named tavern/artifact slot."}, "role":{"type":"string"}, "replenishMovement":{"type":"boolean"}, "boat":{"$ref":"#/$defs/identifier"},
+				"targetKind":{"type":"string"}, "target":{}, "name":{"type":"string"}, "type":{}, "subtype":{"type":"integer"}, "owner":{"$ref":"#/$defs/playerColor"},
+				"blockVisit":{"type":"boolean"}, "removable":{"type":"boolean"}, "creatureState":{"type":"object"},
+				"artifacts":{"type":"array"}, "artifact":{"$ref":"#/$defs/identifier"}, "create":{"type":"object"}, "put":{"type":"object"}, "erase":{"description":"Artifact/stack erase operation, either boolean or structured."},
+				"swap":{"type":"object"}, "move":{"type":"object"}, "insert":{"type":"object"}, "count":{"type":"integer"},
+				"day":{"type":"integer"}, "week":{"type":"string"}, "creature":{"$ref":"#/$defs/identifier"}, "income":{"type":"array"}, "mana":{"description":"Mana scalar or per-hero new-turn list."},
+				"availableCreatures":{"type":"array"}, "rumor":{"type":"object"}, "building":{"$ref":"#/$defs/identifier"}, "configuration":{},
+				"text":{"type":"string"}, "components":{"type":"integer"}, "kind":{"type":"string"}, "selection":{"type":"boolean"}, "cancel":{"type":"boolean"},
+				"hero1":{"$ref":"#/$defs/identifier"}, "hero2":{"$ref":"#/$defs/identifier"}, "window":{"type":"string"}, "visitor":{"$ref":"#/$defs/identifier"},
+				"removableUnits":{"type":"boolean"}, "title":{"type":"string"}, "firstExit":{"$ref":"#/$defs/identifier"}, "exits":{"type":"integer"}, "impassable":{"type":"boolean"},
+				"movesFromSource":{"type":"array"}, "movesFromDestination":{"type":"array"}, "fromCreatureSlot":{"type":"integer"}, "toCreatureSlot":{"type":"integer"}
+			},
+			"additionalProperties":false
+		},
+		"record": {
+			"type":"object", "minProperties":1, "maxProperties":1,
+			"description":"One adventure action/effect record or one nested battle block. Unknown keys are rejected so an unmodelled format extension is visible to validators and generators.",
+			"properties": {
+				"moveHero":{"$ref":"#/$defs/moveHero"},
+				"endTurn":{"$ref":"#/$defs/actorOnly"},
+				"dismissHero":{"$ref":"#/$defs/heroAction"},
+				"dig":{"$ref":"#/$defs/heroAction"},
+				"pauseTimer":{"$ref":"#/$defs/actorOnly"},
+				"ready":{"$ref":"#/$defs/actorOnly"},
+				"castleTeleportHero":{"type":"object","required":["actor","hero","destination","source"],"properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"destination":{"$ref":"#/$defs/identifier"},"source":{"type":"integer"}},"additionalProperties":false},
+				"buildStructure":{"$ref":"#/$defs/townBuildingAction"}, "visitTownBuilding":{"$ref":"#/$defs/townBuildingAction"}, "razeStructure":{"$ref":"#/$defs/townBuildingAction"}, "spellResearch":{"$ref":"#/$defs/spellResearchAction"},
+				"recruitCreatures":{"$ref":"#/$defs/recruitCreaturesAction"}, "hireHero":{"$ref":"#/$defs/hireHeroAction"}, "queryAnswer":{"$ref":"#/$defs/queryAnswerAction"}, "castAdventureSpell":{"$ref":"#/$defs/castAdventureSpellAction"},
+				"arrangeStacks":{"$ref":"#/$defs/arrangeStacksAction"}, "bulkMoveArmy":{"$ref":"#/$defs/bulkMoveArmyAction"}, "bulkSplitStack":{"$ref":"#/$defs/bulkStackAction"}, "bulkMergeStacks":{"$ref":"#/$defs/bulkStackAction"},
+				"bulkSplitAndRebalanceStack":{"$ref":"#/$defs/bulkStackAction"}, "disbandCreature":{"$ref":"#/$defs/armyCreatureAction"}, "upgradeCreature":{"$ref":"#/$defs/armyCreatureAction"}, "swapTownHeroes":{"$ref":"#/$defs/swapTownHeroesAction"},
+				"exchangeArtifacts":{"$ref":"#/$defs/exchangeArtifactsAction"}, "bulkExchangeArtifacts":{"$ref":"#/$defs/bulkExchangeArtifactsAction"}, "manageBackpackArtifacts":{"$ref":"#/$defs/manageBackpackArtifactsAction"}, "manageEquippedArtifacts":{"$ref":"#/$defs/manageEquippedArtifactsAction"},
+				"assembleArtifacts":{"$ref":"#/$defs/assembleArtifactsAction"}, "eraseArtifact":{"$ref":"#/$defs/eraseArtifactAction"}, "buyArtifact":{"$ref":"#/$defs/buyArtifactAction"}, "trade":{"$ref":"#/$defs/tradeAction"},
+				"setFormation":{"$ref":"#/$defs/setFormationAction"}, "setTactics":{"$ref":"#/$defs/setTacticsAction"}, "setTownName":{"$ref":"#/$defs/setTownNameAction"}, "buildBoat":{"$ref":"#/$defs/buildBoatAction"}, "playerMessage":{"$ref":"#/$defs/playerMessageAction"},
+				"decision":{"$ref":"#/$defs/decision"}, "localState":{"$ref":"#/$defs/typedObject"},
+				"turnStart":{"$ref":"#/$defs/typedObject"}, "turnEnd":{"$ref":"#/$defs/typedObject"}, "playerEnd":{"$ref":"#/$defs/typedObject"}, "resources":{"$ref":"#/$defs/typedObject"},
+				"primarySkill":{"$ref":"#/$defs/typedObject"}, "experience":{"$ref":"#/$defs/typedObject"}, "stackExperience":{"$ref":"#/$defs/typedObject"}, "secondarySkill":{"$ref":"#/$defs/typedObject"},
+				"spells":{"$ref":"#/$defs/typedObject"}, "mana":{"$ref":"#/$defs/typedObject"}, "movementPoints":{"$ref":"#/$defs/typedObject"}, "visibility":{"$ref":"#/$defs/typedObject"},
+				"objectPosition":{"$ref":"#/$defs/typedObject"}, "remove":{"$ref":"#/$defs/typedObject"}, "move":{"$ref":"#/$defs/typedObject"}, "town":{"$ref":"#/$defs/typedObject"},
+				"availableCreatures":{"$ref":"#/$defs/typedObject"}, "townHeroes":{"$ref":"#/$defs/typedObject"}, "availableHero":{"$ref":"#/$defs/typedObject"}, "heroRecruited":{"$ref":"#/$defs/typedObject"},
+				"heroOwner":{"$ref":"#/$defs/typedObject"}, "quest":{"$ref":"#/$defs/typedObject"}, "bonus":{"$ref":"#/$defs/typedObject"}, "newObject":{"$ref":"#/$defs/typedObject"},
+				"availableArtifacts":{"$ref":"#/$defs/typedObject"}, "artifact":{"$ref":"#/$defs/typedObject"}, "artifacts":{"$ref":"#/$defs/typedObject"}, "army":{"$ref":"#/$defs/typedObject"},
+				"visit":{"$ref":"#/$defs/typedObject"}, "newTurn":{"$ref":"#/$defs/typedObject"}, "objectProperty":{"$ref":"#/$defs/typedObject"}, "rewardable":{"$ref":"#/$defs/typedObject"},
+				"levelUp":{"$ref":"#/$defs/typedObject"}, "info":{"$ref":"#/$defs/typedObject"}, "adventureSpell":{"$ref":"#/$defs/typedObject"}, "query":{"$ref":"#/$defs/typedObject"},
+				"battle":{"$ref":"#/$defs/battleBlock"},
+				"unmodelled":{"type":"object","required":["stream","pack","material"],"properties":{"stream":{"enum":["decision","effect"]},"pack":{"type":"string"},"material":{"type":"boolean"}},"additionalProperties":false}
+			},
+			"additionalProperties":false
+		}
+	}
+}
