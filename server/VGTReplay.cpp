@@ -2888,6 +2888,62 @@ void applyBattleEffect(CGameHandler & gameHandler, const JsonNode & node, const 
 	}
 }
 
+bool isDecisionKind(const std::string & kind)
+{
+	static const std::set<std::string> decisionKinds = {
+		"arrangeStacks",
+		"assembleArtifacts",
+		"battleAction",
+		"buildBoat",
+		"buildStructure",
+		"bulkExchangeArtifacts",
+		"bulkMergeStacks",
+		"bulkMoveArmy",
+		"bulkSplitAndRebalanceStack",
+		"bulkSplitStack",
+		"buyArtifact",
+		"castleTeleportHero",
+		"castAdventureSpell",
+		"dig",
+		"disbandCreature",
+		"dismissHero",
+		"endTurn",
+		"eraseArtifact",
+		"exchangeArtifacts",
+		"hireHero",
+		"manageBackpackArtifacts",
+		"manageEquippedArtifacts",
+		"moveHero",
+		"pauseTimer",
+		"playerMessage",
+		"queryAnswer",
+		"razeStructure",
+		"ready",
+		"recruitCreatures",
+		"setFormation",
+		"setTactics",
+		"setTownName",
+		"spellResearch",
+		"swapTownHeroes",
+		"trade",
+		"upgradeCreature",
+		"visitTownBuilding",
+	};
+	return decisionKinds.contains(kind);
+}
+
+void replayReadableDecision(CGameHandler & gameHandler, const std::string & kind, const JsonNode & node, const std::optional<std::string> & battleID = std::nullopt)
+{
+	if(!node.isStruct())
+		throw std::runtime_error("VGT " + kind + " action is not a mapping");
+
+	JsonNode decision = node;
+	decision["kind"].String() = kind;
+	if(battleID && !hasField(decision, "battle"))
+		decision["battle"].String() = *battleID;
+	replayDecision(gameHandler, decision);
+}
+
 bool shouldSynthesizeDisabledTimerState(CGameHandler & gameHandler);
 
 [[maybe_unused]] std::set<PlayerColor> collectBattleDecisionPlayers(const JsonNode & events)
@@ -2938,6 +2994,12 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node)
 			if(!hasField(decision, "battle"))
 				decision["battle"].String() = battleID;
 			replayDecision(gameHandler, decision);
+			continue;
+		}
+		if(record.Struct().size() == 1 && isDecisionKind(record.Struct().begin()->first))
+		{
+			const auto & entry = *record.Struct().begin();
+			replayReadableDecision(gameHandler, entry.first, entry.second, battleID);
 			continue;
 		}
 		if(hasField(record, "event"))
@@ -3560,6 +3622,11 @@ void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & docu
 			if(entry.first == "decision")
 			{
 				replayDecision(gameHandler, entry.second);
+				continue;
+			}
+			if(isDecisionKind(entry.first))
+			{
+				replayReadableDecision(gameHandler, entry.first, entry.second);
 				continue;
 			}
 			if(entry.first == "battle")

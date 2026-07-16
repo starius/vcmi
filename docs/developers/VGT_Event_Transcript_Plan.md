@@ -32,7 +32,7 @@ This keeps the transcript readable while detecting the most dangerous external i
 Use a YAML multi-document stream. The header is the first document. Each following document is a turn, world phase, or battle-only phase. This is easier to append than a single large top-level list.
 
 ```yaml
-vgt: 3
+vgt: 4
 format: VCMI readable event transcript
 engine: { version: "1.8.0", build: "develop" }
 map:
@@ -63,15 +63,15 @@ aliases:
 ---
 turn: { day: 1, player: red }
 actions:
-  - decision: { actor: ai/red/Nullkiller2, kind: buildStructure, town: town/red/castle, building: "core:townHall" }
+  - buildStructure: { actor: ai/red/Nullkiller2, town: town/red/castle, building: "core:townHall" }
   - town: { id: town/red/castle, build: "core:townHall", cost: [{ resource: "core:gold", amount: 2500 }] }
   - resources: { player: red, change: [{ resource: "core:gold", from: 5000, to: 2500 }] }
-  - decision: { actor: ai/red/Nullkiller2, kind: moveHero, hero: hero/red/orrin, destination: [12, 10, 0], reason: visit }
+  - moveHero: { actor: ai/red/Nullkiller2, hero: hero/red/orrin, destination: [12, 10, 0], reason: visit }
   - hero: { id: hero/red/orrin, path: [[10, 10, 0], [11, 10, 0], [12, 10, 0]], movement: [1560, 1360] }
   - visit: { hero: hero/red/orrin, object: object/resource/gold/at-12-10-0 }
   - resources: { player: red, change: [{ resource: "core:gold", from: 2500, to: 3000 }], source: object/resource/gold/at-12-10-0 }
   - remove: { object: object/resource/gold/at-12-10-0, reason: collected }
-  - decision: { actor: ai/red/Nullkiller2, kind: endTurn }
+  - endTurn: { actor: ai/red/Nullkiller2 }
   - turnEnd: { player: red, timer: { start: { turn: 120000 }, end: { turn: 91784 } } }
 ---
 world: { day: 8, phase: weekStart }
@@ -127,12 +127,14 @@ Do not include packet type IDs, record counters, connection IDs, request serials
 
 The transcript records both decisions and effects. Decisions are authoritative for replay. Effects explain and audit what became true.
 
-Decision records answer "what did an actor choose?"
+Action records answer "what did an actor choose?" VGT 4 uses the action verb as the
+record key so readers do not have to scan through a generic `decision` wrapper. The
+replayer continues to accept the VGT 3 `decision: { kind: ... }` spelling.
 
 ```yaml
-- decision: { actor: ai/red/Nullkiller2, kind: moveHero, hero: hero/red/orrin, destination: [12, 10, 0], reason: visit }
-- decision: { actor: human/blue, kind: queryAnswer, query: query/blue/levelUp/valeska/day4, answer: "core:archery" }
-- decision: { actor: battleAI/red/BattleAI, kind: melee, stack: stack/attacker/0, target: stack/defender/2 }
+- moveHero: { actor: ai/red/Nullkiller2, hero: hero/red/orrin, destination: [12, 10, 0], reason: visit }
+- queryAnswer: { actor: human/blue, query: query/blue/levelUp/valeska/day4, answer: "core:archery" }
+- melee: { actor: battleAI/red/BattleAI, stack: stack/attacker/0, target: stack/defender/2 }
 ```
 
 Effect records answer "what became true in game state?"
@@ -146,7 +148,7 @@ Effect records answer "what became true in game state?"
 A decision may be followed by zero, one, or many effects. Some world effects have no player decision. Some rejected decisions have no material effect and should be recorded only if useful for analysis:
 
 ```yaml
-- decision: { actor: ai/red/Nullkiller2, kind: recruitHero, town: town/red/castle, hero: "core:sorsha" }
+- recruitHero: { actor: ai/red/Nullkiller2, town: town/red/castle, hero: "core:sorsha" }
 - rejected: { decision: recruitHero, reason: insufficientGold }
 ```
 
@@ -155,11 +157,11 @@ Rejected or illegal decisions are not required for state replay, but are valuabl
 Timer-forced choices are decisions whose actor is the clock, not a player or AI:
 
 ```yaml
-- decision: { actor: timer/red, kind: endTurn }
+- endTurn: { actor: timer/red }
 - battle:
     id: 2
     events:
-      - decision: { actor: timer/red, kind: battleAction, battle: 2, action: { side: attacker, stack: stack/1, creature: core/pikeman, action: defend } }
+      - battleAction: { actor: timer/red, battle: 2, action: { side: attacker, stack: stack/1, creature: core/pikeman, action: defend } }
 ```
 
 Timer updates used only for UI display are not transcript records. At turn end, the recorder may include a compact timer snapshot for analysis:
@@ -222,11 +224,11 @@ Battles are nested under the action or world event that caused them. Battle deci
     rounds:
       - round: 1
         actions:
-          - decision: { actor: battleAI/red/BattleAI, kind: shoot, stack: stack/attacker/0, target: stack/defender/0 }
+          - shoot: { actor: battleAI/red/BattleAI, stack: stack/attacker/0, target: stack/defender/0 }
           - shot: { stack: stack/attacker/0, target: stack/defender/0 }
           - hit: { attacker: stack/attacker/0, defender: stack/defender/0, damage: 94, killed: 7, remaining: 31, luck: none }
           - active: { stack: stack/defender/0 }
-          - decision: { actor: neutralAI, kind: wait, stack: stack/defender/0 }
+          - wait: { actor: neutralAI, stack: stack/defender/0 }
           - wait: { stack: stack/defender/0 }
     result:
       winner: red

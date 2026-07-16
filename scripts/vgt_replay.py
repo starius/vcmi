@@ -55,7 +55,7 @@ def iter_records(documents: list[dict[str, Any]]):
 
 def header(documents: list[dict[str, Any]]) -> dict[str, Any]:
     result = documents[0]
-    if result.get("vgt") != 3:
+    if result.get("vgt") not in (3, 4):
         raise VGTError(f"unsupported VGT version: {result.get('vgt')!r}")
     map_info = result.get("map")
     if not isinstance(map_info, dict):

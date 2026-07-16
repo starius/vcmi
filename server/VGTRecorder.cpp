@@ -131,6 +131,26 @@ struct BattleBlockRecord
 	std::string record;
 };
 
+std::string readableDecisionRecord(const std::string & line)
+{
+	const std::string prefix = "decision: { actor: ";
+	const std::string kindMarker = ", kind: ";
+	if(!line.starts_with(prefix))
+		return line;
+
+	const size_t actorEnd = line.find(kindMarker, prefix.size());
+	if(actorEnd == std::string::npos || line.size() < 2 || !line.ends_with(" }"))
+		return line;
+
+	const size_t kindStart = actorEnd + kindMarker.size();
+	const size_t fieldsStart = line.find(", ", kindStart);
+	const size_t kindEnd = fieldsStart == std::string::npos ? line.size() - 2 : fieldsStart;
+	const std::string actor = line.substr(prefix.size(), actorEnd - prefix.size());
+	const std::string kind = line.substr(kindStart, kindEnd - kindStart);
+	const std::string fields = fieldsStart == std::string::npos ? "" : line.substr(fieldsStart, line.size() - fieldsStart - 2);
+	return kind + ": { actor: " + actor + fields + " }";
+}
+
 std::optional<BattleBlockRecord> battleBlockRecord(const std::string & line)
 {
 	const std::string battlePrefix = "battle: { id: ";
@@ -147,10 +167,11 @@ std::optional<BattleBlockRecord> battleBlockRecord(const std::string & line)
 		return result;
 	}
 
-	const std::string battleDecisionKind = "kind: battleAction";
 	const std::string battleDecisionMarker = ", battle: ";
 	const size_t battleFieldStart = line.find(battleDecisionMarker);
-	if(line.rfind("decision: { ", 0) != 0 || line.find(battleDecisionKind) == std::string::npos || battleFieldStart == std::string::npos)
+	const bool legacyDecision = line.starts_with("decision: { ") && line.find("kind: battleAction") != std::string::npos;
+	const bool readableDecision = line.starts_with("battleAction: { ");
+	if((!legacyDecision && !readableDecision) || battleFieldStart == std::string::npos)
 		return std::nullopt;
 
 	const size_t battleIDStart = battleFieldStart + battleDecisionMarker.size();
@@ -2812,7 +2833,7 @@ void VGTRecorder::ensureHeader(const CGameState & gameState)
 		return;
 	}
 
-	output << "vgt: 3\n";
+	output << "vgt: 4\n";
 	output << "format: " << yamlString("VCMI readable event transcript") << "\n";
 	output << "engine: { version: " << yamlString(GameConstants::VCMI_VERSION) << " }\n";
 	output << "map:\n";
@@ -2997,7 +3018,7 @@ void VGTRecorder::recordDecision(const CGameState & gameState, CPackForServer & 
 		return;
 	DecisionRecorder recorder(gameState);
 	pack.visit(recorder);
-	writeActionLine(gameState, recorder.result());
+	writeActionLine(gameState, readableDecisionRecord(recorder.result()));
 }
 
 void VGTRecorder::recordTimerEndTurn(const CGameState & gameState, PlayerColor player)
@@ -3011,7 +3032,7 @@ void VGTRecorder::recordTimerEndTurn(const CGameState & gameState, PlayerColor p
 	if(!enabled)
 		return;
 
-	writeActionLine(gameState, "decision: { actor: timer/" + color(player) + ", kind: endTurn }");
+	writeActionLine(gameState, "endTurn: { actor: timer/" + color(player) + " }");
 }
 
 void VGTRecorder::recordTimerBattleAction(const CGameState & gameState, PlayerColor player, BattleID battleID, const BattleAction & action)
@@ -3027,8 +3048,8 @@ void VGTRecorder::recordTimerBattleAction(const CGameState & gameState, PlayerCo
 
 	writeActionLine(
 		gameState,
-		"decision: { actor: timer/" + color(player) +
-			", kind: battleAction, battle: " + battleAlias(battleID) +
+		"battleAction: { actor: timer/" + color(player) +
+			", battle: " + battleAlias(battleID) +
 			", action: " + battleAction(gameState, battleID, action) + " }");
 }
 
