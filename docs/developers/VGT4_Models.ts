@@ -10,8 +10,8 @@
 export type Identifier = string;
 export type Actor = string;
 export type PlayerColor = string;
-export type Position2D = readonly [x: number, y: number];
-export type Position3D = readonly [x: number, y: number, z: number];
+/** [x,y] is surface; the three-item form requires a nonzero z. */
+export type Position = readonly [x: number, y: number] | readonly [x: number, y: number, nonzeroZ: number];
 export type ResourceMap = Readonly<Record<Identifier, number>>;
 
 export interface Header {
@@ -20,43 +20,49 @@ export interface Header {
     readonly engine: { readonly version: string };
     readonly map: {
         readonly uri: string;
-        readonly name: string;
+        readonly name?: string;
         readonly source?: "generated-map-file";
         readonly hash: { readonly algorithm: "sha256"; readonly value: string };
         readonly objectNameCounter: number;
         readonly generator?: unknown;
         readonly initialGenerator?: unknown;
     };
-    readonly settings: Readonly<Record<string, unknown>>;
+    readonly settings: {
+        readonly start: string;
+        readonly startTime: number;
+        readonly difficulty: string | number;
+        readonly randomSeed: number;
+        readonly simturns?: Readonly<Record<string, unknown>>;
+        readonly timer?: Readonly<Record<string, unknown>>;
+        readonly extraOptions?: Readonly<Record<string, unknown>>;
+        readonly gameSettingsOverrides?: Readonly<Record<string, unknown>>;
+    };
     readonly players: Readonly<Record<PlayerColor, PlayerSettings>>;
     readonly initialPlayers: Readonly<Record<PlayerColor, PlayerSettings>>;
     readonly initialState: {
-        readonly heroes: readonly InitialHero[];
+        readonly heroes: Readonly<Record<Identifier, InitialHero>>;
     };
 }
 
 export interface PlayerSettings {
-    readonly controller: "human" | "ai";
-    readonly faction: Identifier;
-    readonly hero: Identifier;
-    readonly heroPortrait: Identifier;
-    readonly heroNameTextId: string;
-    readonly startingBonus: string;
-    readonly handicap: {
-        readonly resources: ResourceMap;
-        readonly incomePercent: number;
-        readonly growthPercent: number;
+    readonly controller?: "human" | "ai";
+    readonly faction?: Identifier;
+    readonly hero?: Identifier;
+    readonly heroPortrait?: Identifier;
+    readonly heroNameTextId?: string;
+    readonly startingBonus?: string;
+    readonly handicap?: {
+        readonly resources?: ResourceMap;
+        readonly incomePercent?: number;
+        readonly growthPercent?: number;
     };
-    readonly name: string;
-    readonly connections: readonly number[];
-    readonly computerOnly: boolean;
+    readonly name?: string;
+    readonly connections?: readonly number[];
+    readonly computerOnly?: boolean;
 }
 
 export interface InitialHero {
-    readonly id: Identifier;
-    readonly type: Identifier;
-    readonly owner: PlayerColor;
-    readonly position: Position3D;
+    readonly position: Position;
     readonly experience: number;
     readonly mana: number;
     readonly movement: number;
@@ -88,11 +94,13 @@ export interface ActorContext {
     readonly actor?: Actor;
 }
 
-export type Move = ActorContext & { readonly hero: Identifier; readonly transit?: boolean } & (
-    | { readonly to: Position3D }
-    | { readonly route: readonly [Position2D, Position2D, ...Position2D[]]; readonly z: number }
-    | { readonly to: Position3D; readonly steps: string }
+export type MovementBody = { readonly transit?: boolean } & (
+    | { readonly to: Position; readonly steps?: never }
+    | { readonly to: Position; /** Compass runs such as "NE E*7". */ readonly steps: string }
 );
+
+export type Move = ActorContext & { readonly hero: Identifier } & MovementBody;
+export type Approach = MovementBody;
 
 export interface Build extends ActorContext {
     readonly town: Identifier;
@@ -124,6 +132,7 @@ export interface Choice {
 export interface Encounter extends ActorContext {
     readonly hero: Identifier;
     readonly with: Identifier;
+    readonly approach?: Approach;
     readonly choice?: Choice;
     /** Custom map-authored text only; generated UI messages are omitted. */
     readonly text?: string;
@@ -167,41 +176,69 @@ export type BattleActionRecord =
     | { readonly endTactics: BattleAction }
     | { readonly retreat: BattleAction }
     | { readonly surrender: BattleAction }
-    | { readonly heroSpell: BattleAction }
-    | { readonly walk: BattleAction }
     | { readonly wait: BattleAction | BattleUnitName | readonly BattleUnitName[] }
     | { readonly defend: BattleAction }
-    | { readonly walkAndAttack: BattleAction }
-    | { readonly shoot: BattleAction }
     | { readonly catapult: BattleAction }
-    | { readonly monsterSpell: BattleAction }
     | { readonly badMorale: BattleAction }
     | { readonly stackHeal: BattleAction }
     | { readonly walkAndCast: BattleAction };
 
-export interface UnitStateAfterAttack {
-    readonly units?: number;
-    readonly hp?: number;
-    readonly at?: number;
+export interface BattleMove {
+    readonly actor: Actor;
+    readonly side: "attacker" | "defender";
+    readonly unit: BattleUnitName;
+    readonly to: number;
+    readonly path?: readonly number[];
+    readonly teleport?: boolean;
+    /** Siege gate state change folded into this uninterrupted applied path. */
+    readonly gate?: string;
 }
 
 export interface Retaliation {
     readonly damage: number;
-    readonly killed: number;
-    readonly left?: UnitStateAfterAttack;
-    readonly ranged?: boolean;
+    readonly killed?: number;
     readonly luck?: "good" | "bad";
     readonly deathBlow?: boolean;
     readonly spellLike?: boolean;
     readonly lifeDrain?: boolean;
 }
 
-export interface AttackExchange extends Retaliation {
+export interface AttackExchange {
+    readonly actor: Actor;
+    readonly side: "attacker" | "defender";
     readonly by: BattleUnitName;
-    readonly target: BattleUnitName;
+    readonly target?: BattleUnitName;
+    /** Exact original tactical targets; outcomes are expressed by the named fields. */
+    readonly aim: readonly BattleTarget[];
+    readonly approach?: readonly number[];
+    readonly ranged?: boolean;
+    /** The engine selected this action; replay must not submit it again. */
+    readonly automatic?: boolean;
+    /** Present for double shots or other deterministic multi-strike attacks. */
+    readonly strikes?: number;
+    readonly damage?: number;
+    readonly killed?: number;
+    /** Named spell effects applied by a creature attack. */
+    readonly applies?: readonly Identifier[];
     readonly retaliation?: Retaliation;
-    /** A non-adjacent counterattack that could not be folded into its initiating exchange. */
-    readonly counterattack?: true;
+    readonly luck?: "good" | "bad";
+    readonly deathBlow?: boolean;
+    readonly spellLike?: boolean;
+    readonly lifeDrain?: boolean;
+}
+
+export interface BattleCast {
+    readonly actor: Actor;
+    readonly side: "attacker" | "defender";
+    readonly caster: Identifier;
+    readonly spell: Identifier;
+    readonly aim: readonly BattleTarget[];
+    readonly target?: BattleUnitName;
+    readonly mana?: number;
+    readonly damage?: number;
+    readonly killed?: number;
+    /** Total hit points restored by this cast. */
+    readonly healed?: number;
 }
 
 export interface NamedBattleEffect {
@@ -221,7 +258,9 @@ export interface NamedBattleEffect {
 
 export type BattleEvent =
     | BattleActionRecord
+    | { readonly move: BattleMove }
     | { readonly attack: AttackExchange }
+    | { readonly cast: BattleCast }
     | NamedBattleEffect
     | SemanticEffectRecord;
 
@@ -254,8 +293,8 @@ export interface BattleScene {
 }
 
 export type SemanticEffectRecord =
-    | { readonly resources: Readonly<Record<PlayerColor, ResourceMap>> }
-    | { readonly setResources: Readonly<Record<PlayerColor, ResourceMap>> }
+    | { readonly resources: ResourceMap | Readonly<Record<PlayerColor, ResourceMap>> }
+    | { readonly setResources: ResourceMap | Readonly<Record<PlayerColor, ResourceMap>> }
     | { readonly skills: Readonly<Record<Identifier, Readonly<Record<Identifier, number>>>> }
     | { readonly setSkills: Readonly<Record<Identifier, Readonly<Record<Identifier, number>>>> }
     | { readonly experience: Readonly<Record<Identifier, number>> }
@@ -269,7 +308,7 @@ export type SemanticEffectRecord =
     | { readonly refresh: Readonly<Record<Identifier, { readonly movement?: number; readonly mana?: number }>> }
     | { readonly refresh: { readonly object: Identifier; readonly reward?: ResourceMap; readonly text?: string } }
     | { readonly week: { readonly type: string; readonly creature?: Identifier } }
-    | { readonly capture: { readonly hero?: Identifier; readonly object: Identifier; readonly owner: PlayerColor; readonly income?: ResourceMap } }
+    | { readonly capture: { readonly hero?: Identifier; readonly object: Identifier; readonly owner?: PlayerColor; readonly income?: ResourceMap } }
     | { readonly bonus: {
         readonly targetKind: "object" | "player" | "battle" | "heroCommander";
         readonly target: Identifier;
@@ -286,86 +325,97 @@ export type SemanticEffectRecord =
         readonly text?: string;
     } }
     | { readonly story: { readonly hero?: Identifier; readonly at?: Identifier; readonly text: string; readonly choice?: Choice } }
+    | { readonly opened: OpenedActivity }
     | { readonly visit: { readonly hero: Identifier; readonly object: Identifier } };
 
+export interface OpenedActivity {
+    readonly activity: string;
+    readonly with?: Identifier;
+    readonly object?: Identifier;
+    readonly hero?: Identifier;
+    readonly at?: Identifier;
+}
+
 export type OtherDecisionRecord =
+    | "endTurn"
+    | "ready"
     | { readonly endTurn: ActorContext }
     | { readonly dismissHero: ActorContext & { readonly hero: Identifier } }
     | { readonly dig: ActorContext & { readonly hero: Identifier } }
     | { readonly pauseTimer: ActorContext }
-    | { readonly ready: ActorContext }
     | { readonly castleTeleportHero: ActorContext & { readonly hero: Identifier; readonly destination: Identifier; readonly source: number } }
     | { readonly visitTownBuilding: ActorContext & { readonly town: Identifier; readonly building: Identifier } }
     | { readonly razeStructure: ActorContext & { readonly town: Identifier; readonly building: Identifier } }
     | { readonly spellResearch: ActorContext & { readonly town: Identifier; readonly spell: Identifier; readonly accepted: boolean } }
-    | { readonly hireHero: ActorContext & { readonly town: Identifier; readonly hero: Identifier; readonly nextHero: Identifier } }
-    | { readonly queryAnswer: ActorContext & { readonly query: number | "none" | "client"; readonly answer: number | null } }
-    | { readonly castAdventureSpell: ActorContext & { readonly hero: Identifier; readonly spell: Identifier; readonly position: Position3D } };
+    | { readonly hire: ActorContext & { readonly at: Identifier; readonly hero: Identifier; readonly paid: ResourceMap; readonly replacement?: Identifier; readonly arrival?: Position; readonly boat?: Identifier } }
+    | { readonly answer: ActorContext & { readonly name?: Identifier; readonly value: number | null } }
+    | { readonly finish: ActorContext & { readonly activity: string } }
+    | { readonly chooseSkill: ActorContext & { readonly hero: Identifier; readonly skill: Identifier } }
+    | { readonly swapStacks: ActorContext & { readonly from: ArmySlot; readonly to: ArmySlot } }
+    | { readonly mergeStacks: ActorContext & { readonly from: ArmySlot; readonly into: ArmySlot } }
+    | { readonly splitStack: ActorContext & { readonly from: ArmySlot; readonly to: ArmySlot; readonly count: number } }
+    | { readonly castAdventureSpell: ActorContext & { readonly hero: Identifier; readonly spell: Identifier; readonly position: Position } };
+
+export interface ArmySlot { readonly army: Identifier; readonly slot: number }
+export type SingleResourceAmount = Readonly<Record<Identifier, number>>;
+
+export type MarketDecisionRecord =
+    | { readonly trade: ActorContext & { readonly at: Identifier; readonly exchanges: readonly { readonly sold: SingleResourceAmount; readonly received: SingleResourceAmount }[] } }
+    | { readonly sendResources: ActorContext & { readonly at: Identifier; readonly to: PlayerColor; readonly resources: ResourceMap } }
+    | { readonly sellCreatures: ActorContext & { readonly at: Identifier; readonly hero: Identifier; readonly sales: readonly { readonly slot: number; readonly creature: Identifier; readonly count: number; readonly received: SingleResourceAmount }[] } }
+    | { readonly buyArtifacts: ActorContext & { readonly at: Identifier; readonly hero: Identifier; readonly purchases: readonly { readonly artifact: Identifier; readonly paid: SingleResourceAmount }[] } }
+    | { readonly sellArtifacts: ActorContext & { readonly at: Identifier; readonly hero: Identifier; readonly sales: readonly { readonly artifact: Identifier; readonly instance: number; readonly received: SingleResourceAmount }[] } }
+    | { readonly transformUndead: ActorContext & { readonly at: Identifier; readonly hero?: Identifier; readonly stacks: readonly { readonly slot: number; readonly creature: Identifier }[] } }
+    | { readonly learnSkills: ActorContext & { readonly at: Identifier; readonly hero: Identifier; readonly skills: readonly Identifier[] } }
+    | { readonly sacrificeCreatures: ActorContext & { readonly at: Identifier; readonly hero: Identifier; readonly stacks: readonly { readonly slot: number; readonly creature: Identifier; readonly count: number }[] } }
+    | { readonly sacrificeArtifacts: ActorContext & { readonly at: Identifier; readonly hero: Identifier; readonly artifacts: readonly { readonly artifact: Identifier; readonly instance: number }[] } };
+
+export type TravelDecisionRecord =
+    | { readonly visit: ActorContext & { readonly hero: Identifier; readonly object: Identifier; readonly approach?: Approach } }
+    | { readonly capture: ActorContext & { readonly hero: Identifier; readonly object: Identifier; readonly owner?: PlayerColor; readonly opened?: OpenedActivity; readonly approach?: Approach } }
+    | { readonly teleport: ActorContext & { readonly hero: Identifier; readonly via: Identifier; readonly exit?: Identifier; readonly to?: Position; readonly blocked?: true; readonly random?: true; readonly approach?: Approach; readonly outcome?: readonly TranscriptRecord[] } };
 
 export interface RemoveEffect {
     readonly object: Identifier;
-    readonly initiator: PlayerColor;
+    readonly initiator?: PlayerColor;
 }
 
 export interface HeroRecruitedEffect {
     readonly player: PlayerColor;
     readonly hero: Identifier;
     readonly town: Identifier;
-    readonly tile: Position3D;
-    readonly boat: Identifier;
+    readonly tile: Position;
+    readonly boat?: Identifier;
 }
 
 export interface LevelUpEffect {
-    readonly player: PlayerColor;
     readonly hero: Identifier;
     readonly primary: Identifier;
-    readonly choices: readonly Identifier[];
-    readonly query: number | "none" | "client";
+    readonly choices?: readonly Identifier[];
 }
 
 export interface VisibilityRun {
     readonly y: number;
-    readonly z: number;
+    /** Absent means surface; an explicit value is nonzero. */
+    readonly z?: number;
     /** Inclusive first and last x coordinate. */
     readonly x: readonly [first: number, last: number];
 }
 
-export interface QueryEffect {
-    readonly kind: "blockingDialog" | "exchangeDialog" | "openWindow" | "garrisonDialog" | "teleportDialog";
-    readonly query: number | "none" | "client";
-    readonly player?: PlayerColor;
-    readonly selection?: boolean;
-    readonly cancel?: boolean;
-    readonly choices?: number;
-    readonly hero1?: Identifier;
-    readonly hero2?: Identifier;
-    readonly window?: string;
-    readonly object?: Identifier;
-    readonly visitor?: Identifier;
-    readonly hero?: Identifier;
-    readonly removableUnits?: boolean;
-    readonly title?: string;
-    readonly firstExit?: Identifier;
-    readonly exits?: number;
-    readonly impassable?: boolean;
-}
-
 export type AuditEffectRecord =
-    | { readonly turnStart: { readonly player: PlayerColor; readonly query: number | "none" | "client" } }
     | { readonly turnEnd: { readonly player: PlayerColor; readonly timer: { readonly start: unknown; readonly end: unknown } } }
-    | { readonly playerEnd: { readonly player: PlayerColor; readonly result: "victory" | "loss" | "ingame"; readonly silent: boolean } }
+    | { readonly playerEnd: { readonly player: PlayerColor; readonly result: "victory" | "loss" | "ingame"; readonly silent?: boolean } }
     | { readonly stackExperience: { readonly army: Identifier; readonly values: readonly { readonly slot: number; readonly amount: number }[] } }
     | { readonly spells: { readonly hero: Identifier; readonly mode: "learn" | "forget"; readonly spells: readonly Identifier[] } }
-    | { readonly visibility: { readonly player: PlayerColor; readonly mode: "hidden" | "revealed" | "unknown"; readonly runs: readonly VisibilityRun[] } }
-    | { readonly objectPosition: { readonly object: Identifier; readonly to: Position3D; readonly initiator: PlayerColor } }
+    | { readonly visibility: { readonly player?: PlayerColor; readonly mode: "hidden" | "revealed" | "unknown"; readonly runs: readonly VisibilityRun[] } }
+    | { readonly objectPosition: { readonly object: Identifier; readonly to: Position; readonly initiator?: PlayerColor } }
     | { readonly remove: RemoveEffect }
     | { readonly townHeroes: { readonly town: Identifier; readonly visiting: Identifier; readonly garrison: Identifier } }
     | { readonly heroRecruited: HeroRecruitedEffect }
-    | { readonly heroOwner: { readonly hero: Identifier; readonly player: PlayerColor; readonly boat: Identifier } }
-    | { readonly quest: { readonly player: PlayerColor; readonly object: Identifier } }
+    | { readonly heroOwner: { readonly hero: Identifier; readonly player: PlayerColor; readonly boat?: Identifier } }
+    | { readonly quest: { readonly player?: PlayerColor; readonly object: Identifier } }
     | { readonly availableArtifacts: { readonly object: Identifier; readonly artifacts: readonly Identifier[] } }
     | { readonly levelUp: LevelUpEffect }
-    | { readonly query: QueryEffect }
     /* Lower-frequency audit operations are closed in the JSON Schema; their nested
        engine-shaped payloads remain intentionally opaque in this hand-written prototype. */
     | { readonly localState: Readonly<Record<string, unknown>> }
@@ -377,6 +427,23 @@ export type AuditEffectRecord =
     | { readonly army: Readonly<Record<string, unknown>> }
     | { readonly adventureSpell: Readonly<Record<string, unknown>> };
 
+export type HeroSceneAction =
+    | { readonly move: MovementBody }
+    | { readonly encounter: Omit<Encounter, "actor" | "hero"> }
+    | { readonly visit: { readonly object: Identifier; readonly approach?: Approach } }
+    | { readonly capture: { readonly object: Identifier; readonly owner?: PlayerColor; readonly opened?: OpenedActivity; readonly approach?: Approach } }
+    | { readonly teleport: { readonly via: Identifier; readonly exit?: Identifier; readonly to?: Position; readonly blocked?: true; readonly random?: true; readonly approach?: Approach } }
+    | { readonly levelUp: Omit<LevelUpEffect, "hero"> }
+    | { readonly chooseSkill: { readonly skill: Identifier } }
+    | { readonly dig: Readonly<Record<never, never>> }
+    | { readonly dismissHero: Readonly<Record<never, never>> };
+
+export interface HeroScene {
+    readonly with: Identifier;
+    /** The writer only creates a scene for two or more consecutive actions. */
+    readonly actions: readonly [HeroSceneAction, HeroSceneAction, ...HeroSceneAction[]];
+}
+
 export type TranscriptRecord =
     | { readonly move: Move }
     | { readonly build: Build }
@@ -385,7 +452,8 @@ export type TranscriptRecord =
     | { readonly battle: BattleScene }
     | SemanticEffectRecord
     | OtherDecisionRecord
+    | MarketDecisionRecord
+    | TravelDecisionRecord
     | AuditEffectRecord
     | { readonly unmodelled: { readonly stream: "decision" | "effect"; readonly pack: string; readonly material: boolean } }
-    | { readonly at: Identifier; readonly build: Identifier; readonly cost: ResourceMap; readonly actor?: Actor }
-    | { readonly with: Identifier; readonly move: Omit<Move, "hero" | "actor">; readonly actor?: Actor };
+    | HeroScene;

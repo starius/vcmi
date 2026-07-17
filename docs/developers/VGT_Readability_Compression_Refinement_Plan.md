@@ -7,8 +7,9 @@ compact and more like a game story written by a human. It defines the current VG
 format together with
 [`VGT_Event_Transcript_Plan.md`](VGT_Event_Transcript_Plan.md).
 
-All eighteen reviewed proposals are included. The examples are accepted current
-syntax unless explicitly labelled as the removed verbose shape.
+The original eighteen reviewed proposals and the sixteen-proposal stabilization
+pass are included. The examples are accepted current syntax unless explicitly
+labelled as the removed verbose shape.
 
 The default requirement is semantic losslessness: a compact record must expand into
 the same ordered decisions and independent material outcomes, or provide everything
@@ -36,9 +37,9 @@ semantic replayer, and byte-exact turn-save oracle are the acceptance mechanisms
 
 1. Combine a decision and its effects into a semantic transaction; omit derived
    automatic buildings.
-2. Inherit the turn player and support a focused hero or location scene.
+2. Inherit the turn player and support a bounded focused hero scene.
 3. Shorten identifiers reversibly without a glossary.
-4. Encode long ordinary movement routes as run-length directions.
+4. Encode every multi-tile ordinary movement with run-length directions.
 5. Use signs and verbs instead of repeated `mode` fields.
 6. Make creature availability sparse and creature-keyed.
 7. Batch ordered recruitment into one purchase.
@@ -88,18 +89,19 @@ field such as `completed`.
 
 ### 2. Turn And Scene Context
 
-The player in the turn header is the default actor and affected player. A nested
-scene may establish a default location, town, or hero. Exceptions such as `world`, a
-timer, or another player remain explicit.
+The player in the turn header is the default actor and affected player. References
+owned by that player omit the owner. A bounded nested scene may establish a hero
+for two or more consecutive actions. Exceptions such as `world`, a timer, or another
+player remain explicit.
 
 ```yaml
 turn: { date: 1/1/1, player: red }
 actions:
-  - at: town/red/froisan-conflux@7.5
-    build: cityHall
-    cost: { gold: 5000 }
-  - with: red/grindan
-    move: { to: [8, 5, 0] }
+  - build: { town: town/froisan-conflux@7.5, building: cityHall, cost: { gold: 5000 } }
+  - with: grindan
+    actions:
+      - move: { to: [8, 5] }
+      - encounter: { with: resource/wood@9.5, outcome: [{ resources: { wood: +6 } }] }
 ```
 
 Context is lexical and limited to the containing mapping. It must never depend on an
@@ -144,22 +146,21 @@ display later.
 
 ### 4. Direction-Encoded Movement
 
-For a long uninterrupted ordinary route, use run-length compass directions from the
-hero's known starting position. Retain the exact destination as a readable check.
+One adjacent tile uses only `to`. Every multi-tile uninterrupted ordinary move uses
+run-length compass directions from the hero's known starting position. Retain the
+exact destination as a readable check. There is no coordinate-list alternative.
 
 ```yaml
 - move:
-    hero: red/grindan
-    to: [18, 7, 0]
+    hero: grindan
+    to: [18, 7]
     steps: "SE E SE E*3 NE N NE"
 ```
 
-This expands exactly to the original tile sequence. Short routes may keep `[x, y]`
-coordinate lists with one sibling `z`; route points never have a three-coordinate
-variant. A gate, monolith, whirlpool, spell teleport, embark, disembark, blocking
-visit, or level change ends the ordinary route and remains a separate semantic
-event. The exact `to` check remains three-dimensional because it is one position,
-not a route point.
+This expands exactly to the original tile sequence. `[x, y]` means the surface;
+`[x, y, z]` is allowed only for a nonzero level. A gate, monolith, whirlpool, spell
+teleport, embark, disembark, blocking visit, or level change ends ordinary movement
+and remains a separate semantic event.
 
 ### 5. Signed Changes And Explicit Assignment Verbs
 
@@ -206,7 +207,7 @@ purchase. Preserve order and destination slots where they affect the resulting a
       - { creature: airElemental, count: 5, slot: 1 }
       - { creature: pixie, count: 2, slot: 2 }
     paid: { gold: 3100 }
-    remaining: { waterElemental: 0, airElemental: 1, pixie: 18 }
+    remaining: { airElemental: 1, pixie: 18 }
 ```
 
 The batch expands to the same ordered server requests. It must split when another
@@ -313,10 +314,10 @@ experience, army casualties, artifact movement, or object removal.
     defender: monster/stone-gargoyles@9.9
     events:
       - cast:
-          hero: red/grindan
+          caster: red/grindan
           spell: lightningBolt
           target: defender/stone-gargoyles
-          mana: -10
+          mana: 10
           damage: 85
           killed: 5
       - ...
@@ -332,7 +333,7 @@ When a battle decision is accepted exactly as written, do not repeat it as a
 `startAction` effect.
 
 ```yaml
-- walk: { unit: attacker/water-elementals, to: 58 }
+- move: { actor: red, side: attacker, unit: attacker/water-elementals, to: 58, path: [54, 55, 56, 57, 58] }
 ```
 
 If the accepted action differs from the request, preserve that exceptional fact with
@@ -360,9 +361,7 @@ Events then use the descriptive name:
 
 ```yaml
 - wait: attacker/air-elementals
-- move:
-    unit: attacker/air-elementals
-    path: [2, 3, 4, 5, 6, 7, 8]
+- move: { actor: red, side: attacker, unit: attacker/air-elementals, to: 8, path: [2, 3, 4, 5, 6, 7, 8] }
 - attack:
     by: attacker/air-elementals
     target: defender/stone-gargoyles
@@ -387,20 +386,23 @@ attack results.
 
 ```yaml
 - attack:
+    actor: red
+    side: attacker
     by: attacker/air-elementals
     target: defender/stone-gargoyles
+    aim: [{ hex: 27 }, { hex: 44 }]
+    approach: [9, 27]
     damage: 48
     killed: 3
-    left: { units: 14, hp: 11, at: 44 }
     retaliation:
       damage: 16
-      killed: 0
-      left: { units: 7, hp: 9, at: 27 }
 ```
 
 Fields such as `healthDelta: -48` and `operation: update` are derived and omitted.
 Named exceptional facts such as luck, morale, ranged fire, no retaliation, or a
 special effect remain explicit. Unknown flags must not be silently discarded.
+Deterministic double shots are one exchange with aggregate `damage`/`killed` and
+`strikes: 2`; named creature spell effects use `applies: [curse]`.
 
 ### 15. Ordered Passive Battle Batches
 
@@ -501,6 +503,90 @@ This proposal is replay-lossless but intentionally does not preserve a one-to-on
 copy of every original effect packet. Exact per-turn save comparison remains the
 required proof that no game state was lost.
 
+## Stabilization Pass
+
+The corpus review after the first implementation accepted these additional rules.
+They supersede any older example above when the two differ.
+
+1. Resource trades use named, outcome-bearing exchanges and batch adjacent trades
+   at one market. Other market modes use distinct verbs such as `sendResources`,
+   `sellCreatures`, `buyArtifacts`, `sellArtifacts`, `learnSkills`,
+   `transformUndead`, `sacrificeCreatures`, and `sacrificeArtifacts`.
+
+   ```yaml
+   - trade:
+       at: town/bocc-stronghold@25.4.1
+       exchanges:
+         - { sold: { ore: 1 }, received: { gold: 25 } }
+   ```
+
+2. Omit a neutral field only when its record variant defines one exact default.
+   This includes false `silent`, zero kills, empty injury lists, empty reverse
+   artifact moves, absent boats, and scalar `endTurn`/`ready`. A Magic Well's zero
+   bonus is semantic and becomes `usedToday`, not a dropped no-op.
+
+3. Hero recruitment is one transaction with a readable cost. `replacement`,
+   `arrival`, and `boat` appear only for nonstandard cases.
+
+   ```yaml
+   - hire: { at: town/froisan-conflux@7.5, hero: ciele, paid: { gold: 2500 } }
+   ```
+
+4. Army arrangement uses `swapStacks`, `mergeStacks` with `into`, or `splitStack`
+   with a positive `count`; there is no numeric mode or zero whole-stack sentinel.
+
+5. Recruitment `remaining` is sparse and contains only positive pools.
+
+6. Movement has one grammar: a one-tile move has `to`; every multi-tile ordinary
+   move has `to` plus direction `steps`. Surface positions omit z. There is no
+   coordinate-list movement form.
+
+7. Battle walking and applied paths are one `move`; approach, attack, result, and
+   immediate retaliation are one `attack`. An uninterrupted siege-gate walk keeps
+   one complete path and folds the gate state into that move.
+
+8. A battle spell request, cast notification, status changes, mana payment, and
+   damage or healing are one `cast`. Stable names such as `poison`, `regenerate`,
+   `fear`, `unbind`, and `cloned` replace numeric effect/property codes where
+   applicable. The automatic `catapultShot` notification is represented by the
+   semantic `catapult` result instead of being repeated. Other engine-selected
+   war-machine attacks remain readable attacks marked `automatic: true`, so replay
+   observes them without submitting a duplicate decision.
+
+9. Monoliths, whirlpools, and teleporters are one `teleport` with `via`, semantic
+   exit selection, final position or `blocked`, and optional folded `approach`.
+
+10. Header player data is sparse. `initialPlayers` is a delta from resolved
+    `players`; disabled/default settings are absent; `initialState.heroes` is a
+    readable mapping keyed by hero rather than one huge flow line.
+
+11. Generic constructor prefixes such as `creatureGeneratorCommon` and
+    `shrineOfMagicLevel1` are omitted when the specific object name resolves
+    uniquely.
+
+12. Query IDs are not public transcript data. A choice is nested under the action
+   that caused it; level-up answers use `chooseSkill`, and closing a deterministic
+   activity uses `finish`. A meaningful numeric answer, including zero, remains.
+   When a guarded-dwelling prompt follows a battle, its aftermath carries a readable
+   named `answer` and not the server query number.
+
+13. Authored H3M text is normalized at import: a complete non-ASCII UTF-8 source
+    string is preserved; otherwise the configured legacy map encoding is converted
+    to UTF-8. VGT never performs independent mojibake repair.
+
+14. The turn player is the lexical owner/actor default. Current-player hero and
+    object references omit that player; cross-player references remain explicit.
+
+15. Two or more consecutive actions by one hero form `with: <hero>` plus a nested
+    `actions` list. A scene never leaks beyond its mapping.
+
+16. An adjacent same-hero ordinary move that directly causes an encounter, visit,
+   capture, or teleport is nested as `approach`. Standalone travel remains `move`.
+
+Automatic notifications that the next player's resident hero is visiting their own
+town are omitted between `endTurn` and the next turn header. They are repeated server
+bookkeeping, not new visits in the story.
+
 ## Implementation Sequence
 
 All phases below are implemented. The numbered items are retained as the dependency
@@ -519,7 +605,7 @@ order and review checklist, not as pending work.
 
 1. Implement build, recruitment, resource, availability, movement, and encounter
    transaction codecs.
-2. Implement direction-route expansion and verify every reconstructed coordinate.
+2. Implement the sole direction grammar and verify every reconstructed coordinate.
 3. Group global income, refresh, and weekly growth before player turns.
 4. Keep per-player timed events in the appropriate player turn.
 5. Apply the narrative text filtering policy and preserve custom story text.
@@ -574,7 +660,7 @@ For every accepted transcript:
 3. Replay through normal server requests.
 4. Compare every reconstructed per-turn save byte-for-byte.
 5. Verify that compact identifiers resolve uniquely.
-6. Expand compact routes and compare every tile.
+6. Expand compact direction runs and compare every tile.
 7. Confirm that standard UI boilerplate is absent.
 8. Confirm that custom narrative and meaningful choices remain readable.
 9. Confirm that each battle has one continuous block and stable descriptive unit
@@ -592,12 +678,19 @@ internal serialization structures.
 
 ## Implementation Evidence
 
-The completed implementation was exercised with eight AI-versus-AI recordings: two
-authored land maps, two authored water/custom-narrative maps, and four generated maps
-covering small through extra-large sizes, two through eight active slots, teams,
-surface-only and two-level terrain, no water through islands, and 20 through 40
-player turns per game. All eight streams passed strict and JSON Schema validation.
-Semantic replay reconstructed all 250 recorded per-turn saves byte-for-byte.
+The completed implementation was exercised with eight AI-versus-AI recordings: six
+generated maps plus Arrogance and Pandora's Box. They cover small through extra-large
+sizes, two through eight player slots, computer-only slots, teams, surface-only and
+two-level terrain, no water through islands, normal and strong monsters, and 20
+through 40 player turns per game. All eight streams passed strict and JSON Schema
+validation. Semantic replay reconstructed all 250 recorded per-turn saves
+byte-for-byte. The final text corpus is 610,335 bytes, 96,106 words, and 7,308 lines;
+deterministic `gzip -9` is 90,534 bytes.
+
+A separate 36-turn regression containing seven automatic ballista shots also matched
+every saved turn after those engine-selected attacks were marked `automatic: true`.
+Against the retained pre-refinement recordings for the same authored maps and turn
+counts, Arrogance is 32.20% smaller and Pandora's Box is 29.03% smaller as raw text.
 
 An exact four-turn before/after recording on the same map, setup, and random seed
 changed from 102,700 to 44,892 bytes (56.29% smaller), 14,833 to 6,565 words (55.74%

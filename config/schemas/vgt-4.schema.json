@@ -26,24 +26,12 @@
 			"type": "string",
 			"description": "A VCMI player color or a special owner value such as neutral, unflaggable, or cannotDetermine."
 		},
-		"queryId": {
+		"position": {
+			"description": "Canonical adventure-map position. [x,y] means the surface (z=0); the three-item form is reserved for a nonzero level.",
 			"oneOf": [
-				{ "type": "integer" },
-				{ "enum": ["none", "client"] }
-			],
-			"description": "A server query number, or one of the two non-numeric query sentinels."
-		},
-		"position2D": {
-			"type": "array",
-			"description": "An [x, y] adventure-map coordinate. It is only used where a sibling z field supplies the shared level.",
-			"prefixItems": [{ "type": "integer" }, { "type": "integer" }],
-			"items": false
-		},
-		"position3D": {
-			"type": "array",
-			"description": "An [x, y, z] adventure-map coordinate.",
-			"prefixItems": [{ "type": "integer" }, { "type": "integer" }, { "type": "integer" }],
-			"items": false
+				{ "type": "array", "minItems": 2, "maxItems": 2, "prefixItems": [{ "type": "integer" }, { "type": "integer" }], "items": false },
+				{ "type": "array", "minItems": 3, "maxItems": 3, "prefixItems": [{ "type": "integer" }, { "type": "integer" }, { "type": "integer", "not": { "const": 0 } }], "items": false }
+			]
 		},
 		"resourceValues": {
 			"type": "object",
@@ -88,8 +76,7 @@
 		},
 		"playerSettings": {
 			"type": "object",
-			"description": "Resolved or original lobby settings for one player slot.",
-			"required": ["controller", "faction", "hero", "heroPortrait", "heroNameTextId", "startingBonus", "handicap", "name", "connections", "computerOnly"],
+			"description": "Sparse lobby settings for one player slot. A resolved player always supplies controller and faction; an initialPlayers entry is a delta from it.",
 			"properties": {
 				"controller": { "enum": ["human", "ai"] },
 				"faction": { "$ref": "#/$defs/identifier" },
@@ -99,7 +86,6 @@
 				"startingBonus": { "enum": ["random", "artifact", "gold", "resource", "unknown"] },
 				"handicap": {
 					"type": "object",
-					"required": ["resources", "incomePercent", "growthPercent"],
 					"properties": {
 						"resources": { "$ref": "#/$defs/resourceValues" },
 						"incomePercent": { "type": "integer" },
@@ -116,7 +102,17 @@
 		"playerRoster": {
 			"type": "object",
 			"minProperties": 1,
-			"additionalProperties": { "$ref": "#/$defs/playerSettings" }
+			"additionalProperties": {
+				"allOf": [
+					{ "$ref": "#/$defs/playerSettings" },
+					{ "required": ["controller", "faction"] }
+				]
+			}
+		},
+		"initialPlayerRoster": {
+			"type": "object",
+			"additionalProperties": { "$ref": "#/$defs/playerSettings" },
+			"description": "Only fields that differ from the corresponding resolved players entry. Empty means no setup delta."
 		},
 		"generatorPlayer": {
 			"type": "object",
@@ -147,10 +143,9 @@
 		},
 		"initialHero": {
 			"type": "object",
-			"required": ["id", "type", "owner", "position", "experience", "mana", "movement", "artifacts", "army"],
+			"required": ["position", "experience", "mana", "movement", "artifacts", "army"],
 			"properties": {
-				"id": { "$ref": "#/$defs/identifier" }, "type": { "$ref": "#/$defs/identifier" },
-				"owner": { "$ref": "#/$defs/playerColor" }, "position": { "$ref": "#/$defs/position3D" },
+				"position": { "$ref": "#/$defs/position" },
 				"experience": { "type": "integer" }, "mana": { "type": "integer" }, "movement": { "type": "integer" },
 				"artifacts": { "type": "array", "items": { "type": "object", "required": ["position", "artifact", "instance"], "properties": { "position": { "oneOf": [{"type":"integer"},{"type":"string"}] }, "artifact": { "$ref": "#/$defs/identifier" }, "spell": { "$ref": "#/$defs/identifier" }, "instance": { "type": "integer" }, "locked": { "type": "boolean" } }, "additionalProperties": false } },
 				"army": { "type": "array", "items": { "$ref": "#/$defs/armyStack" } }
@@ -167,7 +162,7 @@
 				"engine": { "type": "object", "required": ["version"], "properties": { "version": { "type": "string" } }, "additionalProperties": false },
 				"map": {
 					"type": "object",
-					"required": ["uri", "name", "hash", "objectNameCounter"],
+					"required": ["uri", "hash", "objectNameCounter"],
 					"properties": {
 						"uri": { "type": "string", "description": "Map resource URI or path used by replay." },
 						"name": { "type": "string" },
@@ -181,7 +176,7 @@
 				},
 				"settings": {
 					"type": "object",
-					"required": ["start", "startTime", "difficulty", "randomSeed", "simturns", "timer", "extraOptions", "gameSettingsOverrides"],
+					"required": ["start", "startTime", "difficulty", "randomSeed"],
 					"properties": {
 						"start": { "enum": ["newGame", "loadGame", "campaign", "invalid", "unknown"] },
 						"startTime": { "type": "integer", "description": "Recorded initialization timestamp. It is input data, not the transcript wall-clock time." },
@@ -195,8 +190,8 @@
 					"additionalProperties": false
 				},
 				"players": { "$ref": "#/$defs/playerRoster" },
-				"initialPlayers": { "$ref": "#/$defs/playerRoster" },
-				"initialState": { "type": "object", "required": ["heroes"], "properties": { "heroes": { "type": "array", "items": { "$ref": "#/$defs/initialHero" } } }, "additionalProperties": false }
+				"initialPlayers": { "$ref": "#/$defs/initialPlayerRoster" },
+				"initialState": { "type": "object", "required": ["heroes"], "properties": { "heroes": { "type": "object", "additionalProperties": { "$ref": "#/$defs/initialHero" } } }, "additionalProperties": false }
 			},
 			"additionalProperties": false
 		},
@@ -221,16 +216,23 @@
 		},
 		"actorOnly": { "type":"object", "properties":{"actor":{"$ref":"#/$defs/actor","description":"Omitted when it is the player named by the turn document."}}, "additionalProperties":false },
 		"heroAction": { "type":"object", "required":["hero"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
+		"directionSteps": { "type":"string", "pattern":"^(?:N|NE|E|SE|S|SW|W|NW)(?:\\*(?:[2-9]|[1-9][0-9]+))?(?: (?:N|NE|E|SE|S|SW|W|NW)(?:\\*(?:[2-9]|[1-9][0-9]+))?)*$", "description":"Space-separated compass directions; a *N suffix repeats the preceding direction N times." },
+		"movementBody": {
+			"oneOf": [
+				{ "type":"object", "required":["to"], "properties":{"to":{"$ref":"#/$defs/position"},"transit":{"type":"boolean"}}, "additionalProperties":false },
+				{ "type":"object", "required":["to","steps"], "properties":{"to":{"$ref":"#/$defs/position"},"steps":{"$ref":"#/$defs/directionSteps"},"transit":{"type":"boolean"}}, "additionalProperties":false }
+			],
+			"description":"One tile uses only to; every multi-tile ordinary move uses to plus direction runs. Coordinate route lists are not part of VGT 4."
+		},
 		"moveAction": {
-			"description": "One uninterrupted ordinary hero movement decision. Long routes use run-length compass steps; short routes contain [x,y] points and one shared z. A gate, monolith, whirlpool, embark/disembark, blocking visit, teleport, or level change ends this action.",
+			"description": "One uninterrupted ordinary hero movement decision. Gates, teleports, embark/disembark, blocking visits, and level changes are separate semantic actions.",
 			"examples": [
-				{"hero":"red/grindan","route":[[32,4],[33,5],[34,6]],"z":1},
-				{"hero":"red/grindan","to":[18,7,0],"steps":"SE E SE E*3 NE N NE"}
+				{"hero":"grindan","to":[18,7]},
+				{"hero":"grindan","to":[34,6],"steps":"SE*3"}
 			],
 			"oneOf": [
-				{ "type":"object", "required":["hero","to"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"to":{"$ref":"#/$defs/position3D"},"transit":{"type":"boolean"}}, "additionalProperties":false },
-				{ "type":"object", "required":["hero","route","z"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"route":{"type":"array","minItems":2,"items":{"$ref":"#/$defs/position2D"}},"z":{"type":"integer"},"transit":{"type":"boolean"}}, "additionalProperties":false },
-				{ "type":"object", "required":["hero","to","steps"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"to":{"$ref":"#/$defs/position3D"},"steps":{"type":"string","pattern":"^(?:N|NE|E|SE|S|SW|W|NW)(?:\\*(?:[2-9]|[1-9][0-9]+))?(?: (?:N|NE|E|SE|S|SW|W|NW)(?:\\*(?:[2-9]|[1-9][0-9]+))?)*$","description":"Space-separated compass directions; *N run-length suffixes expand to N adjacent steps."},"transit":{"type":"boolean"}}, "additionalProperties":false }
+				{ "type":"object", "required":["hero","to"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"to":{"$ref":"#/$defs/position"},"transit":{"type":"boolean"}}, "additionalProperties":false },
+				{ "type":"object", "required":["hero","to","steps"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"to":{"$ref":"#/$defs/position"},"steps":{"$ref":"#/$defs/directionSteps"},"transit":{"type":"boolean"}}, "additionalProperties":false }
 			]
 		},
 		"armySlot": { "type":"object", "required":["army","slot"], "properties":{"army":{"$ref":"#/$defs/identifier"},"slot":{"type":"integer"}}, "additionalProperties":false },
@@ -258,18 +260,23 @@
 			"examples":[{"at":"town/red/froisan-conflux@7.5","units":{"pixie":2},"paid":{"gold":50}},{"at":"town/red/froisan-conflux@7.5","units":[{"creature":"waterElemental","count":6,"slot":0},{"creature":"airElemental","count":5,"slot":1}],"paid":{"gold":3000}}]
 		},
 		"choice": { "type":"object", "required":["name","value"], "properties":{"name":{"type":"string"},"value":{"type":["integer","null"],"description":"Raw server answer retained for exact replay."}}, "additionalProperties":false },
+		"approach": { "allOf":[{"$ref":"#/$defs/movementBody"}], "description":"Exact uninterrupted ordinary movement immediately leading to this event." },
 		"encounterAction": {
 			"type":"object", "required":["hero","with"],
-			"properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"with":{"$ref":"#/$defs/identifier"},"choice":{"$ref":"#/$defs/choice"},"text":{"type":"string","description":"Only genuine map-authored narrative or decision-bearing custom text."},"outcome":{"type":"array","items":{"$ref":"#/$defs/record"}}},
+			"properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"with":{"$ref":"#/$defs/identifier"},"approach":{"$ref":"#/$defs/approach"},"choice":{"$ref":"#/$defs/choice"},"text":{"type":"string","description":"Only genuine map-authored narrative or decision-bearing custom text."},"outcome":{"type":"array","items":{"$ref":"#/$defs/record"}}},
 			"additionalProperties":false,
 			"description":"A visit together with its optional prompt answer and ordered semantic results. An encounter without choice records a non-interactive visit result.",
 			"examples":[{"hero":"red/grindan","with":"monster/gnoll-marauders@5.8","choice":{"name":"accept","value":1},"outcome":[{"remove":{"object":"monster/gnoll-marauders@5.8","initiator":"red"}}]}]
 		},
 		"spellResearchAction": { "type":"object", "required":["town","spell","accepted"], "properties":{"actor":{"$ref":"#/$defs/actor"},"town":{"$ref":"#/$defs/identifier"},"spell":{"$ref":"#/$defs/identifier"},"accepted":{"type":"boolean"}}, "additionalProperties":false },
-		"hireHeroAction": { "type":"object", "required":["town","hero","nextHero"], "properties":{"actor":{"$ref":"#/$defs/actor"},"town":{"$ref":"#/$defs/identifier"},"hero":{"$ref":"#/$defs/identifier"},"nextHero":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
-		"queryAnswerAction": { "type":"object", "required":["query","answer"], "properties":{"actor":{"$ref":"#/$defs/actor"},"query":{"$ref":"#/$defs/queryId"},"answer":{"type":["integer","null"]}}, "additionalProperties":false },
-		"castAdventureSpellAction": { "type":"object", "required":["hero","spell","position"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"spell":{"$ref":"#/$defs/identifier"},"position":{"$ref":"#/$defs/position3D"}}, "additionalProperties":false },
-		"arrangeStacksAction": { "type":"object", "required":["mode","from","to","count"], "properties":{"actor":{"$ref":"#/$defs/actor"},"mode":{"enum":["swap","merge","split","unknown"]},"from":{"$ref":"#/$defs/armySlot"},"to":{"$ref":"#/$defs/armySlot"},"count":{"type":"integer"}}, "additionalProperties":false },
+		"hireAction": { "type":"object", "required":["at","hero","paid"], "properties":{"actor":{"$ref":"#/$defs/actor"},"at":{"$ref":"#/$defs/identifier"},"hero":{"$ref":"#/$defs/identifier"},"paid":{"$ref":"#/$defs/resourceValues"},"replacement":{"$ref":"#/$defs/identifier"},"arrival":{"$ref":"#/$defs/position"},"boat":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false, "description":"Hero recruitment with deterministic cost folded in. Exceptional replacement, arrival, and boat data are present only when meaningful." },
+		"answerAction": { "type":"object", "required":["value"], "properties":{"actor":{"$ref":"#/$defs/actor"},"name":{"$ref":"#/$defs/identifier","description":"Readable meaning of a decision-bearing reply when its parent action cannot carry a dedicated choice field."},"value":{"type":["integer","null"]}}, "additionalProperties":false },
+		"finishAction": { "type":"object", "required":["activity"], "properties":{"actor":{"$ref":"#/$defs/actor"},"activity":{"type":"string"}}, "additionalProperties":false },
+		"chooseSkillAction": { "type":"object", "required":["hero","skill"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"skill":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
+		"castAdventureSpellAction": { "type":"object", "required":["hero","spell","position"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"spell":{"$ref":"#/$defs/identifier"},"position":{"$ref":"#/$defs/position"}}, "additionalProperties":false },
+		"swapStacksAction": { "type":"object", "required":["from","to"], "properties":{"actor":{"$ref":"#/$defs/actor"},"from":{"$ref":"#/$defs/armySlot"},"to":{"$ref":"#/$defs/armySlot"}}, "additionalProperties":false },
+		"mergeStacksAction": { "type":"object", "required":["from","into"], "properties":{"actor":{"$ref":"#/$defs/actor"},"from":{"$ref":"#/$defs/armySlot"},"into":{"$ref":"#/$defs/armySlot"}}, "additionalProperties":false },
+		"splitStackAction": { "type":"object", "required":["from","to","count"], "properties":{"actor":{"$ref":"#/$defs/actor"},"from":{"$ref":"#/$defs/armySlot"},"to":{"$ref":"#/$defs/armySlot"},"count":{"type":"integer","minimum":1}}, "additionalProperties":false },
 		"bulkMoveArmyAction": { "type":"object", "required":["from","to"], "properties":{"actor":{"$ref":"#/$defs/actor"},"from":{"$ref":"#/$defs/armySlot"},"to":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
 		"bulkStackAction": { "type":"object", "required":["source"], "properties":{"actor":{"$ref":"#/$defs/actor"},"source":{"$ref":"#/$defs/armySlot"},"amount":{"type":"integer"}}, "additionalProperties":false },
 		"armyCreatureAction": { "type":"object", "required":["army","slot"], "properties":{"actor":{"$ref":"#/$defs/actor"},"army":{"$ref":"#/$defs/identifier"},"slot":{"type":"integer"},"creature":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
@@ -281,7 +288,20 @@
 		"assembleArtifactsAction": { "type":"object", "required":["hero","slot","assemble","artifact"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"slot":{"oneOf":[{"type":"integer"},{"type":"string"}]},"assemble":{"type":"boolean"},"artifact":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
 		"eraseArtifactAction": { "type":"object", "required":["location"], "properties":{"actor":{"$ref":"#/$defs/actor"},"location":{"$ref":"#/$defs/artifactLocation"}}, "additionalProperties":false },
 		"buyArtifactAction": { "type":"object", "required":["hero","artifact"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"artifact":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
-		"tradeAction": { "type":"object", "required":["market","hero","mode","sell","buy","amount"], "properties":{"actor":{"$ref":"#/$defs/actor"},"market":{"$ref":"#/$defs/identifier"},"hero":{"$ref":"#/$defs/identifier"},"mode":{"type":"string"},"sell":{"type":"array","items":{"type":"integer"}},"buy":{"type":"array","items":{"type":"integer"}},"amount":{"type":"array","items":{"type":"integer"}}}, "additionalProperties":false },
+		"singleResourceAmount": { "type":"object", "minProperties":1, "maxProperties":1, "additionalProperties":{"type":"integer","minimum":0}, "description":"One named resource and its nonnegative amount." },
+		"tradeAction": { "type":"object", "required":["at","exchanges"], "properties":{"actor":{"$ref":"#/$defs/actor"},"at":{"$ref":"#/$defs/identifier"},"exchanges":{"type":"array","minItems":1,"items":{"type":"object","required":["sold","received"],"properties":{"sold":{"$ref":"#/$defs/singleResourceAmount"},"received":{"$ref":"#/$defs/singleResourceAmount"}},"additionalProperties":false}}}, "additionalProperties":false, "description":"Adjacent resource-for-resource exchanges at one market. Resource names and both sides of each outcome are explicit; hero and numeric mode are absent." },
+		"sendResourcesAction": { "type":"object", "required":["at"], "properties":{"actor":{"$ref":"#/$defs/actor"},"at":{"$ref":"#/$defs/identifier"},"to":{"$ref":"#/$defs/playerColor"},"resources":{"$ref":"#/$defs/resourceValues"},"transfers":{"type":"array","items":{"type":"object","required":["to","resources"],"properties":{"to":{"$ref":"#/$defs/playerColor"},"resources":{"$ref":"#/$defs/resourceValues"}},"additionalProperties":false}}}, "additionalProperties":false, "oneOf":[{"required":["to","resources"]},{"required":["transfers"]}] },
+		"marketCreatureListAction": { "type":"object", "required":["at","hero","sales"], "properties":{"actor":{"$ref":"#/$defs/actor"},"at":{"$ref":"#/$defs/identifier"},"hero":{"$ref":"#/$defs/identifier"},"sales":{"type":"array","items":{"type":"object","required":["slot","creature","count","received"],"properties":{"slot":{"type":"integer"},"creature":{"$ref":"#/$defs/identifier"},"count":{"type":"integer","minimum":1},"received":{"$ref":"#/$defs/singleResourceAmount"}},"additionalProperties":false}}}, "additionalProperties":false },
+		"marketArtifactPurchaseAction": { "type":"object", "required":["at","hero","purchases"], "properties":{"actor":{"$ref":"#/$defs/actor"},"at":{"$ref":"#/$defs/identifier"},"hero":{"$ref":"#/$defs/identifier"},"purchases":{"type":"array","items":{"type":"object","required":["artifact","paid"],"properties":{"artifact":{"$ref":"#/$defs/identifier"},"paid":{"$ref":"#/$defs/singleResourceAmount"}},"additionalProperties":false}}}, "additionalProperties":false },
+		"marketArtifactSaleAction": { "type":"object", "required":["at","hero","sales"], "properties":{"actor":{"$ref":"#/$defs/actor"},"at":{"$ref":"#/$defs/identifier"},"hero":{"$ref":"#/$defs/identifier"},"sales":{"type":"array","items":{"type":"object","required":["artifact","instance","received"],"properties":{"artifact":{"$ref":"#/$defs/identifier"},"instance":{"type":"integer"},"received":{"$ref":"#/$defs/singleResourceAmount"}},"additionalProperties":false}}}, "additionalProperties":false },
+		"transformUndeadAction": { "type":"object", "required":["at","stacks"], "properties":{"actor":{"$ref":"#/$defs/actor"},"at":{"$ref":"#/$defs/identifier"},"hero":{"$ref":"#/$defs/identifier"},"stacks":{"type":"array","items":{"type":"object","required":["slot","creature"],"properties":{"slot":{"type":"integer"},"creature":{"$ref":"#/$defs/identifier"}},"additionalProperties":false}}}, "additionalProperties":false },
+		"learnSkillsAction": { "type":"object", "required":["at","hero","skills"], "properties":{"actor":{"$ref":"#/$defs/actor"},"at":{"$ref":"#/$defs/identifier"},"hero":{"$ref":"#/$defs/identifier"},"skills":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/identifier"}}}, "additionalProperties":false },
+		"sacrificeCreaturesAction": { "type":"object", "required":["at","hero","stacks"], "properties":{"actor":{"$ref":"#/$defs/actor"},"at":{"$ref":"#/$defs/identifier"},"hero":{"$ref":"#/$defs/identifier"},"stacks":{"type":"array","items":{"type":"object","required":["slot","creature","count"],"properties":{"slot":{"type":"integer"},"creature":{"$ref":"#/$defs/identifier"},"count":{"type":"integer","minimum":1}},"additionalProperties":false}}}, "additionalProperties":false },
+		"sacrificeArtifactsAction": { "type":"object", "required":["at","hero","artifacts"], "properties":{"actor":{"$ref":"#/$defs/actor"},"at":{"$ref":"#/$defs/identifier"},"hero":{"$ref":"#/$defs/identifier"},"artifacts":{"type":"array","items":{"type":"object","required":["artifact","instance"],"properties":{"artifact":{"$ref":"#/$defs/identifier"},"instance":{"type":"integer"}},"additionalProperties":false}}}, "additionalProperties":false },
+		"visitAction": { "type":"object", "required":["hero","object"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"object":{"$ref":"#/$defs/identifier"},"approach":{"$ref":"#/$defs/approach"}}, "additionalProperties":false },
+		"openedActivity": { "type":"object", "required":["activity"], "properties":{"activity":{"type":"string","description":"Semantic UI activity made available by an encounter, such as market, shipyard, exchange, or garrison."},"with":{"$ref":"#/$defs/identifier"},"object":{"$ref":"#/$defs/identifier"},"hero":{"$ref":"#/$defs/identifier"},"at":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
+		"captureAction": { "type":"object", "required":["hero","object"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"object":{"$ref":"#/$defs/identifier"},"owner":{"$ref":"#/$defs/playerColor"},"approach":{"$ref":"#/$defs/approach"},"opened":{"$ref":"#/$defs/openedActivity"}}, "additionalProperties":false },
+		"teleportAction": { "type":"object", "required":["hero","via"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"via":{"$ref":"#/$defs/identifier"},"approach":{"$ref":"#/$defs/approach"},"random":{"type":"boolean"},"exit":{"$ref":"#/$defs/identifier"},"to":{"$ref":"#/$defs/position"},"blocked":{"type":"boolean"},"outcome":{"type":"array","items":{"$ref":"#/$defs/record"}}}, "additionalProperties":false, "oneOf":[{"required":["to"]},{"required":["blocked"]}] },
 		"setFormationAction": { "type":"object", "required":["hero","formation"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"formation":{"enum":["loose","tight","unknown"]}}, "additionalProperties":false },
 		"setTacticsAction": { "type":"object", "required":["hero","enabled"], "properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"enabled":{"type":"boolean"}}, "additionalProperties":false },
 		"setTownNameAction": { "type":"object", "required":["town","name"], "properties":{"actor":{"$ref":"#/$defs/actor"},"town":{"$ref":"#/$defs/identifier"},"name":{"type":"string"}}, "additionalProperties":false },
@@ -294,18 +314,22 @@
 			"properties":{"actor":{"$ref":"#/$defs/actor"},"side":{"enum":["attacker","defender","none","invalid","allKnowing","unknown"]},"unit":{"$ref":"#/$defs/battleUnitName"},"spell":{"$ref":"#/$defs/identifier"},"target":{"type":"array","items":{"$ref":"#/$defs/battleTarget"}},"acceptedAs":{"type":"object","description":"Exceptional accepted action when the server transformed the request."}},
 			"additionalProperties":false
 		},
-		"battleLeft": { "type":"object", "properties":{"units":{"type":"integer","minimum":0},"hp":{"type":"integer","minimum":0},"at":{"type":"integer"}}, "additionalProperties":false },
+		"battleMove": { "type":"object", "required":["actor","side","unit","to"], "properties":{"actor":{"$ref":"#/$defs/actor"},"side":{"enum":["attacker","defender"]},"unit":{"$ref":"#/$defs/battleUnitName"},"to":{"type":"integer"},"path":{"type":"array","items":{"type":"integer"}},"teleport":{"type":"boolean"},"gate":{"type":"string","description":"A siege gate state change folded into the uninterrupted applied path."}}, "additionalProperties":false, "description":"A movement request and its complete applied path as one tactical action." },
+		"battleRetaliation": { "type":"object", "required":["damage"], "properties":{"damage":{"type":"integer"},"killed":{"type":"integer","minimum":1},"luck":{"enum":["good","bad"]},"deathBlow":{"type":"boolean"},"spellLike":{"type":"boolean"},"lifeDrain":{"type":"boolean"}}, "additionalProperties":false },
 		"battleAttack": {
-			"type":"object", "required":["by","target","damage","killed"],
-			"properties":{"by":{"$ref":"#/$defs/battleUnitName"},"target":{"$ref":"#/$defs/battleUnitName"},"damage":{"type":"integer"},"killed":{"type":"integer","minimum":0},"left":{"$ref":"#/$defs/battleLeft"},"retaliation":{"type":"object","required":["damage","killed"],"properties":{"damage":{"type":"integer"},"killed":{"type":"integer","minimum":0},"left":{"$ref":"#/$defs/battleLeft"},"ranged":{"type":"boolean"},"luck":{"enum":["good","bad"]},"deathBlow":{"type":"boolean"},"spellLike":{"type":"boolean"},"lifeDrain":{"type":"boolean"}},"additionalProperties":false},"counterattack":{"const":true,"description":"The counterattack could not be folded into its initiating exchange because another meaningful event intervened."},"ranged":{"type":"boolean"},"luck":{"enum":["good","bad"]},"deathBlow":{"type":"boolean"},"spellLike":{"type":"boolean"},"lifeDrain":{"type":"boolean"}},
+			"type":"object", "required":["actor","side","by","aim"],
+			"properties":{"actor":{"$ref":"#/$defs/actor"},"side":{"enum":["attacker","defender"]},"by":{"$ref":"#/$defs/battleUnitName"},"target":{"$ref":"#/$defs/battleUnitName"},"aim":{"type":"array","items":{"$ref":"#/$defs/battleTarget"},"description":"Exact requested tactical hex/unit targets used to reproduce the decision."},"approach":{"type":"array","items":{"type":"integer"}},"strikes":{"type":"integer","minimum":2,"description":"Number of deterministic strikes summarized by the aggregate damage and killed totals."},"damage":{"type":"integer"},"killed":{"type":"integer","minimum":1},"applies":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/identifier"},"description":"Named spell effects applied by a creature attack."},"retaliation":{"$ref":"#/$defs/battleRetaliation"},"ranged":{"type":"boolean"},"automatic":{"type":"boolean","description":"True when the battle engine selected this action automatically; replay observes it instead of submitting a duplicate decision."},"luck":{"enum":["good","bad"]},"deathBlow":{"type":"boolean"},"spellLike":{"type":"boolean"},"lifeDrain":{"type":"boolean"}},
 			"additionalProperties":false,
-			"description":"One attack result with an immediate counterattack folded into retaliation. Derived healthDelta/operation fields are absent."
+			"description":"The attack decision, approach path, damage and immediate retaliation in one action. killed is absent when zero."
 		},
+		"battleCast": { "type":"object", "required":["actor","side","caster","spell","aim"], "properties":{"actor":{"$ref":"#/$defs/actor"},"side":{"enum":["attacker","defender"]},"caster":{"$ref":"#/$defs/identifier"},"spell":{"$ref":"#/$defs/identifier"},"aim":{"type":"array","items":{"$ref":"#/$defs/battleTarget"}},"target":{"$ref":"#/$defs/battleUnitName"},"mana":{"type":"integer","minimum":1},"damage":{"type":"integer"},"killed":{"type":"integer","minimum":1},"healed":{"type":"integer","minimum":1,"description":"Total hit points restored by this cast."}}, "additionalProperties":false, "description":"One cast with deterministic notifications, status changes, mana cost, damage, and healing folded into it." },
+		"battleNamedEffect": { "type":"object", "required":["unit"], "properties":{"unit":{"$ref":"#/$defs/battleUnitName"},"value":{"type":"integer"},"hero":{"$ref":"#/$defs/identifier"},"info":{"type":"integer"},"type":{"type":"integer"},"absolute":{"type":"boolean"}}, "additionalProperties":false },
+		"battleSemanticEffectRecord": { "type":"object", "minProperties":1, "maxProperties":1, "properties":{"regenerate":{"$ref":"#/$defs/battleNamedEffect"},"drainMana":{"$ref":"#/$defs/battleNamedEffect"},"poison":{"$ref":"#/$defs/battleNamedEffect"},"enchant":{"$ref":"#/$defs/battleNamedEffect"},"morale":{"$ref":"#/$defs/battleNamedEffect"},"fear":{"$ref":"#/$defs/battleNamedEffect"},"triggeredEffect":{"$ref":"#/$defs/battleNamedEffect"},"casts":{"$ref":"#/$defs/battleNamedEffect"},"enchanterCounter":{"$ref":"#/$defs/battleNamedEffect"},"unbind":{"$ref":"#/$defs/battleNamedEffect"},"cloned":{"$ref":"#/$defs/battleNamedEffect"},"hasClone":{"$ref":"#/$defs/battleNamedEffect"},"gate":{"type":"object","required":["state"],"properties":{"state":{"type":"string"}},"additionalProperties":false},"catapult":{"type":"object","required":["part","tile","damage","attacker"],"properties":{"part":{"type":"integer"},"tile":{"type":"integer"},"damage":{"type":"integer"},"attacker":{"type":"string"},"killedTowerShooter":{"$ref":"#/$defs/battleUnitName"}},"additionalProperties":false}}, "additionalProperties":false },
 		"battleEffect": {
 			"type":"object", "required":["event"],
 			"properties": {
 				"event":{"enum":["start","nextRound","move","unitsChanged","attack","spellCast","stackEffects","obstaclesChanged","catapult","triggerEffect","stackProperty","gate","injured","acceptedAs"]},
-				"result":{"type":"string"},"winner":{"type":"string"},"attacker":{},"defender":{},"query":{"$ref":"#/$defs/queryId"},"victor":{"$ref":"#/$defs/playerColor"},"loser":{"$ref":"#/$defs/playerColor"},
+				"result":{"type":"string"},"winner":{"type":"string"},"attacker":{},"defender":{},"victor":{"$ref":"#/$defs/playerColor"},"loser":{"$ref":"#/$defs/playerColor"},
 				"artifactMoves":{"type":"array"},"grownArtifacts":{"type":"integer"},"dischargedArtifacts":{"type":"integer"},
 				"unit":{"$ref":"#/$defs/battleUnitName"},"creature":{"$ref":"#/$defs/identifier"},"path":{"type":"array","items":{"type":"integer"}},"distance":{"type":"integer"},"teleporting":{"type":"boolean"},
 				"changes":{"oneOf":[{"type":"integer"},{"type":"array"}]},"to":{"type":"integer"},"flags":{"type":"integer"},"attacks":{"type":"array"},"action":{"type":"object"},
@@ -324,16 +348,15 @@
 		},
 		"battleBlock": {
 			"type":"object", "required":["id","events"],
-			"properties":{"id":{"type":"integer"},"attacker":{"$ref":"#/$defs/identifier"},"defender":{"$ref":"#/$defs/identifier"},"units":{"type":"object","propertyNames":{"$ref":"#/$defs/battleUnitName"},"additionalProperties":{"$ref":"#/$defs/battleRosterEntry"}},"events":{"type":"array","items":{"oneOf":[{"$ref":"#/$defs/battleEffect"},{"$ref":"#/$defs/battleDecisionRecord"},{"type":"object","required":["attack"],"properties":{"attack":{"$ref":"#/$defs/battleAttack"}},"additionalProperties":false},{"$ref":"#/$defs/record"}]}},"outcome":{"$ref":"#/$defs/battleOutcome"}},
+			"properties":{"id":{"type":"integer"},"attacker":{"$ref":"#/$defs/identifier"},"defender":{"$ref":"#/$defs/identifier"},"units":{"type":"object","propertyNames":{"$ref":"#/$defs/battleUnitName"},"additionalProperties":{"$ref":"#/$defs/battleRosterEntry"}},"events":{"type":"array","items":{"oneOf":[{"type":"object","required":["move"],"properties":{"move":{"$ref":"#/$defs/battleMove"}},"additionalProperties":false},{"type":"object","required":["attack"],"properties":{"attack":{"$ref":"#/$defs/battleAttack"}},"additionalProperties":false},{"type":"object","required":["cast"],"properties":{"cast":{"$ref":"#/$defs/battleCast"}},"additionalProperties":false},{"$ref":"#/$defs/battleSemanticEffectRecord"},{"$ref":"#/$defs/battleEffect"},{"$ref":"#/$defs/battleDecisionRecord"},{"$ref":"#/$defs/record"}]}},"outcome":{"$ref":"#/$defs/battleOutcome"}},
 			"additionalProperties":false,
-			"examples":[{"id":0,"units":{"attacker/air-elementals":{"stack":0,"owner":"red","count":8},"defender/stone-gargoyles":{"stack":4,"owner":"neutral","count":22}},"events":[{"wait":["attacker/air-elementals","defender/stone-gargoyles"]},{"attack":{"by":"attacker/air-elementals","target":"defender/stone-gargoyles","damage":48,"killed":3,"left":{"units":14,"hp":11,"at":44},"retaliation":{"damage":16,"killed":0,"left":{"units":7,"hp":9,"at":27}}}}],"outcome":{"winner":"red","loser":"neutral","experience":{"red/grindan":368}}}]
+			"examples":[{"id":0,"units":{"attacker/air-elementals":{"stack":0,"owner":"red","count":8},"defender/stone-gargoyles":{"stack":4,"owner":"neutral","count":22}},"events":[{"wait":["attacker/air-elementals","defender/stone-gargoyles"]},{"attack":{"actor":"red","side":"attacker","by":"attacker/air-elementals","target":"defender/stone-gargoyles","aim":[{"hex":27},{"hex":44}],"damage":48,"killed":3,"retaliation":{"damage":16}}}],"outcome":{"winner":"red","loser":"neutral","experience":{"red/grindan":368}}}]
 		},
 		"battleDecisionRecord": {
 			"type":"object", "minProperties":1, "maxProperties":1,
 			"properties": {
 				"none":{"$ref":"#/$defs/battleDecision"},"endTactics":{"$ref":"#/$defs/battleDecision"},"retreat":{"$ref":"#/$defs/battleDecision"},"surrender":{"$ref":"#/$defs/battleDecision"},
-				"heroSpell":{"$ref":"#/$defs/battleDecision"},"walk":{"$ref":"#/$defs/battleDecision"},"wait":{"oneOf":[{"$ref":"#/$defs/battleDecision"},{"$ref":"#/$defs/battleUnitName"},{"type":"array","minItems":2,"items":{"$ref":"#/$defs/battleUnitName"}}]},"defend":{"$ref":"#/$defs/battleDecision"},
-				"walkAndAttack":{"$ref":"#/$defs/battleDecision"},"shoot":{"$ref":"#/$defs/battleDecision"},"catapult":{"$ref":"#/$defs/battleDecision"},"monsterSpell":{"$ref":"#/$defs/battleDecision"},
+				"wait":{"oneOf":[{"$ref":"#/$defs/battleDecision"},{"$ref":"#/$defs/battleUnitName"},{"type":"array","minItems":2,"items":{"$ref":"#/$defs/battleUnitName"}}]},"defend":{"$ref":"#/$defs/battleDecision"},"catapult":{"$ref":"#/$defs/battleDecision"},
 				"badMorale":{"$ref":"#/$defs/battleDecision"},"stackHeal":{"$ref":"#/$defs/battleDecision"},"walkAndCast":{"$ref":"#/$defs/battleDecision"}
 			},
 			"additionalProperties":false
@@ -343,17 +366,18 @@
 			"description":"Payload shared by the statically named audit/effect record variants. The record key is the discriminator. Open fields are explicitly embedded domain JSON or fields whose type varies by the discriminated record.",
 			"properties": {
 				"actor":{"$ref":"#/$defs/actor","description":"Actor responsible for a local-state event."},
-				"player":{"$ref":"#/$defs/playerColor","description":"Player whose state changed or who owns a query."},
-				"query":{"$ref":"#/$defs/queryId","description":"Query associated with a turn, dialog, or level-up."},
+				"activity":{"type":"string","description":"Semantic UI activity opened by an encounter, such as hero exchange or recruitment."},
+				"with":{"$ref":"#/$defs/identifier","description":"The other hero in an opened exchange activity."},
+				"player":{"$ref":"#/$defs/playerColor","description":"Player whose state changed."},
 				"timer":{"type":"object","description":"Turn timer start/end snapshots."},
 				"result":{"type":"string","description":"Victory/loss, movement, or other enumerated outcome."},
 				"silent":{"type":"boolean"}, "mode":{"type":"string","description":"Absolute/relative, learn/forget, or another operation mode selected by the record key."},
 				"values":{"type":"array"}, "value":{}, "data":{},
-				"hero":{"$ref":"#/$defs/identifier"}, "army":{"oneOf":[{"$ref":"#/$defs/identifier"},{"type":"array"}]}, "town":{"$ref":"#/$defs/identifier"}, "object":{"type":["string","null"],"description":"Object alias, or null for a failed/null object creation."},
+				"hero":{"$ref":"#/$defs/identifier"}, "army":{"oneOf":[{"$ref":"#/$defs/identifier"},{"type":"array"}]}, "town":{"$ref":"#/$defs/identifier"}, "object":{"type":["string","null"],"description":"Object alias, or null for a failed/null object creation."}, "at":{"$ref":"#/$defs/identifier"},
 				"id":{"type":["string","integer"],"description":"Readable object alias or numeric runtime identifier, selected by the record kind."},
 				"skill":{"$ref":"#/$defs/identifier"}, "primary":{"$ref":"#/$defs/identifier"}, "choices":{"oneOf":[{"type":"array"},{"type":"integer"}]},
 				"spells":{"type":"array","items":{"$ref":"#/$defs/identifier"}}, "spell":{"$ref":"#/$defs/identifier"}, "caster":{"$ref":"#/$defs/identifier"},
-				"from":{}, "to":{}, "position":{"$ref":"#/$defs/position3D"}, "tile":{"$ref":"#/$defs/position3D"}, "attackedFrom":{"$ref":"#/$defs/position3D"},
+				"from":{}, "to":{}, "position":{"$ref":"#/$defs/position"}, "tile":{"$ref":"#/$defs/position"}, "attackedFrom":{"$ref":"#/$defs/position"},
 				"movement":{"description":"Movement points, or a list of per-hero new-turn movement values."}, "revealed":{"type":["object","array"]}, "runs":{"type":"array"},
 				"initiator":{"$ref":"#/$defs/playerColor"}, "property":{"type":"string"},
 				"build":{"type":"array","items":{"$ref":"#/$defs/identifier"}}, "raze":{"type":"array","items":{"$ref":"#/$defs/identifier"}}, "builtThisTurn":{"type":"integer"}, "destroyed":{"type":"integer"},
@@ -384,36 +408,35 @@
 		"availabilityMap": { "type":"object", "additionalProperties":{"$ref":"#/$defs/creaturePool"} },
 		"rewardRefresh": { "type":"object", "required":["object"], "properties":{"object":{"$ref":"#/$defs/identifier"},"reward":{"$ref":"#/$defs/resourceValues"},"text":{"type":"string","description":"Custom map-authored narrative only."}}, "additionalProperties":false, "examples":[{"object":"windmill@1.26","reward":{"sulfur":5}}] },
 		"dailyRefresh": { "type":"object", "additionalProperties":{"type":"object","minProperties":1,"properties":{"movement":{"type":"integer"},"mana":{"type":"integer"}},"additionalProperties":false}, "description":"Absolute hero movement/mana values applied in the global new-day chapter." },
-		"captureEffect": { "type":"object", "required":["object","owner"], "properties":{"hero":{"$ref":"#/$defs/identifier"},"object":{"$ref":"#/$defs/identifier"},"owner":{"$ref":"#/$defs/playerColor"},"income":{"$ref":"#/$defs/resourceValues"}}, "additionalProperties":false },
+		"captureEffect": { "type":"object", "required":["object"], "properties":{"hero":{"$ref":"#/$defs/identifier"},"object":{"$ref":"#/$defs/identifier"},"owner":{"$ref":"#/$defs/playerColor"},"income":{"$ref":"#/$defs/resourceValues"}}, "additionalProperties":false },
 		"bonusEffect": { "type":"object", "required":["targetKind","target","type","value"], "properties":{"targetKind":{"enum":["object","player","battle","heroCommander"]},"target":{"$ref":"#/$defs/identifier"},"type":{"$ref":"#/$defs/identifier"},"value":{"type":"integer"},"duration":{"oneOf":[{"$ref":"#/$defs/identifier"},{"type":"array","items":{"$ref":"#/$defs/identifier"}}]},"source":{"$ref":"#/$defs/identifier"},"sourceKind":{"$ref":"#/$defs/identifier"},"subtype":{"type":"string"},"turns":{"type":"integer"},"valueKind":{"$ref":"#/$defs/identifier"},"stacking":{"type":"string"},"text":{"type":"string","description":"Genuine map-authored description only; generated localization metadata is omitted."}}, "additionalProperties":false },
 		"storyEffect": { "type":"object", "required":["text"], "properties":{"hero":{"$ref":"#/$defs/identifier"},"at":{"$ref":"#/$defs/identifier"},"text":{"type":"string"},"choice":{"$ref":"#/$defs/choice"}}, "additionalProperties":false, "description":"Custom map narrative; standard generated UI boilerplate is never a story record." },
 		"visitEffect": { "type":"object", "required":["hero","object"], "properties":{"hero":{"$ref":"#/$defs/identifier"},"object":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
 		"weekEffect": { "type":"object", "required":["type"], "properties":{"type":{"type":"string"},"creature":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
-		"turnStartEffect": { "type":"object", "required":["player","query"], "properties":{"player":{"$ref":"#/$defs/playerColor"},"query":{"$ref":"#/$defs/queryId"}}, "additionalProperties":false, "description":"Exceptional turn start carrying a live query; ordinary turn starts are represented by the document header." },
 		"turnEndEffect": { "type":"object", "required":["player","timer"], "properties":{"player":{"$ref":"#/$defs/playerColor"},"timer":{"type":"object","required":["start","end"],"properties":{"start":{"$ref":"#/$defs/timerState"},"end":{"$ref":"#/$defs/timerState"}},"additionalProperties":false}}, "additionalProperties":false, "description":"Compact timer snapshots only; the endTurn decision already marks an ordinary boundary." },
-		"playerEndEffect": { "type":"object", "required":["player","result","silent"], "properties":{"player":{"$ref":"#/$defs/playerColor"},"result":{"enum":["victory","loss","ingame"]},"silent":{"type":"boolean"}}, "additionalProperties":false },
+		"playerEndEffect": { "type":"object", "required":["player","result"], "properties":{"player":{"$ref":"#/$defs/playerColor"},"result":{"enum":["victory","loss","ingame"]},"silent":{"type":"boolean"}}, "additionalProperties":false },
 		"stackExperienceEffect": { "type":"object", "required":["army","values"], "properties":{"army":{"$ref":"#/$defs/identifier"},"values":{"type":"array","items":{"type":"object","required":["slot","amount"],"properties":{"slot":{"type":"integer"},"amount":{"type":"integer"}},"additionalProperties":false}}}, "additionalProperties":false },
 		"spellsEffect": { "type":"object", "required":["hero","mode","spells"], "properties":{"hero":{"$ref":"#/$defs/identifier"},"mode":{"enum":["learn","forget"]},"spells":{"type":"array","items":{"$ref":"#/$defs/identifier"}}}, "additionalProperties":false },
-		"fowRun": { "type":"object", "required":["y","z","x"], "properties":{"y":{"type":"integer"},"z":{"type":"integer"},"x":{"type":"array","minItems":2,"maxItems":2,"items":{"type":"integer"}}}, "additionalProperties":false },
-		"visibilityEffect": { "type":"object", "required":["player","mode","runs"], "properties":{"player":{"$ref":"#/$defs/playerColor"},"mode":{"enum":["hidden","revealed","unknown"]},"runs":{"type":"array","items":{"$ref":"#/$defs/fowRun"}}}, "additionalProperties":false, "description":"Exact fog delta compacted into inclusive horizontal x ranges." },
-		"objectPositionEffect": { "type":"object", "required":["object","to","initiator"], "properties":{"object":{"$ref":"#/$defs/identifier"},"to":{"$ref":"#/$defs/position3D"},"initiator":{"$ref":"#/$defs/playerColor"}}, "additionalProperties":false },
-		"removeEffect": { "type":"object", "required":["object","initiator"], "properties":{"object":{"$ref":"#/$defs/identifier"},"initiator":{"$ref":"#/$defs/playerColor"}}, "additionalProperties":false },
+		"fowRun": { "type":"object", "required":["y","x"], "properties":{"y":{"type":"integer"},"z":{"type":"integer","not":{"const":0}},"x":{"type":"array","minItems":2,"maxItems":2,"items":{"type":"integer"}}}, "additionalProperties":false },
+		"visibilityEffect": { "type":"object", "required":["mode","runs"], "properties":{"player":{"$ref":"#/$defs/playerColor"},"mode":{"enum":["hidden","revealed","unknown"]},"runs":{"type":"array","items":{"$ref":"#/$defs/fowRun"}}}, "additionalProperties":false, "description":"Exact fog delta compacted into inclusive horizontal x ranges. Player is omitted for the current turn actor and present only for a different player." },
+		"objectPositionEffect": { "type":"object", "required":["object","to"], "properties":{"object":{"$ref":"#/$defs/identifier"},"to":{"$ref":"#/$defs/position"},"initiator":{"$ref":"#/$defs/playerColor"}}, "additionalProperties":false },
+		"removeEffect": { "type":"object", "required":["object"], "properties":{"object":{"$ref":"#/$defs/identifier"},"initiator":{"$ref":"#/$defs/playerColor"}}, "additionalProperties":false },
 		"townEffect": { "oneOf":[{"type":"object","required":["id","build","builtThisTurn"],"properties":{"id":{"$ref":"#/$defs/identifier"},"build":{"type":"array","items":{"$ref":"#/$defs/identifier"}},"builtThisTurn":{"type":"integer"}},"additionalProperties":false},{"type":"object","required":["id","raze","destroyed"],"properties":{"id":{"$ref":"#/$defs/identifier"},"raze":{"type":"array","items":{"$ref":"#/$defs/identifier"}},"destroyed":{"type":"integer"}},"additionalProperties":false}], "description":"Exceptional independent town mutation. Normal construction is the semantic build transaction and omits derived buildings." },
 		"townHeroesEffect": { "type":"object", "required":["town","visiting","garrison"], "properties":{"town":{"$ref":"#/$defs/identifier"},"visiting":{"$ref":"#/$defs/identifier"},"garrison":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
 		"simpleArmyEntry": { "type":"object", "required":["slot","creature","count"], "properties":{"slot":{"type":"integer"},"creature":{"$ref":"#/$defs/identifier"},"count":{"type":"integer","minimum":0}}, "additionalProperties":false },
 		"availableHeroEffect": { "type":"object", "required":["player","slot","role","hero","army","replenishMovement"], "properties":{"player":{"$ref":"#/$defs/playerColor"},"slot":{},"role":{"type":"string"},"hero":{"$ref":"#/$defs/identifier"},"army":{"type":"array","items":{"$ref":"#/$defs/simpleArmyEntry"}},"replenishMovement":{"type":"boolean"}}, "additionalProperties":false },
-		"heroRecruitedEffect": { "type":"object", "required":["player","hero","town","tile","boat"], "properties":{"player":{"$ref":"#/$defs/playerColor"},"hero":{"$ref":"#/$defs/identifier"},"town":{"$ref":"#/$defs/identifier"},"tile":{"$ref":"#/$defs/position3D"},"boat":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
-		"heroOwnerEffect": { "type":"object", "required":["hero","player","boat"], "properties":{"hero":{"$ref":"#/$defs/identifier"},"player":{"$ref":"#/$defs/playerColor"},"boat":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
-		"questEffect": { "type":"object", "required":["player","object"], "properties":{"player":{"$ref":"#/$defs/playerColor"},"object":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
-		"newObjectEffect": { "oneOf":[{"type":"object","required":["object"],"properties":{"object":{"type":"null"}},"additionalProperties":false},{"type":"object","required":["id","name","type","subtype","owner","position","blockVisit","removable","initiator"],"properties":{"id":{"$ref":"#/$defs/identifier"},"name":{"type":"string"},"type":{"$ref":"#/$defs/identifier"},"subtype":{"type":"integer"},"owner":{"$ref":"#/$defs/playerColor"},"position":{"$ref":"#/$defs/position3D"},"blockVisit":{"type":"boolean"},"removable":{"type":"boolean"},"initiator":{"$ref":"#/$defs/playerColor"},"army":{"type":"array","items":{"$ref":"#/$defs/simpleArmyEntry"}},"creatureState":{"type":"object"}},"additionalProperties":false}], "description":"All non-derived data needed for a dynamically created map object; id-N becomes its stable alias." },
+		"heroRecruitedEffect": { "type":"object", "required":["player","hero","town","tile"], "properties":{"player":{"$ref":"#/$defs/playerColor"},"hero":{"$ref":"#/$defs/identifier"},"town":{"$ref":"#/$defs/identifier"},"tile":{"$ref":"#/$defs/position"},"boat":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
+		"heroOwnerEffect": { "type":"object", "required":["hero","player"], "properties":{"hero":{"$ref":"#/$defs/identifier"},"player":{"$ref":"#/$defs/playerColor"},"boat":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false },
+		"questEffect": { "type":"object", "required":["object"], "properties":{"player":{"$ref":"#/$defs/playerColor"},"object":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false, "description":"Quest progress for the current turn player; player is present only when different." },
+		"newObjectEffect": { "oneOf":[{"type":"object","required":["object"],"properties":{"object":{"type":"null"}},"additionalProperties":false},{"type":"object","required":["id","name","type","subtype","owner","position","blockVisit","removable"],"properties":{"id":{"$ref":"#/$defs/identifier"},"name":{"type":"string"},"type":{"$ref":"#/$defs/identifier"},"subtype":{"type":"integer"},"owner":{"$ref":"#/$defs/playerColor"},"position":{"$ref":"#/$defs/position"},"blockVisit":{"type":"boolean"},"removable":{"type":"boolean"},"initiator":{"$ref":"#/$defs/playerColor"},"army":{"type":"array","items":{"$ref":"#/$defs/simpleArmyEntry"}},"creatureState":{"type":"object"}},"additionalProperties":false}], "description":"All non-derived data needed for a dynamically created map object; id-N becomes its stable alias. Initiator is omitted for the current turn player." },
 		"availableArtifactsEffect": { "type":"object", "required":["object","artifacts"], "properties":{"object":{"$ref":"#/$defs/identifier"},"artifacts":{"type":"array","items":{"$ref":"#/$defs/identifier"}}}, "additionalProperties":false },
-		"levelUpEffect": { "type":"object", "required":["player","hero","primary","choices","query"], "properties":{"player":{"$ref":"#/$defs/playerColor"},"hero":{"$ref":"#/$defs/identifier"},"primary":{"$ref":"#/$defs/identifier"},"choices":{"type":"array","items":{"$ref":"#/$defs/identifier"}},"query":{"$ref":"#/$defs/queryId"}}, "additionalProperties":false },
-		"queryEffect": { "type":"object", "required":["kind","query"], "properties":{"kind":{"enum":["blockingDialog","exchangeDialog","openWindow","garrisonDialog","teleportDialog"]},"query":{"$ref":"#/$defs/queryId"},"player":{"$ref":"#/$defs/playerColor"},"selection":{"type":"boolean"},"cancel":{"type":"boolean"},"choices":{"type":"integer"},"hero1":{"$ref":"#/$defs/identifier"},"hero2":{"$ref":"#/$defs/identifier"},"window":{"type":"string"},"object":{"$ref":"#/$defs/identifier"},"visitor":{"$ref":"#/$defs/identifier"},"hero":{"$ref":"#/$defs/identifier"},"removableUnits":{"type":"boolean"},"title":{"type":"string"},"firstExit":{"$ref":"#/$defs/identifier"},"exits":{"type":"integer"},"impassable":{"type":"boolean"}}, "additionalProperties":false, "description":"Semantic shape of a decision-bearing server query. The query number remains the exact reply operand." },
+		"levelUpEffect": { "type":"object", "required":["hero","primary"], "properties":{"hero":{"$ref":"#/$defs/identifier"},"primary":{"$ref":"#/$defs/identifier"},"choices":{"type":"array","items":{"$ref":"#/$defs/identifier"}}}, "additionalProperties":false },
 		"atomicRecord": {
 			"type":"object", "minProperties":1, "maxProperties":1,
 			"description":"One adventure action/effect record or one nested battle block. Unknown keys are rejected so an unmodelled format extension is visible to validators and generators.",
 			"properties": {
 				"move":{"$ref":"#/$defs/moveAction"},
+				"ready":{"$ref":"#/$defs/actorOnly"},
 				"build":{"$ref":"#/$defs/buildAction"},
 				"recruit":{"$ref":"#/$defs/recruitAction"},
 				"encounter":{"$ref":"#/$defs/encounterAction"},
@@ -421,44 +444,40 @@
 				"dismissHero":{"$ref":"#/$defs/heroAction"},
 				"dig":{"$ref":"#/$defs/heroAction"},
 				"pauseTimer":{"$ref":"#/$defs/actorOnly"},
-				"ready":{"$ref":"#/$defs/actorOnly"},
 				"castleTeleportHero":{"type":"object","required":["hero","destination","source"],"properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"destination":{"$ref":"#/$defs/identifier"},"source":{"type":"integer"}},"additionalProperties":false},
 				"visitTownBuilding":{"$ref":"#/$defs/townBuildingAction"}, "razeStructure":{"$ref":"#/$defs/townBuildingAction"}, "spellResearch":{"$ref":"#/$defs/spellResearchAction"},
-				"hireHero":{"$ref":"#/$defs/hireHeroAction"}, "queryAnswer":{"$ref":"#/$defs/queryAnswerAction"}, "castAdventureSpell":{"$ref":"#/$defs/castAdventureSpellAction"},
-				"arrangeStacks":{"$ref":"#/$defs/arrangeStacksAction"}, "bulkMoveArmy":{"$ref":"#/$defs/bulkMoveArmyAction"}, "bulkSplitStack":{"$ref":"#/$defs/bulkStackAction"}, "bulkMergeStacks":{"$ref":"#/$defs/bulkStackAction"},
+				"hire":{"$ref":"#/$defs/hireAction"}, "answer":{"$ref":"#/$defs/answerAction"}, "finish":{"$ref":"#/$defs/finishAction"}, "chooseSkill":{"$ref":"#/$defs/chooseSkillAction"}, "castAdventureSpell":{"$ref":"#/$defs/castAdventureSpellAction"},
+				"swapStacks":{"$ref":"#/$defs/swapStacksAction"}, "mergeStacks":{"$ref":"#/$defs/mergeStacksAction"}, "splitStack":{"$ref":"#/$defs/splitStackAction"}, "bulkMoveArmy":{"$ref":"#/$defs/bulkMoveArmyAction"}, "bulkSplitStack":{"$ref":"#/$defs/bulkStackAction"}, "bulkMergeStacks":{"$ref":"#/$defs/bulkStackAction"},
 				"bulkSplitAndRebalanceStack":{"$ref":"#/$defs/bulkStackAction"}, "disbandCreature":{"$ref":"#/$defs/armyCreatureAction"}, "upgradeCreature":{"$ref":"#/$defs/armyCreatureAction"}, "swapTownHeroes":{"$ref":"#/$defs/swapTownHeroesAction"},
 				"exchangeArtifacts":{"$ref":"#/$defs/exchangeArtifactsAction"}, "bulkExchangeArtifacts":{"$ref":"#/$defs/bulkExchangeArtifactsAction"}, "manageBackpackArtifacts":{"$ref":"#/$defs/manageBackpackArtifactsAction"}, "manageEquippedArtifacts":{"$ref":"#/$defs/manageEquippedArtifactsAction"},
 				"assembleArtifacts":{"$ref":"#/$defs/assembleArtifactsAction"}, "eraseArtifact":{"$ref":"#/$defs/eraseArtifactAction"}, "buyArtifact":{"$ref":"#/$defs/buyArtifactAction"}, "trade":{"$ref":"#/$defs/tradeAction"},
+				"sendResources":{"$ref":"#/$defs/sendResourcesAction"}, "sellCreatures":{"$ref":"#/$defs/marketCreatureListAction"}, "buyArtifacts":{"$ref":"#/$defs/marketArtifactPurchaseAction"}, "sellArtifacts":{"$ref":"#/$defs/marketArtifactSaleAction"}, "transformUndead":{"$ref":"#/$defs/transformUndeadAction"}, "learnSkills":{"$ref":"#/$defs/learnSkillsAction"}, "sacrificeCreatures":{"$ref":"#/$defs/sacrificeCreaturesAction"}, "sacrificeArtifacts":{"$ref":"#/$defs/sacrificeArtifactsAction"},
+				"teleport":{"$ref":"#/$defs/teleportAction"},
 				"setFormation":{"$ref":"#/$defs/setFormationAction"}, "setTactics":{"$ref":"#/$defs/setTacticsAction"}, "setTownName":{"$ref":"#/$defs/setTownNameAction"}, "buildBoat":{"$ref":"#/$defs/buildBoatAction"}, "playerMessage":{"$ref":"#/$defs/playerMessageAction"},
 				"localState":{"$ref":"#/$defs/typedObject"},
-				"turnStart":{"$ref":"#/$defs/turnStartEffect"}, "turnEnd":{"$ref":"#/$defs/turnEndEffect"}, "playerEnd":{"$ref":"#/$defs/playerEndEffect"}, "resources":{"$ref":"#/$defs/nestedIntegerMap"}, "setResources":{"$ref":"#/$defs/nestedIntegerMap"},
-				"skills":{"$ref":"#/$defs/nestedIntegerMap"}, "setSkills":{"$ref":"#/$defs/nestedIntegerMap"}, "experience":{"$ref":"#/$defs/integerMap"}, "setExperience":{"$ref":"#/$defs/integerMap"}, "stackExperience":{"$ref":"#/$defs/stackExperienceEffect"},
-				"spells":{"$ref":"#/$defs/spellsEffect"}, "mana":{"$ref":"#/$defs/integerMap"}, "setMana":{"$ref":"#/$defs/integerMap"}, "setMovement":{"$ref":"#/$defs/integerMap"}, "visibility":{"$ref":"#/$defs/visibilityEffect"},
+				"turnEnd":{"$ref":"#/$defs/turnEndEffect"}, "playerEnd":{"$ref":"#/$defs/playerEndEffect"}, "resources":{"oneOf":[{"$ref":"#/$defs/resourceValues"},{"$ref":"#/$defs/nestedIntegerMap"}]}, "setResources":{"oneOf":[{"$ref":"#/$defs/resourceValues"},{"$ref":"#/$defs/nestedIntegerMap"}]},
+				"skills":{"oneOf":[{"$ref":"#/$defs/integerMap"},{"$ref":"#/$defs/nestedIntegerMap"}]}, "setSkills":{"oneOf":[{"$ref":"#/$defs/integerMap"},{"$ref":"#/$defs/nestedIntegerMap"}]}, "experience":{"oneOf":[{"type":"integer"},{"$ref":"#/$defs/integerMap"}]}, "setExperience":{"oneOf":[{"type":"integer"},{"$ref":"#/$defs/integerMap"}]}, "stackExperience":{"$ref":"#/$defs/stackExperienceEffect"},
+				"spells":{"$ref":"#/$defs/spellsEffect"}, "mana":{"oneOf":[{"type":"integer"},{"$ref":"#/$defs/integerMap"}]}, "setMana":{"oneOf":[{"type":"integer"},{"$ref":"#/$defs/integerMap"}]}, "setMovement":{"oneOf":[{"type":"integer"},{"$ref":"#/$defs/integerMap"}]}, "visibility":{"$ref":"#/$defs/visibilityEffect"},
 				"objectPosition":{"$ref":"#/$defs/objectPositionEffect"}, "remove":{"$ref":"#/$defs/removeEffect"}, "town":{"$ref":"#/$defs/townEffect"},
 				"available":{"$ref":"#/$defs/availabilityMap"}, "growth":{"$ref":"#/$defs/availabilityMap"}, "income":{"$ref":"#/$defs/nestedIntegerMap"}, "refresh":{"oneOf":[{"$ref":"#/$defs/dailyRefresh"},{"$ref":"#/$defs/rewardRefresh"}]}, "week":{"$ref":"#/$defs/weekEffect"}, "townHeroes":{"$ref":"#/$defs/townHeroesEffect"}, "availableHero":{"$ref":"#/$defs/availableHeroEffect"}, "heroRecruited":{"$ref":"#/$defs/heroRecruitedEffect"},
 				"heroOwner":{"$ref":"#/$defs/heroOwnerEffect"}, "quest":{"$ref":"#/$defs/questEffect"}, "bonus":{"$ref":"#/$defs/bonusEffect"}, "newObject":{"$ref":"#/$defs/newObjectEffect"},
 				"availableArtifacts":{"$ref":"#/$defs/availableArtifactsEffect"}, "artifact":{"$ref":"#/$defs/typedObject"}, "artifacts":{"$ref":"#/$defs/typedObject"}, "army":{"$ref":"#/$defs/typedObject"},
-				"visit":{"$ref":"#/$defs/visitEffect"}, "capture":{"$ref":"#/$defs/captureEffect"},
-				"levelUp":{"$ref":"#/$defs/levelUpEffect"}, "story":{"$ref":"#/$defs/storyEffect"}, "adventureSpell":{"$ref":"#/$defs/typedObject"}, "query":{"$ref":"#/$defs/queryEffect"},
+				"visit":{"$ref":"#/$defs/visitAction"}, "capture":{"oneOf":[{"$ref":"#/$defs/captureAction"},{"$ref":"#/$defs/captureEffect"}]},
+				"levelUp":{"$ref":"#/$defs/levelUpEffect"}, "story":{"$ref":"#/$defs/storyEffect"}, "adventureSpell":{"$ref":"#/$defs/typedObject"},
+				"opened":{"$ref":"#/$defs/openedActivity"}, "usedToday":{"$ref":"#/$defs/typedObject"},
 				"battle":{"$ref":"#/$defs/battleBlock"},
 				"unmodelled":{"type":"object","required":["stream","pack","material"],"properties":{"stream":{"enum":["decision","effect"]},"pack":{"type":"string"},"material":{"type":"boolean"}},"additionalProperties":false}
 			},
 			"additionalProperties":false
 		},
-		"contextualBuildRecord": {
-			"type":"object", "required":["at","build","cost"],
-			"properties":{"actor":{"$ref":"#/$defs/actor"},"at":{"$ref":"#/$defs/identifier"},"build":{"$ref":"#/$defs/identifier"},"cost":{"$ref":"#/$defs/resourceValues"}},
-			"additionalProperties":false,
-			"description":"Lexical at: scene shorthand for a build transaction; context ends with this mapping."
-		},
-		"contextualMoveRecord": {
-			"type":"object", "required":["with","move"],
-			"properties":{"actor":{"$ref":"#/$defs/actor"},"with":{"$ref":"#/$defs/identifier"},"move":{"oneOf":[{"type":"object","required":["to"],"properties":{"to":{"$ref":"#/$defs/position3D"},"transit":{"type":"boolean"}},"additionalProperties":false},{"type":"object","required":["route","z"],"properties":{"route":{"type":"array","minItems":2,"items":{"$ref":"#/$defs/position2D"}},"z":{"type":"integer"},"transit":{"type":"boolean"}},"additionalProperties":false},{"type":"object","required":["to","steps"],"properties":{"to":{"$ref":"#/$defs/position3D"},"steps":{"type":"string"},"transit":{"type":"boolean"}},"additionalProperties":false}]}},
-			"additionalProperties":false,
-			"description":"Lexical with: scene shorthand for one hero move; context ends with this mapping."
-		},
+		"sceneEncounterAction": { "type":"object", "required":["with"], "properties":{"with":{"$ref":"#/$defs/identifier"},"approach":{"$ref":"#/$defs/approach"},"choice":{"$ref":"#/$defs/choice"},"text":{"type":"string"},"outcome":{"type":"array","items":{"$ref":"#/$defs/record"}}}, "additionalProperties":false },
+		"sceneVisitAction": { "type":"object", "required":["object"], "properties":{"object":{"$ref":"#/$defs/identifier"},"approach":{"$ref":"#/$defs/approach"}}, "additionalProperties":false },
+		"sceneCaptureAction": { "type":"object", "required":["object"], "properties":{"object":{"$ref":"#/$defs/identifier"},"owner":{"$ref":"#/$defs/playerColor"},"approach":{"$ref":"#/$defs/approach"},"opened":{"$ref":"#/$defs/openedActivity"}}, "additionalProperties":false },
+		"sceneTeleportAction": { "type":"object", "required":["via"], "properties":{"via":{"$ref":"#/$defs/identifier"},"approach":{"$ref":"#/$defs/approach"},"random":{"type":"boolean"},"exit":{"$ref":"#/$defs/identifier"},"to":{"$ref":"#/$defs/position"},"blocked":{"type":"boolean"},"outcome":{"type":"array","items":{"$ref":"#/$defs/record"}}}, "additionalProperties":false },
+		"heroSceneAction": { "type":"object", "minProperties":1, "maxProperties":1, "properties":{"move":{"$ref":"#/$defs/movementBody"},"encounter":{"$ref":"#/$defs/sceneEncounterAction"},"visit":{"$ref":"#/$defs/sceneVisitAction"},"capture":{"$ref":"#/$defs/sceneCaptureAction"},"teleport":{"$ref":"#/$defs/sceneTeleportAction"},"levelUp":{"type":"object","required":["primary"],"properties":{"primary":{"$ref":"#/$defs/identifier"},"choices":{"type":"array","items":{"$ref":"#/$defs/identifier"}}},"additionalProperties":false},"chooseSkill":{"type":"object","required":["skill"],"properties":{"skill":{"$ref":"#/$defs/identifier"}},"additionalProperties":false},"dig":{"type":"object","maxProperties":0},"dismissHero":{"type":"object","maxProperties":0},"setFormation":{"type":"object","required":["formation"],"properties":{"formation":{"type":"string"}},"additionalProperties":false},"setTactics":{"type":"object","required":["enabled"],"properties":{"enabled":{"type":"boolean"}},"additionalProperties":false},"assembleArtifacts":{"type":"object","required":["slot","assemble","artifact"],"properties":{"slot":{},"assemble":{"type":"boolean"},"artifact":{"$ref":"#/$defs/identifier"}},"additionalProperties":false},"buyArtifact":{"type":"object","required":["artifact"],"properties":{"artifact":{"$ref":"#/$defs/identifier"}},"additionalProperties":false},"castAdventureSpell":{"type":"object","required":["spell","position"],"properties":{"spell":{"$ref":"#/$defs/identifier"},"position":{"$ref":"#/$defs/position"}},"additionalProperties":false}}, "additionalProperties":false },
+		"heroScene": { "type":"object", "required":["with","actions"], "properties":{"with":{"$ref":"#/$defs/identifier"},"actions":{"type":"array","minItems":2,"items":{"$ref":"#/$defs/heroSceneAction"}}}, "additionalProperties":false, "description":"A bounded lexical scene for two or more consecutive actions by one hero. Nested actions omit hero; the context ends with the mapping." },
 		"record": {
-			"oneOf":[{"$ref":"#/$defs/atomicRecord"},{"$ref":"#/$defs/contextualBuildRecord"},{"$ref":"#/$defs/contextualMoveRecord"}],
+			"oneOf":[{"enum":["endTurn","ready"]},{"$ref":"#/$defs/atomicRecord"},{"$ref":"#/$defs/heroScene"}],
 			"description":"A closed discriminated record. Unknown keys and fields are invalid."
 		}
 	}

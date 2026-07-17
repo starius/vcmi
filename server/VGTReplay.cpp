@@ -17,6 +17,7 @@
 #include "processors/PlayerMessageProcessor.h"
 #include "processors/TurnOrderProcessor.h"
 #include "queries/QueriesProcessor.h"
+#include "queries/MapQueries.h"
 #include "TurnTimerHandler.h"
 
 #include "../lib/CPlayerState.h"
@@ -389,15 +390,6 @@ bool isNoneIdentifier(const std::string & value)
 	return identifier == "none" || identifier == "core:none";
 }
 
-MapObjectID decodeMapObject(const std::string & value)
-{
-	std::string identifier = normalizeScopedIdentifier(value);
-	const std::string corePrefix = "core:";
-	if(identifier.starts_with(corePrefix))
-		identifier.erase(0, corePrefix.size());
-	return MapObjectID(MapObjectID::decode(identifier));
-}
-
 HeroTypeID decodeHeroType(const std::string & value)
 {
 	if(isNoneIdentifier(value))
@@ -436,13 +428,6 @@ SpellID decodeSpell(const std::string & value)
 	return SpellID(SpellID::decode(normalizeScopedIdentifier(value)));
 }
 
-PrimarySkill decodePrimarySkill(const std::string & value)
-{
-	if(isNoneIdentifier(value))
-		return PrimarySkill::NONE;
-	return PrimarySkill(PrimarySkill::decode(normalizeScopedIdentifier(value)));
-}
-
 SecondarySkill decodeSecondarySkill(const std::string & value)
 {
 	if(isNoneIdentifier(value))
@@ -455,25 +440,6 @@ CreatureID decodeCreature(const std::string & value)
 	if(isNoneIdentifier(value))
 		return CreatureID::NONE;
 	return CreatureID(CreatureID::decode(normalizeScopedIdentifier(value)));
-}
-
-CGCreature::Character decodeCreatureCharacter(const std::string & value)
-{
-	if(value == "compliant") return CGCreature::Character::COMPLIANT;
-	if(value == "friendly") return CGCreature::Character::FRIENDLY;
-	if(value == "aggressive") return CGCreature::Character::AGGRESSIVE;
-	if(value == "hostile") return CGCreature::Character::HOSTILE;
-	if(value == "savage") return CGCreature::Character::SAVAGE;
-	if(value == "custom") return CGCreature::Character::CUSTOM;
-	throw std::runtime_error("Unsupported VGT creature character: " + value);
-}
-
-CGCreature::UpgradedStackPresence decodeUpgradedStackPresence(const std::string & value)
-{
-	if(value == "random") return CGCreature::UpgradedStackPresence::RANDOM;
-	if(value == "never") return CGCreature::UpgradedStackPresence::NEVER;
-	if(value == "always") return CGCreature::UpgradedStackPresence::ALWAYS;
-	throw std::runtime_error("Unsupported VGT upgraded stack presence: " + value);
 }
 
 ArtifactID decodeArtifact(const std::string & value)
@@ -502,31 +468,6 @@ BuildingID decodeBuilding(const std::string & value)
 	return BuildingID(BuildingID::decode(identifier));
 }
 
-ui8 decodeArrangeMode(const std::string & value)
-{
-	if(value == "swap")
-		return 1;
-	if(value == "merge")
-		return 2;
-	if(value == "split")
-		return 3;
-	throw std::runtime_error("Unsupported VGT arrange mode: " + value);
-}
-
-EMarketMode decodeMarketMode(const std::string & value)
-{
-	if(value == "resource-resource") return EMarketMode::RESOURCE_RESOURCE;
-	if(value == "resource-player") return EMarketMode::RESOURCE_PLAYER;
-	if(value == "creature-resource") return EMarketMode::CREATURE_RESOURCE;
-	if(value == "resource-artifact") return EMarketMode::RESOURCE_ARTIFACT;
-	if(value == "artifact-resource") return EMarketMode::ARTIFACT_RESOURCE;
-	if(value == "artifact-experience") return EMarketMode::ARTIFACT_EXP;
-	if(value == "creature-experience") return EMarketMode::CREATURE_EXP;
-	if(value == "creature-undead") return EMarketMode::CREATURE_UNDEAD;
-	if(value == "resource-skill") return EMarketMode::RESOURCE_SKILL;
-	throw std::runtime_error("Unsupported VGT market mode: " + value);
-}
-
 EArmyFormation decodeArmyFormation(const std::string & value)
 {
 	if(value == "loose") return EArmyFormation::LOOSE;
@@ -542,60 +483,6 @@ ManageBackpackArtifacts::ManageCmd decodeBackpackManageCommand(const std::string
 	if(value == "sortByClass") return ManageBackpackArtifacts::ManageCmd::SORT_BY_CLASS;
 	if(value == "sortByCost") return ManageBackpackArtifacts::ManageCmd::SORT_BY_COST;
 	throw std::runtime_error("Unsupported VGT backpack command: " + value);
-}
-
-ChangeValueMode decodeChangeMode(const std::string & value)
-{
-	if(value == "absolute")
-		return ChangeValueMode::ABSOLUTE;
-	if(value == "relative")
-		return ChangeValueMode::RELATIVE;
-	throw std::runtime_error("Unsupported VGT change mode: " + value);
-}
-
-TryMoveHero::EResult decodeMovementResult(const std::string & value)
-{
-	if(value == "failed")
-		return TryMoveHero::FAILED;
-	if(value == "success")
-		return TryMoveHero::SUCCESS;
-	if(value == "teleportation")
-		return TryMoveHero::TELEPORTATION;
-	if(value == "blockingVisit")
-		return TryMoveHero::BLOCKING_VISIT;
-	if(value == "embark")
-		return TryMoveHero::EMBARK;
-	if(value == "disembark")
-		return TryMoveHero::DISEMBARK;
-	throw std::runtime_error("Unsupported VGT movement result: " + value);
-}
-
-EVictoryLossCheckResult decodeVictoryLossResult(const std::string & value)
-{
-	if(value == "victory")
-		return EVictoryLossCheckResult::victory(MetaString(), MetaString());
-	if(value == "loss")
-		return EVictoryLossCheckResult::defeat(MetaString(), MetaString());
-	if(value == "ingame")
-		return EVictoryLossCheckResult();
-	throw std::runtime_error("Unsupported VGT player end result: " + value);
-}
-
-EWeekType decodeWeekType(const std::string & value)
-{
-	if(value == "firstWeek")
-		return EWeekType::FIRST_WEEK;
-	if(value == "normal")
-		return EWeekType::NORMAL;
-	if(value == "doubleGrowth")
-		return EWeekType::DOUBLE_GROWTH;
-	if(value == "bonusGrowth")
-		return EWeekType::BONUS_GROWTH;
-	if(value == "deityOfFire")
-		return EWeekType::DEITYOFFIRE;
-	if(value == "plague")
-		return EWeekType::PLAGUE;
-	throw std::runtime_error("Unsupported VGT week type: " + value);
 }
 
 EPlayerType decodeRandomMapPlayerType(const std::string & value)
@@ -664,104 +551,6 @@ RoadId decodeRoad(const std::string & value)
 	return RoadId(RoadId::decode(identifier));
 }
 
-RumorState::ERumorType decodeRumorType(const std::string & value)
-{
-	if(value == "none")
-		return RumorState::TYPE_NONE;
-	if(value == "random")
-		return RumorState::TYPE_RAND;
-	if(value == "special")
-		return RumorState::TYPE_SPECIAL;
-	if(value == "map")
-		return RumorState::TYPE_MAP;
-	throw std::runtime_error("Unsupported VGT rumor type: " + value);
-}
-
-ETileVisibility decodeVisibility(const std::string & value)
-{
-	if(value == "hidden")
-		return ETileVisibility::HIDDEN;
-	if(value == "revealed")
-		return ETileVisibility::REVEALED;
-	throw std::runtime_error("Unsupported VGT visibility mode: " + value);
-}
-
-ObjProperty decodeObjProperty(const JsonNode & node)
-{
-	if(node.isNumber())
-		return static_cast<ObjProperty>(node.Integer());
-
-	if(!node.isString())
-		throw std::runtime_error("VGT replay object property is not a string or number");
-
-	const std::string value = node.String();
-	if(value == "invalid") return ObjProperty::INVALID;
-	if(value == "owner") return ObjProperty::OWNER;
-	if(value == "unused") return ObjProperty::UNUSED;
-	if(value == "primaryStackCount") return ObjProperty::PRIMARY_STACK_COUNT;
-	if(value == "visitors") return ObjProperty::VISITORS;
-	if(value == "visited") return ObjProperty::VISITED;
-	if(value == "id") return ObjProperty::ID;
-	if(value == "availableCreature") return ObjProperty::AVAILABLE_CREATURE;
-	if(value == "monsterCount") return ObjProperty::MONSTER_COUNT;
-	if(value == "monsterPower") return ObjProperty::MONSTER_POWER;
-	if(value == "monsterExperience") return ObjProperty::MONSTER_EXP;
-	if(value == "monsterRestoreType") return ObjProperty::MONSTER_RESTORE_TYPE;
-	if(value == "monsterRefusedJoin") return ObjProperty::MONSTER_REFUSED_JOIN;
-	if(value == "structureAddVisitingHero") return ObjProperty::STRUCTURE_ADD_VISITING_HERO;
-	if(value == "structureClearVisitors") return ObjProperty::STRUCTURE_CLEAR_VISITORS;
-	if(value == "structureAddGarrisonedHero") return ObjProperty::STRUCTURE_ADD_GARRISONED_HERO;
-	if(value == "bonusValueFirst") return ObjProperty::BONUS_VALUE_FIRST;
-	if(value == "bonusValueSecond") return ObjProperty::BONUS_VALUE_SECOND;
-	if(value == "seerHutVisited") return ObjProperty::SEERHUT_VISITED;
-	if(value == "seerHutComplete") return ObjProperty::SEERHUT_COMPLETE;
-	if(value == "obeliskVisited") return ObjProperty::OBELISK_VISITED;
-	if(value == "bankDayCounter") return ObjProperty::BANK_DAYCOUNTER;
-	if(value == "bankClear") return ObjProperty::BANK_CLEAR;
-	if(value == "rewardSelect") return ObjProperty::REWARD_SELECT;
-	if(value == "rewardCleared") return ObjProperty::REWARD_CLEARED;
-	throw std::runtime_error("Unsupported VGT object property: " + value);
-}
-
-ChangeObjectVisitors::VisitMode decodeObjectVisitMode(const std::string & value)
-{
-	if(value == "addHero")
-		return ChangeObjectVisitors::VISITOR_ADD_HERO;
-	if(value == "addPlayer")
-		return ChangeObjectVisitors::VISITOR_ADD_PLAYER;
-	if(value == "scouted")
-		return ChangeObjectVisitors::VISITOR_SCOUTED;
-	if(value == "clear")
-		return ChangeObjectVisitors::VISITOR_CLEAR;
-	throw std::runtime_error("Unsupported VGT object visitor mode: " + value);
-}
-
-TavernHeroSlot decodeTavernSlot(const std::string & value)
-{
-	if(value == "none")
-		return TavernHeroSlot::NONE;
-	if(value == "native")
-		return TavernHeroSlot::NATIVE;
-	if(value == "random")
-		return TavernHeroSlot::RANDOM;
-	throw std::runtime_error("Unsupported VGT tavern slot: " + value);
-}
-
-TavernSlotRole decodeTavernRole(const std::string & value)
-{
-	if(value == "none")
-		return TavernSlotRole::NONE;
-	if(value == "singleUnit")
-		return TavernSlotRole::SINGLE_UNIT;
-	if(value == "fullArmy")
-		return TavernSlotRole::FULL_ARMY;
-	if(value == "retreated")
-		return TavernSlotRole::RETREATED;
-	if(value == "surrendered")
-		return TavernSlotRole::SURRENDERED;
-	throw std::runtime_error("Unsupported VGT tavern role: " + value);
-}
-
 BattleSide decodeBattleSide(const std::string & value)
 {
 	if(value == "attacker")
@@ -775,19 +564,6 @@ BattleSide decodeBattleSide(const std::string & value)
 	if(value == "allKnowing")
 		return BattleSide::ALL_KNOWING;
 	throw std::runtime_error("Unsupported VGT battle side: " + value);
-}
-
-GiveBonus::ETarget decodeBonusTargetKind(const std::string & value)
-{
-	if(value == "object")
-		return GiveBonus::ETarget::OBJECT;
-	if(value == "player")
-		return GiveBonus::ETarget::PLAYER;
-	if(value == "battle")
-		return GiveBonus::ETarget::BATTLE;
-	if(value == "heroCommander")
-		return GiveBonus::ETarget::HERO_COMMANDER;
-	throw std::runtime_error("Unsupported VGT bonus target kind: " + value);
 }
 
 EActionType decodeActionType(const std::string & value)
@@ -827,33 +603,13 @@ EActionType decodeActionType(const std::string & value)
 
 int3 decodePosition(const JsonNode & node)
 {
-	if(!node.isVector() || node.Vector().size() != 3)
-		throw std::runtime_error("VGT replay position must be a three-value list");
+	if(!node.isVector() || (node.Vector().size() != 2 && node.Vector().size() != 3))
+		throw std::runtime_error("VGT replay position must be a two- or three-value list");
 
 	return int3(
 		static_cast<int>(node.Vector()[0].Integer()),
 		static_cast<int>(node.Vector()[1].Integer()),
-		static_cast<int>(node.Vector()[2].Integer()));
-}
-
-std::vector<int3> decodeMoveRoute(const JsonNode & decision)
-{
-	const auto & route = requireField(decision, "route");
-	const int z = static_cast<int>(requireInteger(decision, "z"));
-	if(!route.isVector())
-		throw std::runtime_error("VGT replay route must be a list");
-
-	std::vector<int3> result;
-	for(const auto & entry : route.Vector())
-	{
-		if(!entry.isVector() || entry.Vector().size() != 2)
-			throw std::runtime_error("VGT replay route with shared z must contain two-value positions");
-		result.emplace_back(
-			static_cast<int>(entry.Vector()[0].Integer()),
-			static_cast<int>(entry.Vector()[1].Integer()),
-			z);
-	}
-	return result;
+		node.Vector().size() == 3 ? static_cast<int>(node.Vector()[2].Integer()) : 0);
 }
 
 int3 directionDelta(const std::string & direction)
@@ -897,76 +653,6 @@ std::vector<int3> decodeMoveSteps(const int3 & start, const JsonNode & decision)
 		throw std::runtime_error("VGT movement steps must not be empty");
 	if(result.back() != decodePosition(requireField(decision, "to")))
 		throw std::runtime_error("VGT movement steps do not end at the declared destination");
-	return result;
-}
-
-FowTilesType decodeFowRuns(const JsonNode & node)
-{
-	if(node.isNull())
-		return {};
-	if(!node.isVector())
-		throw std::runtime_error("VGT replay fog runs must be a list");
-
-	FowTilesType result;
-	for(const auto & run : node.Vector())
-	{
-		const int y = static_cast<int>(requireInteger(run, "y"));
-		const int z = static_cast<int>(requireInteger(run, "z"));
-		const auto & xRange = requireField(run, "x");
-		if(!xRange.isVector() || xRange.Vector().size() != 2)
-			throw std::runtime_error("VGT replay fog x range must have two entries");
-		const int firstX = static_cast<int>(xRange.Vector()[0].Integer());
-		const int lastX = static_cast<int>(xRange.Vector()[1].Integer());
-		for(int x = firstX; x <= lastX; ++x)
-			result.insert(int3(x, y, z));
-	}
-	return result;
-}
-
-int3 decodeCompactTile2D(const std::string & value, int z)
-{
-	const auto separator = value.find('x');
-	if(separator == std::string::npos)
-		throw std::runtime_error("VGT compact tile must use x separator: " + value);
-	return int3(
-		std::stoi(value.substr(0, separator)),
-		std::stoi(value.substr(separator + 1)),
-		z);
-}
-
-void insertFowCircle(const CGameState & gameState, FowTilesType & result, const int3 & center, int radius)
-{
-	for(int x = std::max(center.x - radius, 0); x <= std::min(center.x + radius, gameState.getMap().width - 1); ++x)
-	{
-		for(int y = std::max(center.y - radius, 0); y <= std::min(center.y + radius, gameState.getMap().height - 1); ++y)
-		{
-			const int3 tile(x, y, center.z);
-			if(center.dist(tile, int3::DIST_2D) <= static_cast<ui32>(radius))
-				result.insert(tile);
-		}
-	}
-}
-
-FowTilesType decodeFowTiles(const CGameState & gameState, const JsonNode & node)
-{
-	if(node.isVector() || node.isNull())
-		return decodeFowRuns(node);
-	if(!node.isStruct())
-		throw std::runtime_error("VGT replay fog field must be a list or compact mapping");
-
-	const int z = static_cast<int>(requireInteger(node, "z"));
-	const int radius = static_cast<int>(requireInteger(node, "radius"));
-	const auto & centers = requireField(node, "centers");
-	if(!centers.isVector())
-		throw std::runtime_error("VGT replay fog centers must be a list");
-
-	FowTilesType result;
-	for(const auto & center : centers.Vector())
-	{
-		if(!center.isString())
-			throw std::runtime_error("VGT replay fog center must be a compact string");
-		insertFowCircle(gameState, result, decodeCompactTile2D(center.String(), z), radius);
-	}
 	return result;
 }
 
@@ -1038,6 +724,11 @@ std::string objectLocation(const int3 & position)
 	return result;
 }
 
+bool genericObjectAliasType(const std::string & type)
+{
+	return type == "creatureGeneratorCommon" || type.starts_with("shrineOfMagicLevel");
+}
+
 std::string canonicalObjectAlias(const CGObjectInstance & object)
 {
 	if(const auto * hero = dynamic_cast<const CGHeroInstance *>(&object))
@@ -1063,18 +754,59 @@ std::string canonicalObjectAlias(const CGObjectInstance & object)
 	std::string type = dynamic_cast<const CGTownInstance *>(&object) ? "town" : objectAliasType(object.ID);
 	if(type.empty())
 		type = "unknown";
-	std::string result = type;
-	if(object.tempOwner.isValidPlayer())
-		result += "/" + object.tempOwner.toString();
+	const std::string owner = object.tempOwner.isValidPlayer() ? object.tempOwner.toString() : "";
 	std::string name = sanitizedAliasName(object.getObjectName());
 	if(name.empty())
 		name = sanitizedAliasName(object.instanceName);
 	if(name.empty())
 		name = "id-" + std::to_string(object.id.getNum());
 	const auto typeName = type.substr(type.rfind('/') == std::string::npos ? 0 : type.rfind('/') + 1);
-	if(name != sanitizedAliasName(typeName))
-		result += "/" + name;
+	std::string result;
+	if(genericObjectAliasType(type) && name != sanitizedAliasName(typeName))
+		result = owner.empty() ? name : owner + "/" + name;
+	else
+	{
+		result = type;
+		if(!owner.empty())
+			result += "/" + owner;
+		if(name != sanitizedAliasName(typeName))
+			result += "/" + name;
+	}
 	return result + objectLocation(object.visitablePos());
+}
+
+thread_local std::optional<PlayerColor> aliasDefaultPlayer;
+
+class ScopedAliasDefaultPlayer
+{
+	std::optional<PlayerColor> previous;
+
+public:
+	explicit ScopedAliasDefaultPlayer(PlayerColor player)
+		: previous(aliasDefaultPlayer)
+	{
+		aliasDefaultPlayer = player;
+	}
+
+	~ScopedAliasDefaultPlayer()
+	{
+		aliasDefaultPlayer = previous;
+	}
+};
+
+std::string relativeObjectAlias(std::string alias, PlayerColor player)
+{
+	const std::string playerName = player.toString();
+	const std::string heroPrefix = playerName + "/";
+	if(alias.starts_with(heroPrefix))
+		alias.erase(0, heroPrefix.size());
+	else
+	{
+		const std::string owner = "/" + playerName + "/";
+		if(const auto position = alias.find(owner); position != std::string::npos)
+			alias.erase(position + 1, playerName.size() + 1);
+	}
+	return alias;
 }
 
 ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::string & alias)
@@ -1088,16 +820,24 @@ ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::str
 	{
 		for(const auto & object : gameState.getMap().getObjects())
 		{
-			if(object && object->visitablePos() == *position && canonicalObjectAlias(*object) == alias)
-				return object->id;
+			if(object && object->visitablePos() == *position)
+			{
+				const auto canonical = canonicalObjectAlias(*object);
+				if(canonical == alias || (aliasDefaultPlayer && relativeObjectAlias(canonical, *aliasDefaultPlayer) == alias))
+					return object->id;
+			}
 		}
 		throw std::runtime_error("Unable to resolve positioned VGT object alias: " + alias);
 	}
 
 	for(const auto & object : gameState.getMap().getObjects())
 	{
-		if(object && dynamic_cast<const CGHeroInstance *>(object) && canonicalObjectAlias(*object) == alias)
-			return object->id;
+		if(object && dynamic_cast<const CGHeroInstance *>(object))
+		{
+			const auto canonical = canonicalObjectAlias(*object);
+			if(canonical == alias || (aliasDefaultPlayer && relativeObjectAlias(canonical, *aliasDefaultPlayer) == alias))
+				return object->id;
+		}
 	}
 
 	throw std::runtime_error("Unable to resolve VGT object alias: " + alias);
@@ -1137,39 +877,6 @@ PlayerColor playerFromActor(const std::string & actor)
 	throw std::runtime_error("Unsupported VGT actor: " + actor);
 }
 
-QueryID decodeQuery(const std::string & value)
-{
-	const std::string prefix = "query/";
-	std::string alias = value;
-	if(alias.starts_with(prefix))
-		alias.erase(0, prefix.size());
-	if(alias == "none")
-		return QueryID::NONE;
-	if(alias == "client")
-		return QueryID::CLIENT;
-	return QueryID(std::stoi(alias));
-}
-
-QueryID decodeQuery(const JsonNode & node)
-{
-	if(node.isNumber())
-		return QueryID(static_cast<int>(node.Integer()));
-	if(node.isString())
-		return decodeQuery(node.String());
-	throw std::runtime_error("Unsupported VGT query alias type");
-}
-
-[[maybe_unused]] bool isRealQueryAlias(const JsonNode & node)
-{
-	if(node.isNumber())
-		return true;
-	if(!node.isString())
-		throw std::runtime_error("Unsupported VGT query alias type");
-
-	const auto queryID = decodeQuery(node.String());
-	return queryID != QueryID::NONE && queryID != QueryID::CLIENT;
-}
-
 std::string scalarAliasText(const JsonNode & node, const std::string & label)
 {
 	if(node.isNumber())
@@ -1205,11 +912,6 @@ int64_t decodePrefixedIntegerAlias(const JsonNode & node, const std::string & pr
 int64_t decodeStackAlias(const JsonNode & node)
 {
 	return decodePrefixedIntegerAlias(node, "stack/", "stack");
-}
-
-BattleID decodeBattleAlias(const std::string & value)
-{
-	return BattleID(static_cast<int>(decodePrefixedIntegerAlias(value, "battle/", "battle")));
 }
 
 BattleID decodeBattleAlias(const JsonNode & node)
@@ -1257,123 +959,6 @@ bool optionalBool(const JsonNode & node, const char * field, bool defaultValue)
 		return value->Bool();
 	}
 	return defaultValue;
-}
-
-std::vector<ui32> decodeUnsignedList(const JsonNode & node)
-{
-	if(!node.isVector())
-		throw std::runtime_error("VGT replay numeric list must be a list");
-
-	std::vector<ui32> result;
-	result.reserve(node.Vector().size());
-	for(const auto & entry : node.Vector())
-	{
-		if(!entry.isNumber())
-			throw std::runtime_error("VGT replay numeric list entry is not a number");
-		result.push_back(static_cast<ui32>(entry.Integer()));
-	}
-	return result;
-}
-
-std::vector<TradeItemSell> decodeMarketSellItems(const JsonNode & node, EMarketMode mode)
-{
-	if(!node.isVector())
-		throw std::runtime_error("VGT replay market sell list must be a list");
-
-	std::vector<TradeItemSell> result;
-	result.reserve(node.Vector().size());
-	for(const auto & entry : node.Vector())
-	{
-		if(!entry.isNumber())
-			throw std::runtime_error("VGT replay market sell entry is not a number");
-		const auto value = static_cast<int32_t>(entry.Integer());
-		switch(mode)
-		{
-			case EMarketMode::RESOURCE_RESOURCE:
-			case EMarketMode::RESOURCE_PLAYER:
-			case EMarketMode::RESOURCE_ARTIFACT:
-			case EMarketMode::RESOURCE_SKILL:
-				result.emplace_back(GameResID(value));
-				break;
-			case EMarketMode::CREATURE_RESOURCE:
-			case EMarketMode::CREATURE_UNDEAD:
-			case EMarketMode::CREATURE_EXP:
-				result.emplace_back(SlotID(value));
-				break;
-			case EMarketMode::ARTIFACT_RESOURCE:
-			case EMarketMode::ARTIFACT_EXP:
-				result.emplace_back(ArtifactInstanceID(value));
-				break;
-			case EMarketMode::MARKET_AFTER_LAST_PLACEHOLDER:
-				throw std::runtime_error("VGT replay market sell mode is invalid");
-		}
-	}
-	return result;
-}
-
-std::vector<TradeItemBuy> decodeMarketBuyItems(const JsonNode & node, EMarketMode mode)
-{
-	if(!node.isVector())
-		throw std::runtime_error("VGT replay market buy list must be a list");
-
-	std::vector<TradeItemBuy> result;
-	result.reserve(node.Vector().size());
-	for(const auto & entry : node.Vector())
-	{
-		if(!entry.isNumber())
-			throw std::runtime_error("VGT replay market buy entry is not a number");
-		const auto value = static_cast<int32_t>(entry.Integer());
-		switch(mode)
-		{
-			case EMarketMode::RESOURCE_RESOURCE:
-			case EMarketMode::CREATURE_RESOURCE:
-			case EMarketMode::ARTIFACT_RESOURCE:
-				result.emplace_back(GameResID(value));
-				break;
-			case EMarketMode::RESOURCE_PLAYER:
-				result.emplace_back(PlayerColor(value));
-				break;
-			case EMarketMode::RESOURCE_ARTIFACT:
-				result.emplace_back(ArtifactID(value));
-				break;
-			case EMarketMode::RESOURCE_SKILL:
-				result.emplace_back(SecondarySkill(value));
-				break;
-			case EMarketMode::CREATURE_UNDEAD:
-			case EMarketMode::CREATURE_EXP:
-			case EMarketMode::ARTIFACT_EXP:
-				result.emplace_back(GameResID(value));
-				break;
-			case EMarketMode::MARKET_AFTER_LAST_PLACEHOLDER:
-				throw std::runtime_error("VGT replay market buy mode is invalid");
-		}
-	}
-	return result;
-}
-
-std::vector<MoveArtifactInfo> decodeArtifactMoves(const JsonNode & node)
-{
-	if(!node.isVector())
-		throw std::runtime_error("VGT replay artifact moves must be a list");
-
-	std::vector<MoveArtifactInfo> result;
-	result.reserve(node.Vector().size());
-	for(const auto & entry : node.Vector())
-	{
-		bool askAssemble = false;
-		if(const auto * askAssembleNode = findField(entry, "askAssemble"))
-		{
-			if(!askAssembleNode->isBool())
-				throw std::runtime_error("VGT replay artifact move askAssemble must be boolean");
-			askAssemble = askAssembleNode->Bool();
-		}
-		result.emplace_back(
-			decodeArtifactPosition(requireField(entry, "from")),
-			decodeArtifactPosition(requireField(entry, "to")),
-			askAssemble
-		);
-	}
-	return result;
 }
 
 std::string artifactSetSummary(const CArtifactSet & artifactSet)
@@ -1454,29 +1039,6 @@ std::string serializedObjectFingerprint(const std::shared_ptr<CGObjectInstance> 
 	return bytesFingerprint(serializedObjectBytes(object));
 }
 
-void validateBulkArtifactMove(const CGameState & gameState, const BulkMoveArtifacts & pack)
-{
-	const auto * sourceObject = gameState.getObjInstance(pack.srcArtHolder);
-	const auto * destinationObject = gameState.getObjInstance(pack.dstArtHolder);
-	const auto * sourceSet = dynamic_cast<const CArtifactSet *>(sourceObject);
-	const auto * destinationSet = dynamic_cast<const CArtifactSet *>(destinationObject);
-	if(!sourceSet || !destinationSet)
-		throw std::runtime_error("VGT replay artifact move references an object without artifacts");
-
-	for(const auto & move : pack.artsPack0)
-	{
-		if(!sourceSet->getArt(move.srcPos))
-			throw std::runtime_error("VGT replay artifact move source slot is empty: holder=" + std::to_string(pack.srcArtHolder.getNum()) +
-				", slot=" + std::to_string(move.srcPos.getNum()) + ", worn=" + artifactSetSummary(*sourceSet));
-	}
-	for(const auto & move : pack.artsPack1)
-	{
-		if(!destinationSet->getArt(move.srcPos))
-			throw std::runtime_error("VGT replay artifact move destination slot is empty: holder=" + std::to_string(pack.dstArtHolder.getNum()) +
-				", slot=" + std::to_string(move.srcPos.getNum()) + ", worn=" + artifactSetSummary(*destinationSet));
-	}
-}
-
 std::string armySummary(const CCreatureSet & army)
 {
 	std::vector<std::string> entries;
@@ -1492,174 +1054,7 @@ std::string armySummary(const CCreatureSet & army)
 	return "[" + boost::algorithm::join(entries, ", ") + "]";
 }
 
-std::string objectDebugSummary(const CGameState & gameState, ObjectInstanceID objectID)
-{
-	const auto * object = gameState.getMap().getObject(objectID);
-	if(!object)
-		return "missing";
-
-	std::vector<std::string> parts;
-	parts.push_back("id=" + std::to_string(objectID.getNum()));
-	parts.push_back("type=" + MapObjectID::encode(object->ID.getNum()));
-	parts.push_back("subtype=" + std::to_string(object->subID.getNum()));
-	parts.push_back("owner=" + colorAlias(object->tempOwner));
-	parts.push_back("name=" + object->instanceName);
-	parts.push_back("pos=" + object->visitablePos().toString());
-
-	if(const auto * hero = dynamic_cast<const CGHeroInstance *>(object))
-	{
-		parts.push_back("hero=" + HeroTypeID::encode(hero->getHeroTypeID().getNum()));
-		parts.push_back("artifacts=" + artifactSetSummary(*hero));
-	}
-	if(const auto * army = dynamic_cast<const CArmedInstance *>(object))
-		parts.push_back("stacks=" + armySummary(*army));
-
-	return "{" + boost::algorithm::join(parts, ", ") + "}";
-}
-
-std::string ownedHeroesSummary(const CGameState & gameState, PlayerColor player)
-{
-	std::vector<std::string> entries;
-	for(const auto & object : gameState.getMap().getObjects())
-	{
-		const auto * hero = dynamic_cast<const CGHeroInstance *>(object);
-		if(hero && hero->tempOwner == player)
-			entries.push_back(objectDebugSummary(gameState, hero->id));
-	}
-	return "[" + boost::algorithm::join(entries, ", ") + "]";
-}
-
-void validateArmyHasStack(CGameHandler & gameHandler, ObjectInstanceID armyID, SlotID slot, const std::string & context)
-{
-	const auto * army = gameHandler.gs->getArmyInstance(armyID);
-	if(!army)
-		throw std::runtime_error("VGT replay army move references invalid army: " + std::to_string(armyID.getNum()));
-	if(!army->hasStackAtSlot(slot))
-		throw std::runtime_error("VGT replay army move source slot is empty: " + context +
-			", army=" + std::to_string(armyID.getNum()) +
-			", slot=" + std::to_string(slot.getNum()) +
-			", object=" + objectDebugSummary(gameHandler.gameState(), armyID) +
-			", ownedHeroes=" + ownedHeroesSummary(gameHandler.gameState(), army->getOwner()));
-}
-
-BulkMoveArtifacts decodeBulkArtifactMove(CGameHandler & gameHandler, const JsonNode & node)
-{
-	BulkMoveArtifacts pack;
-	pack.interfaceOwner = decodeColor(requireString(node, "owner"));
-	pack.srcArtHolder = resolveObjectAlias(gameHandler.gameState(), requireString(node, "from"));
-	pack.dstArtHolder = resolveObjectAlias(gameHandler.gameState(), requireString(node, "to"));
-	if(const auto * srcCreature = findNullableField(node, "fromCreatureSlot"))
-		pack.srcCreature = decodeOptionalSlot(*srcCreature);
-	if(const auto * dstCreature = findNullableField(node, "toCreatureSlot"))
-		pack.dstCreature = decodeOptionalSlot(*dstCreature);
-	pack.artsPack0 = decodeArtifactMoves(requireField(node, "movesFromSource"));
-	pack.artsPack1 = decodeArtifactMoves(requireField(node, "movesFromDestination"));
-	return pack;
-}
-
-std::vector<BulkMoveArtifacts> decodeBulkArtifactMoves(CGameHandler & gameHandler, const JsonNode & node)
-{
-	if(!node.isVector())
-		throw std::runtime_error("VGT replay battle artifactMoves must be a list");
-
-	std::vector<BulkMoveArtifacts> result;
-	result.reserve(node.Vector().size());
-	for(const auto & entry : node.Vector())
-		result.push_back(decodeBulkArtifactMove(gameHandler, entry));
-	return result;
-}
-
-struct DecodedStackLocation
-{
-	ObjectInstanceID owner;
-	SlotID slot;
-};
-
-DecodedStackLocation decodeStackLocation(const CGameState & gameState, const JsonNode & node)
-{
-	return {
-		resolveObjectAlias(gameState, requireString(node, "owner")),
-		decodeSlot(requireField(node, "slot"))
-	};
-}
-
-ObjPropertyID decodeObjPropertyValue(const CGameState & gameState, ObjProperty property, const JsonNode & node)
-{
-	if(node.isString())
-	{
-		const std::string value = node.String();
-		switch(property)
-		{
-			case ObjProperty::OWNER:
-			case ObjProperty::VISITED:
-			case ObjProperty::SEERHUT_VISITED:
-				return ObjPropertyID(decodeColor(value));
-			case ObjProperty::VISITORS:
-				return ObjPropertyID(resolveObjectAlias(gameState, value));
-			case ObjProperty::ID:
-				return ObjPropertyID(MapObjectID(MapObjectID::decode(normalizeScopedIdentifier(value))));
-			case ObjProperty::AVAILABLE_CREATURE:
-				return ObjPropertyID(decodeCreature(value));
-			default:
-				return ObjPropertyID(NumericID(NumericID::decode(value)));
-		}
-	}
-
-	if(!node.isNumber())
-		throw std::runtime_error("VGT replay object property value is not a string or number");
-
-	const auto value = static_cast<int32_t>(node.Integer());
-	switch(property)
-	{
-		case ObjProperty::OWNER:
-		case ObjProperty::VISITED:
-		case ObjProperty::SEERHUT_VISITED:
-			return ObjPropertyID(PlayerColor(value));
-		case ObjProperty::VISITORS:
-			return ObjPropertyID(ObjectInstanceID(value));
-		case ObjProperty::ID:
-			return ObjPropertyID(MapObjectID(value));
-		case ObjProperty::AVAILABLE_CREATURE:
-			return ObjPropertyID(CreatureID(value));
-		case ObjProperty::OBELISK_VISITED:
-			return ObjPropertyID(TeamID(value));
-		default:
-			return ObjPropertyID(NumericID(value));
-	}
-}
-
-GiveBonus::VariantType decodeBonusTarget(const CGameState & gameState, GiveBonus::ETarget targetKind, std::string value)
-{
-	switch(targetKind)
-	{
-		case GiveBonus::ETarget::OBJECT:
-			return GiveBonus::VariantType(resolveObjectAlias(gameState, value));
-		case GiveBonus::ETarget::PLAYER:
-			return GiveBonus::VariantType(decodePlayerColor(value));
-		case GiveBonus::ETarget::BATTLE:
-			return GiveBonus::VariantType(decodeBattleAlias(value));
-		case GiveBonus::ETarget::HERO_COMMANDER:
-		{
-			const std::string suffix = "/commander";
-			if(!value.ends_with(suffix))
-				throw std::runtime_error("VGT hero commander bonus target lacks /commander suffix: " + value);
-			value.erase(value.size() - suffix.size());
-			return GiveBonus::VariantType(resolveObjectAlias(gameState, value));
-		}
-	}
-	throw std::runtime_error("Unsupported VGT bonus target kind");
-}
-
-BattleResultAccepted::HeroBattleResults decodeBattleHeroResult(const CGameState & gameState, const JsonNode & node)
-{
-	BattleResultAccepted::HeroBattleResults result;
-	result.heroID = resolveObjectAlias(gameState, requireString(node, "hero"));
-	result.armyID = resolveObjectAlias(gameState, requireString(node, "army"));
-	result.exp = static_cast<TExpType>(requireInteger(node, "experience"));
-	return result;
-}
-
-[[maybe_unused]] BattleAction decodeBattleAction(const JsonNode & node)
+BattleAction decodeBattleAction(const JsonNode & node)
 {
 	BattleAction result;
 	result.side = decodeBattleSide(requireString(node, "side"));
@@ -1714,79 +1109,14 @@ ResourceSet decodeResources(const JsonNode & values)
 	return result;
 }
 
-std::set<SpellID> decodeSpellSet(const JsonNode & node)
+std::pair<GameResID, ui32> decodeSingleResourceAmount(const JsonNode & node, const std::string & context)
 {
-	if(!node.isVector())
-		throw std::runtime_error("VGT replay spell list must be a list");
-
-	std::set<SpellID> result;
-	for(const auto & entry : node.Vector())
-	{
-		if(!entry.isString())
-			throw std::runtime_error("VGT replay spell entry is not a string");
-		result.insert(decodeSpell(entry.String()));
-	}
-	return result;
-}
-
-std::vector<ArtifactID> decodeArtifactList(const JsonNode & node)
-{
-	if(!node.isVector())
-		throw std::runtime_error("VGT replay artifact list must be a list");
-
-	std::vector<ArtifactID> result;
-	for(const auto & entry : node.Vector())
-	{
-		if(!entry.isString())
-			throw std::runtime_error("VGT replay artifact entry is not a string");
-		result.push_back(decodeArtifact(entry.String()));
-	}
-	return result;
-}
-
-std::set<BuildingID> decodeBuildingSet(const JsonNode & node)
-{
-	if(!node.isVector())
-		throw std::runtime_error("VGT replay building list must be a list");
-
-	std::set<BuildingID> result;
-	for(const auto & entry : node.Vector())
-	{
-		if(!entry.isString())
-			throw std::runtime_error("VGT replay building entry is not a string");
-		result.insert(decodeBuilding(entry.String()));
-	}
-	return result;
-}
-
-std::vector<CreatureID> decodeCreatureList(const JsonNode & node)
-{
-	if(!node.isVector())
-		throw std::runtime_error("VGT replay creature list must be a list");
-
-	std::vector<CreatureID> result;
-	for(const auto & entry : node.Vector())
-	{
-		if(!entry.isString())
-			throw std::runtime_error("VGT replay creature entry is not a string");
-		result.push_back(decodeCreature(entry.String()));
-	}
-	return result;
-}
-
-std::vector<SecondarySkill> decodeSecondarySkillList(const JsonNode & node)
-{
-	if(!node.isVector())
-		throw std::runtime_error("VGT replay secondary skill list must be a list");
-
-	std::vector<SecondarySkill> result;
-	for(const auto & entry : node.Vector())
-	{
-		if(!entry.isString())
-			throw std::runtime_error("VGT replay secondary skill entry is not a string");
-		result.push_back(decodeSecondarySkill(entry.String()));
-	}
-	return result;
+	if(!node.isStruct() || node.Struct().size() != 1)
+		throw std::runtime_error("VGT " + context + " must name exactly one resource");
+	const auto & entry = *node.Struct().begin();
+	if(!entry.second.isNumber() || entry.second.Integer() < 0)
+		throw std::runtime_error("VGT " + context + " amount must be a nonnegative integer");
+	return {decodeResource(entry.first), static_cast<ui32>(entry.second.Integer())};
 }
 
 CSimpleArmy decodeSimpleArmy(const JsonNode & node)
@@ -1806,95 +1136,15 @@ CSimpleArmy decodeSimpleArmy(const JsonNode & node)
 	return result;
 }
 
-std::vector<std::pair<ui32, std::vector<CreatureID>>> decodeAvailableCreatures(const JsonNode & node)
-{
-	if(!node.isVector())
-		throw std::runtime_error("VGT replay available creatures must be a list");
-
-	std::vector<std::pair<ui32, std::vector<CreatureID>>> result;
-	for(const auto & entry : node.Vector())
-	{
-		result.emplace_back(
-			static_cast<ui32>(requireInteger(entry, "available")),
-			decodeCreatureList(requireField(entry, "creatures")));
-	}
-	return result;
-}
-
-std::vector<SetMovePoints> decodeNewTurnMovement(const CGameState & gameState, const JsonNode & node)
-{
-	if(!node.isVector())
-		throw std::runtime_error("VGT replay newTurn movement must be a list");
-
-	std::vector<SetMovePoints> result;
-	for(const auto & entry : node.Vector())
-	{
-		SetMovePoints pack;
-		pack.hid = resolveObjectAlias(gameState, requireString(entry, "hero"));
-		pack.val = static_cast<si32>(requireInteger(entry, "value"));
-		result.push_back(pack);
-	}
-	return result;
-}
-
-std::vector<SetMana> decodeNewTurnMana(const CGameState & gameState, const JsonNode & node)
-{
-	if(!node.isVector())
-		throw std::runtime_error("VGT replay newTurn mana must be a list");
-
-	std::vector<SetMana> result;
-	for(const auto & entry : node.Vector())
-	{
-		SetMana pack;
-		pack.hid = resolveObjectAlias(gameState, requireString(entry, "hero"));
-		pack.mode = decodeChangeMode(requireString(entry, "mode"));
-		pack.val = static_cast<si32>(requireInteger(entry, "value"));
-		result.push_back(pack);
-	}
-	return result;
-}
-
-std::vector<SetAvailableCreatures> decodeNewTurnAvailableCreatures(const CGameState & gameState, const JsonNode & node)
-{
-	if(!node.isVector())
-		throw std::runtime_error("VGT replay newTurn available creatures must be a list");
-
-	std::vector<SetAvailableCreatures> result;
-	for(const auto & entry : node.Vector())
-	{
-		SetAvailableCreatures pack;
-		pack.tid = resolveObjectAlias(gameState, requireString(entry, "object"));
-		pack.creatures = decodeAvailableCreatures(requireField(entry, "levels"));
-		result.push_back(pack);
-	}
-	return result;
-}
-
-RumorState decodeRumorState(const JsonNode & node)
-{
-	RumorState result;
-	result.type = decodeRumorType(requireString(node, "type"));
-	result.last.clear();
-
-	const auto & last = requireField(node, "last");
-	if(!last.isVector())
-		throw std::runtime_error("VGT replay rumor last must be a list");
-	for(const auto & entry : last.Vector())
-	{
-		result.last[decodeRumorType(requireString(entry, "type"))] = {
-			static_cast<int>(requireInteger(entry, "id")),
-			static_cast<int>(requireInteger(entry, "extra"))
-		};
-	}
-	return result;
-}
-
 Handicap decodeHandicap(const JsonNode & node)
 {
 	Handicap result;
-	result.startBonus = decodeResources(requireField(node, "resources"));
-	result.percentIncome = static_cast<int>(requireInteger(node, "incomePercent"));
-	result.percentGrowth = static_cast<int>(requireInteger(node, "growthPercent"));
+	if(const auto * resources = findField(node, "resources"))
+		result.startBonus = decodeResources(*resources);
+	if(hasField(node, "incomePercent"))
+		result.percentIncome = static_cast<int>(requireInteger(node, "incomePercent"));
+	if(hasField(node, "growthPercent"))
+		result.percentGrowth = static_cast<int>(requireInteger(node, "growthPercent"));
 	return result;
 }
 
@@ -1938,17 +1188,6 @@ TurnTimerInfo decodeTimer(const JsonNode & node)
 	return result;
 }
 
-TurnTimerInfo decodeTurnTimerState(const JsonNode & node)
-{
-	TurnTimerInfo result = decodeTimer(node);
-	result.isActive = requireBool(node, "active");
-	result.isBattle = requireBool(node, "battleMode");
-	result.remainingMovementPointsPercent = static_cast<int>(requireInteger(node, "movementPercent"));
-	result.isTurnStart = requireBool(node, "turnStart");
-	result.isTurnEnded = requireBool(node, "turnEnded");
-	return result;
-}
-
 ExtraOptionsInfo decodeExtraOptions(const JsonNode & node)
 {
 	ExtraOptionsInfo result;
@@ -1957,19 +1196,32 @@ ExtraOptionsInfo decodeExtraOptions(const JsonNode & node)
 	return result;
 }
 
-PlayerSettings decodePlayerSettings(const JsonNode & node, PlayerColor color)
+PlayerSettings decodePlayerSettings(const JsonNode & node, PlayerColor color, const PlayerSettings * base = nullptr)
 {
-	PlayerSettings result;
+	PlayerSettings result = base ? *base : PlayerSettings();
 	result.color = color;
-	result.castle = decodeFaction(requireString(node, "faction"));
-	result.hero = decodeHeroType(requireString(node, "hero"));
-	result.heroPortrait = decodeHeroType(requireString(node, "heroPortrait"));
-	result.heroNameTextId = requireString(node, "heroNameTextId");
-	result.bonus = decodeStartingBonus(requireString(node, "startingBonus"));
-	result.handicap = decodeHandicap(requireField(node, "handicap"));
-	result.name = requireString(node, "name");
-	result.connectedPlayerIDs = decodeConnections(requireField(node, "connections"));
-	result.compOnly = requireBool(node, "computerOnly");
+	const std::string controller = hasField(node, "controller") ? requireString(node, "controller") :
+		(result.isControlledByHuman() ? "human" : "ai");
+	if(hasField(node, "faction"))
+		result.castle = decodeFaction(requireString(node, "faction"));
+	if(hasField(node, "hero"))
+		result.hero = decodeHeroType(requireString(node, "hero"));
+	if(hasField(node, "heroPortrait"))
+		result.heroPortrait = decodeHeroType(requireString(node, "heroPortrait"));
+	if(hasField(node, "heroNameTextId"))
+		result.heroNameTextId = requireString(node, "heroNameTextId");
+	if(hasField(node, "startingBonus"))
+		result.bonus = decodeStartingBonus(requireString(node, "startingBonus"));
+	if(const auto * handicap = findField(node, "handicap"))
+		result.handicap = decodeHandicap(*handicap);
+	if(hasField(node, "name"))
+		result.name = requireString(node, "name");
+	else if(!base)
+		result.name = controller == "ai" ? "Computer" : "";
+	if(const auto * connections = findField(node, "connections"))
+		result.connectedPlayerIDs = decodeConnections(*connections);
+	if(hasField(node, "computerOnly"))
+		result.compOnly = requireBool(node, "computerOnly");
 	return result;
 }
 
@@ -1987,10 +1239,24 @@ std::map<PlayerColor, PlayerSettings> decodePlayerSettingsMap(const JsonNode & n
 	return result;
 }
 
+std::map<PlayerColor, PlayerSettings> decodePlayerSettingsDeltaMap(const JsonNode & players, const JsonNode & deltas)
+{
+	auto result = decodePlayerSettingsMap(players);
+	if(!deltas.isStruct())
+		throw std::runtime_error("VGT replay initialPlayers field is not a mapping");
+	for(const auto & entry : deltas.Struct())
+	{
+		const PlayerColor color = decodePlayerColor(entry.first);
+		const auto base = result.find(color);
+		result[color] = decodePlayerSettings(entry.second, color, base == result.end() ? nullptr : &base->second);
+	}
+	return result;
+}
+
 std::map<PlayerColor, PlayerSettings> decodeGeneratedMapInitializationPlayerSettings(const JsonNode & players, const JsonNode & initialPlayers)
 {
 	auto result = decodePlayerSettingsMap(players);
-	const auto initial = decodePlayerSettingsMap(initialPlayers);
+	const auto initial = decodePlayerSettingsDeltaMap(players, initialPlayers);
 	for(const auto & [color, settings] : initial)
 	{
 		auto iter = result.find(color);
@@ -2084,14 +1350,17 @@ StartInfo decodeStartInfo(const JsonNode & header)
 	result.startTime = static_cast<time_t>(requireInteger(settingsNode, "startTime"));
 	result.difficulty = decodeDifficulty(requireString(settingsNode, "difficulty"));
 	result.fileURI = requireString(map, "uri");
-	result.mapname = requireString(map, "name");
-	result.simturnsInfo = decodeSimturns(requireField(settingsNode, "simturns"));
-	result.turnTimerInfo = decodeTimer(requireField(settingsNode, "timer"));
-	result.extraOptionsInfo = decodeExtraOptions(requireField(settingsNode, "extraOptions"));
+	result.mapname = hasField(map, "name") ? requireString(map, "name") : result.fileURI;
+	if(const auto * simturns = findField(settingsNode, "simturns"))
+		result.simturnsInfo = decodeSimturns(*simturns);
+	if(const auto * timer = findField(settingsNode, "timer"))
+		result.turnTimerInfo = decodeTimer(*timer);
+	if(const auto * extraOptions = findField(settingsNode, "extraOptions"))
+		result.extraOptionsInfo = decodeExtraOptions(*extraOptions);
 	if(generatedMapFile)
 		result.playerInfos = decodeGeneratedMapInitializationPlayerSettings(players, initialPlayers);
 	else
-		result.playerInfos = decodePlayerSettingsMap(initialPlayers);
+		result.playerInfos = decodePlayerSettingsDeltaMap(players, initialPlayers);
 	if(generatedMapFile)
 		result.mapGenOptions = decodeRandomMapGenerator(requireField(map, "generator"));
 	return result;
@@ -2108,7 +1377,9 @@ void setReplaySeed(const JsonNode & header)
 void applyGameSettingsOverrides(CGameHandler & gameHandler, const JsonNode & header)
 {
 	const auto & settingsNode = requireField(header, "settings");
-	const auto & expectedOverrides = requireField(settingsNode, "gameSettingsOverrides");
+	JsonNode emptyOverrides;
+	const auto * expectedOverridesNode = findField(settingsNode, "gameSettingsOverrides");
+	const auto & expectedOverrides = expectedOverridesNode ? *expectedOverridesNode : emptyOverrides;
 
 	const auto actualOverrides = gameHandler.gs->getMap().getGameSettingsOverrides();
 	const auto isEmptyOverrides = [](const JsonNode & node)
@@ -2132,7 +1403,8 @@ void applyMapEngineState(CGameHandler & gameHandler, const JsonNode & header)
 			startInfo->playerInfos = decodePlayerSettingsMap(requireField(header, "players"));
 		if(auto * initialStartInfo = gameHandler.gs->getInitialStartInfo())
 		{
-			initialStartInfo->playerInfos = decodePlayerSettingsMap(requireField(header, "initialPlayers"));
+			initialStartInfo->playerInfos = decodePlayerSettingsDeltaMap(
+				requireField(header, "players"), requireField(header, "initialPlayers"));
 			initialStartInfo->fileURI.clear();
 			initialStartInfo->mapname.clear();
 		}
@@ -2332,42 +1604,23 @@ void applyInitialState(CGameHandler & gameHandler, const JsonNode & header)
 {
 	const auto & initialStateNode = requireField(header, "initialState");
 	const auto & heroesNode = requireField(initialStateNode, "heroes");
-	if(!heroesNode.isVector())
-		throw std::runtime_error("VGT initialState.heroes must be a list");
-
-	for(const auto & heroNode : heroesNode.Vector())
-		applyInitialHeroArmyState(gameHandler, heroNode);
+	if(heroesNode.isVector())
+	{
+		for(const auto & heroNode : heroesNode.Vector())
+			applyInitialHeroArmyState(gameHandler, heroNode);
+		return;
+	}
+	if(!heroesNode.isStruct())
+		throw std::runtime_error("VGT initialState.heroes must be a mapping");
+	for(const auto & [hero, state] : heroesNode.Struct())
+	{
+		JsonNode heroState = state;
+		heroState["id"].String() = hero;
+		applyInitialHeroArmyState(gameHandler, heroState);
+	}
 }
 
-void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, const JsonNode & node)
-{
-	auto creature = std::dynamic_pointer_cast<CGCreature>(object);
-	if(!creature)
-		throw std::runtime_error("VGT creatureState provided for non-creature object");
-
-	if(const auto * character = findField(node, "character"))
-		creature->initialCharacter = decodeCreatureCharacter(character->String());
-	if(const auto * aggression = findField(node, "aggression"))
-		creature->agression = static_cast<int8_t>(aggression->Integer());
-	if(const auto * temppower = findField(node, "temppower"))
-		creature->temppower = temppower->Integer();
-	if(const auto * stacksCount = findField(node, "stacksCount"))
-		creature->stacksCount = stacksCount->Integer();
-	if(const auto * upgradedStackPresence = findField(node, "upgradedStackPresence"))
-		creature->upgradedStackPresence = decodeUpgradedStackPresence(upgradedStackPresence->String());
-	if(const auto * joiningPercentage = findField(node, "joiningPercentage"))
-		creature->joiningPercentage = static_cast<int8_t>(joiningPercentage->Integer());
-	if(const auto * joinOnlyForMoney = findField(node, "joinOnlyForMoney"))
-		creature->joinOnlyForMoney = joinOnlyForMoney->Bool();
-	if(const auto * refusedJoining = findField(node, "refusedJoining"))
-		creature->refusedJoining = refusedJoining->Bool();
-	if(const auto * neverFlees = findField(node, "neverFlees"))
-		creature->neverFlees = neverFlees->Bool();
-	if(const auto * noGrowing = findField(node, "noGrowing"))
-		creature->notGrowingTeam = noGrowing->Bool();
-}
-
-[[maybe_unused]] void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
+void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 {
 	const std::string actor = requireString(decision, "actor");
 	const std::string kind = requireString(decision, "kind");
@@ -2395,6 +1648,7 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 	}
 
 	const PlayerColor player = playerFromActor(actor);
+	ScopedAliasDefaultPlayer aliasScope(player);
 
 	if(kind == "endTurn")
 	{
@@ -2421,19 +1675,10 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 			}
 			return;
 		}
-		if(hasField(decision, "route"))
-		{
-			for(const auto & destination : decodeMoveRoute(decision))
-			{
-				pack.path = {destination};
-				replayPack(gameHandler, pack, player);
-			}
-			return;
-		}
 		if(const auto * destination = findField(decision, "to"))
 			pack.path = {decodePosition(*destination)};
 		else
-			throw std::runtime_error("VGT move action must contain to, route, or steps");
+			throw std::runtime_error("VGT move action must contain to");
 		replayPack(gameHandler, pack, player);
 		return;
 	}
@@ -2492,16 +1737,19 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 			? resolveObjectAlias(gameHandler.gameState(), requireString(decision, "to"))
 			: source;
 		const auto & units = requireField(decision, "units");
-		auto recruit = [&](const std::string & creatureIdentifier, int64_t count)
-		{
-			RecruitCreatures pack;
-			pack.tid = source;
-			pack.dst = destination;
-			pack.crid = decodeCreature(creatureIdentifier);
-			pack.amount = static_cast<ui32>(count);
-			pack.level = -1;
-			replayPack(gameHandler, pack, player);
-		};
+			auto recruit = [&](const std::string & creatureIdentifier, int64_t count)
+			{
+				if(!gameHandler.recruitCreatures(
+					source,
+					destination,
+					decodeCreature(creatureIdentifier),
+					static_cast<ui32>(count),
+					-1,
+					player))
+				{
+					throw std::runtime_error("VGT semantic recruitment was rejected");
+				}
+			};
 		if(units.isStruct())
 		{
 			if(units.Struct().size() != 1)
@@ -2527,28 +1775,30 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 		return;
 	}
 
-	if(kind == "hireHero")
+	if(kind == "hire")
 	{
 		HireHero pack;
-		pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "town"));
+		pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "at"));
 		pack.hid = decodeHeroType(requireString(decision, "hero"));
-		pack.nhid = decodeHeroType(requireString(decision, "nextHero"));
+		pack.nhid = hasField(decision, "replacement")
+			? decodeHeroType(requireString(decision, "replacement"))
+			: HeroTypeID::NONE;
 		replayPack(gameHandler, pack, player);
 		return;
 	}
 
-	if(kind == "arrangeStacks")
+	if(kind == "swapStacks" || kind == "mergeStacks" || kind == "splitStack")
 	{
 		const auto & from = requireField(decision, "from");
-		const auto & to = requireField(decision, "to");
+		const auto & to = requireField(decision, kind == "mergeStacks" ? "into" : "to");
 
 		ArrangeStacks pack;
-		pack.what = decodeArrangeMode(requireString(decision, "mode"));
+		pack.what = kind == "swapStacks" ? 1 : kind == "mergeStacks" ? 2 : 3;
 		pack.id1 = resolveObjectAlias(gameHandler.gameState(), requireString(from, "army"));
 		pack.p1 = decodeSlot(requireField(from, "slot"));
 		pack.id2 = resolveObjectAlias(gameHandler.gameState(), requireString(to, "army"));
 		pack.p2 = decodeSlot(requireField(to, "slot"));
-		pack.val = static_cast<si32>(requireInteger(decision, "count"));
+		pack.val = kind == "splitStack" ? static_cast<si32>(requireInteger(decision, "count")) : 0;
 		replayPack(gameHandler, pack, player);
 		return;
 	}
@@ -2693,12 +1943,169 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 	if(kind == "trade")
 	{
 		TradeOnMarketplace pack;
-		pack.marketId = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "market"));
-		pack.heroId = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "hero"));
-		pack.mode = decodeMarketMode(requireString(decision, "mode"));
-		pack.r1 = decodeMarketSellItems(requireField(decision, "sell"), pack.mode);
-		pack.r2 = decodeMarketBuyItems(requireField(decision, "buy"), pack.mode);
-		pack.val = decodeUnsignedList(requireField(decision, "amount"));
+		pack.marketId = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "at"));
+		pack.heroId = ObjectInstanceID::NONE;
+		pack.mode = EMarketMode::RESOURCE_RESOURCE;
+		const auto & exchanges = requireField(decision, "exchanges");
+		if(!exchanges.isVector() || exchanges.Vector().empty())
+			throw std::runtime_error("VGT resource trade must contain exchanges");
+		const auto * market = gameHandler.gameState().getMarket(pack.marketId);
+		if(!market)
+			throw std::runtime_error("VGT trade references a non-market object");
+		for(const auto & exchange : exchanges.Vector())
+		{
+			const auto & sold = requireField(exchange, "sold");
+			const auto & bought = requireField(exchange, "received");
+			if(!sold.isStruct() || sold.Struct().size() != 1 || !bought.isStruct() || bought.Struct().size() != 1)
+				throw std::runtime_error("VGT trade exchange must name one sold and one bought resource");
+			const auto & soldEntry = *sold.Struct().begin();
+			const auto & boughtEntry = *bought.Struct().begin();
+			const auto soldResource = decodeResource(soldEntry.first);
+			const auto boughtResource = decodeResource(boughtEntry.first);
+			const auto soldAmount = static_cast<ui32>(soldEntry.second.Integer());
+			int offerSold = 0;
+			int offerBought = 0;
+			if(!market->getOffer(soldResource, boughtResource, offerSold, offerBought, pack.mode) || offerSold <= 0 ||
+				static_cast<int64_t>(soldAmount / offerSold * offerBought) != boughtEntry.second.Integer())
+				throw std::runtime_error("VGT trade bought amount does not match the market offer");
+			pack.r1.emplace_back(soldResource);
+			pack.r2.emplace_back(boughtResource);
+			pack.val.push_back(soldAmount);
+		}
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "sendResources" || kind == "sellCreatures" || kind == "buyArtifacts" ||
+		kind == "sellArtifacts" || kind == "transformUndead" || kind == "learnSkills" ||
+		kind == "sacrificeCreatures" || kind == "sacrificeArtifacts")
+	{
+		TradeOnMarketplace pack;
+		pack.marketId = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "at"));
+		pack.heroId = hasField(decision, "hero")
+			? resolveObjectAlias(gameHandler.gameState(), requireString(decision, "hero"))
+			: ObjectInstanceID::NONE;
+
+		if(kind == "sendResources")
+		{
+			pack.mode = EMarketMode::RESOURCE_PLAYER;
+			auto appendTransfer = [&](const JsonNode & transfer)
+			{
+				const auto recipient = decodePlayerColor(requireString(transfer, "to"));
+				const auto resources = decodeResources(requireField(transfer, "resources"));
+				for(size_t index = 0; index < resources.size(); ++index)
+				{
+					if(resources[index] <= 0)
+						continue;
+					pack.r1.emplace_back(GameResID(static_cast<int>(index)));
+					pack.r2.emplace_back(recipient);
+					pack.val.push_back(static_cast<ui32>(resources[index]));
+				}
+			};
+			if(const auto * transfers = findField(decision, "transfers"))
+			{
+				if(!transfers->isVector())
+					throw std::runtime_error("VGT sendResources transfers must be a list");
+				for(const auto & transfer : transfers->Vector())
+					appendTransfer(transfer);
+			}
+			else
+				appendTransfer(decision);
+		}
+		else if(kind == "sellCreatures")
+		{
+			pack.mode = EMarketMode::CREATURE_RESOURCE;
+			const auto & sales = requireField(decision, "sales");
+			if(!sales.isVector())
+				throw std::runtime_error("VGT sellCreatures sales must be a list");
+			for(const auto & sale : sales.Vector())
+			{
+				const auto resource = decodeSingleResourceAmount(requireField(sale, "received"), "creature sale outcome").first;
+				pack.r1.emplace_back(decodeSlot(requireField(sale, "slot")));
+				pack.r2.emplace_back(resource);
+				pack.val.push_back(static_cast<ui32>(requireInteger(sale, "count")));
+			}
+		}
+		else if(kind == "buyArtifacts")
+		{
+			pack.mode = EMarketMode::RESOURCE_ARTIFACT;
+			const auto & purchases = requireField(decision, "purchases");
+			if(!purchases.isVector())
+				throw std::runtime_error("VGT buyArtifacts purchases must be a list");
+			for(const auto & purchase : purchases.Vector())
+			{
+				const auto resource = decodeSingleResourceAmount(requireField(purchase, "paid"), "artifact purchase cost").first;
+				pack.r1.emplace_back(resource);
+				pack.r2.emplace_back(decodeArtifact(requireString(purchase, "artifact")));
+				pack.val.push_back(0);
+			}
+		}
+		else if(kind == "sellArtifacts")
+		{
+			pack.mode = EMarketMode::ARTIFACT_RESOURCE;
+			const auto & sales = requireField(decision, "sales");
+			if(!sales.isVector())
+				throw std::runtime_error("VGT sellArtifacts sales must be a list");
+			for(const auto & sale : sales.Vector())
+			{
+				const auto resource = decodeSingleResourceAmount(requireField(sale, "received"), "artifact sale outcome").first;
+				pack.r1.emplace_back(ArtifactInstanceID(static_cast<int>(requireInteger(sale, "instance"))));
+				pack.r2.emplace_back(resource);
+				pack.val.push_back(0);
+			}
+		}
+		else if(kind == "transformUndead")
+		{
+			pack.mode = EMarketMode::CREATURE_UNDEAD;
+			const auto & stacks = requireField(decision, "stacks");
+			if(!stacks.isVector())
+				throw std::runtime_error("VGT transformUndead stacks must be a list");
+			for(const auto & stack : stacks.Vector())
+			{
+				pack.r1.emplace_back(decodeSlot(requireField(stack, "slot")));
+				pack.r2.emplace_back(GameResID(0));
+				pack.val.push_back(0);
+			}
+		}
+		else if(kind == "learnSkills")
+		{
+			pack.mode = EMarketMode::RESOURCE_SKILL;
+			const auto & skills = requireField(decision, "skills");
+			if(!skills.isVector())
+				throw std::runtime_error("VGT learnSkills skills must be a list");
+			for(const auto & skill : skills.Vector())
+			{
+				pack.r1.emplace_back(GameResID(EGameResID::GOLD));
+				pack.r2.emplace_back(decodeSecondarySkill(skill.String()));
+				pack.val.push_back(0);
+			}
+		}
+		else if(kind == "sacrificeCreatures")
+		{
+			pack.mode = EMarketMode::CREATURE_EXP;
+			const auto & stacks = requireField(decision, "stacks");
+			if(!stacks.isVector())
+				throw std::runtime_error("VGT sacrificeCreatures stacks must be a list");
+			for(const auto & stack : stacks.Vector())
+			{
+				pack.r1.emplace_back(decodeSlot(requireField(stack, "slot")));
+				pack.r2.emplace_back(GameResID(0));
+				pack.val.push_back(static_cast<ui32>(requireInteger(stack, "count")));
+			}
+		}
+		else
+		{
+			pack.mode = EMarketMode::ARTIFACT_EXP;
+			const auto & artifacts = requireField(decision, "artifacts");
+			if(!artifacts.isVector())
+				throw std::runtime_error("VGT sacrificeArtifacts artifacts must be a list");
+			for(const auto & artifact : artifacts.Vector())
+			{
+				pack.r1.emplace_back(ArtifactInstanceID(static_cast<int>(requireInteger(artifact, "instance"))));
+				pack.r2.emplace_back(GameResID(0));
+				pack.val.push_back(0);
+			}
+		}
 		replayPack(gameHandler, pack, player);
 		return;
 	}
@@ -2779,23 +2186,50 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 		return;
 	}
 
-	if(kind == "queryAnswer")
+	if(kind == "finish" || kind == "answer")
 	{
+		const auto topQuery = gameHandler.queries->topQuery(player);
+		if(!topQuery)
+			throw std::runtime_error("VGT semantic answer has no active query");
 		QueryReply pack;
-		pack.qid = decodeQuery(requireField(decision, "query"));
-		const auto answerIter = decision.Struct().find("answer");
-		if(answerIter == decision.Struct().end())
-			throw std::runtime_error("Missing VGT replay query answer");
-		if(answerIter->second.isNull())
-			pack.reply = std::nullopt;
+		pack.qid = topQuery->queryID;
+		if(kind == "finish")
+			pack.reply = 0;
 		else
-			pack.reply = static_cast<int32_t>(answerIter->second.Integer());
+		{
+			const auto & value = requireField(decision, "value");
+			pack.reply = value.isNull() ? std::optional<int32_t>() : std::optional<int32_t>(static_cast<int32_t>(value.Integer()));
+		}
+		replayPack(gameHandler, pack, player);
+		return;
+	}
+
+	if(kind == "chooseSkill")
+	{
+		const auto query = std::dynamic_pointer_cast<CHeroLevelUpDialogQuery>(gameHandler.queries->topQuery(player));
+		if(!query)
+			throw std::runtime_error("VGT chooseSkill has no active hero level-up query");
+		const auto selected = decodeSecondarySkill(requireString(decision, "skill"));
+		const auto choice = std::find(query->hlu.skills.begin(), query->hlu.skills.end(), selected);
+		if(choice == query->hlu.skills.end())
+			throw std::runtime_error("VGT chooseSkill selection is not offered by the active query");
+		QueryReply pack;
+		pack.qid = query->queryID;
+		pack.reply = static_cast<int32_t>(std::distance(query->hlu.skills.begin(), choice));
 		replayPack(gameHandler, pack, player);
 		return;
 	}
 
 	if(kind == "encounter")
 	{
+		if(const auto * approach = findField(decision, "approach"))
+		{
+			JsonNode move = *approach;
+			move["actor"].String() = actor;
+			move["kind"].String() = "move";
+			move["hero"].String() = requireString(decision, "hero");
+			replayDecision(gameHandler, move);
+		}
 		const auto * choice = findField(decision, "choice");
 		if(!choice)
 			return;
@@ -2813,127 +2247,81 @@ void applyCreatureObjectState(const std::shared_ptr<CGObjectInstance> & object, 
 		return;
 	}
 
-	throw std::runtime_error("Unsupported VGT decision kind: " + kind);
-}
-
-void applyArmyEffect(CGameHandler & gameHandler, const JsonNode & node)
-{
-	if(const auto * move = findField(node, "move"))
+	if(kind == "teleport")
 	{
-		const auto from = decodeStackLocation(gameHandler.gameState(), requireField(*move, "from"));
-		const auto to = decodeStackLocation(gameHandler.gameState(), requireField(*move, "to"));
-
-		RebalanceStacks pack;
-		pack.srcArmy = from.owner;
-		pack.srcSlot = from.slot;
-		pack.dstArmy = to.owner;
-		pack.dstSlot = to.slot;
-		pack.count = static_cast<TQuantity>(requireInteger(*move, "count"));
-		validateArmyHasStack(gameHandler, pack.srcArmy, pack.srcSlot, "move");
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(const auto * swap = findField(node, "swap"))
-	{
-		const auto from = decodeStackLocation(gameHandler.gameState(), requireField(*swap, "from"));
-		const auto to = decodeStackLocation(gameHandler.gameState(), requireField(*swap, "to"));
-
-		SwapStacks pack;
-		pack.srcArmy = from.owner;
-		pack.srcSlot = from.slot;
-		pack.dstArmy = to.owner;
-		pack.dstSlot = to.slot;
-		validateArmyHasStack(gameHandler, pack.srcArmy, pack.srcSlot, "swap source");
-		validateArmyHasStack(gameHandler, pack.dstArmy, pack.dstSlot, "swap destination");
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	const auto location = decodeStackLocation(gameHandler.gameState(), node);
-
-	if(const auto * insert = findField(node, "insert"))
-	{
-		InsertNewStack pack;
-		pack.army = location.owner;
-		pack.slot = location.slot;
-		pack.type = decodeCreature(requireString(*insert, "creature"));
-		pack.count = static_cast<TQuantity>(requireInteger(*insert, "count"));
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(hasField(node, "erase"))
-	{
-		EraseStack pack;
-		pack.army = location.owner;
-		pack.slot = location.slot;
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(hasField(node, "creature"))
-	{
-		SetStackType pack;
-		pack.army = location.owner;
-		pack.slot = location.slot;
-		pack.type = decodeCreature(requireString(node, "creature"));
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	ChangeStackCount pack;
-	pack.army = location.owner;
-	pack.slot = location.slot;
-	pack.mode = decodeChangeMode(requireString(node, "mode"));
-	pack.count = static_cast<TQuantity>(requireInteger(node, "count"));
-	applyEffectPack(gameHandler, pack);
-}
-
-BattleID decodeBattleRecordID(const JsonNode & node, const std::optional<std::string> & parentBattleID)
-{
-	if(hasField(node, "id"))
-		return decodeBattleAlias(requireField(node, "id"));
-	if(parentBattleID)
-		return decodeBattleAlias(*parentBattleID);
-	throw std::runtime_error("VGT battle record has no battle id");
-}
-
-void applyBattleEffect(CGameHandler & gameHandler, const JsonNode & node, const std::optional<std::string> & parentBattleID = std::nullopt)
-{
-	const std::string event = requireString(node, "event");
-	if(event == "resultAccepted")
-	{
-		if(!hasField(node, "attacker") || !hasField(node, "defender"))
-			return;
-
-		BattleResultAccepted pack;
-		pack.battleID = decodeBattleRecordID(node, parentBattleID);
-		pack.winnerSide = decodeBattleSide(requireString(node, "winner"));
-		pack.heroResult[BattleSide::ATTACKER] = decodeBattleHeroResult(gameHandler.gameState(), requireField(node, "attacker"));
-		pack.heroResult[BattleSide::DEFENDER] = decodeBattleHeroResult(gameHandler.gameState(), requireField(node, "defender"));
-		applyEffectPack(gameHandler, pack);
-	}
-	else if(event == "resultsApplied")
-	{
-		if(const auto * artifactMoves = findField(node, "artifactMoves"))
+		if(const auto * approach = findField(decision, "approach"))
 		{
-			if(artifactMoves->isVector())
-			{
-				for(auto & move : decodeBulkArtifactMoves(gameHandler, *artifactMoves))
-				{
-					validateBulkArtifactMove(gameHandler.gameState(), move);
-					applyEffectPack(gameHandler, move);
-				}
-			}
+			JsonNode move = *approach;
+			move["actor"].String() = actor;
+			move["kind"].String() = "move";
+			move["hero"].String() = requireString(decision, "hero");
+			replayDecision(gameHandler, move);
 		}
+
+		const auto query = std::dynamic_pointer_cast<CTeleportDialogQuery>(gameHandler.queries->topQuery(player));
+		if(!query)
+			throw std::runtime_error("VGT teleport has no active teleport query");
+		QueryReply pack;
+		pack.qid = query->queryID;
+		if(optionalBool(decision, "random", false))
+			pack.reply = -1;
+		else if(const auto * exitNode = findField(decision, "exit"))
+		{
+			const auto exitID = resolveObjectAlias(gameHandler.gameState(), exitNode->String());
+			auto exit = std::find_if(query->td.exits.begin(), query->td.exits.end(), [exitID](const auto & candidate)
+			{
+				return candidate.first == exitID;
+			});
+			if(exit == query->td.exits.end())
+				throw std::runtime_error("VGT teleport exit is not offered by the active query");
+			pack.reply = static_cast<int32_t>(std::distance(query->td.exits.begin(), exit));
+		}
+		else
+			pack.reply = 0;
+		replayPack(gameHandler, pack, player);
+
+		if(const auto * destination = findField(decision, "to"))
+		{
+			const auto heroID = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "hero"));
+			const auto * hero = gameHandler.gameState().getHero(heroID);
+			if(!hero || hero->visitablePos() != decodePosition(*destination))
+				throw std::runtime_error("VGT teleport did not reach its declared destination");
+		}
+		return;
 	}
+
+	if(kind == "visit")
+	{
+		if(const auto * approach = findField(decision, "approach"))
+		{
+			JsonNode move = *approach;
+			move["actor"].String() = actor;
+			move["kind"].String() = "move";
+			move["hero"].String() = requireString(decision, "hero");
+			replayDecision(gameHandler, move);
+		}
+		return;
+	}
+
+	if(kind == "capture")
+	{
+		if(const auto * approach = findField(decision, "approach"))
+		{
+			JsonNode move = *approach;
+			move["actor"].String() = actor;
+			move["kind"].String() = "move";
+			move["hero"].String() = requireString(decision, "hero");
+			replayDecision(gameHandler, move);
+		}
+		return;
+	}
+
+	throw std::runtime_error("Unsupported VGT decision kind: " + kind);
 }
 
 bool isDecisionKind(const std::string & kind)
 {
 	static const std::set<std::string> decisionKinds = {
-		"arrangeStacks",
 		"assembleArtifacts",
 		"build",
 		"buildBoat",
@@ -2943,7 +2331,10 @@ bool isDecisionKind(const std::string & kind)
 		"bulkSplitAndRebalanceStack",
 		"bulkSplitStack",
 		"buyArtifact",
+		"buyArtifacts",
+		"chooseSkill",
 		"castleTeleportHero",
+		"capture",
 		"castAdventureSpell",
 		"dig",
 		"disbandCreature",
@@ -2952,24 +2343,37 @@ bool isDecisionKind(const std::string & kind)
 		"encounter",
 		"eraseArtifact",
 		"exchangeArtifacts",
-		"hireHero",
+		"finish",
+		"hire",
 		"manageBackpackArtifacts",
 		"manageEquippedArtifacts",
 		"move",
 		"pauseTimer",
+		"answer",
 		"playerMessage",
-		"queryAnswer",
 		"razeStructure",
 		"ready",
 		"recruit",
+		"sacrificeArtifacts",
+		"sacrificeCreatures",
+		"sellArtifacts",
+		"sellCreatures",
+		"sendResources",
 		"setFormation",
 		"setTactics",
 		"setTownName",
+		"mergeStacks",
+		"splitStack",
 		"spellResearch",
 		"swapTownHeroes",
+		"swapStacks",
 		"trade",
+		"teleport",
+		"transformUndead",
 		"upgradeCreature",
+		"visit",
 		"visitTownBuilding",
+		"learnSkills",
 	};
 	return decisionKinds.contains(kind);
 }
@@ -3032,11 +2436,14 @@ bool isEffectKind(const std::string & kind)
 		"spells",
 		"stackExperience",
 		"story",
+		"opened",
 		"town",
 		"townHeroes",
 		"turnEnd",
 		"turnStart",
+		"usedToday",
 		"visit",
+		"visibility",
 		"week",
 	};
 	return effectKinds.contains(kind);
@@ -3049,10 +2456,12 @@ void replayReadableDecision(
 	const std::optional<std::string> & battleID = std::nullopt,
 	const std::optional<std::string> & defaultActor = std::nullopt)
 {
-	if(!node.isStruct())
+	JsonNode decision = node;
+	if(decision.isNull())
+		decision.setType(JsonNode::JsonType::DATA_STRUCT);
+	else if(!decision.isStruct())
 		throw std::runtime_error("VGT " + kind + " action is not a mapping");
 
-	JsonNode decision = node;
 	decision["kind"].String() = kind;
 	if(defaultActor && !hasField(decision, "actor"))
 		decision["actor"].String() = *defaultActor;
@@ -3109,18 +2518,66 @@ void replayReadableBattleAction(
 	replayDecision(gameHandler, decision);
 }
 
-bool shouldSynthesizeDisabledTimerState(CGameHandler & gameHandler);
-
-[[maybe_unused]] void synthesizeDisabledTimerBattleStart(CGameHandler & gameHandler, const std::set<PlayerColor> & players)
+void replaySemanticBattleMove(
+	CGameHandler & gameHandler,
+	const JsonNode & node,
+	const std::string & battleID,
+	const std::map<std::string, int> & roster)
 {
-	if(!shouldSynthesizeDisabledTimerState(gameHandler))
+	JsonNode action;
+	action["actor"].String() = requireString(node, "actor");
+	action["side"].String() = requireString(node, "side");
+	action["unit"].String() = requireString(node, "unit");
+	JsonNode target;
+	target["hex"].Integer() = requireInteger(node, "to");
+	action["target"].Vector().push_back(std::move(target));
+	replayReadableBattleAction(gameHandler, "walk", action, battleID, roster);
+}
+
+void replaySemanticBattleAttack(
+	CGameHandler & gameHandler,
+	const JsonNode & node,
+	const std::string & battleID,
+	const std::map<std::string, int> & roster)
+{
+	// Server-selected war-machine shots are narrative events, not player
+	// decisions. The battle engine reproduces them while advancing initiative.
+	if(optionalBool(node, "automatic", false))
 		return;
 
-	for(const auto & player : players)
-	{
-		if(gameHandler.gs->getPlayerState(player))
-			gameHandler.turnTimerHandler->setBattleTimerForReplay(player);
-	}
+	JsonNode action;
+	action["actor"].String() = requireString(node, "actor");
+	action["side"].String() = requireString(node, "side");
+	action["unit"].String() = requireString(node, "by");
+	action["target"] = requireField(node, "aim");
+	replayReadableBattleAction(
+		gameHandler,
+		optionalBool(node, "ranged", false) ? "shoot" : "walkAndAttack",
+		action,
+		battleID,
+		roster);
+}
+
+void replaySemanticBattleCast(
+	CGameHandler & gameHandler,
+	const JsonNode & node,
+	const std::string & battleID,
+	const std::map<std::string, int> & roster)
+{
+	JsonNode action;
+	action["actor"].String() = requireString(node, "actor");
+	action["side"].String() = requireString(node, "side");
+	const std::string caster = requireString(node, "caster");
+	const bool stackCast = roster.contains(caster);
+	action["unit"].String() = stackCast ? caster : "hero";
+	action["spell"].String() = requireString(node, "spell");
+	action["target"] = requireField(node, "aim");
+	replayReadableBattleAction(
+		gameHandler,
+		stackCast ? "monsterSpell" : "heroSpell",
+		action,
+		battleID,
+		roster);
 }
 
 void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node)
@@ -3165,17 +2622,67 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node)
 			}
 			continue;
 		}
+		if(record.Struct().size() == 1 && record.Struct().begin()->first == "move")
+		{
+			replaySemanticBattleMove(gameHandler, record.Struct().begin()->second, battleID, roster);
+			continue;
+		}
+		if(record.Struct().size() == 1 && record.Struct().begin()->first == "attack" &&
+			hasField(record.Struct().begin()->second, "aim"))
+		{
+			replaySemanticBattleAttack(gameHandler, record.Struct().begin()->second, battleID, roster);
+			continue;
+		}
+		if(record.Struct().size() == 1 && record.Struct().begin()->first == "cast")
+		{
+			replaySemanticBattleCast(gameHandler, record.Struct().begin()->second, battleID, roster);
+			continue;
+		}
+		if(hasField(record, "event") || hasField(record, "attack"))
+			continue;
+		static const std::set<std::string> semanticEffects = {
+			"casts", "catapult", "cloned", "drainMana", "enchant", "enchanterCounter", "fear", "gate",
+			"hasClone", "morale", "poison", "regenerate", "triggeredEffect", "unbind"
+		};
+		if(record.Struct().size() == 1 && semanticEffects.contains(record.Struct().begin()->first))
+			continue;
 		if(record.Struct().size() == 1 && isBattleActionKind(record.Struct().begin()->first))
 		{
 			const auto & entry = *record.Struct().begin();
 			replayReadableBattleAction(gameHandler, entry.first, entry.second, battleID, roster);
 			continue;
 		}
-		if(hasField(record, "event") || hasField(record, "attack"))
-			continue;
 		if(record.Struct().size() == 1 && isEffectKind(record.Struct().begin()->first))
 			continue;
 		throw std::runtime_error("Unsupported VGT battle block event");
+	}
+
+	const auto * outcome = findField(node, "outcome");
+	const auto * aftermath = outcome ? findField(*outcome, "aftermath") : nullptr;
+	if(!aftermath)
+		return;
+	if(!aftermath->isVector())
+		throw std::runtime_error("VGT battle aftermath is not a list");
+
+	std::optional<std::string> aftermathActor;
+	if(const auto * winner = findField(*outcome, "winner"); winner && winner->isString())
+		aftermathActor = winner->String();
+	for(const auto & record : aftermath->Vector())
+	{
+		if(!record.isStruct() || record.Struct().size() != 1)
+			throw std::runtime_error("VGT battle aftermath record is not a one-key mapping");
+		const auto & entry = *record.Struct().begin();
+		if(entry.first == "query")
+		{
+			if(const auto * player = findField(entry.second, "player"); player && player->isString())
+				aftermathActor = player->String();
+			continue;
+		}
+		// Battle resolution already produced all state effects. Only replay choices
+		// that drive a surviving post-battle query (for example guarded dwelling
+		// recruitment); observational capture/reward records remain derived.
+		if(isDecisionKind(entry.first) && !isEffectKind(entry.first))
+			replayReadableDecision(gameHandler, entry.first, entry.second, std::nullopt, aftermathActor);
 	}
 }
 
@@ -3186,580 +2693,6 @@ void applyLocalState(CGameHandler & gameHandler, const JsonNode & node)
 	if(!playerState)
 		throw std::runtime_error("VGT replay localState references unknown player: " + requireString(node, "player"));
 	*playerState->playerLocalSettings = requireField(node, "data");
-}
-
-bool shouldSynthesizeDisabledTimerState(CGameHandler & gameHandler)
-{
-	const auto * startInfo = gameHandler.gameInfo().getStartInfo();
-	return startInfo && !startInfo->turnTimerInfo.isEnabled();
-}
-
-void synthesizeDisabledTimerTurnStart(CGameHandler & gameHandler, PlayerColor player)
-{
-	if(!shouldSynthesizeDisabledTimerState(gameHandler))
-		return;
-
-	auto * playerState = gameHandler.gs->getPlayerState(player);
-	if(!playerState)
-		return;
-
-	if(!playerState->turnTimer.isActive && !playerState->turnTimer.isTurnEnded)
-		gameHandler.turnTimerHandler->onGameplayStart(player);
-}
-
-void synthesizeDisabledTimerTurnEnd(CGameHandler & gameHandler, PlayerColor player)
-{
-	if(!shouldSynthesizeDisabledTimerState(gameHandler))
-		return;
-
-	auto * playerState = gameHandler.gs->getPlayerState(player);
-	if(!playerState)
-		return;
-
-	gameHandler.turnTimerHandler->onEndTurn(player);
-}
-
-[[maybe_unused]] void synthesizeDisabledTimerGameplayStart(CGameHandler & gameHandler)
-{
-	if(!shouldSynthesizeDisabledTimerState(gameHandler))
-		return;
-
-	for(const auto & [player, state] : gameHandler.gameState().players)
-		gameHandler.turnTimerHandler->onGameplayStart(player);
-}
-
-[[maybe_unused]] void applyEffectRecord(CGameHandler & gameHandler, const std::string & kind, const JsonNode & node)
-{
-	if(kind == "query" || kind == "info")
-		return;
-
-	if(kind == "battle")
-	{
-		if(hasField(node, "events"))
-		{
-			applyBattleBlock(gameHandler, node);
-			return;
-		}
-		applyBattleEffect(gameHandler, node);
-		return;
-	}
-
-	if(kind == "localState")
-	{
-		applyLocalState(gameHandler, node);
-		return;
-	}
-
-	if(kind == "availableHero")
-	{
-		SetAvailableHero pack;
-		pack.player = decodePlayerColor(requireString(node, "player"));
-		pack.slotID = decodeTavernSlot(requireString(node, "slot"));
-		pack.roleID = decodeTavernRole(requireString(node, "role"));
-		pack.hid = decodeHeroType(requireString(node, "hero"));
-		pack.army = decodeSimpleArmy(requireField(node, "army"));
-		pack.replenishPoints = requireBool(node, "replenishMovement");
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "timer")
-	{
-		TurnTimeUpdate pack;
-		pack.player = decodePlayerColor(requireString(node, "player"));
-		pack.turnTimer = decodeTurnTimerState(requireField(node, "state"));
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "availableArtifacts")
-	{
-		SetAvailableArtifacts pack;
-		pack.id = resolveObjectAlias(gameHandler.gameState(), requireString(node, "object"));
-		pack.arts = decodeArtifactList(requireField(node, "artifacts"));
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "artifact")
-	{
-		if(const auto * createNode = findField(node, "create"))
-		{
-			NewArtifact pack;
-			pack.artHolder = resolveObjectAlias(gameHandler.gameState(), requireString(*createNode, "holder"));
-			pack.artId = decodeArtifact(requireString(*createNode, "artifact"));
-			pack.spellId = SpellID::NONE;
-			if(const auto * spellNode = findField(*createNode, "spell"))
-			{
-				if(!spellNode->isString())
-					throw std::runtime_error("VGT replay artifact spell must be a string");
-				pack.spellId = decodeSpell(spellNode->String());
-			}
-			pack.pos = decodeArtifactPosition(requireField(*createNode, "position"));
-			applyEffectPack(gameHandler, pack);
-			return;
-		}
-
-		if(const auto * putNode = findField(node, "put"))
-		{
-			PutArtifact pack;
-			pack.id = ArtifactInstanceID(static_cast<int>(requireInteger(*putNode, "artifactInstance")));
-			pack.al = decodeArtifactLocation(gameHandler, requireField(*putNode, "to"));
-			pack.askAssemble = false;
-			if(const auto * askAssembleNode = findField(*putNode, "askAssemble"))
-			{
-				if(!askAssembleNode->isBool())
-					throw std::runtime_error("VGT replay artifact put askAssemble must be boolean");
-				pack.askAssemble = askAssembleNode->Bool();
-			}
-			applyEffectPack(gameHandler, pack);
-			return;
-		}
-	}
-
-	if(kind == "rewardable")
-	{
-		SetRewardableConfiguration pack;
-		pack.objectID = resolveObjectAlias(gameHandler.gameState(), requireString(node, "object"));
-		pack.buildingID = decodeBuilding(requireString(node, "building"));
-		JsonDeserializer handler(nullptr, requireField(node, "configuration"));
-		pack.configuration.serializeJson(handler);
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "artifacts" && hasField(node, "owner"))
-	{
-		BulkMoveArtifacts pack = decodeBulkArtifactMove(gameHandler, node);
-		validateBulkArtifactMove(gameHandler.gameState(), pack);
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "heroRecruited")
-	{
-		HeroRecruited pack;
-		pack.player = decodePlayerColor(requireString(node, "player"));
-		pack.hid = decodeHeroType(requireString(node, "hero"));
-		pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(node, "town"));
-		pack.tile = decodePosition(requireField(node, "tile"));
-		pack.boatId = resolveObjectAlias(gameHandler.gameState(), requireString(node, "boat"));
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "heroOwner")
-	{
-		GiveHero pack;
-		pack.id = resolveObjectAlias(gameHandler.gameState(), requireString(node, "hero"));
-		pack.player = decodePlayerColor(requireString(node, "player"));
-		pack.boatId = resolveObjectAlias(gameHandler.gameState(), requireString(node, "boat"));
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "bonus")
-	{
-		GiveBonus pack;
-		pack.who = decodeBonusTargetKind(requireString(node, "targetKind"));
-		if(pack.who == GiveBonus::ETarget::BATTLE)
-			return;
-
-		pack.id = decodeBonusTarget(gameHandler.gameState(), pack.who, requireString(node, "target"));
-		const auto parsedBonus = JsonUtils::parseBonus(requireField(node, "value"));
-		if(!parsedBonus)
-			throw std::runtime_error("Unable to parse VGT bonus value");
-		pack.bonus = *parsedBonus;
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "newTurn")
-	{
-		NewTurn pack;
-		pack.day = static_cast<ui32>(requireInteger(node, "day"));
-		pack.specialWeek = decodeWeekType(requireString(node, "week"));
-		pack.creatureid = decodeCreature(requireString(node, "creature"));
-
-		if(const auto * income = findField(node, "income"))
-		{
-			if(!income->isVector())
-				throw std::runtime_error("VGT replay newTurn income must be a list");
-			for(const auto & entry : income->Vector())
-				pack.playerIncome[decodePlayerColor(requireString(entry, "player"))] = decodeResources(requireField(entry, "resources"));
-		}
-
-		if(const auto * movement = findField(node, "movement"))
-			pack.heroesMovement = decodeNewTurnMovement(gameHandler.gameState(), *movement);
-		if(const auto * mana = findField(node, "mana"))
-			pack.heroesMana = decodeNewTurnMana(gameHandler.gameState(), *mana);
-		if(const auto * available = findField(node, "availableCreatures"))
-			pack.availableCreatures = decodeNewTurnAvailableCreatures(gameHandler.gameState(), *available);
-		if(const auto * rumor = findField(node, "rumor"))
-			pack.newRumor = decodeRumorState(*rumor);
-
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "turnStart")
-	{
-		PlayerStartsTurn pack;
-		pack.player = decodePlayerColor(requireString(node, "player"));
-		pack.queryID = decodeQuery(requireField(node, "query"));
-		applyEffectPack(gameHandler, pack);
-		synthesizeDisabledTimerTurnStart(gameHandler, pack.player);
-		return;
-	}
-
-	if(kind == "turnEnd")
-	{
-		PlayerEndsTurn pack;
-		pack.player = decodePlayerColor(requireString(node, "player"));
-		applyEffectPack(gameHandler, pack);
-		synthesizeDisabledTimerTurnEnd(gameHandler, pack.player);
-		return;
-	}
-
-	if(kind == "playerEnd")
-	{
-		PlayerEndsGame pack;
-		pack.player = decodePlayerColor(requireString(node, "player"));
-		pack.victoryLossCheckResult = decodeVictoryLossResult(requireString(node, "result"));
-		pack.silentEnd = requireBool(node, "silent");
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "resources")
-	{
-		SetResources pack;
-		pack.player = decodePlayerColor(requireString(node, "player"));
-		pack.mode = decodeChangeMode(requireString(node, "mode"));
-		pack.res = decodeResources(requireField(node, "values"));
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "primarySkill")
-	{
-		SetPrimarySkill pack;
-		pack.id = resolveObjectAlias(gameHandler.gameState(), requireString(node, "hero"));
-		pack.which = decodePrimarySkill(requireString(node, "skill"));
-		pack.mode = decodeChangeMode(requireString(node, "mode"));
-		pack.val = requireInteger(node, "value");
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "experience")
-	{
-		SetHeroExperience pack;
-		pack.id = resolveObjectAlias(gameHandler.gameState(), requireString(node, "hero"));
-		pack.mode = decodeChangeMode(requireString(node, "mode"));
-		pack.val = requireInteger(node, "value");
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "stackExperience")
-	{
-		GiveStackExperience pack;
-		pack.id = resolveObjectAlias(gameHandler.gameState(), requireString(node, "army"));
-		const auto & values = requireField(node, "values");
-		if(!values.isVector())
-			throw std::runtime_error("VGT replay stack experience values must be a list");
-		for(const auto & entry : values.Vector())
-			pack.val[decodeSlot(requireField(entry, "slot"))] = requireInteger(entry, "amount");
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "secondarySkill")
-	{
-		SetSecSkill pack;
-		pack.id = resolveObjectAlias(gameHandler.gameState(), requireString(node, "hero"));
-		pack.which = decodeSecondarySkill(requireString(node, "skill"));
-		pack.mode = decodeChangeMode(requireString(node, "mode"));
-		pack.val = static_cast<ui16>(requireInteger(node, "value"));
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "townVisit")
-	{
-		HeroVisitCastle pack;
-		pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(node, "town"));
-		pack.hid = resolveObjectAlias(gameHandler.gameState(), requireString(node, "hero"));
-		pack.startVisit = requireBool(node, "start");
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "spells")
-	{
-		ChangeSpells pack;
-		pack.hid = resolveObjectAlias(gameHandler.gameState(), requireString(node, "hero"));
-		const std::string mode = requireString(node, "mode");
-		if(mode == "learn")
-			pack.learn = 1;
-		else if(mode == "forget")
-			pack.learn = 0;
-		else
-			throw std::runtime_error("Unsupported VGT spells mode: " + mode);
-		pack.spells = decodeSpellSet(requireField(node, "spells"));
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "mana")
-	{
-		SetMana pack;
-		pack.hid = resolveObjectAlias(gameHandler.gameState(), requireString(node, "hero"));
-		pack.mode = decodeChangeMode(requireString(node, "mode"));
-		pack.val = static_cast<si32>(requireInteger(node, "value"));
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "movementPoints")
-	{
-		SetMovePoints pack;
-		pack.hid = resolveObjectAlias(gameHandler.gameState(), requireString(node, "hero"));
-		pack.val = static_cast<si32>(requireInteger(node, "value"));
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "visibility")
-	{
-		FoWChange pack;
-		pack.player = decodePlayerColor(requireString(node, "player"));
-		pack.mode = decodeVisibility(requireString(node, "mode"));
-		pack.tiles = decodeFowTiles(gameHandler.gameState(), requireField(node, "runs"));
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "objectPosition")
-	{
-		ChangeObjPos pack;
-		pack.objid = resolveObjectAlias(gameHandler.gameState(), requireString(node, "object"));
-		pack.nPos = decodePosition(requireField(node, "to"));
-		pack.initiator = decodeColor(requireString(node, "initiator"));
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "remove")
-	{
-		RemoveObject pack;
-		pack.objectID = resolveObjectAlias(gameHandler.gameState(), requireString(node, "object"));
-		pack.initiator = decodeColor(requireString(node, "initiator"));
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "newObject")
-	{
-		const auto objectType = decodeMapObject(requireString(node, "type"));
-		const auto objectSubtype = MapObjectSubID(static_cast<si32>(requireInteger(node, "subtype")));
-		const auto position = decodePosition(requireField(node, "position"));
-		auto object = gameHandler.createNewObject(position, objectType, objectSubtype);
-		object->tempOwner = decodeColor(requireString(node, "owner"));
-		if(const auto * name = findField(node, "name"); name && name->isString())
-			object->instanceName = name->String();
-		if(const auto * blockVisit = findField(node, "blockVisit"))
-			object->blockVisit = blockVisit->Bool();
-		if(const auto * removable = findField(node, "removable"))
-			object->removable = removable->Bool();
-
-		if(const auto * armyNode = findField(node, "army"))
-		{
-			const auto army = decodeSimpleArmy(*armyNode);
-			auto armed = std::dynamic_pointer_cast<CArmedInstance>(object);
-			if(!armed)
-				throw std::runtime_error("VGT newObject army provided for non-army object");
-			armed->clearSlots();
-			for(const auto & [slotID, stack] : army.army)
-				armed->setCreature(slotID, stack.first, stack.second);
-		}
-		if(const auto * creatureState = findField(node, "creatureState"))
-			applyCreatureObjectState(object, *creatureState);
-
-		NewObject pack;
-		pack.newObject = object;
-		pack.initiator = decodeColor(requireString(node, "initiator"));
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "move")
-	{
-		TryMoveHero pack;
-		pack.id = resolveObjectAlias(gameHandler.gameState(), requireString(node, "hero"));
-		pack.start = decodePosition(requireField(node, "from"));
-		pack.end = decodePosition(requireField(node, "to"));
-		pack.result = decodeMovementResult(requireString(node, "result"));
-		pack.movePoints = static_cast<ui32>(requireInteger(node, "movement"));
-		if(const auto * revealed = findField(node, "revealed"))
-			pack.fowRevealed = decodeFowTiles(gameHandler.gameState(), *revealed);
-		if(const auto * attackedFrom = findField(node, "attackedFrom"))
-			pack.attackedFrom = decodePosition(*attackedFrom);
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "town")
-	{
-		if(hasField(node, "build"))
-		{
-			NewStructures pack;
-			pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(node, "id"));
-			pack.bid = decodeBuildingSet(requireField(node, "build"));
-			pack.built = static_cast<si16>(requireInteger(node, "builtThisTurn"));
-			applyEffectPack(gameHandler, pack);
-			return;
-		}
-
-		if(hasField(node, "raze"))
-		{
-			RazeStructures pack;
-			pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(node, "id"));
-			pack.bid = decodeBuildingSet(requireField(node, "raze"));
-			pack.destroyed = static_cast<si16>(requireInteger(node, "destroyed"));
-			applyEffectPack(gameHandler, pack);
-			return;
-		}
-	}
-
-	if(kind == "availableCreatures")
-	{
-		SetAvailableCreatures pack;
-		pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(node, "object"));
-		pack.creatures = decodeAvailableCreatures(requireField(node, "levels"));
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "townHeroes")
-	{
-		SetHeroesInTown pack;
-		pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(node, "town"));
-		pack.visiting = resolveObjectAlias(gameHandler.gameState(), requireString(node, "visiting"));
-		pack.garrison = resolveObjectAlias(gameHandler.gameState(), requireString(node, "garrison"));
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "objectProperty")
-	{
-		SetObjectProperty pack;
-		pack.id = resolveObjectAlias(gameHandler.gameState(), requireString(node, "object"));
-		pack.what = decodeObjProperty(requireField(node, "property"));
-		pack.identifier = decodeObjPropertyValue(gameHandler.gameState(), pack.what, requireField(node, "value"));
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "objectVisitors")
-	{
-		ChangeObjectVisitors pack;
-		pack.object = resolveObjectAlias(gameHandler.gameState(), requireString(node, "object"));
-		pack.hero = resolveObjectAlias(gameHandler.gameState(), requireString(node, "hero"));
-		pack.mode = decodeObjectVisitMode(requireString(node, "mode"));
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "levelUp")
-	{
-		HeroLevelUp pack;
-		pack.player = decodePlayerColor(requireString(node, "player"));
-		pack.heroId = resolveObjectAlias(gameHandler.gameState(), requireString(node, "hero"));
-		pack.primskill = decodePrimarySkill(requireString(node, "primary"));
-		pack.skills = decodeSecondarySkillList(requireField(node, "choices"));
-		pack.queryID = decodeQuery(requireField(node, "query"));
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "quest")
-	{
-		AddQuest pack;
-		pack.player = decodePlayerColor(requireString(node, "player"));
-		pack.quest = QuestInfo(resolveObjectAlias(gameHandler.gameState(), requireString(node, "object")));
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "army")
-	{
-		applyArmyEffect(gameHandler, node);
-		return;
-	}
-
-	if(kind == "visit")
-	{
-		HeroVisit pack;
-		pack.heroId = resolveObjectAlias(gameHandler.gameState(), requireString(node, "hero"));
-		pack.objId = resolveObjectAlias(gameHandler.gameState(), requireString(node, "object"));
-		pack.starting = requireBool(node, "start");
-		if(const auto * hero = gameHandler.gameState().getHero(pack.heroId))
-			pack.player = hero->getOwner();
-		else
-			pack.player = PlayerColor::NEUTRAL;
-		applyEffectPack(gameHandler, pack);
-		return;
-	}
-
-	if(kind == "unmodelled")
-		throw std::runtime_error("VGT replay encountered unmodelled material pack: " + requireString(node, "pack"));
-
-	throw std::runtime_error("Unsupported VGT effect record: " + kind);
-}
-
-bool isArmyCountOnlyRecord(const JsonNode & node)
-{
-	return hasField(node, "owner") && hasField(node, "slot") && hasField(node, "mode") && hasField(node, "count") &&
-		!hasField(node, "creature") && !hasField(node, "insert") && !hasField(node, "erase") && !hasField(node, "move") && !hasField(node, "swap");
-}
-
-bool isArmyCreatureOnlyRecord(const JsonNode & node)
-{
-	return hasField(node, "owner") && hasField(node, "slot") && hasField(node, "creature") &&
-		!hasField(node, "mode") && !hasField(node, "count") && !hasField(node, "insert") && !hasField(node, "erase") && !hasField(node, "move") && !hasField(node, "swap");
-}
-
-[[maybe_unused]] bool tryReplayArmyInsertPair(CGameHandler & gameHandler, const JsonNode & currentRecord, const JsonNode & nextRecord)
-{
-	if(!currentRecord.isStruct() || currentRecord.Struct().size() != 1 || !nextRecord.isStruct() || nextRecord.Struct().size() != 1)
-		return false;
-
-	const auto & current = *currentRecord.Struct().begin();
-	const auto & next = *nextRecord.Struct().begin();
-	if(current.first != "army" || next.first != "army")
-		return false;
-	if(!isArmyCountOnlyRecord(current.second) || !isArmyCreatureOnlyRecord(next.second))
-		return false;
-	if(requireString(current.second, "owner") != requireString(next.second, "owner"))
-		return false;
-	if(requireInteger(current.second, "slot") != requireInteger(next.second, "slot"))
-		return false;
-
-	const auto army = resolveObjectAlias(gameHandler.gameState(), requireString(current.second, "owner"));
-	const auto slot = decodeSlot(requireField(current.second, "slot"));
-	const auto * armyInstance = gameHandler.gs->getArmyInstance(army);
-	if(!armyInstance || armyInstance->hasStackAtSlot(slot))
-		return false;
-
-	InsertNewStack pack;
-	pack.army = army;
-	pack.slot = slot;
-	pack.type = decodeCreature(requireString(next.second, "creature"));
-	pack.count = static_cast<TQuantity>(requireInteger(current.second, "count"));
-	applyEffectPack(gameHandler, pack);
-	return true;
 }
 
 void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & documents)
@@ -3786,34 +2719,69 @@ void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & docu
 		for(size_t recordIndex = 0; recordIndex < records->Vector().size(); ++recordIndex)
 		{
 			const auto & record = records->Vector()[recordIndex];
-			if(!record.isStruct())
-				throw std::runtime_error("VGT replay record is not a mapping");
-			if(hasField(record, "at") && hasField(record, "build"))
+			if(defaultActor)
 			{
+				const auto actor = decodePlayerColor(*defaultActor);
+				const auto topQuery = gameHandler.queries->topQuery(actor);
+				const std::string kind = record.isString()
+					? record.String()
+					: record.isStruct() && !record.Struct().empty() ? record.Struct().begin()->first : "invalid";
+				logGlobal->trace(
+					"VGT replay document %d record %d kind %s, query before: %s",
+					static_cast<int>(documentIndex), static_cast<int>(recordIndex), kind,
+					topQuery ? topQuery->toString() : "none");
+			}
+			if(record.isString())
+			{
+				if(!isDecisionKind(record.String()))
+					throw std::runtime_error("Unsupported scalar VGT record kind: " + record.String());
 				JsonNode action;
-				action["town"].String() = requireString(record, "at");
-				const auto & build = requireField(record, "build");
-				if(!build.isString())
-					throw std::runtime_error("Contextual VGT build must name one building");
-				action["building"].String() = build.String();
-				if(const auto * cost = findField(record, "cost"))
-					action["cost"] = *cost;
-				replayReadableDecision(gameHandler, "build", action, std::nullopt, defaultActor);
+				replayReadableDecision(gameHandler, record.String(), action, std::nullopt, defaultActor);
 				continue;
 			}
-			if(hasField(record, "with") && hasField(record, "move"))
+			if(!record.isStruct())
+				throw std::runtime_error("VGT replay record is not a mapping or action name");
+			if(hasField(record, "with") && hasField(record, "actions"))
 			{
-				JsonNode action = requireField(record, "move");
-				if(!action.isStruct())
-					throw std::runtime_error("Contextual VGT move must be a mapping");
-				action["hero"].String() = requireString(record, "with");
-				replayReadableDecision(gameHandler, "move", action, std::nullopt, defaultActor);
+				const std::string hero = requireString(record, "with");
+				const auto & sceneActions = requireField(record, "actions");
+				if(!sceneActions.isVector())
+					throw std::runtime_error("VGT hero scene actions must be a list");
+				for(const auto & sceneAction : sceneActions.Vector())
+				{
+					if(sceneAction.isString())
+					{
+						JsonNode action;
+						action["hero"].String() = hero;
+						replayReadableDecision(gameHandler, sceneAction.String(), action, std::nullopt, defaultActor);
+						continue;
+					}
+					if(!sceneAction.isStruct() || sceneAction.Struct().size() != 1)
+						throw std::runtime_error("VGT hero scene action must have one action kind");
+					const auto & entry = *sceneAction.Struct().begin();
+					if(isDecisionKind(entry.first))
+					{
+						JsonNode action = entry.second;
+						if(!action.isStruct())
+							throw std::runtime_error("VGT hero scene decision must be a mapping");
+						action["hero"].String() = hero;
+						replayReadableDecision(gameHandler, entry.first, action, std::nullopt, defaultActor);
+						continue;
+					}
+					if(!isEffectKind(entry.first))
+						throw std::runtime_error("Unsupported VGT hero scene record kind: " + entry.first);
+				}
 				continue;
 			}
 			if(record.Struct().size() != 1)
 				throw std::runtime_error("VGT replay record is not a one-key mapping");
 
 			const auto & entry = *record.Struct().begin();
+			// A world document has no acting player. Some semantic effect names (notably
+			// visit and capture) are also valid decision names inside a turn; in world
+			// scope they are observational effects and must not be replayed as actions.
+			if(!defaultActor && isEffectKind(entry.first))
+				continue;
 			if(isDecisionKind(entry.first))
 			{
 				replayReadableDecision(gameHandler, entry.first, entry.second, std::nullopt, defaultActor);

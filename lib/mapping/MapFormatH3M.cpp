@@ -48,6 +48,19 @@
 #include "modding/CModHandler.h"
 #include "modding/ModDescription.h"
 
+namespace
+{
+std::string decodeH3MText(const std::string & rawText, const std::string & fallbackEncoding)
+{
+	// Some community-authored H3M files contain UTF-8 text even though the format has no
+	// encoding marker. Treat a complete non-ASCII UTF-8 sequence as authored Unicode;
+	// otherwise use the map/mod legacy encoding selected by the resource loader.
+	if(!TextOperations::isValidASCII(rawText) && TextOperations::isValidUnicodeString(rawText))
+		return rawText;
+	return TextOperations::toUnicode(rawText, fallbackEncoding);
+}
+}
+
 CMapLoaderH3M::CMapLoaderH3M(const std::string & mapName, const std::string & modName, const std::string & encodingName, CInputStream * stream)
 	: map(nullptr)
 	, reader(new MapReaderH3M(stream))
@@ -3717,12 +3730,12 @@ void CMapLoaderH3M::readMessageAndGuards(MetaString & message, CArmedInstance * 
 
 std::string CMapLoaderH3M::readBasicString()
 {
-	return TextOperations::toUnicode(reader->readBaseString(), fileEncoding);
+	return decodeH3MText(reader->readBaseString(), fileEncoding);
 }
 
 std::string CMapLoaderH3M::readLocalizedString(const TextIdentifier & stringIdentifier)
 {
-	std::string mapString = TextOperations::toUnicode(reader->readBaseString(), fileEncoding);
+	std::string mapString = decodeH3MText(reader->readBaseString(), fileEncoding);
 	TextIdentifier fullIdentifier("map", mapName, stringIdentifier.get());
 
 	if(mapString.empty())

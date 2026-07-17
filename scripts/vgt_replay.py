@@ -22,13 +22,16 @@ class VGTError(RuntimeError):
 
 
 LEGACY_RECORD_KEYS = {
+    "arrangeStacks",
     "availableCreatures",
     "buildStructure",
+    "hireHero",
     "moveHero",
     "movementPoints",
     "newTurn",
     "objectProperty",
     "primarySkill",
+    "queryAnswer",
     "recruitCreatures",
     "rewardable",
     "secondarySkill",
@@ -65,13 +68,17 @@ def iter_records(documents: list[dict[str, Any]]):
         if not isinstance(records, list):
             raise VGTError(f"document {document_index} records field is not a list")
         for record_index, record in enumerate(records):
+            if isinstance(record, str):
+                if record not in {"endTurn", "ready"}:
+                    raise VGTError(f"document {document_index} record {record_index} has unsupported scalar action {record!r}")
+                yield document_index, record_index, record
+                continue
             if not isinstance(record, dict):
-                raise VGTError(f"document {document_index} record {record_index} is not a mapping")
-            contextual_build = "at" in record and "build" in record
-            contextual_move = "with" in record and "move" in record
-            if len(record) != 1 and not contextual_build and not contextual_move:
+                raise VGTError(f"document {document_index} record {record_index} is not a mapping or scalar action")
+            hero_scene = "with" in record and "actions" in record
+            if len(record) != 1 and not hero_scene:
                 raise VGTError(
-                    f"document {document_index} record {record_index} is neither a one-key record nor a contextual scene"
+                    f"document {document_index} record {record_index} is neither a one-key record nor a bounded hero scene"
                 )
             if "decision" in record:
                 raise VGTError(f"document {document_index} record {record_index} uses the removed generic decision wrapper")
@@ -81,12 +88,21 @@ def iter_records(documents: list[dict[str, Any]]):
                     f"document {document_index} record {record_index} uses removed record key {sorted(removed)[0]!r}"
                 )
             validate_short_identifiers(record, document_index, record_index)
-            if contextual_move:
-                value = dict(record["move"])
-                value["hero"] = record["with"]
-                validate_move(value, document_index, record_index)
-            elif "move" in record:
+            if "move" in record:
                 validate_move(record["move"], document_index, record_index)
+            for payload in find_movement_payloads(record):
+                validate_move(payload, document_index, record_index, require_hero=False)
+            if hero_scene:
+                actions = record.get("actions")
+                if not isinstance(actions, list) or len(actions) < 2:
+                    raise VGTError(f"document {document_index} record {record_index} hero scene needs at least two actions")
+                for action in actions:
+                    if not isinstance(action, dict) or len(action) != 1:
+                        raise VGTError(f"document {document_index} record {record_index} hero scene action is not a one-key mapping")
+                    if "move" in action:
+                        validate_move(action["move"], document_index, record_index, require_hero=False)
+                    for payload in find_movement_payloads(action):
+                        validate_move(payload, document_index, record_index, require_hero=False)
             if "battle" in record:
                 validate_battle_block(record["battle"], document_index, record_index)
             yield document_index, record_index, record
@@ -94,6 +110,10 @@ def iter_records(documents: list[dict[str, Any]]):
 
 def validate_short_identifiers(value: Any, document_index: int, record_index: int) -> None:
     if isinstance(value, dict):
+        if "query" in value:
+            raise VGTError(
+                f"document {document_index} record {record_index} exposes removed server query bookkeeping"
+            )
         for child in value.values():
             validate_short_identifiers(child, document_index, record_index)
         return
@@ -109,16 +129,40 @@ def validate_short_identifiers(value: Any, document_index: int, record_index: in
         )
 
 
-def validate_move(value: Any, document_index: int, record_index: int) -> None:
+def find_movement_payloads(value: Any):
+    if isinstance(value, list):
+        for child in value:
+            yield from find_movement_payloads(child)
+        return
+    if not isinstance(value, dict):
+        return
+    for key, child in value.items():
+        if key == "approach" and isinstance(child, dict):
+            yield child
+        elif isinstance(child, (dict, list)):
+            yield from find_movement_payloads(child)
+
+
+def validate_position(value: Any, document_index: int, record_index: int) -> None:
+    if not isinstance(value, list) or len(value) not in (2, 3) or any(type(coordinate) is not int for coordinate in value):
+        raise VGTError(f"document {document_index} record {record_index} position must be [x,y] or [x,y,nonzero-z]")
+    if len(value) == 3 and value[2] == 0:
+        raise VGTError(f"document {document_index} record {record_index} writes redundant surface z=0")
+
+
+def validate_move(value: Any, document_index: int, record_index: int, require_hero: bool = True) -> None:
     if not isinstance(value, dict):
         raise VGTError(f"document {document_index} record {record_index} move payload is not a mapping")
-    if "path" in value:
-        raise VGTError(f"document {document_index} record {record_index} uses the removed move path field")
-    forms = sum(field in value for field in ("route", "steps"))
-    if forms > 1:
-        raise VGTError(f"document {document_index} record {record_index} move mixes route and steps")
+    removed = {"path", "route", "z"}.intersection(value)
+    if removed:
+        raise VGTError(f"document {document_index} record {record_index} uses removed movement field {sorted(removed)[0]!r}")
+    if require_hero and not isinstance(value.get("hero"), str):
+        raise VGTError(f"document {document_index} record {record_index} standalone move has no hero")
+    if "to" not in value:
+        raise VGTError(f"document {document_index} record {record_index} move has no destination")
+    validate_position(value["to"], document_index, record_index)
     if "steps" in value:
-        if not isinstance(value["steps"], str) or not value["steps"].strip() or "to" not in value:
+        if not isinstance(value["steps"], str) or not value["steps"].strip():
             raise VGTError(f"document {document_index} record {record_index} encoded move needs non-empty steps and to")
         for token in value["steps"].split():
             direction, marker, count = token.partition("*")
@@ -126,18 +170,6 @@ def validate_move(value: Any, document_index: int, record_index: int) -> None:
                 raise VGTError(f"document {document_index} record {record_index} has invalid direction {direction!r}")
             if marker and (not count.isdigit() or int(count) < 2):
                 raise VGTError(f"document {document_index} record {record_index} has invalid run length {token!r}")
-    if "route" not in value:
-        return
-    route = value["route"]
-    if type(value.get("z")) is not int:
-        raise VGTError(f"document {document_index} record {record_index} move route has no integer z")
-    if not isinstance(route, list) or len(route) < 2 or any(
-        not isinstance(point, list)
-        or len(point) != 2
-        or any(type(coordinate) is not int for coordinate in point)
-        for point in route
-    ):
-        raise VGTError(f"document {document_index} record {record_index} move route must contain only [x, y] points")
 
 
 def validate_battle_block(value: Any, document_index: int, record_index: int) -> None:
@@ -172,11 +204,11 @@ def validate_battle_block(value: Any, document_index: int, record_index: int) ->
                 )
 
 
-def record_key(record: dict[str, Any]) -> str:
-    if "at" in record and "build" in record:
-        return "build"
-    if "with" in record and "move" in record:
-        return "move"
+def record_key(record: dict[str, Any] | str) -> str:
+    if isinstance(record, str):
+        return record
+    if "with" in record and "actions" in record:
+        return "with"
     return next(iter(record))
 
 
@@ -199,29 +231,33 @@ def header(documents: list[dict[str, Any]]) -> dict[str, Any]:
     settings = result.get("settings")
     if not isinstance(settings, dict):
         raise VGTError("header settings field is missing or invalid")
-    for field in ("start", "startTime", "difficulty", "randomSeed", "simturns", "timer", "extraOptions", "gameSettingsOverrides"):
+    for field in ("start", "startTime", "difficulty", "randomSeed"):
         if field not in settings:
             raise VGTError(f"header settings.{field} is missing")
     for field in ("simturns", "extraOptions", "gameSettingsOverrides"):
-        if not isinstance(settings[field], dict):
+        if field in settings and not isinstance(settings[field], dict):
             raise VGTError(f"header settings.{field} must be a mapping")
-    if settings["timer"] != "none" and not isinstance(settings["timer"], dict):
-        raise VGTError("header settings.timer must be a mapping or none")
-    def validate_players(players: Any, field_name: str) -> None:
-        if not isinstance(players, dict) or not players:
+    if "timer" in settings and not isinstance(settings["timer"], dict):
+        raise VGTError("header settings.timer must be a mapping")
+    def validate_players(players: Any, field_name: str, require_resolved: bool) -> None:
+        if not isinstance(players, dict) or (require_resolved and not players):
             raise VGTError(f"header {field_name} field is missing or invalid")
         for color, player in players.items():
             if not isinstance(player, dict):
                 raise VGTError(f"header {field_name}.{color} must be a mapping")
-            for field in ("controller", "faction", "hero", "heroPortrait", "heroNameTextId", "startingBonus", "handicap", "name", "connections", "computerOnly"):
-                if field not in player:
-                    raise VGTError(f"header {field_name}.{color}.{field} is missing")
-            if not isinstance(player["handicap"], dict):
+            if require_resolved:
+                for field in ("controller", "faction"):
+                    if field not in player:
+                        raise VGTError(f"header {field_name}.{color}.{field} is missing")
+            if "handicap" in player and not isinstance(player["handicap"], dict):
                 raise VGTError(f"header {field_name}.{color}.handicap must be a mapping")
 
     players = result.get("players")
-    validate_players(players, "players")
-    validate_players(result.get("initialPlayers"), "initialPlayers")
+    validate_players(players, "players", True)
+    validate_players(result.get("initialPlayers"), "initialPlayers", False)
+    initial_state = result.get("initialState")
+    if not isinstance(initial_state, dict) or not isinstance(initial_state.get("heroes"), dict):
+        raise VGTError("header initialState.heroes must be a mapping keyed by hero")
     return result
 
 
@@ -258,7 +294,7 @@ def summarize(documents: list[dict[str, Any]]) -> collections.Counter[str]:
     counter: collections.Counter[str] = collections.Counter()
     for _, _, record in iter_records(documents):
         key = record_key(record)
-        value = record.get(key)
+        value = record.get(key) if isinstance(record, dict) else None
         if key == "battle" and isinstance(value, dict) and isinstance(value.get("events"), list):
             counter[key] += len(value["events"])
         else:
@@ -268,7 +304,7 @@ def summarize(documents: list[dict[str, Any]]) -> collections.Counter[str]:
 
 def fail_on_unmodelled(documents: list[dict[str, Any]]) -> None:
     for document_index, record_index, record in iter_records(documents):
-        if "unmodelled" in record:
+        if isinstance(record, dict) and "unmodelled" in record:
             raise VGTError(f"unmodelled record at document {document_index}, record {record_index}")
 
 

@@ -59,13 +59,13 @@ and is useful only for diagnosing a mismatch.
 - Records use full readable field names. Avoid VGT-specific abbreviations.
 - Only material events are recorded. Do not record acknowledgements, duplicate network delivery, timer ticks, internal implementation noise, or random draws that never realize into game state or a decision.
 - Consecutive successful one-tile movement requests are written as one `move`
-  transaction. A short route uses `[x, y]` points and one `z`; a long ordinary route
-  uses run-length compass `steps` plus its exact three-dimensional destination.
-  Replay expands either form into the original one-tile server requests. A blocking
-  visit, teleport, embark/disembark, or other semantic transition ends the route.
+  transaction. One tile uses only `to`; every multi-tile ordinary move uses
+  run-length compass `steps` plus its exact destination. Replay expands this sole
+  grammar into the original one-tile server requests. A blocking visit, teleport,
+  embark/disembark, or other semantic transition ends ordinary movement.
 - Turn documents and `endTurn` actions already express ordinary turn boundaries, so
-  duplicate turn-start/end effects are omitted unless they carry a query or timer
-  state. Visit-end sentinels, duplicate town-visit notifications, visitor bookkeeping,
+  duplicate turn-start/end effects are omitted unless they carry a semantic decision
+  prompt or timer state. Visit-end sentinels, duplicate town-visit notifications, visitor bookkeeping,
   and internal reward-selection flags are also derived implementation state and are
   omitted from the readable transcript.
 - Every actor decision is recorded: human, AI, neutral/world, battle AI, query answer, retreat/surrender choice, and scripted choice where applicable.
@@ -106,27 +106,24 @@ settings:
   startTime: 1775000000
   difficulty: normal
   randomSeed: 504122489
-  simturns: { requiredTurns: 0, optionalTurns: 0, allowHumanWithAI: false, ignoreAlliedContacts: false }
-  timer: none
-  extraOptions: { cheatsAllowed: false, unlimitedReplay: false }
-  gameSettingsOverrides: {}
 players:
-  red: { controller: ai, faction: conflux, hero: grindan, heroPortrait: grindan, heroNameTextId: "", startingBonus: random, handicap: { resources: {}, incomePercent: 100, growthPercent: 100 }, name: "Computer", connections: [], computerOnly: false }
-initialPlayers:
-  red: { controller: ai, faction: random, hero: random, heroPortrait: random, heroNameTextId: "", startingBonus: random, handicap: { resources: {}, incomePercent: 100, growthPercent: 100 }, name: "Computer", connections: [], computerOnly: false }
-initialState: { heroes: [] }
+  red: { controller: ai, faction: conflux, hero: grindan }
+initialPlayers: {}
+initialState:
+  heroes:
+    red/orrin: { position: [10, 10], experience: 0, mana: 12, movement: 1560, artifacts: [], army: [] }
 ---
 turn: { date: 1/1/1, player: red }
 actions:
-  - build: { town: town/red/castle@8.10, building: townHall, cost: { gold: 2500 } }
-  - move: { hero: red/orrin, route: [[11, 10], [12, 10]], z: 0 }
+  - build: { town: town/castle@8.10, building: townHall, cost: { gold: 2500 } }
   - encounter:
-      hero: red/orrin
+      hero: orrin
       with: resource/gold@12.10
+      approach: { to: [11, 10], steps: "E" }
       outcome:
-        - resources: { red: { gold: +500 } }
-        - remove: { object: resource/gold@12.10, initiator: red }
-  - endTurn: {}
+        - resources: { gold: +500 }
+        - remove: { object: resource/gold@12.10 }
+  - endTurn
 ---
 world: { date: 1/1/2, phase: newDay }
 events:
@@ -150,8 +147,9 @@ the redundant `hero/` kind, and surface object locations omit `z = 0`:
 - `monster/imps@44.19.1` (underground)
 - `attacker/marksmen` (battle-local)
 
-Queries remain numeric because their server-assigned number is the exact replay
-operand; the surrounding record supplies their semantic kind.
+Server query IDs are internal replay bookkeeping and are not public transcript
+references. A query answer is nested under the action that caused it; the readable
+choice name and any replay-significant numeric choice value remain.
 
 Core content names are bare. Non-core content keeps its mod namespace:
 
@@ -169,7 +167,7 @@ Use numeric values only for naturally numeric facts: coordinates, battle hexes, 
 Most actions are one-key mappings in flow style:
 
 ```yaml
-- resources: { player: red, mode: relative, values: [{ gold: -2500 }] }
+- resources: { gold: -2500 }
 ```
 
 Use block style for nested structures:
@@ -192,30 +190,29 @@ Action records answer "what did an actor choose?" The action verb is the record 
 so readers do not have to scan through a generic `decision` wrapper.
 
 ```yaml
-- move: { hero: red/orrin, to: [12, 10, 0] }
-- queryAnswer: { actor: blue, query: 7, answer: 1 }
-- build: { town: town/red/castle@8.10, building: townHall, cost: { gold: 2500 } }
+- move: { hero: orrin, to: [12, 10] }
+- chooseSkill: { actor: blue, hero: gurnisson, skill: logistics }
+- build: { town: town/castle@8.10, building: townHall, cost: { gold: 2500 } }
 ```
 
-The enclosing turn supplies the actor, so `actor` is omitted for the active player.
-Consecutive one-tile moves by the same hero are written as a route. Every route
-point has exactly two coordinates; the one map level is written once:
+The enclosing turn supplies the actor and reference owner, so both are omitted for
+the active player. One adjacent tile uses only its destination:
 
 ```yaml
-- move: { hero: teal/yog, route: [[32, 4], [33, 5], [34, 6]], z: 1 }
+- move: { hero: yog, to: [32, 4] }
 ```
 
-Long ordinary routes use run-length compass directions, with their exact destination
-as a check:
+Every multi-tile ordinary move uses run-length compass directions, with its exact
+destination as a check:
 
 ```yaml
-- move: { hero: teal/yog, to: [41, 8, 1], steps: "SE E SE E*3 NE N NE" }
+- move: { hero: yog, to: [41, 8], steps: "SE E SE E*3 NE N NE" }
 ```
 
 Ordinary movement cannot change map levels. Gates, monoliths, whirlpools, and
-teleport spells end the current route; their encounter/query records explain the
-transition before a new route begins on the destination level. A single destination
-remains `to: [x, y, z]`. There is no `[x, y, z]` route-point variant.
+teleport spells end it and become semantic `teleport` actions. `[x, y]` means the
+surface; a nonzero level is one destination tuple such as `[x, y, 1]`.
+Coordinate-list movement is not a format variant.
 
 Effect records answer "what became true in game state?"
 
@@ -262,7 +259,7 @@ The first complete text format must cover these material effects:
 - army stack type, count, slot changes, upgrades, garrison swaps, casualties, summons
 - artifact creation, pickup, equip, unequip, move, assemble/disassemble, discharge, destroy
 - fog-of-war changes, compacted as tile runs or rectangles rather than one tile per line
-- quests and query state that affects future legal choices
+- quests and semantic decision prompts that affect future legal choices
 - all battle setup, decisions, actions, damage, deaths, spell effects, morale/luck outcomes, obstacle changes, round changes, active stack changes, and battle result
 - world events, timed events, creature growth, spawned monsters, generated dwellings/resources, and any hidden effect that changes future state
 
@@ -293,13 +290,15 @@ Battles are nested under the action or world event that caused them. Battle deci
       - { event: start }
       - { event: nextRound }
       - wait: [defender/pikemen]
-      - shoot: { actor: red, side: attacker, unit: attacker/marksmen, target: [{ unit: defender/pikemen }] }
       - attack:
+          actor: red
+          side: attacker
           by: attacker/marksmen
           target: defender/pikemen
+          aim: [{ unit: defender/pikemen, hex: 87 }]
+          ranged: true
           damage: 94
           killed: 7
-          left: { units: 31, hp: 5, at: 87 }
     outcome:
       result: normal
       winnerSide: attacker
@@ -310,15 +309,19 @@ Battles are nested under the action or world event that caused them. Battle deci
       removeDefender: true
 ```
 
-Inside battle blocks, use `from`, `to`, and `at` for hexes. Do not write `fromHex` or `toHex`.
-Battle decisions follow the same verb-keyed style as adventure actions: `wait`,
-`defend`, `shoot`, `walkAndAttack`, `heroSpell`, and the other battle action names
-are direct record keys. The enclosing battle supplies the battle identifier. Raw
-stack IDs appear only once in `units`; duplicate creature stacks receive stable
-final ordinal segments such as `defender/pikemen/1` and `defender/pikemen/2`.
-Exactly redundant accepted-action echoes are omitted, immediate retaliation is
-nested in the initiating `attack`, and all resolution/cleanup facts are consolidated
-under one `outcome`.
+Inside battle blocks, tactical walking is `move` with a hex `path`; it is unrelated
+to adventure-map compass `steps`. Walking into an attack is folded into that
+`attack` as `approach`. Ranged attacks are also `attack`, with `ranged: true`, and
+spells are `cast`; damage, healing, and mana are folded into that cast. A siege gate
+opening inside an uninterrupted walk is folded into its complete `path`. The
+enclosing battle supplies the battle identifier. Raw stack
+IDs appear only once in `units`; duplicate creature stacks receive stable final
+ordinal segments such as `defender/pikemen/1` and `defender/pikemen/2`. Exactly
+redundant accepted-action echoes are omitted, immediate retaliation is nested in the
+initiating `attack`, and all resolution/cleanup facts are consolidated under one
+`outcome`. A server-selected war-machine shot remains visible as an attack with
+`automatic: true`; it is an observed part of the battle story, not a decision that
+replay submits a second time.
 
 ## Fog And Hidden State
 
@@ -327,11 +330,12 @@ Fog changes are relevant because a recorded-game player must reproduce what each
 Preferred forms:
 
 ```yaml
-- visibility: { player: red, reveal: { rectangles: [[[10, 10, 0], [16, 16, 0]]], reason: red/orrin } }
-- visibility: { player: blue, reveal: { runs: [{ y: 44, z: 0, x: [12, 18] }, { y: 45, z: 0, x: [13, 17] }] } }
+- visibility: { mode: revealed, runs: [{ y: 44, x: [12, 18] }, { y: 45, x: [13, 17] }] }
+- visibility: { player: blue, mode: hidden, runs: [{ y: 9, z: 1, x: [4, 11] }] }
 ```
 
-Do not emit one event per tile. A single visibility action may contain many rectangles or runs.
+The current turn player is implicit; another player is explicit. Surface runs omit
+`z`, and underground runs retain `z: 1`. Do not emit one event per tile.
 
 ## Implementation Architecture
 
@@ -443,7 +447,7 @@ Decision replay through normal mechanics is the authoritative reconstruction pat
 ## Stabilization Boundary
 
 - VGT 4 is the only accepted text grammar; the checker rejects legacy record names,
-  identifier prefixes, and three-coordinate route points.
+  identifier prefixes, coordinate-list movement, and redundant surface z values.
 - Standard generated `InfoWindow` prose is omitted. Literal/non-core authored text
   is retained only as encounter or story narrative; semantic outcomes stay even
   when their UI message is dropped.

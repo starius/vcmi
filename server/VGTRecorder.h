@@ -54,10 +54,32 @@ class VGTRecorder final
 		std::map<std::string, int64_t> remaining;
 	};
 
+	struct PendingTrade
+	{
+		struct Exchange
+		{
+			std::string sold;
+			uint32_t soldAmount = 0;
+			std::string bought;
+			uint32_t boughtAmount = 0;
+		};
+
+		std::string actor;
+		std::string market;
+		std::vector<Exchange> exchanges;
+	};
+
 	struct PendingEncounter
 	{
+		struct TeleportExit
+		{
+			std::string object;
+			std::array<int, 3> position = {};
+		};
+
 		std::string actor;
 		std::string hero;
+		ObjectInstanceID heroID;
 		std::string object;
 		int query = -1;
 		bool selection = false;
@@ -66,6 +88,32 @@ class VGTRecorder final
 		std::optional<int32_t> answer;
 		std::optional<std::string> text;
 		std::vector<std::string> outcomes;
+		std::optional<PendingMove> approach;
+		bool teleport = false;
+		bool impassable = false;
+		std::array<int, 3> teleportStart = {};
+		std::vector<TeleportExit> teleportExits;
+	};
+
+	struct PendingHeroScene
+	{
+		struct Action
+		{
+			std::string original;
+			std::string nested;
+		};
+
+		std::string hero;
+		std::vector<Action> actions;
+	};
+
+	struct PendingQuery
+	{
+		std::string kind;
+		std::string subject;
+		std::vector<std::string> choices;
+		bool selection = false;
+		bool cancel = false;
 	};
 
 	struct PendingBattle
@@ -104,8 +152,12 @@ class VGTRecorder final
 	std::map<std::string, std::string> lastBattleDecisions;
 	std::optional<PendingMove> pendingMove;
 	std::optional<PendingRecruit> pendingRecruit;
+	std::optional<PendingTrade> pendingTrade;
 	std::optional<PendingEncounter> pendingEncounter;
+	std::optional<PendingHeroScene> pendingHeroScene;
+	std::map<int, PendingQuery> pendingQueries;
 	bool suppressDerivedEffects = false;
+	bool betweenPlayerTurns = false;
 	std::map<PlayerColor, std::string> latestTimerStates;
 	std::map<PlayerColor, std::string> turnStartTimerStates;
 
@@ -118,7 +170,9 @@ class VGTRecorder final
 	void writeActionLine(const CGameState & gameState, const std::string & line);
 	void flushPendingMove(const CGameState & gameState);
 	void flushPendingRecruit(const CGameState & gameState);
+	void flushPendingTrade(const CGameState & gameState);
 	void flushPendingEncounter(const CGameState & gameState);
+	void flushPendingHeroScene();
 	void flushPendingBattle();
 	void writeBaselineSave(CGameHandler & gameHandler);
 	void writeTurnState(CGameHandler & gameHandler);
