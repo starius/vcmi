@@ -24,6 +24,16 @@ using TCNodesVector = std::vector<const CBonusSystemNode *>;
 class DLL_LINKAGE CBonusSystemNode : public virtual IBonusBearer, public virtual Serializeable, public boost::noncopyable
 {
 public:
+	class DLL_LINKAGE InvalidationBatch
+	{
+	public:
+		InvalidationBatch();
+		~InvalidationBatch();
+
+		InvalidationBatch(const InvalidationBatch &) = delete;
+		InvalidationBatch & operator=(const InvalidationBatch &) = delete;
+	};
+
 	struct HashStringCompare {
 		static size_t hash(const std::string& data)
 		{
