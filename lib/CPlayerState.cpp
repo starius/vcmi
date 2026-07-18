@@ -115,7 +115,18 @@ std::vector<T> PlayerState::getObjectsOfType() const
 
 std::vector<const CGHeroInstance *> PlayerState::getHeroes() const
 {
-	return getObjectsOfType<const CGHeroInstance *>();
+	using T = const CGHeroInstance *;
+	std::vector<T> result;
+	for(const ObjectInstanceID & objectID : ownedObjects)
+	{
+		const auto * objectPtr = cb->gameState().getObjInstance(objectID);
+		if(objectPtr->ID != Obj::HERO)
+			continue;
+
+		assert(dynamic_cast<T>(objectPtr) != nullptr);
+		result.push_back(static_cast<T>(objectPtr));
+	}
+	return result;
 }
 
 std::vector<const CGTownInstance *> PlayerState::getTowns() const
@@ -138,17 +149,50 @@ std::vector<const CGTownInstance *> PlayerState::getTowns() const
 
 std::vector<CGHeroInstance *> PlayerState::getHeroes()
 {
-	return getObjectsOfType<CGHeroInstance *>();
+	using T = CGHeroInstance *;
+	std::vector<T> result;
+	for(const ObjectInstanceID & objectID : ownedObjects)
+	{
+		auto * objectPtr = cb->gameState().getObjInstance(objectID);
+		if(objectPtr->ID != Obj::HERO)
+			continue;
+
+		assert(dynamic_cast<T>(objectPtr) != nullptr);
+		result.push_back(static_cast<T>(objectPtr));
+	}
+	return result;
 }
 
 std::vector<CGTownInstance *> PlayerState::getTowns()
 {
-	return getObjectsOfType<CGTownInstance *>();
+	using T = CGTownInstance *;
+	std::vector<T> result;
+	for(const ObjectInstanceID & objectID : ownedObjects)
+	{
+		auto * objectPtr = cb->gameState().getObjInstance(objectID);
+		if(objectPtr->ID != Obj::TOWN)
+			continue;
+
+		assert(dynamic_cast<T>(objectPtr) != nullptr);
+		result.push_back(static_cast<T>(objectPtr));
+	}
+	return result;
 }
 
 std::vector<const CGObjectInstance *> PlayerState::getOwnedObjects() const
 {
 	return getObjectsOfType<const CGObjectInstance *>();
+}
+
+bool PlayerState::checkVanquished() const
+{
+	for(const ObjectInstanceID & objectID : ownedObjects)
+	{
+		const auto * object = cb->gameState().getObjInstance(objectID);
+		if(object->ID == Obj::HERO || object->ID == Obj::TOWN)
+			return false;
+	}
+	return true;
 }
 
 void PlayerState::addOwnedObject(CGObjectInstance * object)

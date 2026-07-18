@@ -105,10 +105,7 @@ public:
 	void markObjectControlled(ObjectInstanceID objectID);
 	bool hasEverControlled(ObjectInstanceID objectID) const;
 
-	bool checkVanquished() const
-	{
-		return getHeroes().empty() && getTowns().empty();
-	}
+	bool checkVanquished() const;
 
 	template <typename Handler> void serialize(Handler &h)
 	{
