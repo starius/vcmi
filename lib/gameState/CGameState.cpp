@@ -1117,13 +1117,15 @@ BattleField CGameState::battleGetBattlefieldType(int3 tile, vstd::RNG & randomGe
 
 	ObjectInstanceID topObjectID = t.visitableObjects.front();
 	const CGObjectInstance * topObject = getObjInstance(topObjectID);
-	if(topObject && topObject->getBattlefield() != BattleField::NONE)
-	{
-		return topObject->getBattlefield();
-	}
+	const auto objectBattlefield = topObject ? topObject->getBattlefield() : BattleField::NONE;
+	if(objectBattlefield != BattleField::NONE)
+		return objectBattlefield;
 
-	for(auto & obj : map->getObjects<CGTerrainPatch>())
+	for(const auto & objectID : map->getTerrainPatches())
 	{
+		const auto * obj = getObjInstance(objectID);
+		assert(obj);
+
 		//look only for magical terrain-like objects covering given tile
 		if(!obj->coveringAt(tile))
 			continue;

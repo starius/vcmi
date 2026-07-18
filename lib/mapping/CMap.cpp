@@ -623,6 +623,8 @@ void CMap::setUniqueInstanceNameCounter(si32 value)
 
 void CMap::addNewObject(std::shared_ptr<CGObjectInstance> obj)
 {
+	invalidateTerrainPatchIndex();
+
 	if (!obj->id.hasValue())
 		obj->id = ObjectInstanceID(objects.size());
 
@@ -684,6 +686,8 @@ bool CMap::adjustToMapBounds(CGObjectInstance * obj)
 
 std::shared_ptr<CGObjectInstance> CMap::removeObject(ObjectInstanceID oldObject)
 {
+	invalidateTerrainPatchIndex();
+
 	auto obj = objects.at(oldObject);
 
 	hideObject(obj.get());
@@ -725,6 +729,8 @@ std::shared_ptr<CGObjectInstance> CMap::removeObject(ObjectInstanceID oldObject)
 
 std::shared_ptr<CGObjectInstance> CMap::replaceObject(ObjectInstanceID oldObjectID, const std::shared_ptr<CGObjectInstance> & newObject)
 {
+	invalidateTerrainPatchIndex();
+
 	auto oldObject = objects.at(oldObjectID.getNum());
 
 	newObject->id = oldObjectID;
@@ -744,6 +750,8 @@ std::shared_ptr<CGObjectInstance> CMap::replaceObject(ObjectInstanceID oldObject
 
 std::shared_ptr<CGObjectInstance> CMap::eraseObject(ObjectInstanceID oldObjectID)
 {
+	invalidateTerrainPatchIndex();
+
 	auto oldObject = objects.at(oldObjectID.getNum());
 
 	instanceNames.erase(oldObject->instanceName);
@@ -885,6 +893,8 @@ CMapEditManager * CMap::getEditManager()
 
 void CMap::reindexObjects()
 {
+	invalidateTerrainPatchIndex();
+
 	// Only reindex at editor / RMG operations
 
 	auto oldIndex = objects;
@@ -1027,6 +1037,27 @@ const CArtifactInstance * CMap::getArtifactInstance(const ArtifactInstanceID & a
 const std::vector<ObjectInstanceID> & CMap::getAllTowns() const
 {
 	return towns;
+}
+
+const std::vector<ObjectInstanceID> & CMap::getTerrainPatches() const
+{
+	if(!terrainPatchIndexValid)
+	{
+		terrainPatches.clear();
+		for(const auto & object : objects)
+		{
+			if(object && object->isTile2Terrain())
+				terrainPatches.push_back(object->id);
+		}
+		terrainPatchIndexValid = true;
+	}
+
+	return terrainPatches;
+}
+
+void CMap::invalidateTerrainPatchIndex()
+{
+	terrainPatchIndexValid = false;
 }
 
 const MapTilesStorage<TerrainTile> & CMap::getTerrainTiles() const
