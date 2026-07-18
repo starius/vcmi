@@ -886,6 +886,8 @@ std::string canonicalObjectAlias(const CGObjectInstance & object)
 }
 
 thread_local std::optional<PlayerColor> aliasDefaultPlayer;
+using ObjectAliasCacheKey = std::pair<int, std::string>;
+thread_local std::map<ObjectAliasCacheKey, ObjectInstanceID> objectAliasCache;
 
 class ScopedAliasDefaultPlayer
 {
@@ -919,6 +921,12 @@ std::string relativeObjectAlias(std::string alias, PlayerColor player)
 	return alias;
 }
 
+bool objectMatchesAlias(const CGObjectInstance & object, const std::string & alias)
+{
+	const auto canonical = canonicalObjectAlias(object);
+	return canonical == alias || (aliasDefaultPlayer && relativeObjectAlias(canonical, *aliasDefaultPlayer) == alias);
+}
+
 ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::string & alias)
 {
 	if(alias == "none")
@@ -926,27 +934,58 @@ ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::str
 	if(alias.starts_with("id-"))
 		return ObjectInstanceID(std::stoi(alias.substr(std::string("id-").size())));
 
+	const auto & map = gameState.getMap();
+	const ObjectAliasCacheKey cacheKey(aliasDefaultPlayer ? aliasDefaultPlayer->getNum() : -1, alias);
+	const auto cached = objectAliasCache.find(cacheKey);
+	if(cached != objectAliasCache.end())
+	{
+		const auto * object = map.getObject(cached->second);
+		if(object && objectMatchesAlias(*object, alias))
+			return cached->second;
+		objectAliasCache.erase(cached);
+	}
+
+	auto tryObject = [&](const CGObjectInstance * object) -> std::optional<ObjectInstanceID>
+	{
+		if(!object || !objectMatchesAlias(*object, alias))
+			return std::nullopt;
+		objectAliasCache.emplace(cacheKey, object->id);
+		return object->id;
+	};
+
 	if(const auto position = positionFromAlias(alias))
 	{
-		for(const auto & object : gameState.getMap().getObjects())
+		if(map.isInTheMap(*position))
+		{
+			for(const auto objectID : map.getTile(*position).visitableObjects)
+			{
+				if(const auto result = tryObject(map.getObject(objectID)))
+					return *result;
+			}
+		}
+
+		for(const auto & object : map.objects)
 		{
 			if(object && object->visitablePos() == *position)
 			{
-				const auto canonical = canonicalObjectAlias(*object);
-				if(canonical == alias || (aliasDefaultPlayer && relativeObjectAlias(canonical, *aliasDefaultPlayer) == alias))
-					return object->id;
+				if(const auto result = tryObject(object.get()))
+					return *result;
 			}
 		}
+
 		throw std::runtime_error("Unable to resolve positioned VGT object alias: " + alias);
 	}
 
-	for(const auto & object : gameState.getMap().getObjects())
+	for(const auto heroID : map.getHeroesOnMap())
+		if(const auto result = tryObject(map.getObject(heroID)))
+			return *result;
+
+	for(const auto & object : map.objects)
 	{
-		if(object && dynamic_cast<const CGHeroInstance *>(object))
+		if(object && dynamic_cast<const CGHeroInstance *>(object.get()))
 		{
-			const auto canonical = canonicalObjectAlias(*object);
-			if(canonical == alias || (aliasDefaultPlayer && relativeObjectAlias(canonical, *aliasDefaultPlayer) == alias))
-				return object->id;
+			if(const auto result = tryObject(object.get()))
+				return *result;
 		}
 	}
 
@@ -3727,6 +3766,7 @@ int normalizeVGTGameStateSave(const VGTGameStateNormalizeOptions & options)
 
 int replayVGTJson(const VGTReplayOptions & options)
 {
+	objectAliasCache.clear();
 	const JsonNode documents = readJsonFile(options.inputJson);
 	if(!documents.isVector() || documents.Vector().empty())
 		throw std::runtime_error("VGT replay JSON must contain transcript documents");
