@@ -73,6 +73,68 @@ bool hasMines(const std::map<EGameResID, int> & mines)
 	}
 	return false;
 }
+
+struct PlayerStatisticSnapshot
+{
+	int numberHeroes = 0;
+	int numberTowns = 0;
+	int numberArtifacts = 0;
+	int numberDwellings = 0;
+	si64 armyStrength = 0;
+	si64 totalExperience = 0;
+	int income = 0;
+	float townBuiltRatio = 0;
+	bool hasGrail = false;
+	std::map<EGameResID, int> numMines;
+	const CGHeroInstance * bestHero = nullptr;
+
+	explicit PlayerStatisticSnapshot(const PlayerState * player)
+	{
+		for(const auto & resource : LIBRARY->resourceTypeHandler->getAllObjects())
+			numMines[resource] = 0;
+
+		const auto heroes = player->getHeroes();
+		numberHeroes = static_cast<int>(heroes.size());
+		for(const auto * hero : heroes)
+		{
+			numberArtifacts += hero->artifactsInBackpack.size() + hero->artifactsWorn.size();
+			armyStrength += hero->getArmyStrength();
+			totalExperience += hero->exp;
+			hasGrail |= hero->hasArt(ArtifactID::GRAIL);
+			if(!bestHero || hero->exp > bestHero->exp)
+				bestHero = hero;
+		}
+
+		float built = 0;
+		float total = 0;
+		const auto towns = player->getTowns();
+		numberTowns = static_cast<int>(towns.size());
+		for(const auto * town : towns)
+		{
+			hasGrail |= town->hasBuilt(BuildingID::GRAIL);
+			built += town->getBuildings().size();
+			for(const auto & building : town->getTown()->buildings)
+				if(!town->forbiddenBuildings.count(building.first))
+					total += 1;
+		}
+		if(total >= 1)
+			townBuiltRatio = built / total;
+
+		for(const auto * object : player->getOwnedObjects())
+		{
+			const auto * ownable = object->asOwnable();
+			if(!ownable->providedCreatures().empty())
+				++numberDwellings;
+			income += ownable->dailyIncome()[EGameResID::GOLD];
+
+			if(object->ID == Obj::MINE || object->ID == Obj::ABANDONED_MINE)
+			{
+				const auto * mine = static_cast<const CGMine *>(object);
+				numMines[mine->producedResource]++;
+			}
+		}
+	}
+};
 }
 
 void StatisticDataSet::add(StatisticDataSetEntry entry)
@@ -114,8 +176,10 @@ StatisticDataSetEntry StatisticDataSet::createEntry(const PlayerState * ps, cons
 	const StatisticDataSet & accumulatedData, float mapExploredRatio)
 {
 	StatisticDataSetEntry data;
+	const PlayerStatisticSnapshot snapshot(ps);
 
-	HighScoreParameter param = HighScore::prepareHighScores(gs, ps->color, false);
+	HighScoreParameter param = HighScore::prepareHighScores(
+		gs, ps->color, false, snapshot.numberTowns, snapshot.hasGrail);
 	HighScoreCalculation scenarioHighScores;
 	scenarioHighScores.parameters.push_back(param);
 	scenarioHighScores.isCampaign = false;
@@ -129,32 +193,34 @@ StatisticDataSetEntry StatisticDataSet::createEntry(const PlayerState * ps, cons
 	data.isHuman = ps->isHuman();
 	data.status = ps->status;
 	data.resources = ps->resources;
-	data.numberHeroes = ps->getHeroes().size();
-	data.numberTowns = gs->howManyTowns(ps->color);
-	data.numberArtifacts = Statistic::getNumberOfArts(ps);
-	data.numberDwellings = Statistic::getNumberOfDwellings(ps);
-	data.armyStrength = Statistic::getArmyStrength(ps, true);
-	data.totalExperience = Statistic::getTotalExperience(ps);
-	data.income = Statistic::getIncome(gs, ps);
+	data.numberHeroes = snapshot.numberHeroes;
+	data.numberTowns = snapshot.numberTowns;
+	data.numberArtifacts = snapshot.numberArtifacts;
+	data.numberDwellings = snapshot.numberDwellings;
+	data.armyStrength = snapshot.armyStrength;
+	data.totalExperience = snapshot.totalExperience;
+	data.income = snapshot.income;
 	data.mapExploredRatio = mapExploredRatio;
 	data.obeliskVisitedRatio = Statistic::getObeliskVisitedRatio(gs, ps->team);
-	data.townBuiltRatio = Statistic::getTownBuiltRatio(ps);
+	data.townBuiltRatio = snapshot.townBuiltRatio;
 	data.hasGrail = param.hasGrail;
-	data.numMines = Statistic::getNumMines(gs, ps);
+	data.numMines = snapshot.numMines;
 	data.score = scenarioHighScores.calculate().total;
-	data.maxHeroLevel = Statistic::findBestHero(gs, ps->color) ? Statistic::findBestHero(gs, ps->color)->level : 0;
-	data.numBattlesNeutral = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).numBattlesNeutral : 0;
-	data.numBattlesPlayer = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).numBattlesPlayer : 0;
-	data.numWinBattlesNeutral = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).numWinBattlesNeutral : 0;
-	data.numWinBattlesPlayer = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).numWinBattlesPlayer : 0;
-	data.numHeroSurrendered = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).numHeroSurrendered : 0;
-	data.numHeroEscaped = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).numHeroEscaped : 0;
-	data.spentResourcesForArmy = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).spentResourcesForArmy : TResources();
-	data.spentResourcesForBuildings = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).spentResourcesForBuildings : TResources();
-	data.tradeVolume = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).tradeVolume : TResources();
-	data.eventCapturedTown = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).lastCapturedTownDay == data.day : false;
-	data.eventDefeatedStrongestHero = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).lastDefeatedStrongestHeroDay == data.day : false;
-	data.movementPointsUsed = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).movementPointsUsed : 0;
+	data.maxHeroLevel = snapshot.bestHero ? snapshot.bestHero->level : 0;
+	const auto accumulatedIt = accumulatedData.accumulatedValues.find(ps->color);
+	const auto * accumulated = accumulatedIt != accumulatedData.accumulatedValues.end() ? &accumulatedIt->second : nullptr;
+	data.numBattlesNeutral = accumulated ? accumulated->numBattlesNeutral : 0;
+	data.numBattlesPlayer = accumulated ? accumulated->numBattlesPlayer : 0;
+	data.numWinBattlesNeutral = accumulated ? accumulated->numWinBattlesNeutral : 0;
+	data.numWinBattlesPlayer = accumulated ? accumulated->numWinBattlesPlayer : 0;
+	data.numHeroSurrendered = accumulated ? accumulated->numHeroSurrendered : 0;
+	data.numHeroEscaped = accumulated ? accumulated->numHeroEscaped : 0;
+	data.spentResourcesForArmy = accumulated ? accumulated->spentResourcesForArmy : TResources();
+	data.spentResourcesForBuildings = accumulated ? accumulated->spentResourcesForBuildings : TResources();
+	data.tradeVolume = accumulated ? accumulated->tradeVolume : TResources();
+	data.eventCapturedTown = accumulated && accumulated->lastCapturedTownDay == data.day;
+	data.eventDefeatedStrongestHero = accumulated && accumulated->lastDefeatedStrongestHeroDay == data.day;
+	data.movementPointsUsed = accumulated ? accumulated->movementPointsUsed : 0;
 
 	return data;
 }

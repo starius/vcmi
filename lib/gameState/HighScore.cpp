@@ -23,19 +23,24 @@
 HighScoreParameter HighScore::prepareHighScores(const CGameState * gs, PlayerColor player, bool victory)
 {
 	const auto * playerState = gs->getPlayerState(player);
+	const auto towns = playerState->getTowns();
+	bool hasGrail = false;
+	for(const CGHeroInstance * hero : playerState->getHeroes())
+		hasGrail |= hero->hasArt(ArtifactID::GRAIL);
+	for(const CGTownInstance * town : towns)
+		hasGrail |= town->hasBuilt(BuildingID::GRAIL);
+	return prepareHighScores(gs, player, victory, static_cast<int>(towns.size()), hasGrail);
+}
 
+HighScoreParameter HighScore::prepareHighScores(
+	const CGameState * gs, PlayerColor player, bool victory, int townAmount, bool hasGrail)
+{
 	HighScoreParameter param;
 	param.difficulty = gs->getStartInfo()->difficulty;
 	param.day = gs->getCalendar().getCurrentDay();
-	param.townAmount = gs->howManyTowns(player);
+	param.townAmount = townAmount;
 	param.usedCheat = gs->getPlayerState(player)->cheated;
-	param.hasGrail = false;
-	for(const CGHeroInstance * h : playerState->getHeroes())
-		if(h->hasArt(ArtifactID::GRAIL))
-			param.hasGrail = true;
-	for(const CGTownInstance * t : playerState->getTowns())
-		if(t->hasBuilt(BuildingID::GRAIL))
-			param.hasGrail = true;
+	param.hasGrail = hasGrail;
 	param.allEnemiesDefeated = true;
 	for (PlayerColor otherPlayer(0); otherPlayer < PlayerColor::PLAYER_LIMIT; ++otherPlayer)
 	{
