@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "../../lib/GameConstants.h"
 #include "../../lib/constants/EntityIdentifiers.h"
 #include "../../lib/constants/Enumerations.h"
 #include "../../lib/battle/BattleSide.h"
@@ -64,6 +65,18 @@ public:
 
 	/// Processing of incoming battle action netpack
 	bool makePlayerBattleAction(const BattleID & battleID, PlayerColor player, const BattleAction & ba);
+	/// Replays an action with the recorded ordering of simultaneous secondary hits.
+	bool makePlayerBattleAction(
+		const BattleID & battleID,
+		PlayerColor player,
+		const BattleAction & ba,
+		const std::vector<uint32_t> & orderedSecondaryTargets);
+	/// Completes a replay battle from its recorded tactical outcome.
+	void setBattleResultFromReplay(
+		const CBattleInfoCallback & battle,
+		EBattleResult resultType,
+		BattleSide victoriousSide,
+		const BattleSideArray<TExpType> & experience);
 
 	/// Applies results of a battle once player agrees to them
 	void endBattleConfirm(const BattleID & battleID);
@@ -75,4 +88,3 @@ public:
 
 	}
 };
-

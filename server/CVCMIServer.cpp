@@ -1220,7 +1220,7 @@ void CVCMIServer::applyPack(CPackForClient & pack)
 	logNetwork->trace("\tSending to all clients: %s", typeid(pack).name());
 	for (const auto & c : activeConnections)
 		c->sendPack(pack);
-	VGTRecorder::get().recordEffect(*gh->gs, pack);
+	VGTRecorder::get().recordEffect(*gh, pack);
 	gh->gs->apply(pack);
 	VGTRecorder::get().recordAppliedState(*gh);
 	logNetwork->trace("\tApplied on gameState(): %s", typeid(pack).name());

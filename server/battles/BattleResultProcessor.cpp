@@ -206,7 +206,9 @@ FinishingBattleHelper::FinishingBattleHelper(const CBattleInfoCallback & info, c
 	this->remainingBattleQueriesCount = remainingBattleQueriesCount;
 }
 
-void BattleResultProcessor::endBattle(const CBattleInfoCallback & battle)
+void BattleResultProcessor::endBattle(
+	const CBattleInfoCallback & battle,
+	const std::optional<BattleSideArray<TExpType>> & replayExperience)
 {
 	auto const & giveExp = [&battle](BattleResult &r)
 	{
@@ -229,26 +231,31 @@ void BattleResultProcessor::endBattle(const CBattleInfoCallback & battle)
 	const auto * heroAttacker = battle.battleGetFightingHero(BattleSide::ATTACKER);
 	const auto * heroDefender = battle.battleGetFightingHero(BattleSide::DEFENDER);
 
-	//Fill BattleResult structure with exp info
-	giveExp(*battleResult);
-
-	if (battleResult->result == EBattleResult::NORMAL) // give 500 exp for defeating hero, unless he escaped
+	if(replayExperience)
+		battleResult->exp = *replayExperience;
+	else
 	{
-		if(heroAttacker)
-			battleResult->exp[BattleSide::DEFENDER] += 500;
-		if(heroDefender)
+		//Fill BattleResult structure with exp info
+		giveExp(*battleResult);
+
+		if (battleResult->result == EBattleResult::NORMAL) // give 500 exp for defeating hero, unless he escaped
+		{
+			if(heroAttacker)
+				battleResult->exp[BattleSide::DEFENDER] += 500;
+			if(heroDefender)
+				battleResult->exp[BattleSide::ATTACKER] += 500;
+		}
+
+		// Give 500 exp to winner if a town was conquered during the battle
+		const auto * defendedTown = battle.battleGetDefendedTown();
+		if (defendedTown && battleResult->winner == BattleSide::ATTACKER)
 			battleResult->exp[BattleSide::ATTACKER] += 500;
+
+		if(heroAttacker)
+			battleResult->exp[BattleSide::ATTACKER] = heroAttacker->calculateXp(battleResult->exp[BattleSide::ATTACKER]);//scholar skill
+		if(heroDefender)
+			battleResult->exp[BattleSide::DEFENDER] = heroDefender->calculateXp(battleResult->exp[BattleSide::DEFENDER]);
 	}
-
-	// Give 500 exp to winner if a town was conquered during the battle
-	const auto * defendedTown = battle.battleGetDefendedTown();
-	if (defendedTown && battleResult->winner == BattleSide::ATTACKER)
-		battleResult->exp[BattleSide::ATTACKER] += 500;
-
-	if(heroAttacker)
-		battleResult->exp[BattleSide::ATTACKER] = heroAttacker->calculateXp(battleResult->exp[BattleSide::ATTACKER]);//scholar skill
-	if(heroDefender)
-		battleResult->exp[BattleSide::DEFENDER] = heroDefender->calculateXp(battleResult->exp[BattleSide::DEFENDER]);
 
 	auto attackerQuery = gameHandler->queries->topQuery(battle.sideToPlayer(BattleSide::ATTACKER));
 

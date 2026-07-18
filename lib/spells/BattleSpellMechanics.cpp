@@ -318,20 +318,21 @@ std::vector<const CStack *> BattleSpellMechanics::getAffectedStacks(const Target
 		vstd::concatenate(all, one);
 	});
 
-	std::set<const CStack *> stacks;
+	std::set<uint32_t> seenStacks;
+	std::vector<const CStack *> result;
 
 	for(const Destination & dest : all)
 	{
 		if(dest.unitValue && !dest.unitValue->isInvincible())
 		{
 			//FIXME: remove and return battle::Unit
-			stacks.insert(battle()->battleGetStackByID(dest.unitValue->unitId(), false));
+			const auto * stack = battle()->battleGetStackByID(dest.unitValue->unitId(), false);
+			if(stack && seenStacks.insert(stack->unitId()).second)
+				result.push_back(stack);
 		}
 	}
 
-	std::vector<const CStack *> res;
-	std::copy(stacks.begin(), stacks.end(), std::back_inserter(res));
-	return res;
+	return result;
 }
 
 void BattleSpellMechanics::cast(ServerCallback * server, const Target & target)
@@ -731,4 +732,3 @@ const Spell * BattleSpellMechanics::getSpell() const
 
 
 }
-

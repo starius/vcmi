@@ -14,6 +14,8 @@
 #include "../../lib/networkPacks/ArtifactLocation.h"
 #include "../../lib/battle/BattleSide.h"
 
+#include <optional>
+
 struct SideInBattle;
 struct BattleResult;
 class CBattleInfoCallback;
@@ -76,7 +78,9 @@ public:
 	bool battleIsEnding(const CBattleInfoCallback & battle) const;
 
 	void setBattleResult(const CBattleInfoCallback & battle, EBattleResult resultType, BattleSide victoriusSide);
-	void endBattle(const CBattleInfoCallback & battle); //ends battle
+	void endBattle(
+		const CBattleInfoCallback & battle,
+		const std::optional<BattleSideArray<TExpType>> & replayExperience = std::nullopt); //ends battle
 	void endBattleConfirm(const CBattleInfoCallback & battle);
 	void battleFinalize(const BattleID & battleID, const BattleResult & result);
 };

@@ -318,10 +318,35 @@ bool BattleProcessor::makePlayerBattleAction(const BattleID & battleID, PlayerCo
 	return result;
 }
 
+bool BattleProcessor::makePlayerBattleAction(
+	const BattleID & battleID,
+	PlayerColor player,
+	const BattleAction & ba,
+	const std::vector<uint32_t> & orderedSecondaryTargets)
+{
+	const auto * battle = gameHandler->gameState().getBattle(battleID);
+	if(!battle)
+		return false;
+	const bool result = actionsProcessor->makePlayerBattleAction(*battle, player, ba, orderedSecondaryTargets);
+	if(gameHandler->gameState().getBattle(battleID) != nullptr && !resultProcessor->battleIsEnding(*battle))
+		flowProcessor->onActionMade(*battle, ba);
+	return result;
+}
+
 void BattleProcessor::setBattleResult(const CBattleInfoCallback & battle, EBattleResult resultType, BattleSide victoriusSide)
 {
 	resultProcessor->setBattleResult(battle, resultType, victoriusSide);
 	resultProcessor->endBattle(battle);
+}
+
+void BattleProcessor::setBattleResultFromReplay(
+	const CBattleInfoCallback & battle,
+	EBattleResult resultType,
+	BattleSide victoriousSide,
+	const BattleSideArray<TExpType> & experience)
+{
+	resultProcessor->setBattleResult(battle, resultType, victoriousSide);
+	resultProcessor->endBattle(battle, experience);
 }
 
 bool BattleProcessor::makeAutomaticBattleAction(const CBattleInfoCallback & battle, const BattleAction &ba)

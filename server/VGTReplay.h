@@ -17,6 +17,8 @@ struct VGTReplayOptions
 	std::string outputGameStateSave;
 	std::string expectedTurnStateDirectory;
 	std::string outputTurnStateDirectory;
+	std::string capturedBattleOutcomes;
+	bool fastForwardBattles = false;
 };
 
 struct VGTGameStateSummaryOptions

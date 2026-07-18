@@ -15,6 +15,7 @@
 #include "../Version.h"
 #include "../lib/GameConstants.h"
 #include "../lib/GameLibrary.h"
+#include "../lib/IGameSettings.h"
 #include "../lib/ResourceSet.h"
 #include "../lib/StartInfo.h"
 #include "../lib/VCMIDirs.h"
@@ -38,10 +39,12 @@
 #include "../lib/mapObjects/CGDwelling.h"
 #include "../lib/mapObjects/CGHeroInstance.h"
 #include "../lib/mapObjects/CGTownInstance.h"
+#include "../lib/mapObjects/CQuest.h"
 #include "../lib/mapObjects/IMarket.h"
 #include "../lib/mapObjects/MiscObjects.h"
 #include "../lib/mapObjects/army/CArmedInstance.h"
 #include "../lib/mapObjects/army/CSimpleArmy.h"
+#include "../lib/modding/CModHandler.h"
 #include "../lib/networkPacks/NetPackVisitor.h"
 #include "../lib/rmg/CMapGenOptions.h"
 #include "../lib/serializer/CSaveFile.h"
@@ -350,6 +353,17 @@ bool genericObjectAliasType(const std::string & type)
 	return type == "creatureGeneratorCommon" || type.starts_with("shrineOfMagicLevel");
 }
 
+bool equivalentAliasWords(const std::string & left, const std::string & right)
+{
+	auto compact = [](std::string value)
+	{
+		value = sanitizedAliasName(std::move(value));
+		value.erase(std::remove(value.begin(), value.end(), '-'), value.end());
+		return value;
+	};
+	return compact(left) == compact(right);
+}
+
 std::string objectAlias(const CGameState & gameState, ObjectInstanceID id)
 {
 	if(id == ObjectInstanceID::NONE)
@@ -379,13 +393,14 @@ std::string objectAlias(const CGameState & gameState, ObjectInstanceID id)
 
 	const auto typeName = type.substr(type.rfind('/') == std::string::npos ? 0 : type.rfind('/') + 1);
 	std::string result;
-	if(genericObjectAliasType(type) && name != sanitizedAliasName(typeName))
+	if(equivalentAliasWords(name, typeName))
+		result = owner.empty() ? name : owner.substr(1) + "/" + name;
+	else if(genericObjectAliasType(type))
 		result = owner.empty() ? name : owner.substr(1) + "/" + name;
 	else
 	{
 		result = type + owner;
-		if(name != sanitizedAliasName(typeName))
-			result += "/" + name;
+		result += "/" + name;
 	}
 	return result + objectLocation(object->visitablePos());
 }
@@ -818,28 +833,66 @@ std::string randomMapPlayers(const CMapGenOptions & options)
 {
 	std::vector<std::string> entries;
 	for(const auto & player : options.getPlayersSettings())
-		entries.push_back(color(player.first) + ": " + randomMapPlayer(player.second));
+	{
+		const bool resolvedDefault = player.second.getPlayerType() == EPlayerType::AI &&
+			player.second.getStartingTown() == FactionID::RANDOM &&
+			player.second.getStartingHero() == HeroTypeID::RANDOM &&
+			player.second.getTeam() == TeamID(player.first.getNum());
+		if(!resolvedDefault)
+			entries.push_back(color(player.first) + ": " + randomMapPlayer(player.second));
+	}
 	return "{ " + boost::algorithm::join(entries, ", ") + " }";
+}
+
+std::string randomMapSlots(const CMapGenOptions & options)
+{
+	const auto & settings = options.getPlayersSettings();
+	const int inferredSlots = std::max<int>(0, options.getHumanOrCpuPlayerCount()) +
+		std::max<int>(0, options.getCompOnlyPlayerCount());
+	bool inferred = settings.size() == static_cast<size_t>(inferredSlots);
+	for(int index = 0; inferred && index < inferredSlots; ++index)
+		inferred = settings.contains(PlayerColor(index));
+	if(inferred)
+		return {};
+
+	std::vector<std::string> entries;
+	for(const auto & player : settings)
+		entries.push_back(color(player.first));
+	return flowList(entries);
 }
 
 std::string randomMapGenerator(const CMapGenOptions & options)
 {
+	std::vector<std::string> fields;
 	std::string templateName;
 	if(options.getMapTemplate())
 		templateName = options.getMapTemplate()->getId();
-
-	return "{ width: " + std::to_string(options.getWidth()) +
-		", height: " + std::to_string(options.getHeight()) +
-		", levels: " + std::to_string(options.getLevels()) +
-		", humanOrComputerPlayers: " + std::to_string(options.getHumanOrCpuPlayerCount()) +
-		", teams: " + std::to_string(options.getTeamCount()) +
-		", computerOnlyPlayers: " + std::to_string(options.getCompOnlyPlayerCount()) +
-		", computerOnlyTeams: " + std::to_string(options.getCompOnlyTeamCount()) +
-		", water: " + randomMapWater(options.getWaterContent()) +
-		", monsters: " + randomMapMonsterStrength(options.getMonsterStrength()) +
-		", template: " + yamlString(templateName) +
-		", roads: " + randomMapRoads(options) +
-		", players: " + randomMapPlayers(options) + " }";
+	fields.push_back("width: " + std::to_string(options.getWidth()));
+	fields.push_back("height: " + std::to_string(options.getHeight()));
+	fields.push_back("humanOrComputerPlayers: " + std::to_string(options.getHumanOrCpuPlayerCount()));
+	if(options.getLevels() != 1)
+		fields.push_back("levels: " + std::to_string(options.getLevels()));
+	if(options.getTeamCount() != 0)
+		fields.push_back("teams: " + std::to_string(options.getTeamCount()));
+	if(options.getCompOnlyPlayerCount() != 0)
+		fields.push_back("computerOnlyPlayers: " + std::to_string(options.getCompOnlyPlayerCount()));
+	if(options.getCompOnlyTeamCount() != 0)
+		fields.push_back("computerOnlyTeams: " + std::to_string(options.getCompOnlyTeamCount()));
+	if(options.getWaterContent() != EWaterContent::NONE)
+		fields.push_back("water: " + randomMapWater(options.getWaterContent()));
+	if(options.getMonsterStrength() != EMonsterStrength::GLOBAL_NORMAL)
+		fields.push_back("monsters: " + randomMapMonsterStrength(options.getMonsterStrength()));
+	if(!templateName.empty())
+		fields.push_back("template: " + yamlString(templateName));
+	if(options.isRoadEnabled())
+		fields.push_back("roads: " + randomMapRoads(options));
+	const auto slots = randomMapSlots(options);
+	if(!slots.empty())
+		fields.push_back("slots: " + slots);
+	const auto players = randomMapPlayers(options);
+	if(players != "{  }")
+		fields.push_back("players: " + players);
+	return "{ " + boost::algorithm::join(fields, ", ") + " }";
 }
 
 std::string mode(ChangeValueMode mode)
@@ -1235,45 +1288,6 @@ std::string armyState(const CCreatureSet & army)
 	return flowList(entries);
 }
 
-std::string creatureCharacter(CGCreature::Character character)
-{
-	switch(character)
-	{
-		case CGCreature::Character::COMPLIANT: return "compliant";
-		case CGCreature::Character::FRIENDLY: return "friendly";
-		case CGCreature::Character::AGGRESSIVE: return "aggressive";
-		case CGCreature::Character::HOSTILE: return "hostile";
-		case CGCreature::Character::SAVAGE: return "savage";
-		case CGCreature::Character::CUSTOM: return "custom";
-	}
-	return "unknown";
-}
-
-std::string upgradedStackPresence(CGCreature::UpgradedStackPresence value)
-{
-	switch(value)
-	{
-		case CGCreature::UpgradedStackPresence::RANDOM: return "random";
-		case CGCreature::UpgradedStackPresence::NEVER: return "never";
-		case CGCreature::UpgradedStackPresence::ALWAYS: return "always";
-	}
-	return "unknown";
-}
-
-std::string creatureState(const CGCreature & creature)
-{
-	return "{ character: " + creatureCharacter(creature.initialCharacter) +
-		", aggression: " + std::to_string(creature.agression) +
-		", temppower: " + std::to_string(creature.temppower) +
-		", stacksCount: " + std::to_string(creature.stacksCount) +
-		", upgradedStackPresence: " + upgradedStackPresence(creature.upgradedStackPresence) +
-		", joiningPercentage: " + std::to_string(creature.joiningPercentage) +
-		", joinOnlyForMoney: " + boolValue(creature.joinOnlyForMoney) +
-		", refusedJoining: " + boolValue(creature.refusedJoining) +
-		", neverFlees: " + boolValue(creature.neverFlees) +
-		", noGrowing: " + boolValue(creature.notGrowingTeam) + " }";
-}
-
 std::string initialHeroState(const CGameState & gameState, const CGHeroInstance & hero)
 {
 	std::vector<std::string> artifactEntries;
@@ -1392,6 +1406,38 @@ std::string creatureGrowth(const CGameState & gameState, const SetAvailableCreat
 	if(!shared.empty())
 		fields.push_back("shared: " + flowList(shared));
 	return "{ " + boost::algorithm::join(fields, ", ") + " }";
+}
+
+bool isStandardDwellingRefresh(const CGameState & gameState, const SetAvailableCreatures & value)
+{
+	const auto * dwelling = dynamic_cast<const CGDwelling *>(gameState.getMap().getObject(value.tid));
+	if(!dwelling || dynamic_cast<const CGTownInstance *>(dwelling) || dwelling->ID == Obj::REFUGEE_CAMP)
+		return false;
+	if(value.creatures.size() != dwelling->creatures.size())
+		return false;
+
+	const bool accumulate = gameState.getSettings().getBoolean(
+		dwelling->tempOwner.isValidPlayer()
+			? EGameSettings::DWELLINGS_ACCUMULATE_WHEN_OWNED
+			: EGameSettings::DWELLINGS_ACCUMULATE_WHEN_NEUTRAL);
+	for(size_t index = 0; index < value.creatures.size(); ++index)
+	{
+		const auto & current = dwelling->creatures[index];
+		const auto & refreshed = value.creatures[index];
+		if(current.second != refreshed.second)
+			return false;
+		if(current.second.empty())
+			continue;
+
+		const auto * creature = current.second.front().toCreature();
+		const TQuantity growth = creature->getGrowth() *
+			(1 + creature->valOfBonuses(BonusType::CREATURE_GROWTH_PERCENT) / 100) +
+			creature->valOfBonuses(BonusType::CREATURE_GROWTH, BonusCustomSubtype::creatureLevel(creature->getLevel()));
+		const TQuantity expected = accumulate ? current.first + growth : growth;
+		if(refreshed.first != expected)
+			return false;
+	}
+	return true;
 }
 
 std::string stackExperienceValues(const std::map<SlotID, si64> & values)
@@ -1604,6 +1650,59 @@ std::vector<std::string> battleRoster(const CGameState & gameState, BattleID bat
 	return result;
 }
 
+std::vector<std::string> battleSurvivors(const CGameState & gameState, BattleID battleID)
+{
+	std::vector<std::string> result;
+	const auto * battle = gameState.getBattle(battleID);
+	if(!battle)
+		return result;
+	for(const auto * stack : battle->battleGetAllStacks(true))
+	{
+		if(!stack || stack->summoned || stack->isTurret())
+			continue;
+		const int count = std::max(0, stack->getCount() - stack->health.getResurrected());
+		if(count > 0)
+			result.push_back(yamlKey(battleUnitAlias(gameState, battleID, static_cast<int>(stack->unitId()))) +
+				": " + std::to_string(count));
+	}
+	return result;
+}
+
+std::vector<std::string> battleCreatedUnits(const CGameState & gameState, BattleID battleID)
+{
+	std::vector<std::string> result;
+	const auto * battle = gameState.getBattle(battleID);
+	if(!battle)
+		return result;
+	for(const auto * stack : battle->battleGetAllStacks(true))
+	{
+		if(!stack || stack->summoned || stack->isTurret() ||
+			stack->unitSlot() != SlotID::SUMMONED_SLOT_PLACEHOLDER || stack->getCount() <= 0)
+			continue;
+		result.push_back(yamlKey(battleUnitAlias(gameState, battleID, static_cast<int>(stack->unitId()))) +
+			": { creature: " + creature(stack->creatureId()) +
+			", count: " + std::to_string(stack->unitBaseAmount()) +
+			", hex: " + std::to_string(stack->getPosition().toInt()) + " }");
+	}
+	return result;
+}
+
+std::set<ObjectInstanceID> battleRandomizerParticipants(const CGameState & gameState, BattleID battleID)
+{
+	std::set<ObjectInstanceID> result;
+	const auto * battle = gameState.getBattle(battleID);
+	if(!battle)
+		return result;
+	for(const auto side : {BattleSide::ATTACKER, BattleSide::DEFENDER})
+	{
+		if(const auto * army = battle->getSideArmy(side))
+			result.insert(army->id);
+		if(const auto * hero = battle->getSideHero(side))
+			result.insert(hero->id);
+	}
+	return result;
+}
+
 std::string battleParticipant(const CGameState & gameState, BattleID battleID, BattleSide side)
 {
 	const auto * battle = gameState.getBattle(battleID);
@@ -1778,6 +1877,23 @@ std::string battleStackAttacks(const CGameState & gameState, BattleID battleID, 
 	std::vector<std::string> result;
 	for(const auto & attack : attacks)
 		result.push_back(battleStackAttacked(gameState, battleID, attack));
+	return flowList(result);
+}
+
+std::string battleAttackHits(const CGameState & gameState, BattleID battleID, const std::vector<BattleStackAttacked> & attacks)
+{
+	std::vector<std::string> result;
+	for(const auto & attack : attacks)
+	{
+		std::vector<std::string> fields;
+		fields.push_back("target: " + yamlIdentifier(battleUnitAlias(gameState, battleID, attack.stackAttacked)));
+		fields.push_back("damage: " + std::to_string(attack.damageAmount));
+		if(attack.killedAmount != 0)
+			fields.push_back("killed: " + std::to_string(attack.killedAmount));
+		if(attack.spellID != SpellID::NONE)
+			fields.push_back("spell: " + spell(attack.spellID));
+		result.push_back("{ " + boost::algorithm::join(fields, ", ") + " }");
+	}
 	return flowList(result);
 }
 
@@ -2187,8 +2303,11 @@ std::string semanticBonus(const CGameState & gameState, const GiveBonus & pack)
 {
 	const Bonus & bonus = pack.bonus;
 	std::vector<std::string> fields;
-	fields.push_back("targetKind: " + bonusTargetKind(pack.who));
-	fields.push_back("target: " + bonusTarget(gameState, pack));
+	if(pack.who != GiveBonus::ETarget::BATTLE)
+	{
+		fields.push_back("targetKind: " + bonusTargetKind(pack.who));
+		fields.push_back("target: " + bonusTarget(gameState, pack));
+	}
 	fields.push_back("type: " + lowerCamelEnum(LIBRARY->bth->bonusToString(bonus.type)));
 	fields.push_back("value: " + signedInteger(bonus.val));
 
@@ -2365,6 +2484,24 @@ std::optional<std::string> mapHash(const StartInfo & startInfo)
 	}
 
 	return std::nullopt;
+}
+
+std::string mapTextEncoding(const StartInfo & startInfo)
+{
+	std::string uri = startInfo.fileURI;
+	boost::algorithm::to_lower(uri);
+	if(!uri.ends_with(".h3m"))
+		return "{ source: utf-8, stored: utf-8 }";
+
+	std::string fallback = "unknown";
+	try
+	{
+		fallback = LIBRARY->modh->findResourceEncoding(ResourcePath(startInfo.fileURI, EResType::MAP));
+	}
+	catch(...)
+	{
+	}
+	return "{ source: h3m-auto, fallback: " + yamlString(fallback) + ", stored: utf-8 }";
 }
 
 std::string startMode(EStartMode mode)
@@ -2720,6 +2857,12 @@ public:
 		line.clear();
 	}
 
+	void visitSystemMessage(SystemMessage &) override
+	{
+		// Generated server/chat status belongs to the UI, not game history.
+		line.clear();
+	}
+
 	void visitPlayerStartsTurn(PlayerStartsTurn &) override
 	{
 		line.clear();
@@ -2735,6 +2878,16 @@ public:
 		line = "turnEnd: { player: " + color(pack.player) +
 			", timer: { start: " + turnStartTimer.value_or("none") +
 			", end: " + turnEndTimer.value_or("none") + " } }";
+	}
+
+	void visitDaysWithoutTown(DaysWithoutTown & pack) override
+	{
+		line = "townless: { player: " + color(pack.player);
+		if(pack.daysWithoutCastle)
+			line += ", days: " + std::to_string(*pack.daysWithoutCastle);
+		else
+			line += ", cleared: true";
+		line += " }";
 	}
 
 	void visitPlayerEndsGame(PlayerEndsGame & pack) override
@@ -2931,26 +3084,28 @@ public:
 		const auto & object = pack.newObject;
 		if(!object)
 		{
-			line = "newObject: { object: null }";
+			line = "appears: { object: null }";
 			return;
 		}
 
 		const int objectID = object->id.hasValue()
 			? object->id.getNum()
 			: static_cast<int>(gameState.getMap().getObjects().size());
-		line = "newObject: { id: id-" + std::to_string(objectID) +
-			", name: " + yamlString(object->instanceName) +
-			", type: " + transcriptIdentifier(MapObjectID::encode(object->ID.getNum())) +
-			", subtype: " + std::to_string(object->subID.getNum()) +
-			", owner: " + color(object->tempOwner) +
-			", position: " + pos(object->visitablePos()) +
-			", blockVisit: " + boolValue(object->blockVisit) +
-			", removable: " + boolValue(object->removable) +
-			", initiator: " + color(pack.initiator);
+		std::string type = transcriptIdentifier(MapObjectID::encode(object->ID.getNum()));
+		std::string name = sanitizedAliasName(object->getObjectName());
+		if(name.empty())
+			name = sanitizedAliasName(object->instanceName);
+		if(name.empty())
+			name = "id-" + std::to_string(objectID);
+		const auto typeName = type.substr(type.rfind('/') == std::string::npos ? 0 : type.rfind('/') + 1);
+		std::string alias = equivalentAliasWords(name, typeName) ? name : type + "/" + name;
+		alias += objectLocation(object->visitablePos());
+
+		line = "appears: { object: " + alias + ", at: " + pos(object->visitablePos());
+		if(object->tempOwner.isValidPlayer())
+			line += ", owner: " + color(object->tempOwner);
 		if(const auto armed = std::dynamic_pointer_cast<CArmedInstance>(object))
-			line += ", army: " + armyState(*armed);
-		if(const auto creatureObject = std::dynamic_pointer_cast<CGCreature>(object))
-			line += ", creatureState: " + creatureState(*creatureObject);
+			line += ", units: " + armyState(*armed);
 		line += " }";
 	}
 
@@ -3081,18 +3236,38 @@ public:
 
 		if(!pack.availableCreatures.empty())
 		{
-			std::vector<std::string> entries;
+			std::vector<std::string> towns;
+			std::vector<std::string> dwellings;
 			for(const auto & availability : pack.availableCreatures)
 			{
-				const auto pools = pack.day <= 1
+				const bool isTown = dynamic_cast<const CGTownInstance *>(gameState.getMap().getObject(availability.tid));
+				if(pack.day > 1 && !isTown && isStandardDwellingRefresh(gameState, availability))
+					continue;
+				const auto pools = pack.day <= 1 || !isTown
 					? sparseCreaturePools(availability.creatures)
 					: creatureGrowth(gameState, availability);
 				if(pools != "{  }")
-					entries.push_back(objectAlias(gameState, availability.tid) + ": " + pools);
+				{
+					auto & scope = isTown ? towns : dwellings;
+					scope.push_back(objectAlias(gameState, availability.tid) + ": " + pools);
+				}
 			}
-			if(!entries.empty())
-				records.push_back(std::string(pack.day <= 1 ? "available: { " : "growth: { ") +
-					boost::algorithm::join(entries, ", ") + " }");
+			if(pack.day <= 1 && (!towns.empty() || !dwellings.empty()))
+			{
+				std::vector<std::string> scopes;
+				if(!towns.empty())
+					scopes.push_back("towns: { " + boost::algorithm::join(towns, ", ") + " }");
+				if(!dwellings.empty())
+					scopes.push_back("dwellings: { " + boost::algorithm::join(dwellings, ", ") + " }");
+				records.push_back("availability: { " + boost::algorithm::join(scopes, ", ") + " }");
+			}
+			else if(pack.day > 1)
+			{
+				if(!towns.empty())
+					records.push_back("growth: { " + boost::algorithm::join(towns, ", ") + " }");
+				for(const auto & dwelling : dwellings)
+					records.push_back("available: { " + dwelling + " }");
+			}
 		}
 
 		if(pack.specialWeek != EWeekType::NORMAL || pack.creatureid != CreatureID::NONE)
@@ -3248,13 +3423,17 @@ public:
 			return;
 		}
 		std::vector<std::string> fields;
-		fields.push_back("id: " + battleAlias(pack.battleID));
-		fields.push_back("event: attack");
-		fields.push_back("attacker: " + yamlIdentifier(battleUnitAlias(gameState, pack.battleID, pack.stackAttacking)));
-		fields.push_back("to: " + std::to_string(pack.tile.toInt()));
-		fields.push_back("flags: " + std::to_string(pack.flags));
-		fields.push_back("attacks: " + battleStackAttacks(gameState, pack.battleID, pack.bsa));
-		line = "battle: { " + boost::algorithm::join(fields, ", ") + " }";
+		fields.push_back("by: " + yamlIdentifier(battleUnitAlias(gameState, pack.battleID, pack.stackAttacking)));
+		fields.push_back("hits: " + battleAttackHits(gameState, pack.battleID, pack.bsa));
+		if(pack.counter()) fields.push_back("retaliation: true");
+		if(pack.shot()) fields.push_back("ranged: true");
+		if(pack.lucky()) fields.push_back("luck: good");
+		if(pack.unlucky()) fields.push_back("luck: bad");
+		if(pack.deathBlow()) fields.push_back("deathBlow: true");
+		if(pack.spellLike()) fields.push_back("spellLike: true");
+		if(pack.lifeDrain()) fields.push_back("lifeDrain: true");
+		line = "battle: { id: " + battleAlias(pack.battleID) +
+			", attack: { " + boost::algorithm::join(fields, ", ") + " } }";
 	}
 
 	void visitStartAction(StartAction & pack) override
@@ -3270,11 +3449,14 @@ public:
 
 	void visitBattleSpellCast(BattleSpellCast & pack) override
 	{
+		std::string caster = battleUnitAlias(gameState, pack.battleID, pack.casterStack);
+		if(caster.starts_with("unit-"))
+			caster = "spell";
 		line = "battle: { id: " + battleAlias(pack.battleID) +
 			", event: spellCast, side: " + battleSide(pack.side) +
 			", spell: " + spell(pack.spellID) +
 			", at: " + std::to_string(pack.tile.toInt()) +
-			", caster: " + yamlIdentifier(battleUnitAlias(gameState, pack.battleID, pack.casterStack)) +
+			", caster: " + yamlIdentifier(caster) +
 			", hero: " + std::string(pack.castByHero ? "true" : "false") + " }";
 	}
 
@@ -3522,6 +3704,7 @@ void VGTRecorder::ensureHeader(const CGameState & gameState)
 	output << "  uri: " << yamlString(startInfo->fileURI) << "\n";
 	if(startInfo->mapname != startInfo->fileURI)
 		output << "  name: " << yamlString(startInfo->mapname) << "\n";
+	output << "  textEncoding: " << mapTextEncoding(*startInfo) << "\n";
 	if(startInfo->mapGenOptions)
 		output << "  source: generated-map-file\n";
 	output << "  hash: { algorithm: sha256, value: " << yamlString(*hash) << " }\n";
@@ -3708,6 +3891,84 @@ std::optional<std::vector<std::string>> nestedFlowFields(
 	return splitFlowFields(*body);
 }
 
+void writeYamlRecord(std::ostream & stream, const std::string & indent, const std::string & record)
+{
+	static constexpr size_t FLOW_LINE_LIMIT = 160;
+	const std::string recordSeparator = "\n  - ";
+	if(const auto separator = record.find(recordSeparator); separator != std::string::npos)
+	{
+		writeYamlRecord(stream, indent, record.substr(0, separator));
+		writeYamlRecord(stream, indent, record.substr(separator + recordSeparator.size()));
+		return;
+	}
+	if(record.size() <= FLOW_LINE_LIMIT)
+	{
+		stream << indent << "- " << record << "\n";
+		return;
+	}
+
+	// Battle packets are stored as wrapped flow mappings until the complete
+	// battle can be rendered.  A long singleton such as
+	// `{ bonus: { ... } }` must lose that staging wrapper before it is expanded
+	// into block YAML; otherwise the opening brace becomes part of the key and
+	// the resulting document is invalid.
+	if(const auto wrapped = flowMappingBody(record))
+	{
+		const auto fields = splitFlowFields(*wrapped);
+		if(fields.size() == 1)
+		{
+			writeYamlRecord(stream, indent, fields.front());
+			return;
+		}
+
+		// A multi-field staging wrapper cannot be removed without changing the
+		// mapping's shape. Keep it as a valid (if long) flow mapping.
+		stream << indent << "- " << record << "\n";
+		return;
+	}
+
+	const auto separator = record.find(": ");
+	if(separator == std::string::npos)
+	{
+		stream << indent << "- " << record << "\n";
+		return;
+	}
+	const auto body = flowMappingBody(std::string_view(record).substr(separator + 2));
+	if(!body)
+	{
+		stream << indent << "- " << record << "\n";
+		return;
+	}
+
+	stream << indent << "- " << record.substr(0, separator) << ":\n";
+	for(const auto & field : splitFlowFields(*body))
+	{
+		const auto fieldSeparator = field.find(": ");
+		if(fieldSeparator != std::string::npos)
+		{
+			const std::string value = field.substr(fieldSeparator + 2);
+			if(field.size() > FLOW_LINE_LIMIT)
+			{
+				if(const auto nested = flowMappingBody(value))
+				{
+					stream << indent << "    " << field.substr(0, fieldSeparator) << ":\n";
+					for(const auto & nestedField : splitFlowFields(*nested))
+						stream << indent << "      " << nestedField << "\n";
+					continue;
+				}
+			}
+			if(value.starts_with("[{ ") && value.ends_with(" }]"))
+			{
+				stream << indent << "    " << field.substr(0, fieldSeparator) << ":\n";
+				for(const auto & item : splitFlowFields(std::string_view(value).substr(1, value.size() - 2)))
+					stream << indent << "      - " << item << "\n";
+				continue;
+			}
+		}
+		stream << indent << "    " << field << "\n";
+	}
+}
+
 bool isBattlePacketEvent(const std::string & record, const std::string & event)
 {
 	const auto fields = wrappedFlowFields(record);
@@ -3728,6 +3989,25 @@ std::vector<int> battleTargetHexes(const std::string & targets)
 			++end;
 		if(end > start)
 			result.push_back(std::stoi(targets.substr(start, end - start)));
+	}
+	return result;
+}
+
+std::vector<int> flowIntegerList(const std::string & values)
+{
+	std::vector<int> result;
+	for(size_t start = 0; start < values.size();)
+	{
+		while(start < values.size() && values[start] != '-' && !std::isdigit(static_cast<unsigned char>(values[start])))
+			++start;
+		if(start >= values.size())
+			break;
+		size_t end = start + (values[start] == '-' ? 1 : 0);
+		while(end < values.size() && std::isdigit(static_cast<unsigned char>(values[end])))
+			++end;
+		if(end > start + (values[start] == '-' ? 1 : 0))
+			result.push_back(std::stoi(values.substr(start, end - start)));
+		start = end;
 	}
 	return result;
 }
@@ -3760,20 +4040,25 @@ void appendBattleAttackOutcome(
 	if(strikes.empty())
 		return;
 
-	int damage = 0;
-	int killed = 0;
-	for(const auto & strike : strikes)
+	if(const auto hits = strikes.size() == 1 ? flowField(strikes.front(), "hits") : std::nullopt)
+		outputFields.push_back("hits: " + *hits);
+	else
 	{
-		if(const auto value = flowField(strike, "damage"))
-			damage += std::stoi(*value);
-		if(const auto value = flowField(strike, "killed"))
-			killed += std::stoi(*value);
+		int damage = 0;
+		int killed = 0;
+		for(const auto & strike : strikes)
+		{
+			if(const auto value = flowField(strike, "damage"))
+				damage += std::stoi(*value);
+			if(const auto value = flowField(strike, "killed"))
+				killed += std::stoi(*value);
+		}
+		if(strikes.size() > 1)
+			outputFields.push_back("strikes: " + std::to_string(strikes.size()));
+		outputFields.push_back("damage: " + std::to_string(damage));
+		if(killed > 0)
+			outputFields.push_back("killed: " + std::to_string(killed));
 	}
-	if(strikes.size() > 1)
-		outputFields.push_back("strikes: " + std::to_string(strikes.size()));
-	outputFields.push_back("damage: " + std::to_string(damage));
-	if(killed > 0)
-		outputFields.push_back("killed: " + std::to_string(killed));
 
 	for(const std::string flag : {"luck", "deathBlow", "spellLike", "lifeDrain"})
 	{
@@ -3796,7 +4081,9 @@ void appendBattleRetaliation(
 		return;
 
 	std::vector<std::string> fields;
-	if(const auto damage = flowField(applied, "damage"))
+	if(const auto hits = flowField(applied, "hits"))
+		fields.push_back("hits: " + *hits);
+	else if(const auto damage = flowField(applied, "damage"))
 		fields.push_back("damage: " + *damage);
 	if(const auto killed = flowField(applied, "killed"); killed && *killed != "0")
 		fields.push_back("killed: " + *killed);
@@ -3945,12 +4232,27 @@ void VGTRecorder::flushPendingBattle()
 			output << "        " << unit << "\n";
 	}
 	output << "      events:\n";
+	int round = 0;
+	std::string eventIndent = "        ";
 	for(size_t index = 0; index < pendingBattle->events.size();)
 	{
+		if(isBattlePacketEvent(pendingBattle->events[index], "start"))
+		{
+			++index;
+			continue;
+		}
+		if(isBattlePacketEvent(pendingBattle->events[index], "nextRound"))
+		{
+			output << "        - round: " << ++round << "\n";
+			output << "          events:\n";
+			eventIndent = "            ";
+			++index;
+			continue;
+		}
 		if(const auto action = keyedFlowFields(pendingBattle->events[index], "walk"))
 		{
 			std::vector<std::string> fields;
-			for(const std::string key : {"actor", "side", "unit"})
+			for(const std::string key : {"unit"})
 			{
 				if(const auto value = flowField(*action, key))
 					fields.push_back(key + ": " + *value);
@@ -3990,7 +4292,7 @@ void VGTRecorder::flushPendingBattle()
 				fields.push_back("path: " + *path);
 			if(gate)
 				fields.push_back("gate: " + *gate);
-			output << "        - " << battleFlowRecord("move", fields) << "\n";
+			writeYamlRecord(output, eventIndent, battleFlowRecord("move", fields));
 			index = end;
 			continue;
 		}
@@ -4026,11 +4328,6 @@ void VGTRecorder::flushPendingBattle()
 		if(attackAction)
 		{
 			std::vector<std::string> fields;
-			for(const std::string key : {"actor", "side"})
-			{
-				if(const auto value = flowField(*attackAction, key))
-					fields.push_back(key + ": " + *value);
-			}
 			if(const auto unit = flowField(*attackAction, "unit"))
 				fields.push_back("by: " + *unit);
 			const auto aim = flowField(*attackAction, "target");
@@ -4088,6 +4385,7 @@ void VGTRecorder::flushPendingBattle()
 
 			std::optional<std::vector<std::string>> retaliation;
 			std::vector<std::string> appliedSpells;
+			std::vector<std::string> attackEffects;
 			while(end < pendingBattle->events.size())
 			{
 				if(isBattlePacketEvent(pendingBattle->events[end], "stackEffects"))
@@ -4102,6 +4400,24 @@ void VGTRecorder::flushPendingBattle()
 					++end;
 					continue;
 				}
+				if(const auto injury = battleInjurySummary(pendingBattle->events[end]); injury && !injury->empty())
+				{
+					const auto target = flowField(*injury, "target");
+					const auto attacker = flowField(*attackAction, "unit");
+					std::optional<std::string> effect;
+					if(!appliedSpells.empty())
+						effect = appliedSpells.back();
+					else if(target && target == attacker)
+						effect = "reflection";
+					if(effect)
+					{
+						std::vector<std::string> effectFields = {"effect: " + *effect};
+						effectFields.insert(effectFields.end(), injury->begin(), injury->end());
+						attackEffects.push_back("{ " + boost::algorithm::join(effectFields, ", ") + " }");
+						++end;
+						continue;
+					}
+				}
 				const auto nextAttack = appliedBattleAttack(pendingBattle->events[end]);
 				if(!nextAttack)
 					break;
@@ -4111,8 +4427,15 @@ void VGTRecorder::flushPendingBattle()
 					++end;
 					continue;
 				}
-				if(strikes.empty() ||
-					flowField(*nextAttack, "by") != flowField(strikes.front(), "by") ||
+				if(strikes.empty())
+				{
+					if(flowField(*nextAttack, "by") != flowField(*attackAction, "unit"))
+						break;
+					strikes.push_back(*nextAttack);
+					++end;
+					continue;
+				}
+				if(flowField(*nextAttack, "by") != flowField(strikes.front(), "by") ||
 					flowField(*nextAttack, "target") != flowField(strikes.front(), "target"))
 					break;
 				strikes.push_back(*nextAttack);
@@ -4121,12 +4444,31 @@ void VGTRecorder::flushPendingBattle()
 			appendBattleAttackOutcome(fields, strikes);
 			if(!appliedSpells.empty())
 				fields.push_back("applies: " + flowList(appliedSpells));
+			if(!attackEffects.empty())
+				fields.push_back("effects: " + flowList(attackEffects));
 			if(retaliation)
 				appendBattleRetaliation(fields, *retaliation);
 
+			if(end < pendingBattle->events.size() && isBattlePacketEvent(pendingBattle->events[end], "move"))
+			{
+				const auto movement = wrappedFlowFields(pendingBattle->events[end]);
+				if(movement && flowField(*movement, "unit") == flowField(*attackAction, "unit"))
+				{
+					if(const auto path = flowField(*movement, "path"))
+					{
+						const auto hexes = flowIntegerList(*path);
+						if(hexes.size() == 1)
+							fields.push_back("returnsTo: " + std::to_string(hexes.front()));
+						else if(!hexes.empty())
+							fields.push_back("returnPath: " + *path);
+					}
+					++end;
+				}
+			}
+
 			for(const auto & effect : concurrentEffects)
-				output << "        - " << effect << "\n";
-			output << "        - " << battleFlowRecord("attack", fields) << "\n";
+				writeYamlRecord(output, eventIndent, effect);
+			writeYamlRecord(output, eventIndent, battleFlowRecord("attack", fields));
 			index = end;
 			continue;
 		}
@@ -4143,21 +4485,19 @@ void VGTRecorder::flushPendingBattle()
 		if(spellAction)
 		{
 			std::vector<std::string> fields;
-			for(const std::string key : {"actor", "side"})
-			{
-				if(const auto value = flowField(*spellAction, key))
-					fields.push_back(key + ": " + *value);
-			}
 			const auto side = flowField(*spellAction, "side");
 			if(heroCast)
+			{
+				if(side)
+					fields.push_back("side: " + *side);
 				fields.push_back("caster: " + (side == "defender" ? pendingBattle->defender : pendingBattle->attacker));
+			}
 			else if(const auto unit = flowField(*spellAction, "unit"))
 				fields.push_back("caster: " + *unit);
 			if(const auto value = flowField(*spellAction, "spell"))
 				fields.push_back("spell: " + *value);
 			const auto aim = flowField(*spellAction, "target");
-			if(aim)
-				fields.push_back("aim: " + *aim);
+			fields.push_back("aim: " + aim.value_or("[]"));
 
 			std::optional<int> mana;
 			std::optional<int> healed;
@@ -4204,7 +4544,7 @@ void VGTRecorder::flushPendingBattle()
 			if(healed)
 				fields.push_back("healed: " + std::to_string(*healed));
 
-			output << "        - " << battleFlowRecord("cast", fields) << "\n";
+			writeYamlRecord(output, eventIndent, battleFlowRecord("cast", fields));
 			index = end;
 			continue;
 		}
@@ -4226,7 +4566,7 @@ void VGTRecorder::flushPendingBattle()
 			}
 			else
 				boost::algorithm::replace_all(attack, ", retaliation: true", ", counterattack: true");
-			output << "        - attack: { " << attack << " }\n";
+			writeYamlRecord(output, eventIndent, "attack: { " + attack + " }");
 			++index;
 			continue;
 		}
@@ -4257,19 +4597,71 @@ void VGTRecorder::flushPendingBattle()
 			}
 			if(!units.empty())
 			{
-				output << "        - wait: " << (units.size() == 1 ? units.front() : flowList(units)) << "\n";
+				writeYamlRecord(output, eventIndent, "wait: " + (units.size() == 1 ? units.front() : flowList(units)));
 				index = end;
 				continue;
 			}
 		}
-		output << "        - " << pendingBattle->events[index] << "\n";
+		if(pendingBattle->events[index].starts_with("defend: { "))
+		{
+			std::vector<std::string> units;
+			size_t end = index;
+			while(end < pendingBattle->events.size())
+			{
+				const auto action = keyedFlowFields(pendingBattle->events[end], "defend");
+				if(!action)
+					break;
+				if(const auto unit = flowField(*action, "unit"))
+					units.push_back(*unit);
+				else
+					break;
+				++end;
+				while(end < pendingBattle->events.size() && isBattlePacketEvent(pendingBattle->events[end], "stackEffects"))
+					++end;
+			}
+			if(!units.empty())
+			{
+				writeYamlRecord(output, eventIndent, "defend: " + (units.size() == 1 ? units.front() : flowList(units)));
+				index = end;
+				continue;
+			}
+		}
+		bool compactedDecision = false;
+		for(const std::string kind : {
+			"badMorale", "catapult", "none", "retreat", "stackHeal", "surrender", "walkAndCast"})
+		{
+			const auto action = keyedFlowFields(pendingBattle->events[index], kind);
+			const auto unit = action ? flowField(*action, "unit") : std::nullopt;
+			if(!action || !unit || (!unit->starts_with("attacker/") && !unit->starts_with("defender/")))
+				continue;
+			std::vector<std::string> compact;
+			for(const auto & field : *action)
+			{
+				if(!field.starts_with("actor: ") && !field.starts_with("side: "))
+					compact.push_back(field);
+			}
+			writeYamlRecord(output, eventIndent, battleFlowRecord(kind, compact));
+			++index;
+			compactedDecision = true;
+			break;
+		}
+		if(compactedDecision)
+			continue;
+		writeYamlRecord(output, eventIndent, pendingBattle->events[index]);
 		++index;
 	}
-	if(!pendingBattle->outcome.empty() || !pendingBattle->aftermath.empty())
+	if(!pendingBattle->outcome.empty() || !pendingBattle->manaChanges.empty() || !pendingBattle->aftermath.empty())
 	{
 		output << "      outcome:\n";
 		for(const auto & field : pendingBattle->outcome)
 			output << "        " << field << "\n";
+		output << "        survivors: { " + boost::algorithm::join(pendingBattle->survivors, ", ") + " }\n";
+		if(!pendingBattle->createdUnits.empty())
+			output << "        createdUnits: { " + boost::algorithm::join(pendingBattle->createdUnits, ", ") + " }\n";
+		if(!pendingBattle->continuation.empty())
+			output << "        continuation: " << pendingBattle->continuation << "\n";
+		if(!pendingBattle->manaChanges.empty())
+			output << "        mana: " << namedIntegerMap(pendingBattle->manaChanges) << "\n";
 		if(!pendingBattle->aftermath.empty())
 		{
 			output << "        aftermath:\n";
@@ -4288,13 +4680,13 @@ void VGTRecorder::flushPendingHeroScene()
 		return;
 
 	if(pendingHeroScene->actions.size() == 1)
-		output << "  - " << pendingHeroScene->actions.front().original << "\n";
+		writeYamlRecord(output, "  ", pendingHeroScene->actions.front().original);
 	else
 	{
 		output << "  - with: " << pendingHeroScene->hero << "\n";
 		output << "    actions:\n";
 		for(const auto & action : pendingHeroScene->actions)
-			output << "      - " << action.nested << "\n";
+			writeYamlRecord(output, "      ", action.nested);
 	}
 	output.flush();
 	pendingHeroScene.reset();
@@ -4320,7 +4712,7 @@ void VGTRecorder::writeActionLine(const CGameState & gameState, const std::strin
 				battleParticipant(gameState, BattleID(std::stoi(battleRecord->battleID)), BattleSide::ATTACKER),
 				battleParticipant(gameState, BattleID(std::stoi(battleRecord->battleID)), BattleSide::DEFENDER),
 				battleRoster(gameState, BattleID(std::stoi(battleRecord->battleID))),
-				{}, {}, {}, false};
+				{}, {}, {}, {}, {}, {}, {}, false};
 		}
 		if(pendingBattle->units.empty())
 		{
@@ -4353,7 +4745,7 @@ void VGTRecorder::writeActionLine(const CGameState & gameState, const std::strin
 		return;
 	}
 	flushPendingHeroScene();
-	output << "  - " << relativeLine << "\n";
+	writeYamlRecord(output, "  ", relativeLine);
 	output.flush();
 }
 
@@ -4408,6 +4800,8 @@ void VGTRecorder::flushPendingRecruit(const CGameState & gameState)
 	{
 		const auto & unit = pendingRecruit->units.front();
 		line += ", units: { " + yamlKey(unit.creature) + ": " + std::to_string(unit.count) + " }";
+		if(unit.pool)
+			line += ", pool: " + *unit.pool;
 	}
 	else
 	{
@@ -4417,6 +4811,8 @@ void VGTRecorder::flushPendingRecruit(const CGameState & gameState)
 			std::string entry = "{ creature: " + unit.creature + ", count: " + std::to_string(unit.count);
 			if(unit.slot >= 0)
 				entry += ", slot: " + std::to_string(unit.slot);
+			if(unit.pool)
+				entry += ", pool: " + *unit.pool;
 			entry += " }";
 			units.push_back(entry);
 		}
@@ -4458,6 +4854,70 @@ void VGTRecorder::flushPendingEncounter(const CGameState & gameState)
 {
 	if(!pendingEncounter)
 		return;
+
+	// Collapse exact pickup/join packet sequences into one story outcome. These
+	// patterns are deliberately strict so pre-battle neutral stack splitting is
+	// never mistaken for creatures joining the hero.
+	if(pendingEncounter->outcomes.size() == 2)
+	{
+		const auto removed = keyedFlowFields(pendingEncounter->outcomes[1], "remove");
+		const bool removesEncounter = removed && flowField(*removed, "object") == pendingEncounter->object;
+		if(removesEncounter)
+		{
+			if(const auto resources = keyedFlowFields(pendingEncounter->outcomes[0], "resources"))
+			{
+				pendingEncounter->outcomes = {
+					"collects: { resources: { " + boost::algorithm::join(*resources, ", ") + " } }"};
+			}
+			else if(const auto army = keyedFlowFields(pendingEncounter->outcomes[0], "army"))
+			{
+				const auto movement = nestedFlowFields(*army, "move");
+				const auto from = movement ? nestedFlowFields(*movement, "from") : std::nullopt;
+				const auto to = movement ? nestedFlowFields(*movement, "to") : std::nullopt;
+				const auto source = from ? flowField(*from, "owner") : std::nullopt;
+				const auto destination = to ? flowField(*to, "owner") : std::nullopt;
+				const auto count = movement ? flowField(*movement, "count") : std::nullopt;
+				if(source == pendingEncounter->object && destination && count &&
+					pendingEncounter->object.starts_with("monster/"))
+				{
+					const auto creatureStart = std::string("monster/").size();
+					const auto creatureEnd = pendingEncounter->object.find('@', creatureStart);
+					const std::string joinedCreature = pendingEncounter->object.substr(
+						creatureStart, creatureEnd - creatureStart);
+					pendingEncounter->outcomes = {"joins: { hero: " + *destination +
+						", units: { " + joinedCreature + ": " + *count + " } }"};
+				}
+			}
+			else if(const auto artifactChange = keyedFlowFields(pendingEncounter->outcomes[0], "artifact"))
+			{
+				std::vector<std::string> fields;
+				if(const auto created = nestedFlowFields(*artifactChange, "create"))
+				{
+					if(const auto value = flowField(*created, "artifact"))
+						fields.push_back("artifact: " + *value);
+					if(const auto value = flowField(*created, "position"))
+						fields.push_back("slot: " + *value);
+				}
+				else if(const auto put = nestedFlowFields(*artifactChange, "put"))
+				{
+					std::string found = pendingEncounter->object.substr(0, pendingEncounter->object.find('@'));
+					if(found.starts_with("artifact/"))
+						found.erase(0, std::string("artifact/").size());
+					fields.push_back("artifact: " + found);
+					if(const auto value = flowField(*put, "artifactInstance"))
+						fields.push_back("instance: " + *value);
+					if(const auto target = nestedFlowFields(*put, "to"))
+					{
+						if(const auto value = flowField(*target, "slot"))
+							fields.push_back("slot: " + *value);
+					}
+				}
+				if(!fields.empty())
+					pendingEncounter->outcomes = {
+						"finds: { " + boost::algorithm::join(fields, ", ") + " }"};
+			}
+		}
+	}
 
 	auto appendApproach = [this](std::string & line)
 	{
@@ -4567,7 +5027,7 @@ void VGTRecorder::flushPendingEncounter(const CGameState & gameState)
 		return;
 	}
 
-	if(!pendingEncounter->answered && pendingEncounter->outcomes.empty() && !pendingEncounter->text)
+	if(!pendingEncounter->answered && pendingEncounter->outcomes.empty() && !pendingEncounter->text && !pendingEncounter->quest)
 	{
 		std::string line = "visit: { hero: " + pendingEncounter->hero + ", object: " + pendingEncounter->object;
 		appendApproach(line);
@@ -4582,11 +5042,15 @@ void VGTRecorder::flushPendingEncounter(const CGameState & gameState)
 		line += "actor: " + pendingEncounter->actor + ", ";
 	line += "hero: " + pendingEncounter->hero + ", with: " + pendingEncounter->object;
 	appendApproach(line);
+	if(pendingEncounter->quest)
+		line += ", quest: " + *pendingEncounter->quest;
 	if(pendingEncounter->answered)
 	{
 		const int32_t answer = pendingEncounter->answer.value_or(0);
 		std::string choiceName;
-		if(pendingEncounter->selection)
+		if(pendingEncounter->battleFollows && pendingEncounter->object.starts_with("monster/"))
+			choiceName = "fight";
+		else if(pendingEncounter->selection)
 			choiceName = "option" + std::to_string(answer);
 		else if(answer == 0)
 			choiceName = pendingEncounter->cancel ? "cancel" : "decline";
@@ -4628,6 +5092,7 @@ void VGTRecorder::writeBaselineSave(CGameHandler & gameHandler)
 			if(boost::filesystem::exists(targetPath))
 				boost::filesystem::remove(targetPath);
 			boost::filesystem::rename(temporaryPath, targetPath);
+			baselineSaveEnabled = false;
 		}
 		catch(const std::exception & e)
 		{
@@ -4649,6 +5114,7 @@ void VGTRecorder::writeBaselineSave(CGameHandler & gameHandler)
 			if(boost::filesystem::exists(targetPath))
 				boost::filesystem::remove(targetPath);
 			boost::filesystem::rename(temporaryPath, targetPath);
+			baselineGameStateSaveEnabled = false;
 		}
 		catch(const std::exception & e)
 		{
@@ -4820,7 +5286,25 @@ void VGTRecorder::recordDecision(const CGameState & gameState, CPackForServer & 
 		int destinationSlot = -1;
 		if(const auto * army = dynamic_cast<const CArmedInstance *>(gameState.getMap().getObject(recruitPack->dst)))
 			destinationSlot = army->getSlotFor(recruitPack->crid).getNum();
-		pendingRecruit->units.push_back({creature(recruitPack->crid), recruitPack->amount, destinationSlot});
+		std::optional<std::string> poolName;
+		if(const auto * dwelling = dynamic_cast<const CGDwelling *>(gameState.getMap().getObject(recruitPack->tid));
+			dwelling && recruitPack->level >= 0 && static_cast<size_t>(recruitPack->level) < dwelling->creatures.size())
+		{
+			const auto matchingPools = std::count_if(dwelling->creatures.begin(), dwelling->creatures.end(), [&](const auto & pool)
+			{
+				return pool.first >= recruitPack->amount &&
+					std::find(pool.second.begin(), pool.second.end(), recruitPack->crid) != pool.second.end();
+			});
+			if(matchingPools > 1)
+			{
+				if(const auto * town = dynamic_cast<const CGTownInstance *>(dwelling);
+					static_cast<size_t>(recruitPack->level) == town->getTown()->creatures.size())
+					poolName = "portalOfSummoning";
+				else
+					poolName = "level-" + std::to_string(recruitPack->level + 1);
+			}
+		}
+		pendingRecruit->units.push_back({creature(recruitPack->crid), recruitPack->amount, destinationSlot, poolName});
 
 		if(const auto * recruited = recruitPack->crid.toCreature())
 		{
@@ -4978,9 +5462,10 @@ void VGTRecorder::recordTimerBattleAction(const CGameState & gameState, PlayerCo
 			", action: " + battleAction(gameState, battleID, action) + " }");
 }
 
-void VGTRecorder::recordEffect(const CGameState & gameState, CPackForClient & pack)
+void VGTRecorder::recordEffect(CGameHandler & gameHandler, CPackForClient & pack)
 {
 	std::scoped_lock lock(outputMutex);
+	const CGameState & gameState = gameHandler.gameState();
 	initializeFromEnvironment();
 	if(auto * end = dynamic_cast<PlayerEndsTurn *>(&pack); end && turnStateArchiveEnabled)
 		pendingTurnStatePlayer = end->player;
@@ -5029,8 +5514,43 @@ void VGTRecorder::recordEffect(const CGameState & gameState, CPackForClient & pa
 		writeActionLine(gameState, "battle: { id: " + id + ", event: acceptedAs, action: " + accepted + " }");
 		return;
 	}
+	if(auto * mana = dynamic_cast<SetMana *>(&pack); mana && pendingBattle)
+	{
+		int64_t change = mana->val;
+		if(mana->mode == ChangeValueMode::ABSOLUTE)
+		{
+			const auto * hero = gameState.getHero(mana->hid);
+			change -= hero ? hero->mana : 0;
+		}
+		const std::string hero = heroAlias(gameState, mana->hid);
+		auto & total = pendingBattle->manaChanges[hero];
+		total += change;
+		if(total == 0)
+			pendingBattle->manaChanges.erase(hero);
+		if(pendingBattle->ended)
+			return;
+	}
 	if(auto * result = dynamic_cast<BattleResult *>(&pack); result && pendingBattle)
 	{
+		pendingBattle->manaChanges.clear();
+		if(const auto * battle = gameState.getBattle(result->battleID))
+		{
+			for(const auto side : {BattleSide::ATTACKER, BattleSide::DEFENDER})
+			{
+				const auto & battleSide = battle->getSide(side);
+				const auto * hero = battle->getSideHero(side);
+				if(!hero)
+					continue;
+				const int64_t change = std::min(hero->mana, battleSide.initialMana) - battleSide.initialMana;
+				if(change != 0)
+					pendingBattle->manaChanges[heroAlias(gameState, hero->id)] = change;
+			}
+		}
+		pendingBattle->survivors = battleSurvivors(gameState, result->battleID);
+		pendingBattle->createdUnits = battleCreatedUnits(gameState, result->battleID);
+		if(gameHandler.randomizer)
+			pendingBattle->continuation = gameHandler.randomizer->toVGTBattleJson(
+				battleRandomizerParticipants(gameState, result->battleID)).toCompactString();
 		pendingBattle->outcome.push_back("result: " + battleResult(result->result));
 		pendingBattle->outcome.push_back("winnerSide: " + battleSide(result->winner));
 		std::vector<std::string> casualties;
@@ -5040,8 +5560,7 @@ void VGTRecorder::recordEffect(const CGameState & gameState, CPackForClient & pa
 			if(!values.empty())
 				casualties.push_back(battleSide(side) + ": " + battleCasualties(values));
 		}
-		if(!casualties.empty())
-			pendingBattle->outcome.push_back("casualties: { " + boost::algorithm::join(casualties, ", ") + " }");
+		pendingBattle->outcome.push_back("casualties: { " + boost::algorithm::join(casualties, ", ") + " }");
 		return;
 	}
 	if(auto * accepted = dynamic_cast<BattleResultAccepted *>(&pack); accepted && pendingBattle)
@@ -5093,7 +5612,10 @@ void VGTRecorder::recordEffect(const CGameState & gameState, CPackForClient & pa
 	}
 
 	if(dynamic_cast<BattleStart *>(&pack) && pendingEncounter)
+	{
+		pendingEncounter->battleFollows = true;
 		flushPendingEncounter(gameState);
+	}
 	if(auto * visit = dynamic_cast<HeroVisit *>(&pack); visit && visit->starting)
 	{
 		std::optional<PendingMove> approach;
@@ -5198,6 +5720,23 @@ void VGTRecorder::recordEffect(const CGameState & gameState, CPackForClient & pa
 			writeActionLine(gameState, line);
 		return;
 	}
+	if(auto * addedQuest = dynamic_cast<AddQuest *>(&pack); addedQuest && pendingEncounter &&
+		objectAlias(gameState, addedQuest->quest.obj) == pendingEncounter->object)
+	{
+		const auto * questObject = dynamic_cast<const IQuestObject *>(gameState.getObjInstance(addedQuest->quest.obj));
+		if(questObject && !questObject->getQuest().mission.artifacts.empty())
+		{
+			std::vector<std::string> requestedArtifacts;
+			for(const auto artifactID : questObject->getQuest().mission.artifacts)
+				requestedArtifacts.push_back(artifact(artifactID));
+			const std::string request = requestedArtifacts.size() == 1
+				? requestedArtifacts.front()
+				: flowList(requestedArtifacts);
+			pendingEncounter->quest = "{ bring: " + request + " }";
+			pendingEncounter->standardQuestText = !questObject->getQuest().isCustomFirst;
+			return;
+		}
+	}
 	if(auto * dialog = dynamic_cast<BlockingDialog *>(&pack); dialog && pendingEncounter)
 	{
 		pendingEncounter->query = dialog->queryID.getNum();
@@ -5219,12 +5758,29 @@ void VGTRecorder::recordEffect(const CGameState & gameState, CPackForClient & pa
 	{
 		const bool standardShrineText = pendingEncounter &&
 			pendingEncounter->object.starts_with("shrine-of-magic-");
-		if(info->text.hasCustomText() && !standardShrineText)
+		const bool standardQuestText = pendingEncounter && pendingEncounter->standardQuestText;
+		if(info->text.hasCustomText() && !standardShrineText && !standardQuestText)
 		{
 			if(pendingEncounter)
 				pendingEncounter->text = info->text.toString();
 			else
 				writeActionLine(gameState, "story: { text: " + yamlString(info->text.toString()) + " }");
+		}
+		return;
+	}
+	if(auto * fog = dynamic_cast<FoWChange *>(&pack); fog && pendingEncounter && visibility(fog->mode) == "revealed")
+	{
+		const bool alreadyRecorded = std::any_of(
+			pendingEncounter->outcomes.begin(), pendingEncounter->outcomes.end(), [](const std::string & outcome)
+			{
+				return outcome.starts_with("reveal: ");
+			});
+		if(!alreadyRecorded)
+		{
+			std::string reveal = "reveal: { by: " + pendingEncounter->object;
+			if(color(fog->player) != pendingEncounter->actor)
+				reveal += ", player: " + color(fog->player);
+			pendingEncounter->outcomes.push_back(reveal + " }");
 		}
 		return;
 	}

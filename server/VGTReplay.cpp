@@ -21,6 +21,7 @@
 #include "TurnTimerHandler.h"
 
 #include "../lib/CPlayerState.h"
+#include "../lib/CStack.h"
 #include "../lib/CConfigHandler.h"
 #include "../lib/LoadProgress.h"
 #include "../lib/StartInfo.h"
@@ -69,6 +70,8 @@ class ReplayGameServer : public IGameServer
 	EServerState state = EServerState::GAMEPLAY;
 	std::string expectedTurnStateDirectory;
 	std::string outputTurnStateDirectory;
+	std::string capturedBattleOutcomePath;
+	JsonNode capturedBattleOutcomes;
 	int replayedTurnStates = 0;
 
 	std::string turnStateFileName(PlayerColor player) const
@@ -118,6 +121,14 @@ class ReplayGameServer : public IGameServer
 	void processTurnState(PlayerColor player)
 	{
 		++replayedTurnStates;
+		if(expectedTurnStateDirectory.empty() && outputTurnStateDirectory.empty())
+			return;
+		if(const char * compareFrom = std::getenv("VCMI_VGT_REPLAY_COMPARE_FROM_TURN"))
+		{
+			if(replayedTurnStates < std::stoi(compareFrom))
+				return;
+		}
+
 		const std::string fileName = turnStateFileName(player);
 		const auto actual = serializeTurnState();
 
@@ -133,6 +144,8 @@ class ReplayGameServer : public IGameServer
 			logGlobal->info("VGT turn state matches '%s'", expectedPath.string());
 			return;
 		}
+		if(const char * mismatchPath = std::getenv("VCMI_VGT_REPLAY_MISMATCH_SAVE"); mismatchPath && *mismatchPath)
+			writeTurnState(boost::filesystem::path(mismatchPath), actual);
 
 		const size_t commonSize = std::min(actual.size(), expected.size());
 		size_t firstDifference = 0;
@@ -152,11 +165,83 @@ class ReplayGameServer : public IGameServer
 		throw std::runtime_error(message.str());
 	}
 
+	void captureBattleOutcome(const BattleResult & result)
+	{
+		if(capturedBattleOutcomePath.empty())
+			return;
+		const auto * battle = gameHandler->gameState().getBattle(result.battleID);
+		if(!battle || !gameHandler->randomizer)
+			throw std::runtime_error("Unable to capture VGT battle outcome state");
+
+		JsonNode snapshot;
+		snapshot["battle"].Integer() = result.battleID.getNum();
+		snapshot["survivors"].Struct();
+		snapshot["createdUnits"].Struct();
+		snapshot["mana"].Struct();
+		for(const auto side : {BattleSide::ATTACKER, BattleSide::DEFENDER})
+		{
+			const auto & battleSide = battle->getSide(side);
+			const auto * hero = battle->getSideHero(side);
+			if(!hero)
+				continue;
+			const int64_t change = std::min(hero->mana, battleSide.initialMana) - battleSide.initialMana;
+			if(change != 0)
+				snapshot["mana"][side == BattleSide::ATTACKER ? "attacker" : "defender"].Integer() = change;
+		}
+		for(const auto * stack : battle->battleGetAllStacks(true))
+		{
+			if(!stack || stack->summoned || stack->isTurret())
+				continue;
+			const int count = std::max(0, stack->getCount() - stack->health.getResurrected());
+			if(count > 0)
+			{
+				snapshot["survivors"][std::to_string(stack->unitId())].Integer() = count;
+				if(stack->unitSlot() == SlotID::SUMMONED_SLOT_PLACEHOLDER)
+				{
+					auto & created = snapshot["createdUnits"][std::to_string(stack->unitId())];
+					created["creature"].String() = CreatureID::encode(stack->creatureId().getNum());
+					created["count"].Integer() = stack->unitBaseAmount();
+					created["hex"].Integer() = stack->getPosition().toInt();
+				}
+			}
+		}
+
+		std::set<ObjectInstanceID> participants;
+		for(const auto side : {BattleSide::ATTACKER, BattleSide::DEFENDER})
+		{
+			if(const auto * army = battle->getSideArmy(side))
+				participants.insert(army->id);
+			if(const auto * hero = battle->getSideHero(side))
+				participants.insert(hero->id);
+		}
+		snapshot["continuation"] = gameHandler->randomizer->toVGTBattleJson(participants);
+		capturedBattleOutcomes.Vector().push_back(std::move(snapshot));
+	}
+
 public:
 	void configureTurnStates(const std::string & expectedDirectory, const std::string & outputDirectory)
 	{
 		expectedTurnStateDirectory = expectedDirectory;
 		outputTurnStateDirectory = outputDirectory;
+	}
+
+	void configureBattleOutcomeCapture(const std::string & path)
+	{
+		capturedBattleOutcomePath = path;
+		capturedBattleOutcomes.Vector();
+	}
+
+	void writeCapturedBattleOutcomes() const
+	{
+		if(capturedBattleOutcomePath.empty())
+			return;
+		const boost::filesystem::path path(capturedBattleOutcomePath);
+		if(!path.parent_path().empty())
+			boost::filesystem::create_directories(path.parent_path());
+		std::ofstream output(path.string(), std::ios::out | std::ios::trunc);
+		output << capturedBattleOutcomes.toCompactString() << '\n';
+		if(!output)
+			throw std::runtime_error("Unable to write captured VGT battle outcomes: " + path.string());
 	}
 
 	void verifyTurnStatesComplete() const
@@ -217,6 +302,8 @@ public:
 	{
 		if(!gameHandler || !gameHandler->gs)
 			throw std::runtime_error("VGT replay cannot apply a pack before game state initialization");
+		if(auto * result = dynamic_cast<BattleResult *>(&pack))
+			captureBattleOutcome(*result);
 		gameHandler->gs->apply(pack);
 		if(auto * end = dynamic_cast<PlayerEndsTurn *>(&pack))
 			processTurnState(end->player);
@@ -566,6 +653,17 @@ BattleSide decodeBattleSide(const std::string & value)
 	throw std::runtime_error("Unsupported VGT battle side: " + value);
 }
 
+EBattleResult decodeBattleResult(const std::string & value)
+{
+	if(value == "normal")
+		return EBattleResult::NORMAL;
+	if(value == "escape")
+		return EBattleResult::ESCAPE;
+	if(value == "surrender")
+		return EBattleResult::SURRENDER;
+	throw std::runtime_error("Unsupported VGT battle result: " + value);
+}
+
 EActionType decodeActionType(const std::string & value)
 {
 	if(value == "none")
@@ -729,6 +827,17 @@ bool genericObjectAliasType(const std::string & type)
 	return type == "creatureGeneratorCommon" || type.starts_with("shrineOfMagicLevel");
 }
 
+bool equivalentAliasWords(const std::string & left, const std::string & right)
+{
+	auto compact = [](std::string value)
+	{
+		value = sanitizedAliasName(std::move(value));
+		value.erase(std::remove(value.begin(), value.end(), '-'), value.end());
+		return value;
+	};
+	return compact(left) == compact(right);
+}
+
 std::string canonicalObjectAlias(const CGObjectInstance & object)
 {
 	if(const auto * hero = dynamic_cast<const CGHeroInstance *>(&object))
@@ -762,15 +871,16 @@ std::string canonicalObjectAlias(const CGObjectInstance & object)
 		name = "id-" + std::to_string(object.id.getNum());
 	const auto typeName = type.substr(type.rfind('/') == std::string::npos ? 0 : type.rfind('/') + 1);
 	std::string result;
-	if(genericObjectAliasType(type) && name != sanitizedAliasName(typeName))
+	if(equivalentAliasWords(name, typeName))
+		result = owner.empty() ? name : owner + "/" + name;
+	else if(genericObjectAliasType(type))
 		result = owner.empty() ? name : owner + "/" + name;
 	else
 	{
 		result = type;
 		if(!owner.empty())
 			result += "/" + owner;
-		if(name != sanitizedAliasName(typeName))
-			result += "/" + name;
+		result += "/" + name;
 	}
 	return result + objectLocation(object.visitablePos());
 }
@@ -1271,14 +1381,21 @@ std::map<PlayerColor, PlayerSettings> decodeGeneratedMapInitializationPlayerSett
 	return result;
 }
 
-CMapGenOptions::CPlayerSettings decodeRandomMapPlayerSettings(const JsonNode & node, PlayerColor color)
+CMapGenOptions::CPlayerSettings decodeRandomMapPlayerSettings(
+	const JsonNode & node,
+	PlayerColor color,
+	const CMapGenOptions::CPlayerSettings * base = nullptr)
 {
-	CMapGenOptions::CPlayerSettings result;
+	CMapGenOptions::CPlayerSettings result = base ? *base : CMapGenOptions::CPlayerSettings();
 	result.setColor(color);
-	result.setPlayerType(decodeRandomMapPlayerType(requireString(node, "type")));
-	result.setStartingTown(decodeFaction(requireString(node, "faction")));
-	result.setStartingHero(decodeHeroType(requireString(node, "hero")));
-	result.setTeam(decodeTeam(requireField(node, "team")));
+	if(hasField(node, "type"))
+		result.setPlayerType(decodeRandomMapPlayerType(requireString(node, "type")));
+	if(hasField(node, "faction"))
+		result.setStartingTown(decodeFaction(requireString(node, "faction")));
+	if(hasField(node, "hero"))
+		result.setStartingHero(decodeHeroType(requireString(node, "hero")));
+	if(hasField(node, "team"))
+		result.setTeam(decodeTeam(requireField(node, "team")));
 	return result;
 }
 
@@ -1287,40 +1404,82 @@ std::shared_ptr<CMapGenOptions> decodeRandomMapGenerator(const JsonNode & node)
 	auto result = std::make_shared<CMapGenOptions>();
 	result->setWidth(static_cast<si32>(requireInteger(node, "width")));
 	result->setHeight(static_cast<si32>(requireInteger(node, "height")));
-	result->setLevels(static_cast<int>(requireInteger(node, "levels")));
+	result->setLevels(hasField(node, "levels") ? static_cast<int>(requireInteger(node, "levels")) : 1);
 	result->setHumanOrCpuPlayerCount(static_cast<si8>(requireInteger(node, "humanOrComputerPlayers")));
-	result->setTeamCount(static_cast<si8>(requireInteger(node, "teams")));
-	result->setCompOnlyPlayerCount(static_cast<si8>(requireInteger(node, "computerOnlyPlayers")));
-	result->setCompOnlyTeamCount(static_cast<si8>(requireInteger(node, "computerOnlyTeams")));
-	result->setWaterContent(decodeRandomMapWater(requireString(node, "water")));
-	result->setMonsterStrength(decodeRandomMapMonsterStrength(requireString(node, "monsters")));
+	result->setTeamCount(hasField(node, "teams") ? static_cast<si8>(requireInteger(node, "teams")) : 0);
+	result->setCompOnlyPlayerCount(hasField(node, "computerOnlyPlayers")
+		? static_cast<si8>(requireInteger(node, "computerOnlyPlayers"))
+		: 0);
+	result->setCompOnlyTeamCount(hasField(node, "computerOnlyTeams")
+		? static_cast<si8>(requireInteger(node, "computerOnlyTeams"))
+		: 0);
+	result->setWaterContent(hasField(node, "water")
+		? decodeRandomMapWater(requireString(node, "water"))
+		: EWaterContent::NONE);
+	result->setMonsterStrength(hasField(node, "monsters")
+		? decodeRandomMapMonsterStrength(requireString(node, "monsters"))
+		: EMonsterStrength::GLOBAL_NORMAL);
 
-	const auto & templateNode = requireField(node, "template");
-	if(templateNode.isString() && !templateNode.String().empty())
-		result->setMapTemplate(templateNode.String());
+	if(const auto * templateNode = findField(node, "template");
+		templateNode && templateNode->isString() && !templateNode->String().empty())
+		result->setMapTemplate(templateNode->String());
 
 	for(const auto roadId : { RoadId::DIRT_ROAD, RoadId::GRAVEL_ROAD, RoadId::COBBLESTONE_ROAD })
 		result->setRoadEnabled(roadId, false);
 
-	const auto & roads = requireField(node, "roads");
-	if(!roads.isVector())
-		throw std::runtime_error("VGT replay random map roads must be a list");
-	for(const auto & road : roads.Vector())
+	if(const auto * roads = findField(node, "roads"))
 	{
-		if(!road.isString())
-			throw std::runtime_error("VGT replay random map road is not a string");
-		result->setRoadEnabled(decodeRoad(road.String()), true);
+		if(!roads->isVector())
+			throw std::runtime_error("VGT replay random map roads must be a list");
+		for(const auto & road : roads->Vector())
+		{
+			if(!road.isString())
+				throw std::runtime_error("VGT replay random map road is not a string");
+			result->setRoadEnabled(decodeRoad(road.String()), true);
+		}
 	}
 
-	const auto & players = requireField(node, "players");
-	if(!players.isStruct())
-		throw std::runtime_error("VGT replay random map players must be a mapping");
-
 	std::map<PlayerColor, CMapGenOptions::CPlayerSettings> playerSettings;
-	for(const auto & entry : players.Struct())
+	std::vector<PlayerColor> playerSlots;
+	if(const auto * slots = findField(node, "slots"))
 	{
-		const auto color = decodePlayerColor(entry.first);
-		playerSettings[color] = decodeRandomMapPlayerSettings(entry.second, color);
+		if(!slots->isVector())
+			throw std::runtime_error("VGT replay random map slots must be a list");
+		for(const auto & slot : slots->Vector())
+		{
+			if(!slot.isString())
+				throw std::runtime_error("VGT replay random map slot is not a player color");
+			playerSlots.push_back(decodePlayerColor(slot.String()));
+		}
+	}
+	else
+	{
+		const int standardPlayers = std::max<int>(0, result->getHumanOrCpuPlayerCount());
+		const int computerOnlyPlayers = std::max<int>(0, result->getCompOnlyPlayerCount());
+		for(int index = 0; index < standardPlayers + computerOnlyPlayers; ++index)
+			playerSlots.emplace_back(index);
+	}
+	for(const PlayerColor color : playerSlots)
+	{
+		CMapGenOptions::CPlayerSettings settings;
+		settings.setColor(color);
+		settings.setPlayerType(EPlayerType::AI);
+		settings.setStartingTown(FactionID::RANDOM);
+		settings.setStartingHero(HeroTypeID::RANDOM);
+		settings.setTeam(TeamID(color.getNum()));
+		playerSettings[color] = settings;
+	}
+	if(const auto * players = findField(node, "players"))
+	{
+		if(!players->isStruct())
+			throw std::runtime_error("VGT replay random map players must be a mapping");
+		for(const auto & entry : players->Struct())
+		{
+			const auto color = decodePlayerColor(entry.first);
+			const auto base = playerSettings.find(color);
+			playerSettings[color] = decodeRandomMapPlayerSettings(
+				entry.second, color, base == playerSettings.end() ? nullptr : &base->second);
+		}
 	}
 	result->setPlayerSettings(playerSettings);
 	return result;
@@ -1629,9 +1788,26 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 	{
 		MakeAction pack;
 		pack.battleID = decodeBattleAlias(requireField(decision, "battle"));
-		pack.ba = decodeBattleAction(requireField(decision, "action"));
+		const auto & actionNode = requireField(decision, "action");
+		pack.ba = decodeBattleAction(actionNode);
+		std::vector<uint32_t> secondaryTargets;
+		if(const auto * targets = findField(actionNode, "secondaryTargets"))
+		{
+			if(!targets->isVector())
+				throw std::runtime_error("VGT replay battle action secondaryTargets must be a list");
+			for(const auto & target : targets->Vector())
+			{
+				if(!target.isNumber())
+					throw std::runtime_error("VGT replay battle action secondary target must be numeric");
+				secondaryTargets.push_back(static_cast<uint32_t>(target.Integer()));
+			}
+		}
 		if(const auto player = tryPlayerFromActor(actor))
-			replayPack(gameHandler, pack, *player);
+		{
+			if(!gameHandler.battles->makePlayerBattleAction(pack.battleID, *player, pack.ba, secondaryTargets))
+				throw std::runtime_error(
+					"VGT battle action was rejected for " + actor + ": " + actionNode.toCompactString());
+		}
 		else if(actor == "world")
 		{
 			const auto * battle = gameHandler.gameState().getBattle(pack.battleID);
@@ -1640,7 +1816,9 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 
 			const auto * active = battle->battleActiveUnit();
 			const PlayerColor owner = active ? battle->battleGetOwner(active) : PlayerColor::UNFLAGGABLE;
-			gameHandler.battles->makePlayerBattleAction(pack.battleID, owner, pack.ba);
+			if(!gameHandler.battles->makePlayerBattleAction(pack.battleID, owner, pack.ba, secondaryTargets))
+				throw std::runtime_error(
+					"VGT world battle action was rejected: " + actionNode.toCompactString());
 		}
 		else
 			throw std::runtime_error("Unsupported VGT actor: " + actor);
@@ -1737,30 +1915,67 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 			? resolveObjectAlias(gameHandler.gameState(), requireString(decision, "to"))
 			: source;
 		const auto & units = requireField(decision, "units");
-			auto recruit = [&](const std::string & creatureIdentifier, int64_t count)
+		auto recruit = [&](const std::string & creatureIdentifier, int64_t count, const std::optional<std::string> & poolName)
+		{
+			if(count <= 0 || count > std::numeric_limits<ui32>::max())
+				throw std::runtime_error("VGT semantic recruitment has an invalid count");
+			const CreatureID creature = decodeCreature(creatureIdentifier);
+			int fromLevel = -1;
+			if(const auto * dwelling = dynamic_cast<const CGDwelling *>(gameHandler.gameState().getObj(source)))
 			{
-				if(!gameHandler.recruitCreatures(
-					source,
-					destination,
-					decodeCreature(creatureIdentifier),
-					static_cast<ui32>(count),
-					-1,
-					player))
+				if(poolName)
 				{
-					throw std::runtime_error("VGT semantic recruitment was rejected");
+					if(*poolName == "portalOfSummoning")
+						fromLevel = static_cast<int>(dwelling->creatures.size()) - 1;
+					else if(poolName->starts_with("level-"))
+						fromLevel = std::stoi(poolName->substr(std::string("level-").size())) - 1;
+					else
+						throw std::runtime_error("Unknown VGT recruitment pool: " + *poolName);
 				}
-			};
+				else
+				{
+					std::vector<int> matchingPools;
+					for(size_t index = 0; index < dwelling->creatures.size(); ++index)
+					{
+						const auto & pool = dwelling->creatures[index];
+						if(pool.first >= static_cast<ui32>(count) &&
+							std::find(pool.second.begin(), pool.second.end(), creature) != pool.second.end())
+							matchingPools.push_back(static_cast<int>(index));
+					}
+					if(matchingPools.size() == 1)
+						fromLevel = matchingPools.front();
+					else if(matchingPools.size() > 1)
+						throw std::runtime_error(
+							"VGT semantic recruitment is ambiguous; a named pool is required");
+				}
+			}
+			if(!gameHandler.recruitCreatures(
+				source,
+				destination,
+				creature,
+				static_cast<ui32>(count),
+				fromLevel,
+				player))
+			{
+				throw std::runtime_error("VGT semantic recruitment was rejected");
+			}
+		};
 		if(units.isStruct())
 		{
 			if(units.Struct().size() != 1)
 				throw std::runtime_error("Compact VGT recruitment must contain exactly one creature");
 			const auto & unit = *units.Struct().begin();
-			recruit(unit.first, unit.second.Integer());
+			const auto * pool = findField(decision, "pool");
+			recruit(unit.first, unit.second.Integer(), pool ? std::optional<std::string>(pool->String()) : std::nullopt);
 		}
 		else if(units.isVector())
 		{
 			for(const auto & unit : units.Vector())
-				recruit(requireString(unit, "creature"), requireInteger(unit, "count"));
+			{
+				const auto * pool = findField(unit, "pool");
+				recruit(requireString(unit, "creature"), requireInteger(unit, "count"),
+					pool ? std::optional<std::string>(pool->String()) : std::nullopt);
+			}
 		}
 		else
 			throw std::runtime_error("VGT recruitment units must be a mapping or ordered list");
@@ -2243,7 +2458,26 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 			pack.reply = std::nullopt;
 		else
 			pack.reply = static_cast<int32_t>(value.Integer());
-		replayPack(gameHandler, pack, player);
+		if(requireString(*choice, "name") == "fight")
+		{
+			// A neutral-creature fight can involve several generated prompts: a
+			// joining offer, an insufficient-funds notice, and a pursuit question.
+			// The transcript records the meaningful decision once and omits those
+			// UI mechanics. Keep affirming the decision until combat begins.
+			for(int prompt = 0; prompt < 8 && gameHandler.gameState().currentBattles.empty(); ++prompt)
+			{
+				const auto query = gameHandler.queries->topQuery(player);
+				if(!query || !query->endsByPlayerAnswer())
+					break;
+				pack.qid = query->queryID;
+				pack.reply = 1;
+				replayPack(gameHandler, pack, player);
+			}
+			if(gameHandler.gameState().currentBattles.empty())
+				throw std::runtime_error("VGT monster fight choice did not start a battle");
+		}
+		else
+			replayPack(gameHandler, pack, player);
 		return;
 	}
 
@@ -2404,26 +2638,31 @@ bool isEffectKind(const std::string & kind)
 {
 	static const std::set<std::string> effectKinds = {
 		"adventureSpell",
+		"appears",
 		"army",
 		"artifact",
 		"artifacts",
 		"available",
+		"availability",
 		"availableArtifacts",
 		"availableHero",
 		"bonus",
 		"capture",
+		"collects",
 		"experience",
+		"finds",
 		"growth",
 		"heroOwner",
 		"heroRecruited",
 		"income",
 		"levelUp",
+		"joins",
 		"mana",
-		"newObject",
 		"objectPosition",
 		"playerEnd",
 		"query",
 		"quest",
+		"reveal",
 		"remove",
 		"refresh",
 		"resources",
@@ -2438,6 +2677,7 @@ bool isEffectKind(const std::string & kind)
 		"story",
 		"opened",
 		"town",
+		"townless",
 		"townHeroes",
 		"turnEnd",
 		"turnStart",
@@ -2480,6 +2720,47 @@ int rosterStack(const std::map<std::string, int> & roster, const std::string & u
 	return position->second;
 }
 
+std::string battleActorForSide(CGameHandler & gameHandler, const std::string & battleID, BattleSide side)
+{
+	const auto * battle = gameHandler.gameState().getBattle(BattleID(std::stoi(battleID)));
+	if(!battle)
+		throw std::runtime_error("Unknown VGT battle: " + battleID);
+	const PlayerColor player = battle->getSidePlayer(side);
+	return player.isValidPlayer() ? player.toString() : "world";
+}
+
+std::string resolveLiveBattleID(CGameHandler & gameHandler, const std::string & recordedBattleID)
+{
+	const BattleID recordedID(std::stoi(recordedBattleID));
+	if(gameHandler.gameState().getBattle(recordedID))
+		return recordedBattleID;
+
+	// Battle numbers are capture-local infrastructure identifiers. They can have
+	// gaps that are not represented by the semantic transcript (for example a
+	// battle setup that never reaches an action block). A readable battle block
+	// is applied immediately after the decision that opened it, so the sole live
+	// battle is the unambiguous replay target.
+	if(gameHandler.gameState().currentBattles.size() == 1)
+		return std::to_string(gameHandler.gameState().currentBattles.front()->battleID.getNum());
+
+	throw std::runtime_error(
+		"Cannot match recorded VGT battle " + recordedBattleID + " to a live battle");
+}
+
+std::string inferredBattleSide(const JsonNode & action)
+{
+	if(const auto * side = findField(action, "side"))
+		return side->String();
+	if(const auto * unit = findField(action, "unit"); unit && unit->isString())
+	{
+		if(unit->String().starts_with("attacker/"))
+			return "attacker";
+		if(unit->String().starts_with("defender/"))
+			return "defender";
+	}
+	throw std::runtime_error("VGT battle action has neither a side nor a side-qualified unit");
+}
+
 void replayReadableBattleAction(
 	CGameHandler & gameHandler,
 	const std::string & kind,
@@ -2491,8 +2772,14 @@ void replayReadableBattleAction(
 		throw std::runtime_error("VGT " + kind + " battle action is not a mapping");
 
 	JsonNode action = node;
-	const std::string actor = requireString(action, "actor");
+	const std::string side = inferredBattleSide(action);
+	const BattleSide battleSide = side == "defender" ? BattleSide::DEFENDER : BattleSide::ATTACKER;
+	const std::string actor = hasField(action, "actor")
+		? requireString(action, "actor")
+		: battleActorForSide(gameHandler, battleID, battleSide);
 	action.Struct().erase("actor");
+	if(!hasField(action, "side"))
+		action["side"].String() = side;
 	if(const auto * unit = findField(action, "unit"))
 	{
 		action["stack"].Integer() = rosterStack(roster, unit->String());
@@ -2525,8 +2812,10 @@ void replaySemanticBattleMove(
 	const std::map<std::string, int> & roster)
 {
 	JsonNode action;
-	action["actor"].String() = requireString(node, "actor");
-	action["side"].String() = requireString(node, "side");
+	if(const auto * actor = findField(node, "actor"))
+		action["actor"].String() = actor->String();
+	if(const auto * side = findField(node, "side"))
+		action["side"].String() = side->String();
 	action["unit"].String() = requireString(node, "unit");
 	JsonNode target;
 	target["hex"].Integer() = requireInteger(node, "to");
@@ -2546,10 +2835,22 @@ void replaySemanticBattleAttack(
 		return;
 
 	JsonNode action;
-	action["actor"].String() = requireString(node, "actor");
-	action["side"].String() = requireString(node, "side");
+	if(const auto * actor = findField(node, "actor"))
+		action["actor"].String() = actor->String();
+	if(const auto * side = findField(node, "side"))
+		action["side"].String() = side->String();
 	action["unit"].String() = requireString(node, "by");
 	action["target"] = requireField(node, "aim");
+	if(const auto * hits = findField(node, "hits"); hits && hits->isVector())
+	{
+		for(size_t index = 1; index < hits->Vector().size(); ++index)
+		{
+			const auto & hit = hits->Vector()[index];
+			const auto * target = findField(hit, "target");
+			if(target && target->isString())
+				action["secondaryTargets"].Vector().emplace_back(rosterStack(roster, target->String()));
+		}
+	}
 	replayReadableBattleAction(
 		gameHandler,
 		optionalBool(node, "ranged", false) ? "shoot" : "walkAndAttack",
@@ -2565,8 +2866,10 @@ void replaySemanticBattleCast(
 	const std::map<std::string, int> & roster)
 {
 	JsonNode action;
-	action["actor"].String() = requireString(node, "actor");
-	action["side"].String() = requireString(node, "side");
+	if(const auto * actor = findField(node, "actor"))
+		action["actor"].String() = actor->String();
+	if(const auto * side = findField(node, "side"))
+		action["side"].String() = side->String();
 	const std::string caster = requireString(node, "caster");
 	const bool stackCast = roster.contains(caster);
 	action["unit"].String() = stackCast ? caster : "hero";
@@ -2580,9 +2883,197 @@ void replaySemanticBattleCast(
 		roster);
 }
 
-void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node)
+void fastForwardBattle(
+	CGameHandler & gameHandler,
+	const std::string & battleID,
+	const std::map<std::string, int> & roster,
+	const JsonNode & outcome)
 {
-	const std::string battleID = battleAliasText(requireField(node, "id"));
+	const BattleID liveBattleID(std::stoi(battleID));
+	auto * battle = gameHandler.gs->getBattle(liveBattleID);
+	if(!battle)
+		throw std::runtime_error("VGT fast-forward references missing battle: " + battleID);
+
+	const EBattleResult result = decodeBattleResult(requireString(outcome, "result"));
+	const BattleSide winnerSide = decodeBattleSide(requireString(outcome, "winnerSide"));
+	if(result == EBattleResult::SURRENDER)
+	{
+		const BattleSide surrenderingSide = battle->otherSide(winnerSide);
+		const PlayerColor player = battle->sideToPlayer(surrenderingSide);
+		const int cost = battle->battleGetSurrenderCost(player);
+		if(cost < 0 || gameHandler.gameInfo().getResource(player, EGameResID::GOLD) < cost)
+			throw std::runtime_error("Recorded VGT surrender is not legal in the replayed battle");
+		gameHandler.giveResource(player, EGameResID::GOLD, -cost);
+	}
+
+	const JsonNode & survivors = requireField(outcome, "survivors");
+	if(!survivors.isStruct())
+		throw std::runtime_error("VGT battle outcome survivors is not a mapping");
+	std::map<int, std::string> aliasesByStack;
+	for(const auto & [alias, stack] : roster)
+		aliasesByStack[stack] = alias;
+	for(const auto & [alias, count] : survivors.Struct())
+	{
+		if(!count.isNumber() || count.Integer() <= 0)
+			throw std::runtime_error("VGT battle survivor count must be positive: " + alias);
+		if(!roster.contains(alias))
+			throw std::runtime_error("VGT battle survivor is absent from the roster: " + alias);
+	}
+	const JsonNode * createdUnits = findField(outcome, "createdUnits");
+	if(createdUnits && !createdUnits->isStruct())
+		throw std::runtime_error("VGT battle outcome createdUnits is not a mapping");
+
+	BattleUnitsChanged changes;
+	changes.battleID = liveBattleID;
+	std::set<std::string> seenAliases;
+	for(const auto * stack : battle->battleGetAllStacks(true))
+	{
+		if(!stack || stack->summoned || stack->isTurret())
+			continue;
+		const auto aliasIter = aliasesByStack.find(static_cast<int>(stack->unitId()));
+		if(aliasIter == aliasesByStack.end())
+			throw std::runtime_error("Live VGT battle stack is absent from the recorded roster");
+		const std::string & alias = aliasIter->second;
+		seenAliases.insert(alias);
+		const auto survivorIter = survivors.Struct().find(alias);
+		const int targetCount = survivorIter == survivors.Struct().end()
+			? 0
+			: static_cast<int>(survivorIter->second.Integer());
+
+		auto state = stack->acquireState();
+		const int64_t currentHealth = state->getAvailableHealth();
+		const int64_t targetHealth = static_cast<int64_t>(targetCount) * state->getMaxHealth();
+		if(targetHealth < currentHealth)
+		{
+			int64_t damage = currentHealth - targetHealth;
+			state->damage(damage);
+		}
+		else if(targetHealth > currentHealth)
+		{
+			int64_t healing = targetHealth - currentHealth;
+			state->heal(healing, EHealLevel::RESURRECT, EHealPower::PERMANENT);
+		}
+		if(state->getCount() != targetCount)
+			throw std::runtime_error("Unable to apply VGT survivor count for " + alias);
+
+		UnitChanges change(stack->unitId(), BattleChanges::EOperation::UPDATE);
+		change.healthDelta = targetHealth - currentHealth;
+		change.data = state->save();
+		changes.changedStacks.push_back(std::move(change));
+	}
+	if(!changes.changedStacks.empty())
+		gameHandler.sendAndApply(changes);
+
+	if(createdUnits)
+	{
+		for(const auto & [alias, created] : createdUnits->Struct())
+		{
+			if(!created.isStruct() || !roster.contains(alias) || !survivors.Struct().contains(alias) || seenAliases.contains(alias))
+				throw std::runtime_error("Invalid VGT permanently created battle unit: " + alias);
+			const int initialCount = static_cast<int>(requireInteger(created, "count"));
+			const int survivorCount = static_cast<int>(survivors.Struct().at(alias).Integer());
+			if(initialCount <= 0 || survivorCount > initialCount)
+				throw std::runtime_error("Invalid VGT permanently created battle unit count: " + alias);
+
+			battle::UnitInfo info;
+			info.id = roster.at(alias);
+			info.count = initialCount;
+			info.type = decodeCreature(requireString(created, "creature"));
+			info.side = alias.starts_with("attacker/") ? BattleSide::ATTACKER : BattleSide::DEFENDER;
+			info.position = BattleHex(static_cast<si16>(requireInteger(created, "hex")));
+			info.summoned = false;
+			JsonNode data;
+			info.save(data);
+
+			BattleUnitsChanged addition;
+			addition.battleID = liveBattleID;
+			UnitChanges added(info.id, BattleChanges::EOperation::ADD);
+			added.data = std::move(data);
+			addition.changedStacks.push_back(std::move(added));
+			gameHandler.sendAndApply(addition);
+
+			auto * stack = battle->battleGetStackByID(info.id, false);
+			if(!stack)
+				throw std::runtime_error("Unable to create VGT permanent battle unit: " + alias);
+			auto state = stack->acquireState();
+			const int64_t currentHealth = state->getAvailableHealth();
+			const int64_t targetHealth = static_cast<int64_t>(survivorCount) * state->getMaxHealth();
+			int64_t damage = currentHealth - targetHealth;
+			state->damage(damage);
+			BattleUnitsChanged update;
+			update.battleID = liveBattleID;
+			UnitChanges changed(info.id, BattleChanges::EOperation::UPDATE);
+			changed.healthDelta = targetHealth - currentHealth;
+			changed.data = state->save();
+			update.changedStacks.push_back(std::move(changed));
+			gameHandler.sendAndApply(update);
+			seenAliases.insert(alias);
+		}
+	}
+	for(const auto & [alias, count] : survivors.Struct())
+	{
+		if(!seenAliases.contains(alias))
+			throw std::runtime_error("VGT fast-forward lacks createdUnits state for dynamic survivor: " + alias);
+	}
+
+	if(const auto * mana = findField(outcome, "mana"))
+	{
+		if(!mana->isStruct())
+			throw std::runtime_error("VGT battle outcome mana is not a mapping");
+		for(const auto & [hero, amount] : mana->Struct())
+		{
+			if(!amount.isNumber())
+				throw std::runtime_error("VGT battle outcome mana change is not numeric: " + hero);
+			const ObjectInstanceID heroID = resolveObjectAlias(gameHandler.gameState(), hero);
+			std::optional<int32_t> initialMana;
+			for(const auto side : {BattleSide::ATTACKER, BattleSide::DEFENDER})
+			{
+				const auto & battleSide = battle->getSide(side);
+				if(battleSide.heroID == heroID)
+					initialMana = battleSide.initialMana;
+			}
+			if(!initialMana)
+				throw std::runtime_error("VGT battle outcome mana hero is not a battle participant: " + hero);
+			SetMana change;
+			change.hid = heroID;
+			change.val = static_cast<si32>(*initialMana + amount.Integer());
+			change.mode = ChangeValueMode::ABSOLUTE;
+			gameHandler.sendAndApply(change);
+		}
+	}
+
+	BattleSideArray<TExpType> experience{0, 0};
+	if(const auto * recordedExperience = findField(outcome, "experience"))
+	{
+		if(!recordedExperience->isStruct())
+			throw std::runtime_error("VGT battle outcome experience is not a mapping");
+		for(const auto & [hero, amount] : recordedExperience->Struct())
+		{
+			if(!amount.isNumber() || amount.Integer() < 0)
+				throw std::runtime_error("Invalid VGT battle outcome experience for " + hero);
+			const ObjectInstanceID heroID = resolveObjectAlias(gameHandler.gameState(), hero);
+			std::optional<BattleSide> heroSide;
+			for(const auto side : {BattleSide::ATTACKER, BattleSide::DEFENDER})
+			{
+				if(battle->getSide(side).heroID == heroID)
+					heroSide = side;
+			}
+			if(!heroSide)
+				throw std::runtime_error("VGT battle outcome experience hero is not a participant: " + hero);
+			experience[*heroSide] = amount.Integer();
+		}
+	}
+
+	gameHandler.randomizer->loadVGTBattleJson(requireField(outcome, "continuation"));
+	gameHandler.battles->setBattleResultFromReplay(*battle, result, winnerSide, experience);
+}
+
+void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fastForwardBattles)
+{
+	const std::string recordedBattleID = battleAliasText(requireField(node, "id"));
+	const std::string battleID = resolveLiveBattleID(
+		gameHandler,
+		recordedBattleID);
 	std::map<std::string, int> roster;
 	if(const auto * units = findField(node, "units"))
 	{
@@ -2594,78 +3085,106 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node)
 	const JsonNode & events = requireField(node, "events");
 	if(!events.isVector())
 		throw std::runtime_error("VGT battle block events field is not a list");
-
-	for(const JsonNode & record : events.Vector())
+	const auto & outcome = requireField(node, "outcome");
+	std::function<void(const JsonNode &)> replayEvents;
+	replayEvents = [&](const JsonNode & eventList)
 	{
-		if(!record.isStruct())
-			throw std::runtime_error("VGT battle block event is not a mapping");
-		if(record.Struct().size() == 1 && record.Struct().begin()->first == "wait")
+		if(!eventList.isVector())
+			throw std::runtime_error("VGT battle round events field is not a list");
+		for(const JsonNode & record : eventList.Vector())
 		{
-			std::vector<std::string> units;
-			const auto & waits = record.Struct().begin()->second;
-			if(waits.isString())
-				units.push_back(waits.String());
-			else if(waits.isVector())
+			if(!record.isStruct())
+				throw std::runtime_error("VGT battle block event is not a mapping");
+			if(hasField(record, "round") && hasField(record, "events"))
 			{
-				for(const auto & unit : waits.Vector())
-					units.push_back(unit.String());
+				replayEvents(requireField(record, "events"));
+				continue;
 			}
-			else
-				throw std::runtime_error("VGT battle wait batch must be a unit or list of units");
-			for(const auto & unit : units)
+			if(record.Struct().size() == 1 &&
+				(record.Struct().begin()->first == "wait" || record.Struct().begin()->first == "defend"))
 			{
-				JsonNode action;
-				action["actor"].String() = "world";
-				action["side"].String() = unit.starts_with("defender/") ? "defender" : "attacker";
-				action["unit"].String() = unit;
-				replayReadableBattleAction(gameHandler, "wait", action, battleID, roster);
+				const std::string actionKind = record.Struct().begin()->first;
+				std::vector<std::string> units;
+				const auto & actions = record.Struct().begin()->second;
+				if(actions.isString())
+					units.push_back(actions.String());
+				else if(actions.isVector())
+				{
+					for(const auto & unit : actions.Vector())
+						units.push_back(unit.String());
+				}
+				else
+					throw std::runtime_error("VGT battle action batch must be a unit or list of units");
+				for(const auto & unit : units)
+				{
+					JsonNode action;
+					action["unit"].String() = unit;
+					replayReadableBattleAction(gameHandler, actionKind, action, battleID, roster);
+				}
+				continue;
 			}
-			continue;
+			if(record.Struct().size() == 1 && record.Struct().begin()->first == "move")
+			{
+				replaySemanticBattleMove(gameHandler, record.Struct().begin()->second, battleID, roster);
+				continue;
+			}
+			if(record.Struct().size() == 1 && record.Struct().begin()->first == "attack" &&
+				hasField(record.Struct().begin()->second, "aim"))
+			{
+				replaySemanticBattleAttack(
+					gameHandler,
+					record.Struct().begin()->second,
+					battleID,
+					roster);
+				continue;
+			}
+			if(record.Struct().size() == 1 && record.Struct().begin()->first == "cast")
+			{
+				replaySemanticBattleCast(gameHandler, record.Struct().begin()->second, battleID, roster);
+				continue;
+			}
+			if(hasField(record, "event") || hasField(record, "attack"))
+				continue;
+			static const std::set<std::string> semanticEffects = {
+				"casts", "catapult", "cloned", "drainMana", "enchant", "enchanterCounter", "fear", "gate",
+				"hasClone", "morale", "poison", "regenerate", "triggeredEffect", "unbind"
+			};
+			if(record.Struct().size() == 1 && semanticEffects.contains(record.Struct().begin()->first))
+				continue;
+			if(record.Struct().size() == 1 && isBattleActionKind(record.Struct().begin()->first))
+			{
+				const auto & entry = *record.Struct().begin();
+				replayReadableBattleAction(gameHandler, entry.first, entry.second, battleID, roster);
+				continue;
+			}
+			if(record.Struct().size() == 1 && isEffectKind(record.Struct().begin()->first))
+				continue;
+			throw std::runtime_error("Unsupported VGT battle block event");
 		}
-		if(record.Struct().size() == 1 && record.Struct().begin()->first == "move")
-		{
-			replaySemanticBattleMove(gameHandler, record.Struct().begin()->second, battleID, roster);
-			continue;
-		}
-		if(record.Struct().size() == 1 && record.Struct().begin()->first == "attack" &&
-			hasField(record.Struct().begin()->second, "aim"))
-		{
-			replaySemanticBattleAttack(gameHandler, record.Struct().begin()->second, battleID, roster);
-			continue;
-		}
-		if(record.Struct().size() == 1 && record.Struct().begin()->first == "cast")
-		{
-			replaySemanticBattleCast(gameHandler, record.Struct().begin()->second, battleID, roster);
-			continue;
-		}
-		if(hasField(record, "event") || hasField(record, "attack"))
-			continue;
-		static const std::set<std::string> semanticEffects = {
-			"casts", "catapult", "cloned", "drainMana", "enchant", "enchanterCounter", "fear", "gate",
-			"hasClone", "morale", "poison", "regenerate", "triggeredEffect", "unbind"
-		};
-		if(record.Struct().size() == 1 && semanticEffects.contains(record.Struct().begin()->first))
-			continue;
-		if(record.Struct().size() == 1 && isBattleActionKind(record.Struct().begin()->first))
-		{
-			const auto & entry = *record.Struct().begin();
-			replayReadableBattleAction(gameHandler, entry.first, entry.second, battleID, roster);
-			continue;
-		}
-		if(record.Struct().size() == 1 && isEffectKind(record.Struct().begin()->first))
-			continue;
-		throw std::runtime_error("Unsupported VGT battle block event");
-	}
+	};
+	if(fastForwardBattles)
+		fastForwardBattle(gameHandler, battleID, roster, outcome);
+	else
+		replayEvents(events);
 
-	const auto * outcome = findField(node, "outcome");
-	const auto * aftermath = outcome ? findField(*outcome, "aftermath") : nullptr;
+	requireString(outcome, "result");
+	requireString(outcome, "winnerSide");
+	requireString(outcome, "winner");
+	requireString(outcome, "loser");
+	if(!requireField(outcome, "casualties").isStruct())
+		throw std::runtime_error("VGT battle outcome casualties is not a mapping");
+	if(const auto * survivors = findField(outcome, "survivors"); survivors && !survivors->isStruct())
+		throw std::runtime_error("VGT battle outcome survivors is not a mapping");
+	if(const auto * continuation = findField(outcome, "continuation"); continuation && !continuation->isStruct())
+		throw std::runtime_error("VGT battle outcome continuation is not a mapping");
+	const auto * aftermath = findField(outcome, "aftermath");
 	if(!aftermath)
 		return;
 	if(!aftermath->isVector())
 		throw std::runtime_error("VGT battle aftermath is not a list");
 
 	std::optional<std::string> aftermathActor;
-	if(const auto * winner = findField(*outcome, "winner"); winner && winner->isString())
+	if(const auto * winner = findField(outcome, "winner"); winner && winner->isString())
 		aftermathActor = winner->String();
 	for(const auto & record : aftermath->Vector())
 	{
@@ -2695,7 +3214,7 @@ void applyLocalState(CGameHandler & gameHandler, const JsonNode & node)
 	*playerState->playerLocalSettings = requireField(node, "data");
 }
 
-void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & documents)
+void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & documents, bool fastForwardBattles)
 {
 	if(documents.Vector().size() == 1)
 		return;
@@ -2789,7 +3308,7 @@ void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & docu
 			}
 			if(entry.first == "battle")
 			{
-				applyBattleBlock(gameHandler, entry.second);
+				applyBattleBlock(gameHandler, entry.second, fastForwardBattles);
 				continue;
 			}
 			if(entry.first == "localState")
@@ -2986,8 +3505,22 @@ void writeGameStateSummary(const CGameState & gameState, std::ostream & output)
 			<< " type=" << HeroTypeID::encode(hero->getHeroTypeID().getNum())
 			<< " owner=" << colorAlias(hero->tempOwner)
 			<< " pos=" << hero->visitablePos().toString()
+			<< " experience=" << hero->exp
+			<< " level=" << hero->level
 			<< " mana=" << hero->mana
 			<< " movement=" << hero->movementPointsRemaining()
+			<< " moveDir=" << static_cast<int>(hero->moveDir)
+			<< " tactics=" << hero->tacticFormationEnabled
+			<< " secondarySkills=";
+		for(const auto & [skill, level] : hero->secSkills)
+			output << SecondarySkill::encode(skill.getNum()) << ":" << static_cast<int>(level) << ",";
+		output << " spells=";
+		for(const auto & spell : hero->getSpellsInSpellbook())
+			output << SpellID::encode(spell.getNum()) << ",";
+		output << " visitedObjects=";
+		for(const auto & object : hero->visitedObjects)
+			output << object.getNum() << ",";
+		output
 			<< " artifacts=" << artifactSetSummary(*hero)
 			<< " army=" << armySummary(*hero)
 			<< "\n";
@@ -3009,6 +3542,19 @@ void writeGameStateSummary(const CGameState & gameState, std::ostream & output)
 				output << ",";
 			first = false;
 			output << BuildingID::encode(building.getNum());
+		}
+		output << " creatures=";
+		for(size_t index = 0; index < town->creatures.size(); ++index)
+		{
+			if(index)
+				output << ";";
+			output << index << ":" << town->creatures[index].first << ":";
+			for(size_t creatureIndex = 0; creatureIndex < town->creatures[index].second.size(); ++creatureIndex)
+			{
+				if(creatureIndex)
+					output << ",";
+				output << CreatureID::encode(town->creatures[index].second[creatureIndex].getNum());
+			}
 		}
 		output << "\n";
 	}
@@ -3195,6 +3741,7 @@ int replayVGTJson(const VGTReplayOptions & options)
 
 	ReplayGameServer replayServer;
 	replayServer.configureTurnStates(options.expectedTurnStateDirectory, options.outputTurnStateDirectory);
+	replayServer.configureBattleOutcomeCapture(options.capturedBattleOutcomes);
 	CGameHandler gameHandler(replayServer);
 	replayServer.attach(gameHandler);
 
@@ -3205,9 +3752,11 @@ int replayVGTJson(const VGTReplayOptions & options)
 	applyGameSettingsOverrides(gameHandler, header);
 	if(documents.Vector().size() > 1)
 		gameHandler.start(false);
-	replayTranscriptDocuments(gameHandler, documents);
+	replayTranscriptDocuments(gameHandler, documents, options.fastForwardBattles);
 	replayServer.verifyTurnStatesComplete();
-	gameHandler.saveToFile(options.outputSave);
+	replayServer.writeCapturedBattleOutcomes();
+	if(!options.outputSave.empty())
+		gameHandler.saveToFile(options.outputSave);
 	writeGameStateSave(gameHandler, options.outputGameStateSave);
 	return 0;
 }

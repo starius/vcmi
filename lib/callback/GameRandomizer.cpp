@@ -375,6 +375,41 @@ JsonNode GameRandomizer::toVGTJson() const
 	return result;
 }
 
+JsonNode GameRandomizer::toVGTBattleJson(const std::set<ObjectInstanceID> & participants) const
+{
+	JsonNode result;
+	result["global"].String() = globalRandomNumberGenerator.getSerializedState();
+
+	auto writeBiasMap = [&participants](const auto & source) -> JsonNode
+	{
+		JsonNode result;
+		result.Vector();
+		for(const auto & [object, generator] : source)
+		{
+			if(!participants.contains(object))
+				continue;
+			JsonNode entry;
+			entry["object"].Integer() = object.getNum();
+			entry["state"] = generator.toVGTJson();
+			result.Vector().push_back(entry);
+		}
+		return result;
+	};
+
+	for(const auto & [name, source] : {
+		std::pair{"goodMorale", &goodMoraleSeed},
+		std::pair{"badMorale", &badMoraleSeed},
+		std::pair{"goodLuck", &goodLuckSeed},
+		std::pair{"badLuck", &badLuckSeed},
+		std::pair{"combatAbility", &combatAbilitySeed}})
+	{
+		const auto values = writeBiasMap(*source);
+		if(!values.Vector().empty())
+			result[name] = values;
+	}
+	return result;
+}
+
 void GameRandomizer::loadVGTJson(const JsonNode & node)
 {
 	globalRandomNumberGenerator.setSerializedState(requireString(node, "global"));
@@ -414,6 +449,31 @@ void GameRandomizer::loadVGTJson(const JsonNode & node)
 			return;
 		if(!source->isVector())
 			throw std::runtime_error("VGT randomizer " + name + " field is not a list");
+		for(const auto & entry : source->Vector())
+		{
+			const ObjectInstanceID object(requireInteger(entry, "object"));
+			auto [iter, inserted] = target.try_emplace(object);
+			iter->second.loadVGTJson(requireField(entry, "state"));
+		}
+	};
+
+	readBiasMap(goodMoraleSeed, findField(node, "goodMorale"), "goodMorale");
+	readBiasMap(badMoraleSeed, findField(node, "badMorale"), "badMorale");
+	readBiasMap(goodLuckSeed, findField(node, "goodLuck"), "goodLuck");
+	readBiasMap(badLuckSeed, findField(node, "badLuck"), "badLuck");
+	readBiasMap(combatAbilitySeed, findField(node, "combatAbility"), "combatAbility");
+}
+
+void GameRandomizer::loadVGTBattleJson(const JsonNode & node)
+{
+	globalRandomNumberGenerator.setSerializedState(requireString(node, "global"));
+
+	auto readBiasMap = [](auto & target, const JsonNode * source, const std::string & name)
+	{
+		if(!source)
+			return;
+		if(!source->isVector())
+			throw std::runtime_error("VGT battle randomizer " + name + " field is not a list");
 		for(const auto & entry : source->Vector())
 		{
 			const ObjectInstanceID object(requireInteger(entry, "object"));

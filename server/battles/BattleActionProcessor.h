@@ -46,6 +46,9 @@ class BattleActionProcessor : boost::noncopyable
 
 	BattleProcessor * owner;
 	CGameHandler * gameHandler;
+	std::vector<uint32_t> secondaryTargetOrder;
+
+	void orderSecondaryTargets(std::vector<const CStack *> & targets) const;
 
 	MovementResult moveStack(const CBattleInfoCallback & battle, int stack, BattleHex dest); //returned value - travelled distance
 	void makeAttack(const CBattleInfoCallback & battle, const CStack * attacker, const CStack * defender, int distance, const BattleHex & targetHex, bool first, bool ranged, bool counter);
@@ -95,4 +98,9 @@ public:
 
 	bool makeAutomaticBattleAction(const CBattleInfoCallback & battle, const BattleAction & ba);
 	bool makePlayerBattleAction(const CBattleInfoCallback & battle, PlayerColor player, const BattleAction & ba);
+	bool makePlayerBattleAction(
+		const CBattleInfoCallback & battle,
+		PlayerColor player,
+		const BattleAction & ba,
+		const std::vector<uint32_t> & orderedSecondaryTargets);
 };

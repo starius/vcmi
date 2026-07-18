@@ -44,6 +44,7 @@ class VGTRecorder final
 			std::string creature;
 			uint32_t count = 0;
 			int slot = -1;
+			std::optional<std::string> pool;
 		};
 
 		std::string actor;
@@ -85,8 +86,11 @@ class VGTRecorder final
 		bool selection = false;
 		bool cancel = false;
 		bool answered = false;
+		bool battleFollows = false;
 		std::optional<int32_t> answer;
 		std::optional<std::string> text;
+		std::optional<std::string> quest;
+		bool standardQuestText = false;
 		std::vector<std::string> outcomes;
 		std::optional<PendingMove> approach;
 		bool teleport = false;
@@ -124,6 +128,10 @@ class VGTRecorder final
 		std::vector<std::string> units;
 		std::vector<std::string> events;
 		std::vector<std::string> outcome;
+		std::vector<std::string> survivors;
+		std::vector<std::string> createdUnits;
+		std::string continuation;
+		std::map<std::string, int64_t> manaChanges;
 		std::vector<std::string> aftermath;
 		bool ended = false;
 	};
@@ -184,7 +192,7 @@ public:
 	void setRandomSeed(int seed);
 
 	void recordDecision(const CGameState & gameState, CPackForServer & pack);
-	void recordEffect(const CGameState & gameState, CPackForClient & pack);
+	void recordEffect(CGameHandler & gameHandler, CPackForClient & pack);
 	void recordTimerEndTurn(const CGameState & gameState, PlayerColor player);
 	void recordTimerBattleAction(const CGameState & gameState, PlayerColor player, BattleID battleID, const BattleAction & action);
 	void recordAppliedState(CGameHandler & gameHandler);

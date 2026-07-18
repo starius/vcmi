@@ -130,6 +130,8 @@ public:
 	int getDefaultSeed() const;
 	JsonNode toVGTJson() const;
 	void loadVGTJson(const JsonNode & node);
+	JsonNode toVGTBattleJson(const std::set<ObjectInstanceID> & participants) const;
+	void loadVGTBattleJson(const JsonNode & node);
 
 	template<typename Handler>
 	void serialize(Handler & h)
