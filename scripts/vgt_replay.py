@@ -631,6 +631,7 @@ def command_replay(args: argparse.Namespace) -> int:
         ])
     if args.fast_forward_battles:
         command.append("--vgt-replay-fast-forward-battles")
+    command.extend(["--vgt-replay-log-level", args.log_level])
     try:
         completed = subprocess.run(command, check=False)
     finally:
@@ -675,6 +676,12 @@ def build_parser() -> argparse.ArgumentParser:
     replay.add_argument("--output-turn-states", type=Path, help="directory in which to write replayed turn-state saves")
     replay.add_argument("--captured-battle-outcomes", type=Path, help="write tactical-end survivor and randomizer state as JSON")
     replay.add_argument("--fast-forward-battles", action="store_true", help="apply recorded battle outcomes without replaying tactical events")
+    replay.add_argument(
+        "--log-level",
+        choices=("trace", "debug", "info", "warn", "error"),
+        default="info",
+        help="engine log level during replay (default: info)",
+    )
     replay.add_argument("--header-only", action="store_true", help="rebuild only the initialized state from the transcript header")
     replay.set_defaults(func=command_replay)
     return parser

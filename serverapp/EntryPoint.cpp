@@ -16,6 +16,7 @@
 
 #include "../lib/CConsoleHandler.h"
 #include "../lib/logging/CBasicLogConfigurator.h"
+#include "../lib/logging/CLogger.h"
 #include "../lib/VCMIDirs.h"
 #include "../lib/GameLibrary.h"
 #include "../lib/CConfigHandler.h"
@@ -244,6 +245,9 @@ static void handleCommandOptions(int argc, const char * argv[], boost::program_o
 	("vgt-replay-turn-states", boost::program_options::value<std::string>(), "Write every replayed turn state to this directory")
 	("vgt-replay-captured-battle-outcomes", boost::program_options::value<std::string>(), "Write tactical-end survivor and randomizer state as JSON")
 	("vgt-replay-fast-forward-battles", "Apply recorded battle outcomes without replaying tactical events")
+	("vgt-replay-log-level",
+		boost::program_options::value<std::string>()->default_value("info"),
+		"Set VGT replay log level")
 	("vgt-dump-game-state-save", boost::program_options::value<std::string>(), "Write a VGT game state save summary for diagnostics")
 	("vgt-dump-output", boost::program_options::value<std::string>(), "Path for --vgt-dump-game-state-save output")
 	("vgt-normalize-game-state-save", boost::program_options::value<std::string>(), "Load and rewrite a VGT game state save for diagnostics")
@@ -314,6 +318,11 @@ int main(int argc, const char * argv[])
 	LIBRARY = new GameLibrary;
 	LIBRARY->initializeFilesystem(false);
 	logConfigurator.configure();
+	if(opts.count("vgt-replay-json"))
+	{
+		const auto logLevel = CBasicLogConfigurator::getLogLevel(opts["vgt-replay-log-level"].as<std::string>());
+		CLogger::getGlobalLogger()->setLevel(logLevel);
+	}
 
 	LIBRARY->initializeLibrary();
 
