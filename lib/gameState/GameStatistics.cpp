@@ -110,7 +110,8 @@ void StatisticDataSet::filterByTeam(const TeamState * team)
 	}), data.end());
 }
 
-StatisticDataSetEntry StatisticDataSet::createEntry(const PlayerState * ps, const CGameState * gs, const StatisticDataSet & accumulatedData)
+StatisticDataSetEntry StatisticDataSet::createEntry(const PlayerState * ps, const CGameState * gs,
+	const StatisticDataSet & accumulatedData, float mapExploredRatio)
 {
 	StatisticDataSetEntry data;
 
@@ -135,7 +136,7 @@ StatisticDataSetEntry StatisticDataSet::createEntry(const PlayerState * ps, cons
 	data.armyStrength = Statistic::getArmyStrength(ps, true);
 	data.totalExperience = Statistic::getTotalExperience(ps);
 	data.income = Statistic::getIncome(gs, ps);
-	data.mapExploredRatio = Statistic::getMapExploredRatio(gs, ps->color);
+	data.mapExploredRatio = mapExploredRatio;
 	data.obeliskVisitedRatio = Statistic::getObeliskVisitedRatio(gs, ps->team);
 	data.townBuiltRatio = Statistic::getTownBuiltRatio(ps);
 	data.hasGrail = param.hasGrail;
@@ -471,26 +472,43 @@ int Statistic::getIncome(const CGameState * gs, const PlayerState * ps)
 	return totalIncome;
 }
 
-float Statistic::getMapExploredRatio(const CGameState * gs, PlayerColor player)
+std::map<PlayerColor, float> Statistic::getMapExploredRatios(const CGameState * gs)
 {
-	float visible = 0.0;
-	float numTiles = 0.0;
+	struct PlayerVisibility
+	{
+		PlayerColor player;
+		MapTilesStorage<uint8_t>::const_iterator current;
+		size_t visible = 0;
+	};
 
-	for(int layer = 0; layer < gs->getMap().levels(); layer++)
-		for(int y = 0; y < gs->getMap().height; ++y)
-			for(int x = 0; x < gs->getMap().width; ++x)
-			{
-				TerrainTile tile = gs->getMap().getTile(int3(x, y, layer));
+	std::vector<PlayerVisibility> visibility;
+	for(const auto & playerState : gs->players)
+	{
+		const auto player = playerState.first;
+		if(player == PlayerColor::NEUTRAL || !player.isValidPlayer())
+			continue;
+		const auto & fogOfWar = gs->getPlayerTeam(player)->fogOfWarMap;
+		visibility.push_back({player, fogOfWar.begin()});
+	}
 
-				if(tile.blocked() && !tile.visitable())
-					continue;
+	size_t numTiles = 0;
+	for(const auto & tile : gs->getMap().getTerrainTiles())
+	{
+		const bool explorable = !tile.blocked() || tile.visitable();
+		if(explorable)
+			numTiles++;
+		for(auto & player : visibility)
+		{
+			if(explorable && *player.current)
+				player.visible++;
+			player.current++;
+		}
+	}
 
-				if(gs->isVisibleFor(int3(x, y, layer), player))
-					visible++;
-				numTiles++;
-			}
-	
-	return visible / numTiles;
+	std::map<PlayerColor, float> result;
+	for(const auto & player : visibility)
+		result[player.player] = static_cast<float>(player.visible) / static_cast<float>(numTiles);
+	return result;
 }
 
 const CGHeroInstance * Statistic::findBestHero(const CGameState * gs, const PlayerColor & color)

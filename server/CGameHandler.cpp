@@ -661,12 +661,14 @@ void CGameHandler::onAdvInterfaceReady(PlayerColor player)
 
 void CGameHandler::addStatistics(StatisticDataSet &stat) const
 {
+	const auto mapExploredRatios = Statistic::getMapExploredRatios(&gameState());
 	for (const auto & elem : gameState().players)
 	{
 		if (elem.first == PlayerColor::NEUTRAL || !elem.first.isValidPlayer())
 			continue;
 
-		auto data = StatisticDataSet::createEntry(&elem.second, &gameState(), *statistics);
+		auto data = StatisticDataSet::createEntry(
+			&elem.second, &gameState(), *statistics, mapExploredRatios.at(elem.first));
 
 		stat.add(data);
 	}

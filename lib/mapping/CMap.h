@@ -90,6 +90,7 @@ public:
 	CMapEditManager * getEditManager();
 	inline TerrainTile & getTile(const int3 & tile);
 	inline const TerrainTile & getTile(const int3 & tile) const;
+	const MapTilesStorage<TerrainTile> & getTerrainTiles() const;
 	bool isCoastalTile(const int3 & pos) const;
 	inline bool isInTheMap(const int3 & pos) const;
 

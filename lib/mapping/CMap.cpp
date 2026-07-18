@@ -1029,6 +1029,11 @@ const std::vector<ObjectInstanceID> & CMap::getAllTowns() const
 	return towns;
 }
 
+const MapTilesStorage<TerrainTile> & CMap::getTerrainTiles() const
+{
+	return terrain;
+}
+
 const std::vector<ObjectInstanceID> & CMap::getHeroesOnMap() const
 {
 	return heroesOnMap;
