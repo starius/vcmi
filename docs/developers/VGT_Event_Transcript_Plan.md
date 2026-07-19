@@ -69,7 +69,10 @@ and is useful only for diagnosing a mismatch.
   and internal reward-selection flags are also derived implementation state and are
   omitted from the readable transcript.
 - Every actor decision is recorded: human, AI, neutral/world, battle AI, query answer, retreat/surrender choice, and scripted choice where applicable.
-- Every authoritative material effect is recorded, including effects nobody could see yet, such as neutral growth or week-start spawned monsters in fog.
+- Every authoritative material effect that cannot be regenerated exactly from the
+  referenced inputs is recorded, including effects nobody could see yet, such as a
+  randomized neutral refresh or week-start spawned monsters in fog. Ordinary fixed
+  map-dwelling growth is derived and omitted after its day-one inventory is stated.
 - In the material event stream, randomness is recorded only as realized facts near the event that consumed it. Internal RNG state is not a timeline event. Replay advances RNG by feeding recorded decisions through normal server logic.
 - Countdown timer ticks are not recorded. Timer state is recorded only when a timer forces a gameplay action, or as a compact start/end snapshot on the turn end record for analysis.
 
@@ -261,7 +264,8 @@ The first complete text format must cover these material effects:
 - fog-of-war changes, compacted as tile runs or rectangles rather than one tile per line
 - quests and semantic decision prompts that affect future legal choices
 - all battle setup, decisions, actions, damage, deaths, spell effects, morale/luck outcomes, obstacle changes, round changes, active stack changes, and battle result
-- world events, timed events, creature growth, spawned monsters, generated dwellings/resources, and any hidden effect that changes future state
+- world events, timed events, non-derived creature availability, spawned monsters,
+  generated dwellings/resources, and any hidden effect that changes future state
 
 The writer must know when the transcript is incomplete. Strict validation rejects an
 `unmodelled` material record instead of accepting opaque data; the review corpus is
@@ -413,7 +417,9 @@ World events are not a special replay mode. They are the same applied effects gr
 world: { date: 1/2/1, phase: newDay }
 ```
 
-This captures invisible spawns and growth because they still produce material state effects.
+This captures invisible spawns and non-derived growth because they still produce
+material state effects. Fixed weekly map-dwelling growth is regenerated from the
+map/content inputs and therefore does not need a repeated event.
 
 ### 6. Completeness Mode
 

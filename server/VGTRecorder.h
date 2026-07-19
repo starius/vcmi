@@ -24,6 +24,7 @@ class CGameState;
 class CGameHandler;
 struct CPackForClient;
 struct CPackForServer;
+struct SetAvailableCreatures;
 
 class VGTRecorder final
 {
@@ -132,6 +133,8 @@ class VGTRecorder final
 		std::vector<std::string> createdUnits;
 		std::string continuation;
 		std::map<std::string, int64_t> manaChanges;
+		std::vector<ObjectInstanceID> armyIDs;
+		std::map<std::string, std::string> armies;
 		std::vector<std::string> aftermath;
 		bool ended = false;
 	};
@@ -164,6 +167,8 @@ class VGTRecorder final
 	std::optional<PendingEncounter> pendingEncounter;
 	std::optional<PendingHeroScene> pendingHeroScene;
 	std::map<int, PendingQuery> pendingQueries;
+	std::map<std::string, std::string> pendingInitialTownAvailability;
+	std::map<std::string, std::string> pendingInitialDwellingAvailability;
 	bool suppressDerivedEffects = false;
 	bool betweenPlayerTurns = false;
 	std::map<PlayerColor, std::string> latestTimerStates;
@@ -181,7 +186,9 @@ class VGTRecorder final
 	void flushPendingTrade(const CGameState & gameState);
 	void flushPendingEncounter(const CGameState & gameState);
 	void flushPendingHeroScene();
-	void flushPendingBattle();
+	void flushPendingBattle(const CGameState & gameState);
+	void collectInitialAvailability(const CGameState & gameState, const SetAvailableCreatures & availability);
+	void flushPendingInitialAvailability(const CGameState & gameState);
 	void writeBaselineSave(CGameHandler & gameHandler);
 	void writeTurnState(CGameHandler & gameHandler);
 

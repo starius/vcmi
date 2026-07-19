@@ -102,6 +102,11 @@ void CStackInstance::giveTotalStackExperience(TExpType experienceToGive)
 	totalExperience += experienceToGive;
 }
 
+void CStackInstance::setTotalStackExperience(TExpType experience)
+{
+	totalExperience = experience;
+}
+
 TExpType CStackInstance::getTotalExperience() const
 {
 	return totalExperience;

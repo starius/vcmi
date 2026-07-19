@@ -1285,6 +1285,90 @@ CSimpleArmy decodeSimpleArmy(const JsonNode & node)
 	return result;
 }
 
+void applyEffectPack(CGameHandler & gameHandler, CPackForClient & pack);
+
+void applyArmyState(CGameHandler & gameHandler, ObjectInstanceID armyID, const JsonNode & node)
+{
+	auto * army = gameHandler.gs->getArmyInstance(armyID);
+	if(!army)
+		throw std::runtime_error("VGT army state references non-army object: " + std::to_string(armyID.getNum()));
+
+	const CSimpleArmy desiredArmy = decodeSimpleArmy(node);
+	std::set<int> desiredSlots;
+	for(const auto & [slotID, stack] : desiredArmy.army)
+	{
+		desiredSlots.insert(slotID.getNum());
+		const auto desiredCreature = stack.first;
+		const auto desiredCount = stack.second;
+
+		if(!army->hasStackAtSlot(slotID))
+		{
+			InsertNewStack pack;
+			pack.army = armyID;
+			pack.slot = slotID;
+			pack.type = desiredCreature;
+			pack.count = desiredCount;
+			applyEffectPack(gameHandler, pack);
+			continue;
+		}
+
+		const auto * current = army->getStackPtr(slotID);
+		if(current->getCreatureID() != desiredCreature)
+		{
+			SetStackType pack;
+			pack.army = armyID;
+			pack.slot = slotID;
+			pack.type = desiredCreature;
+			applyEffectPack(gameHandler, pack);
+		}
+		if(army->getStackPtr(slotID)->getCount() != desiredCount)
+		{
+			ChangeStackCount pack;
+			pack.army = armyID;
+			pack.slot = slotID;
+			pack.mode = ChangeValueMode::ABSOLUTE;
+			pack.count = desiredCount;
+			applyEffectPack(gameHandler, pack);
+		}
+	}
+
+	std::vector<SlotID> slotsToErase;
+	for(const auto & [slotID, stack] : army->Slots())
+	{
+		if(stack && !vstd::contains(desiredSlots, slotID.getNum()))
+			slotsToErase.push_back(slotID);
+	}
+	for(const auto & slotID : slotsToErase)
+	{
+		EraseStack pack;
+		pack.army = armyID;
+		pack.slot = slotID;
+		applyEffectPack(gameHandler, pack);
+	}
+
+	for(const auto & entry : node.Vector())
+	{
+		const auto * experience = findField(entry, "experience");
+		if(!experience)
+			continue;
+		const SlotID slotID(static_cast<int>(requireInteger(entry, "slot")));
+		auto * current = army->getStackPtr(slotID);
+		if(!current)
+			throw std::runtime_error("VGT army experience slot is absent: " + std::to_string(slotID.getNum()));
+		const TExpType total = experience->Integer();
+		current->setTotalStackExperience(total);
+		current->nodeHasChanged();
+	}
+	army->nodeHasChanged();
+
+	if(dynamic_cast<const CGCreature *>(army) && army->Slots().size() == 1 && army->hasStackAtSlot(SlotID(0)))
+	{
+		const auto count = army->getStackPtr(SlotID(0))->getCount();
+		gameHandler.setObjPropertyValue(
+			armyID, ObjProperty::MONSTER_POWER, static_cast<int32_t>(count * 1000));
+	}
+}
+
 Handicap decodeHandicap(const JsonNode & node)
 {
 	Handicap result;
@@ -1744,58 +1828,7 @@ void applyInitialHeroArmyState(CGameHandler & gameHandler, const JsonNode & node
 		}
 	}
 
-	const CSimpleArmy desiredArmy = decodeSimpleArmy(requireField(node, "army"));
-	std::set<int> desiredSlots;
-	for(const auto & [slotID, stack] : desiredArmy.army)
-	{
-		desiredSlots.insert(slotID.getNum());
-		const auto desiredCreature = stack.first;
-		const auto desiredCount = stack.second;
-
-		if(!army->hasStackAtSlot(slotID))
-		{
-			InsertNewStack pack;
-			pack.army = heroID;
-			pack.slot = slotID;
-			pack.type = desiredCreature;
-			pack.count = desiredCount;
-			applyEffectPack(gameHandler, pack);
-			continue;
-		}
-
-		const auto * current = army->getStackPtr(slotID);
-		if(current->getCreatureID() != desiredCreature)
-		{
-			SetStackType pack;
-			pack.army = heroID;
-			pack.slot = slotID;
-			pack.type = desiredCreature;
-			applyEffectPack(gameHandler, pack);
-		}
-		if(current->getCount() != desiredCount)
-		{
-			ChangeStackCount pack;
-			pack.army = heroID;
-			pack.slot = slotID;
-			pack.mode = ChangeValueMode::ABSOLUTE;
-			pack.count = desiredCount;
-			applyEffectPack(gameHandler, pack);
-		}
-	}
-
-	std::vector<SlotID> slotsToErase;
-	for(const auto & [slotID, stack] : army->Slots())
-	{
-		if(stack && !vstd::contains(desiredSlots, slotID.getNum()))
-			slotsToErase.push_back(slotID);
-	}
-	for(const auto & slotID : slotsToErase)
-	{
-		EraseStack pack;
-		pack.army = heroID;
-		pack.slot = slotID;
-		applyEffectPack(gameHandler, pack);
-	}
+	applyArmyState(gameHandler, heroID, requireField(node, "army"));
 }
 
 void applyInitialState(CGameHandler & gameHandler, const JsonNode & header)
@@ -3182,6 +3215,19 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 				replaySemanticBattleCast(gameHandler, record.Struct().begin()->second, battleID, roster);
 				continue;
 			}
+			// A catapult decision names its acting unit; the wall-damage records that
+			// follow it use the same top-level key but are derived battle effects.
+			if(record.Struct().size() == 1 && record.Struct().begin()->first == "catapult" &&
+				hasField(record.Struct().begin()->second, "unit"))
+			{
+				replayReadableBattleAction(
+					gameHandler,
+					"catapult",
+					record.Struct().begin()->second,
+					battleID,
+					roster);
+				continue;
+			}
 			if(hasField(record, "event") || hasField(record, "attack"))
 				continue;
 			static const std::set<std::string> semanticEffects = {
@@ -3206,6 +3252,12 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 	else
 		replayEvents(events);
 
+	const BattleID liveBattleID(std::stoi(battleID));
+	if(gameHandler.gs->getBattle(liveBattleID))
+		gameHandler.battles->endBattleConfirm(liveBattleID);
+	if(gameHandler.gs->getBattle(liveBattleID))
+		throw std::runtime_error("VGT battle outcome did not finalize battle: " + battleID);
+
 	requireString(outcome, "result");
 	requireString(outcome, "winnerSide");
 	requireString(outcome, "winner");
@@ -3216,6 +3268,16 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 		throw std::runtime_error("VGT battle outcome survivors is not a mapping");
 	if(const auto * continuation = findField(outcome, "continuation"); continuation && !continuation->isStruct())
 		throw std::runtime_error("VGT battle outcome continuation is not a mapping");
+	const auto & armies = requireField(outcome, "armies");
+	if(!armies.isStruct())
+		throw std::runtime_error("VGT battle outcome armies is not a mapping");
+	for(const auto & [armyName, state] : armies.Struct())
+	{
+		applyArmyState(
+			gameHandler,
+			resolveObjectAlias(*gameHandler.gs, armyName),
+			state);
+	}
 	const auto * aftermath = findField(outcome, "aftermath");
 	if(!aftermath)
 		return;

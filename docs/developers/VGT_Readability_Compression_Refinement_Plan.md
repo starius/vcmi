@@ -183,16 +183,23 @@ Represent only actual creature pools. Do not write seven positional town levels
 filled with empty lists.
 
 ```yaml
-- available:
-    town/red/froisan-conflux@7.5:
-      pixie: 18
-      airElemental: 1
-      waterElemental: 0
+- availability:
+    towns:
+      town/red/froisan-conflux@7.5: { pixie: 18, airElemental: 1 }
+    dwellings:
+      fire-lake@105.6.1: { efreet: 2 }
 ```
 
 The content definition supplies absent, unavailable dwelling levels. A pool that
 permits base and upgraded creatures must retain that shared-pool relationship in a
 compact explicit form; it must not be flattened into two independent counts.
+
+The day-one inventories are initial state, so collect all town and map-dwelling
+inventories into this single world record. On later weeks, retain town `growth` and
+any nonstandard or data-dependent dwelling result. Omit the ordinary fixed weekly
+refresh of a map dwelling when its exact result follows from the referenced content
+definition; replay regenerates it. Refugee Camps and scripted or dynamically changed
+dwellings are examples whose realized availability must remain explicit.
 
 ### 7. Ordered Recruitment Batches
 
@@ -440,12 +447,17 @@ outcome:
       attacker/gnoll-marauders: 368
   survivors:
     attacker/pixies: 14
+  armies:
+    red/grindan: [{ slot: 0, creature: pixie, count: 14, experience: 12880 }]
   removeDefender: true
 ```
 
 Omit empty artifact moves and repeated winner/loser spellings. Preserve surrender,
 retreat, hero defeat, artifacts, necromancy, creature transformation, and any other
-non-default outcome explicitly.
+non-default outcome explicitly. Record each surviving strategic participant army as
+absolute slots after battle resolution, including total stack experience. This keeps
+the strategic result sufficient for both tactical replay and
+battle fast-forwarding, including retreat outcomes that consolidate battle stacks.
 
 ### 17. Sparse Rewardable Refreshes
 

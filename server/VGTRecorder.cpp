@@ -1288,6 +1288,22 @@ std::string armyState(const CCreatureSet & army)
 	return flowList(entries);
 }
 
+std::string strategicArmyState(const CCreatureSet & army)
+{
+	std::vector<std::string> entries;
+	for(const auto & [slotID, stack] : army.Slots())
+	{
+		if(!stack)
+			continue;
+		std::string entry = "{ slot: " + slot(slotID) +
+			", creature: " + creature(stack->getCreatureID()) +
+			", count: " + std::to_string(stack->getCount()) +
+			", experience: " + std::to_string(stack->getTotalExperience());
+		entries.push_back(entry + " }");
+	}
+	return flowList(entries);
+}
+
 std::string initialHeroState(const CGameState & gameState, const CGHeroInstance & hero)
 {
 	std::vector<std::string> artifactEntries;
@@ -1438,6 +1454,15 @@ bool isStandardDwellingRefresh(const CGameState & gameState, const SetAvailableC
 			return false;
 	}
 	return true;
+}
+
+std::string singleLineJson(const JsonNode & value)
+{
+	std::string result = value.toCompactString();
+	boost::algorithm::erase_all(result, "\n");
+	boost::algorithm::erase_all(result, "\r");
+	boost::algorithm::erase_all(result, "\t");
+	return result;
 }
 
 std::string stackExperienceValues(const std::map<SlotID, si64> & values)
@@ -3234,16 +3259,16 @@ public:
 			records.push_back("refresh: { " + boost::algorithm::join(entries, ", ") + " }");
 		}
 
-		if(!pack.availableCreatures.empty())
+		if(pack.day > 1 && !pack.availableCreatures.empty())
 		{
 			std::vector<std::string> towns;
 			std::vector<std::string> dwellings;
 			for(const auto & availability : pack.availableCreatures)
 			{
 				const bool isTown = dynamic_cast<const CGTownInstance *>(gameState.getMap().getObject(availability.tid));
-				if(pack.day > 1 && !isTown && isStandardDwellingRefresh(gameState, availability))
+				if(!isTown && isStandardDwellingRefresh(gameState, availability))
 					continue;
-				const auto pools = pack.day <= 1 || !isTown
+				const auto pools = !isTown
 					? sparseCreaturePools(availability.creatures)
 					: creatureGrowth(gameState, availability);
 				if(pools != "{  }")
@@ -3252,22 +3277,10 @@ public:
 					scope.push_back(objectAlias(gameState, availability.tid) + ": " + pools);
 				}
 			}
-			if(pack.day <= 1 && (!towns.empty() || !dwellings.empty()))
-			{
-				std::vector<std::string> scopes;
-				if(!towns.empty())
-					scopes.push_back("towns: { " + boost::algorithm::join(towns, ", ") + " }");
-				if(!dwellings.empty())
-					scopes.push_back("dwellings: { " + boost::algorithm::join(dwellings, ", ") + " }");
-				records.push_back("availability: { " + boost::algorithm::join(scopes, ", ") + " }");
-			}
-			else if(pack.day > 1)
-			{
-				if(!towns.empty())
-					records.push_back("growth: { " + boost::algorithm::join(towns, ", ") + " }");
-				for(const auto & dwelling : dwellings)
-					records.push_back("available: { " + dwelling + " }");
-			}
+			if(!towns.empty())
+				records.push_back("growth: { " + boost::algorithm::join(towns, ", ") + " }");
+			for(const auto & dwelling : dwellings)
+				records.push_back("available: { " + dwelling + " }");
 		}
 
 		if(pack.specialWeek != EWeekType::NORMAL || pack.creatureid != CreatureID::NONE)
@@ -3759,7 +3772,7 @@ void VGTRecorder::startTurnDocument(const CGameState & gameState, PlayerColor pl
 		return;
 
 	flushPendingHeroScene();
-	flushPendingBattle();
+	flushPendingBattle(gameState);
 	const auto calendar = gameState.getCalendar();
 	output << "---\n";
 	output << "turn: { date: " << calendarDate(calendar) << ", player: " << color(player) << " }\n";
@@ -3775,7 +3788,7 @@ void VGTRecorder::startWorldDocument(const CGameState & gameState, const std::st
 		return;
 
 	flushPendingHeroScene();
-	flushPendingBattle();
+	flushPendingBattle(gameState);
 	const auto calendar = phase == "newDay" ? gameState.getCalendar().nextDay() : gameState.getCalendar();
 	output << "---\n";
 	output << "world: { date: " << calendarDate(calendar) << ", phase: " << phase << " }\n";
@@ -4213,11 +4226,21 @@ std::string battleFlowRecord(const std::string & kind, const std::vector<std::st
 }
 }
 
-void VGTRecorder::flushPendingBattle()
+void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 {
 	if(!pendingBattle)
 		return;
 	flushPendingHeroScene();
+	if(pendingBattle->ended)
+	{
+		pendingBattle->armies.clear();
+		for(const auto armyID : pendingBattle->armyIDs)
+		{
+			const auto * army = dynamic_cast<const CArmedInstance *>(gameState.getMap().getObject(armyID));
+			if(army)
+				pendingBattle->armies[objectAlias(gameState, armyID)] = strategicArmyState(*army);
+		}
+	}
 
 	output << "  - battle:\n";
 	output << "      id: " << pendingBattle->id << "\n";
@@ -4650,7 +4673,8 @@ void VGTRecorder::flushPendingBattle()
 		writeYamlRecord(output, eventIndent, pendingBattle->events[index]);
 		++index;
 	}
-	if(!pendingBattle->outcome.empty() || !pendingBattle->manaChanges.empty() || !pendingBattle->aftermath.empty())
+	if(!pendingBattle->outcome.empty() || !pendingBattle->manaChanges.empty() ||
+		!pendingBattle->armies.empty() || !pendingBattle->aftermath.empty())
 	{
 		output << "      outcome:\n";
 		for(const auto & field : pendingBattle->outcome)
@@ -4662,6 +4686,13 @@ void VGTRecorder::flushPendingBattle()
 			output << "        continuation: " << pendingBattle->continuation << "\n";
 		if(!pendingBattle->manaChanges.empty())
 			output << "        mana: " << namedIntegerMap(pendingBattle->manaChanges) << "\n";
+		if(pendingBattle->ended)
+		{
+			std::vector<std::string> armies;
+			for(const auto & [army, values] : pendingBattle->armies)
+				armies.push_back(yamlString(army) + ": " + values);
+			output << "        armies: { " + boost::algorithm::join(armies, ", ") + " }\n";
+		}
 		if(!pendingBattle->aftermath.empty())
 		{
 			output << "        aftermath:\n";
@@ -4692,6 +4723,42 @@ void VGTRecorder::flushPendingHeroScene()
 	pendingHeroScene.reset();
 }
 
+void VGTRecorder::collectInitialAvailability(const CGameState & gameState, const SetAvailableCreatures & availability)
+{
+	const std::string pools = sparseCreaturePools(availability.creatures);
+	if(pools == "{  }")
+		return;
+
+	const std::string object = objectAlias(gameState, availability.tid);
+	if(dynamic_cast<const CGTownInstance *>(gameState.getMap().getObject(availability.tid)))
+		pendingInitialTownAvailability[object] = pools;
+	else
+		pendingInitialDwellingAvailability[object] = pools;
+}
+
+void VGTRecorder::flushPendingInitialAvailability(const CGameState & gameState)
+{
+	if(pendingInitialTownAvailability.empty() && pendingInitialDwellingAvailability.empty())
+		return;
+
+	std::vector<std::string> scopes;
+	for(const auto & [scopeName, availability] : {
+		std::pair{"towns", &pendingInitialTownAvailability},
+		std::pair{"dwellings", &pendingInitialDwellingAvailability}})
+	{
+		if(availability->empty())
+			continue;
+		std::vector<std::string> entries;
+		for(const auto & [object, pools] : *availability)
+			entries.push_back(object + ": " + pools);
+		scopes.push_back(std::string(scopeName) + ": { " + boost::algorithm::join(entries, ", ") + " }");
+	}
+
+	pendingInitialTownAvailability.clear();
+	pendingInitialDwellingAvailability.clear();
+	writeActionLine(gameState, "availability: { " + boost::algorithm::join(scopes, ", ") + " }");
+}
+
 void VGTRecorder::writeActionLine(const CGameState & gameState, const std::string & line)
 {
 	if(line.empty())
@@ -4706,13 +4773,14 @@ void VGTRecorder::writeActionLine(const CGameState & gameState, const std::strin
 		flushPendingHeroScene();
 		if(!pendingBattle || pendingBattle->id != battleRecord->battleID)
 		{
-			flushPendingBattle();
-			pendingBattle = PendingBattle{
-				battleRecord->battleID,
-				battleParticipant(gameState, BattleID(std::stoi(battleRecord->battleID)), BattleSide::ATTACKER),
-				battleParticipant(gameState, BattleID(std::stoi(battleRecord->battleID)), BattleSide::DEFENDER),
-				battleRoster(gameState, BattleID(std::stoi(battleRecord->battleID))),
-				{}, {}, {}, {}, {}, {}, {}, false};
+			flushPendingBattle(gameState);
+			pendingBattle.emplace();
+			pendingBattle->id = battleRecord->battleID;
+			pendingBattle->attacker = battleParticipant(
+				gameState, BattleID(std::stoi(battleRecord->battleID)), BattleSide::ATTACKER);
+			pendingBattle->defender = battleParticipant(
+				gameState, BattleID(std::stoi(battleRecord->battleID)), BattleSide::DEFENDER);
+			pendingBattle->units = battleRoster(gameState, BattleID(std::stoi(battleRecord->battleID)));
 		}
 		if(pendingBattle->units.empty())
 		{
@@ -4721,6 +4789,15 @@ void VGTRecorder::writeActionLine(const CGameState & gameState, const std::strin
 				gameState, BattleID(std::stoi(battleRecord->battleID)), BattleSide::ATTACKER);
 			pendingBattle->defender = battleParticipant(
 				gameState, BattleID(std::stoi(battleRecord->battleID)), BattleSide::DEFENDER);
+		}
+		if(const auto * battle = gameState.getBattle(BattleID(std::stoi(battleRecord->battleID))))
+		{
+			for(const auto side : {BattleSide::ATTACKER, BattleSide::DEFENDER})
+			{
+				const auto * army = battle->battleGetArmyObject(side);
+				if(army && !vstd::contains(pendingBattle->armyIDs, army->id))
+					pendingBattle->armyIDs.push_back(army->id);
+			}
 		}
 		pendingBattle->events.push_back(battleRecord->record);
 		return;
@@ -5203,7 +5280,7 @@ void VGTRecorder::recordDecision(const CGameState & gameState, CPackForServer & 
 			}
 			flushPendingEncounter(gameState);
 			if(pendingBattle)
-				flushPendingBattle();
+				flushPendingBattle(gameState);
 			if(pending->second.kind == "levelUp" && reply->reply && *reply->reply >= 0 &&
 				static_cast<size_t>(*reply->reply) < pending->second.choices.size())
 			{
@@ -5233,7 +5310,7 @@ void VGTRecorder::recordDecision(const CGameState & gameState, CPackForServer & 
 		return;
 	}
 	if(!dynamic_cast<MakeAction *>(&pack))
-		flushPendingBattle();
+		flushPendingBattle(gameState);
 	suppressDerivedEffects = false;
 	if(!dynamic_cast<TradeOnMarketplace *>(&pack))
 		flushPendingTrade(gameState);
@@ -5436,7 +5513,7 @@ void VGTRecorder::recordTimerEndTurn(const CGameState & gameState, PlayerColor p
 	flushPendingMove(gameState);
 	flushPendingRecruit(gameState);
 	flushPendingTrade(gameState);
-	flushPendingBattle();
+	flushPendingBattle(gameState);
 	writeActionLine(gameState, "endTurn: { actor: timer/" + color(player) + " }");
 }
 
@@ -5549,8 +5626,8 @@ void VGTRecorder::recordEffect(CGameHandler & gameHandler, CPackForClient & pack
 		pendingBattle->survivors = battleSurvivors(gameState, result->battleID);
 		pendingBattle->createdUnits = battleCreatedUnits(gameState, result->battleID);
 		if(gameHandler.randomizer)
-			pendingBattle->continuation = gameHandler.randomizer->toVGTBattleJson(
-				battleRandomizerParticipants(gameState, result->battleID)).toCompactString();
+			pendingBattle->continuation = singleLineJson(gameHandler.randomizer->toVGTBattleJson(
+				battleRandomizerParticipants(gameState, result->battleID)));
 		pendingBattle->outcome.push_back("result: " + battleResult(result->result));
 		pendingBattle->outcome.push_back("winnerSide: " + battleSide(result->winner));
 		std::vector<std::string> casualties;
@@ -5795,9 +5872,20 @@ void VGTRecorder::recordEffect(CGameHandler & gameHandler, CPackForClient & pack
 		dynamic_cast<PlayerEndsTurn *>(&pack) || dynamic_cast<NewTurn *>(&pack);
 	if(documentBoundary)
 	{
+		flushPendingInitialAvailability(gameState);
 		flushPendingEncounter(gameState);
 		flushPendingTrade(gameState);
-		flushPendingBattle();
+		flushPendingBattle(gameState);
+	}
+	if(auto * availability = dynamic_cast<SetAvailableCreatures *>(&pack); availability && !currentTurnPlayer)
+	{
+		if(gameState.getCalendar().getCurrentDay() == 1)
+		{
+			collectInitialAvailability(gameState, *availability);
+			return;
+		}
+		if(isStandardDwellingRefresh(gameState, *availability))
+			return;
 	}
 	if(suppressDerivedEffects && !documentBoundary)
 		return;
@@ -5852,8 +5940,15 @@ void VGTRecorder::recordEffect(CGameHandler & gameHandler, CPackForClient & pack
 		}
 		startTurnDocument(gameState, start->player);
 	}
-	else if(dynamic_cast<NewTurn *>(&pack))
+	else if(auto * newTurn = dynamic_cast<NewTurn *>(&pack))
 	{
+		if(newTurn->day <= 1)
+		{
+			pendingInitialTownAvailability.clear();
+			pendingInitialDwellingAvailability.clear();
+			for(const auto & availability : newTurn->availableCreatures)
+				collectInitialAvailability(gameState, availability);
+		}
 		flushPendingMove(gameState);
 		flushPendingRecruit(gameState);
 		flushPendingTrade(gameState);
