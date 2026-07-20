@@ -2272,26 +2272,81 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 		const auto & armies = requireField(decision, "armies");
 		if(!armies.isStruct() || armies.Struct().empty())
 			throw std::runtime_error("VGT arrangeArmies action has no armies");
+		struct UndeadMoraleSnapshot
+		{
+			CArmedInstance * army;
+			std::shared_ptr<Bonus> bonus;
+			size_t index;
+		};
+		std::map<ObjectInstanceID, UndeadMoraleSnapshot> undeadMoraleBefore;
+		const auto undeadMoraleSelector = Selector::source(
+			BonusSource::ARMY, BonusCustomSource::undeadMoraleDebuff).And(Selector::type()(BonusType::MORALE));
+		for(const auto & [army, state] : armies.Struct())
+		{
+			const ObjectInstanceID armyID = resolveObjectAlias(gameHandler.gameState(), army);
+			auto * armed = gameHandler.gs->getArmyInstance(armyID);
+			if(!armed)
+				throw std::runtime_error("VGT arrangeArmies references a non-army object");
+			const auto bonus = armed->getLocalBonus(undeadMoraleSelector);
+			size_t index = armed->getExportedBonusList().size();
+			if(bonus)
+			{
+				index = 0;
+				for(const auto & candidate : armed->getExportedBonusList())
+				{
+					if(candidate == bonus)
+						break;
+					++index;
+				}
+			}
+			undeadMoraleBefore.emplace(armyID, UndeadMoraleSnapshot{armed, bonus, index});
+		}
 		for(const auto & [army, state] : armies.Struct())
 			applyArmyState(gameHandler, resolveObjectAlias(gameHandler.gameState(), army), state);
+		std::set<ObjectInstanceID> refreshedArmies;
 		if(const auto * refreshed = findField(decision, "refreshUndeadMorale"))
 		{
 			if(!refreshed->isVector())
 				throw std::runtime_error("VGT arrangeArmies refreshUndeadMorale must be a list");
 			for(const auto & entry : refreshed->Vector())
 			{
-				auto * army = gameHandler.gs->getArmyInstance(
-					resolveObjectAlias(gameHandler.gameState(), entry.String()));
+				const ObjectInstanceID armyID = resolveObjectAlias(gameHandler.gameState(), entry.String());
+				refreshedArmies.insert(armyID);
+				auto * army = gameHandler.gs->getArmyInstance(armyID);
 				if(!army)
 					throw std::runtime_error("VGT arrangeArmies refreshUndeadMorale references a non-army object");
-				auto bonus = army->getLocalBonus(
-					Selector::source(BonusSource::ARMY, BonusCustomSource::undeadMoraleDebuff)
-						.And(Selector::type()(BonusType::MORALE)));
+				auto bonus = army->getLocalBonus(undeadMoraleSelector);
 				if(!bonus)
 					throw std::runtime_error("VGT arrangeArmies cannot refresh an absent undead morale modifier");
 				army->removeBonus(bonus);
 				army->addNewBonus(bonus);
 			}
+		}
+		for(auto & [armyID, snapshot] : undeadMoraleBefore)
+		{
+			if(refreshedArmies.contains(armyID))
+				continue;
+			auto current = snapshot.army->getLocalBonus(undeadMoraleSelector);
+			if(!snapshot.bonus)
+			{
+				if(current)
+					snapshot.army->removeBonus(current);
+				continue;
+			}
+			if(!current)
+				continue;
+			auto & bonuses = snapshot.army->getExportedBonusList();
+			size_t currentIndex = 0;
+			for(const auto & candidate : bonuses)
+			{
+				if(candidate == current)
+					break;
+				++currentIndex;
+			}
+			if(currentIndex >= bonuses.size() || currentIndex == snapshot.index)
+				continue;
+			bonuses.erase(static_cast<int>(currentIndex));
+			bonuses.insert(bonuses.begin() + std::min(snapshot.index, bonuses.size()), 1, current);
 		}
 		return;
 	}
