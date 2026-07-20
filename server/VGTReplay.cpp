@@ -3865,10 +3865,12 @@ void replaySemanticBattleAttack(
 				", adjacent=[" + boost::algorithm::join(adjacent, ", ") +
 				"], live positions=[" + boost::algorithm::join(positions, ", ") + "]");
 		}
+		const std::string_view message(error.what());
+		const bool interruptedMovement =
+			message.find("battle action was rejected") != std::string_view::npos ||
+			message.find("Movement terminated abnormally") != std::string_view::npos;
 		const bool canRestoreRecordedPath =
-			!ranged &&
-			std::string_view(error.what()).find("battle action was rejected") != std::string_view::npos &&
-			stack && stack->getPosition().toInt() != from;
+			!ranged && interruptedMovement && stack && stack->getPosition().toInt() != from;
 		if(!canRestoreRecordedPath)
 			throw;
 
@@ -3887,7 +3889,20 @@ void replaySemanticBattleAttack(
 		moved.tilesToMove.insert(BattleHex(from));
 		moved.distance = static_cast<int>(moved.tilesToMove.size());
 		gameHandler.sendAndApply(moved);
-		replayReadableBattleAction(gameHandler, "walkAndAttack", action, battleID, roster);
+		try
+		{
+			replayReadableBattleAction(gameHandler, "walkAndAttack", action, battleID, roster);
+		}
+		catch(const std::runtime_error & retryError)
+		{
+			battle = gameHandler.gs->getBattle(BattleID(std::stoi(battleID)));
+			stack = battle ? battle->battleGetStackByID(stackID, false) : nullptr;
+			throw std::runtime_error(
+				std::string(retryError.what()) +
+				"; retry position=" + std::to_string(stack ? stack->getPosition().toInt() : -1) +
+				", occupied=" + std::to_string(stack ? stack->occupiedHex().toInt() : -1) +
+				", recorded from=" + std::to_string(from));
+		}
 	}
 	applyRecordedBattleDamage(
 		gameHandler,
@@ -4173,6 +4188,7 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 		throw std::runtime_error("VGT battle block events field is not a list");
 	const auto & outcome = requireField(node, "outcome");
 	bool tacticalFinishedEarly = false;
+	std::string currentEvent;
 	std::function<void(const JsonNode &)> replayEvents;
 	replayEvents = [&](const JsonNode & eventList)
 	{
@@ -4181,6 +4197,7 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 		bool replayedCatapultAction = false;
 		for(const JsonNode & record : eventList.Vector())
 		{
+			currentEvent = record.toCompactString();
 			if(tacticalFinishedEarly)
 				return;
 			const auto * liveBattle = gameHandler.gs->getBattle(BattleID(std::stoi(battleID)));
@@ -4320,7 +4337,8 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 		}
 		catch(const std::exception & error)
 		{
-			throw std::runtime_error("tactical events: " + std::string(error.what()));
+			throw std::runtime_error(
+				"tactical event " + currentEvent + ": " + std::string(error.what()));
 		}
 
 		if(const auto * battle = gameHandler.gs->getBattle(BattleID(std::stoi(battleID))))
