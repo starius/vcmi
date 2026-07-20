@@ -11,6 +11,7 @@
 #include <limits>
 
 #include "Nullkiller.h"
+#include "../AIUtility.h"
 #include "../../../lib/entities/artifact/CArtifact.h"
 #include "../../../lib/entities/ResourceTypeHandler.h"
 #include "../../../lib/mapObjects/CGResource.h"
@@ -118,6 +119,7 @@ EvaluationContext::EvaluationContext(const Nullkiller* aiNk)
 	threatTurns(INT_MAX),
 	involvesSailing(false),
 	requiresBattle(false),
+	targetRequiresBattle(false),
 	isTradeBuilding(false),
 	isExchange(false),
 	isArmyUpgrade(false),
@@ -831,10 +833,15 @@ public:
 		// TODO: Mircea: See how we can get some kind of balance between MAINs in terms of army delivery
 		// See: GatherArmyBehavior::deliverArmyToHero
 		const uint64_t additionalArmyStrength = heroExchange.getReinforcementArmyStrength(evaluationContext.evaluator.aiNk);
-		const float additionalArmyRatio = additionalArmyStrength / heroExchange.hero->getArmyStrength();
+		const auto receiverArmyStrength = heroExchange.hero->getArmyStrength();
+		const float additionalArmyRatio = receiverArmyStrength > 0 ? static_cast<float>(additionalArmyStrength) / receiverArmyStrength : 0.0f;
+		const bool deliversArmyToMain = evaluationContext.evaluator.aiNk->heroManager->getHeroRoleOrDefaultInefficient(heroExchange.hero) == HeroRole::MAIN
+			&& evaluationContext.evaluator.aiNk->heroManager->isMeaningfulArmyCarrier(heroExchange.exchangePath.targetHero);
 
 		evaluationContext.addNonCriticalStrategicalValue(additionalArmyRatio);
 		evaluationContext.armyGrowth = additionalArmyStrength;
+		if(deliversArmyToMain && heroExchange.exchangePath.turn() <= 1)
+			evaluationContext.armyGrowth *= 3;
 		evaluationContext.movementCost = heroExchange.exchangePath.movementCost();
 		evaluationContext.danger = heroExchange.exchangePath.getTotalDanger();
 		evaluationContext.heroRole = giverHeroRole;
@@ -1049,6 +1056,7 @@ public:
 
 		vstd::amax(evaluationContext.danger, path.getTotalDanger());
 		evaluationContext.requiresBattle = evaluationContext.requiresBattle || path.requiresBattle();
+		evaluationContext.targetRequiresBattle = evaluationContext.targetRequiresBattle || path.targetObjectArmyLoss > 0;
 		evaluationContext.movementCost += path.movementCost();
 		evaluationContext.closestWayRatio = chain.closestWayRatio;
 
@@ -1660,6 +1668,46 @@ float PriorityEvaluator::evaluate(Goals::TSubgoal task, int priorityTier)
 				// 	return 0;
 
 				const auto requiresBattle = evaluationContext.requiresBattle || evaluationContext.armyLossRatio > 0;
+				const auto targetRequiresBattle = evaluationContext.targetRequiresBattle;
+				const bool meaningfulArmyCarrier = task->hero && aiNk->heroManager->isMeaningfulArmyCarrier(task->hero);
+				const std::string tempLogPriorityTier = std::to_string(priorityTier);
+				const std::string tempLogHeroName = task->hero ? task->hero->getObjectName() : "<no hero>";
+				const std::string tempLogHeroRole = evaluationContext.heroRole == MAIN ? "MAIN" : "SCOUT";
+				const std::string tempLogObjectName = targetObject ? targetObject->getObjectName() : "<no object>";
+				const std::string tempLogObjectPos = targetObject ? targetObject->visitablePos().toString() : task->tile.toString();
+				const std::string tempLogBattleReason = targetRequiresBattle
+					? "target requires battle"
+					: "path/army loss is not target guard";
+				const bool tempLogHasVisitTarget = task->hero && targetObject;
+				if(!requiresBattle
+					&& !evaluationContext.isExchange
+					&& evaluationContext.heroRole != MAIN
+					&& meaningfulArmyCarrier)
+				{
+					const auto paths = aiNk->getPathsInfo(task->hero);
+					for(const auto * hero : aiNk->cc->getHeroesInfo())
+					{
+						if(hero == task->hero)
+							continue;
+						if(aiNk->heroManager->getHeroRoleOrDefaultInefficient(hero) != HeroRole::MAIN)
+							continue;
+						if(!paths)
+							continue;
+
+						const auto pathNode = paths->getPathInfo(hero->visitablePos());
+						if(pathNode->reachable() && pathNode->turns <= 1)
+						{
+							if(tempLogHasVisitTarget)
+								logGlobal->warn("TEMP_LOG priorityTier " + tempLogPriorityTier
+									+ ", hero " + tempLogHeroName
+									+ " role " + tempLogHeroRole
+									+ " rejects " + task->toString()
+									+ " because MAIN " + hero->getObjectName() + " can receive army within one turn");
+							return 0;
+						}
+					}
+				}
+
 				score += evaluationContext.strategicalValue * 1000;
 				if(evaluationContext.explorePriority > 0)
 				{
@@ -1675,60 +1723,155 @@ float PriorityEvaluator::evaluate(Goals::TSubgoal task, int priorityTier)
 					// try to balance other resources vs gold, especially 2500 gold treasures
 					score += evaluationContext.goldReward > 500 ? evaluationContext.goldReward / 2.0f : evaluationContext.goldReward * 2.0f;
 
-					if(evaluationContext.heroRole == MAIN)
+					if(evaluationContext.heroRole == MAIN || meaningfulArmyCarrier)
 					{
-						bool scoutCanReachResourceThisTurn = false;
-						if(!requiresBattle && targetResourceType.has_value())
+						const auto missingNow = aiNk->buildAnalyzer->getMissingResourcesNow();
+						const auto freeResources = aiNk->getFreeResources();
+						const std::string tempLogResourceStock = targetResourceType.has_value()
+							? ", stock of target resource=" + std::to_string(freeResources[*targetResourceType])
+							: ", free resources=" + freeResources.toString();
+						const auto isCriticalResource = [&](GameResID resType) -> bool
 						{
-							const auto targetTile = targetObject->visitablePos();
+							if(missingNow[resType] <= 0)
+								return false;
 
-							// Only same-turn SCOUT pickup is certain enough to make MAIN abandon this target.
-							for(const auto * hero : aiNk->cc->getHeroesInfo())
+							if(resType == GameResID::GOLD)
+								return freeResources[resType] < GameConstants::HERO_GOLD_COST
+									&& aiNk->buildAnalyzer->isGoldPressureOverMax();
+
+							return freeResources[resType] == 0;
+						};
+
+						bool targetGivesCriticalResource = targetResourceType.has_value() && isCriticalResource(*targetResourceType);
+						if(!targetGivesCriticalResource && isWeeklyRevisitable(aiNk->playerID, targetObject))
+						{
+							auto rewardable = dynamic_cast<const Rewardable::Interface *>(targetObject);
+							if(rewardable)
 							{
-								if(hero == task->hero)
-									continue;
-								if(aiNk->getHeroLockedReason(hero) != HeroLockedReason::NOT_LOCKED)
-									continue;
-								if(aiNk->heroManager->getHeroRoleOrDefaultInefficient(hero) != HeroRole::SCOUT)
-									continue;
-
-								auto paths = aiNk->getPathsInfo(hero);
-								if(!paths)
-									continue;
-
-								auto pathNode = paths->getPathInfo(targetTile);
-								if(pathNode->reachable() && pathNode->turns == 0)
+								for(int index : rewardable->getAvailableRewards(task->hero, Rewardable::EEventType::EVENT_FIRST_VISIT))
 								{
-									scoutCanReachResourceThisTurn = true;
-									break;
+									for(TResources::nziterator it(rewardable->configuration.info[index].reward.resources); it.valid(); it++)
+									{
+										if(isCriticalResource(it->resType))
+										{
+											targetGivesCriticalResource = true;
+											break;
+										}
+									}
+
+									if(targetGivesCriticalResource)
+										break;
 								}
 							}
 						}
 
-						if(scoutCanReachResourceThisTurn)
+						if(evaluationContext.heroRole != MAIN)
 						{
-							logAi->trace(
-								"priorityTier %d, MAIN yields %s at %s because a SCOUT can reach it this turn",
-								priorityTier,
-								targetObject->getObjectName(),
-								targetObject->visitablePos().toString());
-							return 0;
+							if(!targetRequiresBattle && !targetGivesCriticalResource && isWeeklyRevisitable(aiNk->playerID, targetObject))
+							{
+								if(tempLogHasVisitTarget)
+									logGlobal->warn("TEMP_LOG priorityTier " + tempLogPriorityTier
+										+ ", hero " + tempLogHeroName
+										+ " role " + tempLogHeroRole
+										+ " rejects visit of " + tempLogObjectName + " at " + tempLogObjectPos
+										+ " because reward is non-critical and weekly revisitable" + tempLogResourceStock);
+								return 0;
+							}
+							if(tempLogHasVisitTarget)
+								logGlobal->warn("TEMP_LOG priorityTier " + tempLogPriorityTier
+									+ ", hero " + tempLogHeroName
+									+ " role " + tempLogHeroRole
+									+ " allows resource/visit " + tempLogObjectName + " at " + tempLogObjectPos
+									+ " because reward is critical or not weekly-blocked");
 						}
-
-						if(requiresBattle)
-							// Encourage MAIN to fight for crypts and similar
-							score *= 2;
-						else if(targetResourceType.has_value()
-							&& aiNk->buildAnalyzer->getMissingResourcesNow()[*targetResourceType] > 0
-							&& ((*targetResourceType == GameResID::GOLD
-								&& aiNk->getFreeResources()[*targetResourceType] < GameConstants::HERO_GOLD_COST
-								&& aiNk->buildAnalyzer->isGoldPressureOverMax())
-								|| (*targetResourceType != GameResID::GOLD && aiNk->getFreeResources()[*targetResourceType] == 0)))
-							// Critical no-battle resources are still worth MAIN movement if waiting blocks builds or hero hiring.
-							score *= 2;
 						else
-							// Discourage MAIN to waste time picking resources if they don't require a fight
-							score *= 0.33;
+						{
+							bool scoutCanReachResourceThisTurn = false;
+							if(!targetRequiresBattle && targetResourceType.has_value())
+							{
+								const auto targetTile = targetObject->visitablePos();
+
+								// Only same-turn SCOUT pickup is certain enough to make MAIN abandon this target.
+								for(const auto * hero : aiNk->cc->getHeroesInfo())
+								{
+									if(hero == task->hero)
+										continue;
+									if(aiNk->getHeroLockedReason(hero) != HeroLockedReason::NOT_LOCKED)
+										continue;
+									if(aiNk->heroManager->getHeroRoleOrDefaultInefficient(hero) != HeroRole::SCOUT)
+										continue;
+
+									auto paths = aiNk->getPathsInfo(hero);
+									if(!paths)
+										continue;
+
+									auto pathNode = paths->getPathInfo(targetTile);
+									if(pathNode->reachable() && pathNode->turns == 0)
+									{
+										scoutCanReachResourceThisTurn = true;
+										break;
+									}
+								}
+							}
+
+							if(scoutCanReachResourceThisTurn)
+							{
+								if(tempLogHasVisitTarget)
+									logGlobal->warn("TEMP_LOG priorityTier " + tempLogPriorityTier
+										+ ", hero " + tempLogHeroName
+										+ " role MAIN rejects resource " + tempLogObjectName + " at " + tempLogObjectPos
+										+ " because a SCOUT can reach it this turn");
+								return 0;
+							}
+
+							if(targetRequiresBattle)
+							{
+								if(tempLogHasVisitTarget)
+									logGlobal->warn("TEMP_LOG priorityTier " + tempLogPriorityTier
+										+ ", hero " + tempLogHeroName
+										+ " role MAIN accepts visit of " + tempLogObjectName + " at " + tempLogObjectPos
+										+ " because " + tempLogBattleReason);
+								// Encourage MAIN to fight for crypts and similar
+								score *= 2;
+							}
+							else if(targetGivesCriticalResource)
+							{
+								if(tempLogHasVisitTarget)
+									logGlobal->warn("TEMP_LOG priorityTier " + tempLogPriorityTier
+										+ ", hero " + tempLogHeroName
+										+ " role MAIN accepts resource/visit " + tempLogObjectName + " at " + tempLogObjectPos
+										+ " because reward is critical");
+								// Critical no-battle resources are still worth MAIN movement if waiting blocks builds or hero hiring.
+								score *= 2;
+							}
+							else if(meaningfulArmyCarrier && isWeeklyRevisitable(aiNk->playerID, targetObject))
+							{
+								if(tempLogHasVisitTarget)
+									logGlobal->warn("TEMP_LOG priorityTier " + tempLogPriorityTier
+										+ ", hero " + tempLogHeroName
+										+ " role MAIN rejects visit of " + tempLogObjectName + " at " + tempLogObjectPos
+										+ " because army carrier should skip non-critical weekly reward" + tempLogResourceStock);
+								return 0;
+							}
+							else
+							{
+								if(tempLogHasVisitTarget)
+									logGlobal->warn("TEMP_LOG priorityTier " + tempLogPriorityTier
+										+ ", hero " + tempLogHeroName
+										+ " role MAIN discourages resource/visit " + tempLogObjectName + " at " + tempLogObjectPos
+										+ " because reward is non-critical" + tempLogResourceStock);
+								// Discourage MAIN to waste time picking resources if they don't require a fight
+								score *= 0.33;
+							}
+						}
+					}
+					else
+					{
+						if(tempLogHasVisitTarget)
+							logGlobal->warn("TEMP_LOG priorityTier " + tempLogPriorityTier
+								+ ", hero " + tempLogHeroName
+								+ " role " + tempLogHeroRole
+								+ " uses default reward scoring for resource/visit " + tempLogObjectName + " at " + tempLogObjectPos);
 					}
 				}
 
