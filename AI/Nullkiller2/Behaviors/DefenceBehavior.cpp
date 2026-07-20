@@ -410,7 +410,6 @@ void DefenceBehavior::evaluateDefence(Goals::TGoalVec & tasks, const CGTownInsta
 	// TODO: Mircea: Why don't we check if there's any danger in threadNode? Maybe map is still unexplored and no danger
 	// or simply no one is around
 	threats.push_back(threatNode.fastestDanger); // no guarantee that fastest danger will be there
-
 	for(const auto & threat : threats)
 		handleGarrisonReturnCounterAttack(town, threat, threatNode.maximumDanger, aiNk, tasks);
 
@@ -484,6 +483,19 @@ void DefenceBehavior::evaluateDefence(Goals::TGoalVec & tasks, const CGTownInsta
 				path.toString()
 			);
 #endif
+
+			const auto * releasedDefender =
+				path.targetHero == town->getVisitingHero() || path.targetHero == town->getGarrisonHero()
+				? path.targetHero
+				: nullptr;
+
+			if(aiNk->isPathRejected(path, releasedDefender))
+			{
+#if NK2AI_TRACE_LEVEL >= 1
+				logAi->trace("Can not move %s to defend town %s. Path is locked.", path.targetHero->getObjectName(), town->getObjectName());
+#endif
+				continue;
+			}
 
 			const auto townDefenseStrength = estimateTownMobileDefence(town);
 			const bool lockDefenderNow = shouldLockPathDefender(town, threat, path, aiNk);
@@ -565,15 +577,6 @@ void DefenceBehavior::evaluateDefence(Goals::TGoalVec & tasks, const CGTownInsta
 			const bool heroStrengthCoversThreat = path.turn() <= threat.turn && path.getHeroStrength() >= threat.danger * aiNk->settings->getSafeAttackRatio();
 			if(threat.turn == 0 || lockDefenderNow || heroStrengthCoversThreat)
 			{
-				if(aiNk->arePathHeroesLocked(path))
-				{
-#if NK2AI_TRACE_LEVEL >= 1
-					logAi->trace("Can not move %s to defend town %s. Path is locked.", path.targetHero->getObjectName(), town->getObjectName());
-
-#endif
-					continue;
-				}
-
 				pathsToDefend.push_back(i);
 			}
 		}

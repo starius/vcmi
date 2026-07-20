@@ -5,6 +5,7 @@
 	// - example: 3 + 2 * towns (owned towns = 3) = 8 (would have been 9, but 8 is the default perPlayerOnMapCap, so 8)
 	// maxPass: number of cycles (find, prioritize and execute) for map activities within a turn
 	// maxPriorityPass: number of cycles within each pass of maxPass for town management mostly, including buying heroes
+	// maxFailedPathsPerHero: number of different failed destinations before a hero is stopped for the turn
 	// - this becomes strategically important later in the game, so the AI can do its "house chores" before more important actions on the map
 	// - if maxPass or maxPriorityPass is reached, AI's turn is stopped even if it could have done many more things
 	// - acts as an artificial limit to how much it can work within a turn
@@ -44,6 +45,7 @@
 		"maxRoamingHeroesPerTown" : 0,
 		"maxPass" : 5,
 		"maxPriorityPass" : 2,
+		"maxFailedPathsPerHero" : 2,
 		"mainHeroTurnDistanceLimit" : 20,
 		"scoutHeroTurnDistanceLimit" : 15,
 		"threatTurnDistanceLimit" : 1,
@@ -66,6 +68,7 @@
 		"maxRoamingHeroesPerTown" : 1,
 		"maxPass" : 10,
 		"maxPriorityPass" : 5,
+		"maxFailedPathsPerHero" : 2,
 		"mainHeroTurnDistanceLimit" : 20,
 		"scoutHeroTurnDistanceLimit" : 15,
 		"threatTurnDistanceLimit" : 3,
@@ -88,6 +91,7 @@
 		"maxRoamingHeroesPerTown" : 2,
 		"maxPass" : 40,
 		"maxPriorityPass" : 40,
+		"maxFailedPathsPerHero" : 2,
 		"mainHeroTurnDistanceLimit" : 20,
 		"scoutHeroTurnDistanceLimit" : 15,
 		"threatTurnDistanceLimit" : 5,
@@ -110,6 +114,7 @@
 		"maxRoamingHeroesPerTown" : 2,
 		"maxPass" : 40,
 		"maxPriorityPass" : 40,
+		"maxFailedPathsPerHero" : 2,
 		"mainHeroTurnDistanceLimit" : 20,
 		"scoutHeroTurnDistanceLimit" : 15,
 		"threatTurnDistanceLimit" : 5,
@@ -132,6 +137,7 @@
 		"maxRoamingHeroesPerTown" : 2,
 		"maxPass" : 40,
 		"maxPriorityPass" : 40,
+		"maxFailedPathsPerHero" : 2,
 		"mainHeroTurnDistanceLimit" : 20,
 		"scoutHeroTurnDistanceLimit" : 15,
 		"threatTurnDistanceLimit" : 5,

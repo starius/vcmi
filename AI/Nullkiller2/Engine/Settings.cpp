@@ -29,17 +29,19 @@ namespace NK2AI
 		mainHeroTurnDistanceLimit(10),
 		scoutHeroTurnDistanceLimit(5),
 		threatTurnDistanceLimit(5),
+		maxPass(10),
+		maxPriorityPass(10),
+		maxFailedPathsPerHero(2),
+		pathfinderBucketsCount(1),
+		pathfinderBucketSize(32),
 		maxGoldPressure(0.3f),
 		retreatThresholdRelative(0.3),
 		retreatThresholdAbsolute(10000),
 		safeAttackRatio(1.1),
-		maxPass(10),
-		maxPriorityPass(10),
-		pathfinderBucketsCount(1),
-		pathfinderBucketSize(32),
+		maxArmyLossTarget(0.35f),
 		allowObjectGraph(true),
-		useOneWayMonoliths(false),
 		useTroopsFromGarrisons(false),
+		useOneWayMonoliths(false),
 		updateHitmapOnTileReveal(false),
 		openMap(true)
 	{
@@ -53,6 +55,7 @@ namespace NK2AI
 		scoutHeroTurnDistanceLimit = node["scoutHeroTurnDistanceLimit"].Integer();
 		maxPass = node["maxPass"].Integer();
 		maxPriorityPass = node["maxPriorityPass"].Integer();
+		maxFailedPathsPerHero = node["maxFailedPathsPerHero"].Integer();
 		pathfinderBucketsCount = node["pathfinderBucketsCount"].Integer();
 		pathfinderBucketSize = node["pathfinderBucketSize"].Integer();
 		maxGoldPressure = node["maxGoldPressure"].Float();

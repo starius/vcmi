@@ -161,9 +161,11 @@ if(ENABLE_NULLKILLER2_AI)
 		nullkiller2/Behaviors/ExplorationBehaviorTest.cpp
 		nullkiller2/Behaviors/RecruitHeroBehaviorTest.cpp
 		nullkiller2/Engine/PriorityEvaluatorTest.cpp
+		nullkiller2/Engine/FailedRouteRecoveryTest.cpp
 		nullkiller2/Engine/TaskFailureTest.cpp
 		nullkiller2/Goals/BuyArmyTest.cpp
 		nullkiller2/Goals/CompositionTest.cpp
+		nullkiller2/Goals/ExecuteHeroChainTest.cpp
 		nullkiller2/Goals/ExploreNeighbourTileTest.cpp
 		nullkiller2/Helpers/ExplorationHelperTest.cpp
 		nullkiller2/Helpers/TinyH3MDimensionDoorExplorationTest.cpp
@@ -173,6 +175,7 @@ if(ENABLE_NULLKILLER2_AI)
 
 	list(APPEND test_HEADERS
 		nullkiller2/Nulkiller2TestUtils.h
+		nullkiller2/NullkillerTest.h
 	)
 endif()
 

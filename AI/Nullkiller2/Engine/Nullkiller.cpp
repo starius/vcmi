@@ -40,8 +40,12 @@ std::unique_ptr<ObjectGraph> Nullkiller::baseGraph;
 
 Nullkiller::Nullkiller()
 	: activeHero(nullptr)
+	, targetTile(int3(-1))
+	, activePathHeroID(ObjectInstanceID::NONE)
+	, activePathDestination(int3(-1))
 	, scanDepth(ScanDepth::MAIN_FULL)
 	, useHeroChain(true)
+	, lastTaskFailureHadPath(false)
 	, memory(std::make_unique<AIMemory>())
 {
 
@@ -260,6 +264,8 @@ void Nullkiller::resetState()
 	lockedResources = TResources();
 	scanDepth = ScanDepth::MAIN_FULL;
 	lockedHeroes.clear();
+	failedHeroPaths.clear();
+	resetTaskExecutionContext();
 	dangerHitMap->resetHitmap();
 	useHeroChain = true;
 	objectClusterizer->reset();
@@ -286,8 +292,7 @@ void Nullkiller::updateState()
 	makingTurnInterruption.interruptionPoint();
 	std::unique_lock lockGuard(aiStateMutex);
 
-	activeHero = nullptr;
-	setTargetObject(-1);
+	resetTaskExecutionContext();
 	decomposer->reset();
 
 	buildAnalyzer->update();
@@ -491,8 +496,20 @@ bool Nullkiller::canReleaseDefenderForTownCapture(const CGHeroInstance * hero, c
 		calendar.getDaysInWeek());
 }
 
-bool Nullkiller::arePathHeroesLocked(const AIPath & path, const CGHeroInstance * releasedDefender) const
+bool Nullkiller::isPathRejected(const AIPath & path, const CGHeroInstance * releasedDefender) const
 {
+	if(isPathKnownToFail(path))
+	{
+#if NK2AI_TRACE_LEVEL >= 1
+		logAi->trace(
+			"Hero %s already failed to reach %s this turn. Discarding %s",
+			path.targetHero->getObjectName(),
+			path.targetTile().toString(),
+			path.toString());
+#endif
+		return true;
+	}
+
 	if(getHeroLockedReason(path.targetHero) == HeroLockedReason::STARTUP)
 	{
 #if NK2AI_TRACE_LEVEL >= 1
@@ -662,7 +679,9 @@ void Nullkiller::makeTurn()
 			{
 				if(!executeTask(selectedTask))
 				{
-					lockTaskHeroes(selectedTask, HeroLockedReason::HERO_CHAIN);
+					if(!lastTaskFailureHadPath)
+						lockTaskHeroes(selectedTask, HeroLockedReason::HERO_CHAIN);
+
 					const bool hasRemainingTasks = selectedTaskIndex + 1 < selectedTasks.size();
 					const auto failureAction = chooseTaskFailureAction(hasAnySuccess, hasRemainingTasks, hasUnlockedHeroWithMovement());
 
@@ -812,10 +831,83 @@ bool Nullkiller::hasUnlockedHeroWithMovement() const
 		});
 }
 
+void Nullkiller::resetTaskExecutionContext()
+{
+	activePathHeroID = ObjectInstanceID::NONE;
+	activePathDestination = int3(-1);
+	setActive(nullptr, int3(-1));
+	setTargetObject(-1);
+	lastTaskFailureHadPath = false;
+}
+
+bool Nullkiller::hasActivePath() const
+{
+	return activePathHeroID.hasValue() && activePathDestination.isValid();
+}
+
+void Nullkiller::recordActivePathFailure()
+{
+	if(!hasActivePath())
+		return;
+
+	const auto alreadyRemembered = vstd::contains_if(
+		failedHeroPaths,
+		[this](const FailedHeroPath & failedPath)
+		{
+			return failedPath.hero == activePathHeroID && failedPath.destination == activePathDestination;
+		});
+
+	if(!alreadyRemembered)
+		failedHeroPaths.push_back({ activePathHeroID, activePathDestination });
+
+	const size_t heroFailureCount = std::count_if(
+		failedHeroPaths.begin(),
+		failedHeroPaths.end(),
+		[this](const FailedHeroPath & failedPath)
+		{
+			return failedPath.hero == activePathHeroID;
+		});
+
+	const auto * failedHero = cc->getHero(activePathHeroID);
+	const std::string heroName = failedHero
+		? failedHero->getNameTranslated()
+		: std::to_string(activePathHeroID.getNum());
+	logAi->debug(
+		"Remembering failed path for hero %s to %s for the rest of this turn.",
+		heroName,
+		activePathDestination.toString());
+
+	if(!alreadyRemembered
+		&& heroFailureCount >= settings->getMaxFailedPathsPerHero()
+		&& failedHero)
+	{
+		lockHero(failedHero, HeroLockedReason::HERO_CHAIN);
+
+		logAi->warn(
+			"Hero %s failed %zu different paths. Excluding it from further tasks this turn.",
+			heroName,
+			heroFailureCount);
+	}
+}
+
+bool Nullkiller::isPathKnownToFail(const AIPath & path) const
+{
+	if(!path.targetHero)
+		return false;
+
+	return vstd::contains_if(
+		failedHeroPaths,
+		[&path](const FailedHeroPath & failedPath)
+		{
+			return failedPath.hero == path.targetHero->id && failedPath.destination == path.targetTile();
+		});
+}
+
 bool Nullkiller::executeTask(const Goals::TTask & task)
 {
 	auto start = std::chrono::high_resolution_clock::now();
 	std::string taskDescr = task->toString();
+	resetTaskExecutionContext();
 
 	makingTurnInterruption.interruptionPoint();
 	logAi->debug("Trying to realize %s (value %2.3f)", taskDescr, task->priority);
@@ -831,6 +923,9 @@ bool Nullkiller::executeTask(const Goals::TTask & task)
 	}
 	catch(cannotFulfillGoalException & e)
 	{
+		lastTaskFailureHadPath = hasActivePath();
+		if(lastTaskFailureHadPath)
+			recordActivePathFailure();
 		invalidatePathfinderData();
 		logAi->error("Failed to realize subgoal of type %s.", taskDescr);
 		logAi->error("The error message was: %s", e.what());

@@ -118,7 +118,7 @@ Goals::TGoalVec CaptureObjectsBehavior::getVisitGoals(
 		const CGHeroInstance * releasedDefender = nullkiller->canReleaseDefenderForTownCapture(hero, objToVisit, path)
 			? hero
 			: nullptr;
-		if(nullkiller->arePathHeroesLocked(path, releasedDefender))
+		if(nullkiller->isPathRejected(path, releasedDefender))
 			continue;
 
 		auto firstBlockedAction = path.getFirstBlockedAction();

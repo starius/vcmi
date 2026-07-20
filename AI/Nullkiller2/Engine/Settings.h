@@ -23,6 +23,7 @@ namespace NK2AI
 		int threatTurnDistanceLimit;
 		int maxPass;
 		int maxPriorityPass;
+		int maxFailedPathsPerHero;
 		int pathfinderBucketsCount;
 		int pathfinderBucketSize;
 		float maxGoldPressure;
@@ -41,6 +42,7 @@ namespace NK2AI
 
 		int getMaxPass() const { return maxPass; }
 		int getMaxPriorityPass() const { return maxPriorityPass; }
+		int getMaxFailedPathsPerHero() const { return maxFailedPathsPerHero; }
 		float getMaxGoldPressure() const { return maxGoldPressure; }
 		float getRetreatThresholdRelative() const { return retreatThresholdRelative; }
 		float getRetreatThresholdAbsolute() const { return retreatThresholdAbsolute; }

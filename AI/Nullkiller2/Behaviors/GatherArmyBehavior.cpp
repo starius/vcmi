@@ -91,7 +91,7 @@ Goals::TGoalVec GatherArmyBehavior::deliverArmyToHero(const Nullkiller * aiNk, c
 			continue;
 		}
 
-		if(aiNk->arePathHeroesLocked(path))
+		if(aiNk->isPathRejected(path))
 		{
 #if NK2AI_TRACE_LEVEL >= 2
 			logAi->trace("GatherArmyBehavior::deliverArmyToHero Ignore path because of locked hero");
@@ -264,7 +264,7 @@ Goals::TGoalVec GatherArmyBehavior::upgradeArmy(const Nullkiller * aiNk, const C
 			continue;
 		}
 
-		if(aiNk->arePathHeroesLocked(path))
+		if(aiNk->isPathRejected(path))
 		{
 #if NK2AI_TRACE_LEVEL >= 2
 			logAi->trace("Ignore path because of locked hero");
