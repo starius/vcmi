@@ -58,6 +58,59 @@ def load_documents(path: Path) -> list[dict[str, Any]]:
     return documents
 
 
+def expand_battle_companion(
+    documents: list[dict[str, Any]], transcript_path: Path
+) -> list[dict[str, Any]]:
+    companion_info = documents[0].get("companions")
+    if not isinstance(companion_info, dict) or not isinstance(companion_info.get("battles"), str):
+        raise VGTError("header companions.battles is missing or invalid")
+    companion_path = transcript_path.parent / companion_info["battles"]
+    try:
+        companion = yaml.safe_load(companion_path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise VGTError(f"failed to parse battle companion {companion_path}: {exc}") from exc
+    except OSError as exc:
+        raise VGTError(f"failed to read battle companion {companion_path}: {exc}") from exc
+    if not isinstance(companion, dict) or companion.get("vgtBattles") != 4:
+        raise VGTError(f"{companion_path} is not a VGT 4 battle companion")
+    battles = companion.get("battles")
+    if battles is None:
+        battles = []
+    if not isinstance(battles, list):
+        raise VGTError(f"{companion_path} has no battles list")
+
+    by_id: dict[int, dict[str, Any]] = {}
+    for index, entry in enumerate(battles):
+        battle = entry.get("battle") if isinstance(entry, dict) else None
+        battle_id = battle.get("id") if isinstance(battle, dict) else None
+        if type(battle_id) is not int or battle_id in by_id:
+            raise VGTError(f"battle companion entry {index} has an invalid or duplicate id")
+        by_id[battle_id] = battle
+
+    expanded = [documents[0]]
+    used: set[int] = set()
+    for document in documents[1:]:
+        copy = dict(document)
+        record_key = "actions" if "actions" in copy else "events"
+        records: list[Any] = []
+        for record in copy[record_key]:
+            battle = record.get("battle") if isinstance(record, dict) else None
+            reference = battle.get("tactics") if isinstance(battle, dict) else None
+            if reference is None:
+                records.append(record)
+                continue
+            if type(reference) is not int or reference not in by_id or reference in used:
+                raise VGTError(f"invalid or repeated tactical battle reference {reference!r}")
+            records.append({"battle": by_id[reference]})
+            used.add(reference)
+        copy[record_key] = records
+        expanded.append(copy)
+    if used != set(by_id):
+        missing = sorted(set(by_id) - used)
+        raise VGTError(f"unreferenced battle companion entries: {missing[:10]}")
+    return expanded
+
+
 def iter_records(documents: list[dict[str, Any]]):
     for document_index, document in enumerate(documents[1:], start=1):
         if set(document) == {"turn", "actions"}:
@@ -174,8 +227,17 @@ def validate_move(value: Any, document_index: int, record_index: int, require_he
 
 
 def validate_battle_block(value: Any, document_index: int, record_index: int) -> None:
+    if isinstance(value, dict) and type(value.get("tactics")) is int:
+        if not isinstance(value.get("forces"), dict) or not isinstance(value.get("outcome"), dict):
+            raise VGTError(f"document {document_index} record {record_index} battle summary is incomplete")
+        return
     if not isinstance(value, dict) or not isinstance(value.get("events"), list):
         raise VGTError(f"document {document_index} record {record_index} battle has no event list")
+    random_before = value.get("randomBefore")
+    if not isinstance(random_before, dict) or not isinstance(random_before.get("global"), str):
+        raise VGTError(
+            f"document {document_index} record {record_index} battle has no frozen initial RNG state"
+        )
     outcome = value.get("outcome")
     if not isinstance(outcome, dict):
         raise VGTError(f"document {document_index} record {record_index} battle has no explicit outcome")
@@ -306,6 +368,9 @@ def header(documents: list[dict[str, Any]]) -> dict[str, Any]:
     initial_state = result.get("initialState")
     if not isinstance(initial_state, dict) or not isinstance(initial_state.get("heroes"), dict):
         raise VGTError("header initialState.heroes must be a mapping keyed by hero")
+    companions = result.get("companions")
+    if not isinstance(companions, dict) or not isinstance(companions.get("battles"), str):
+        raise VGTError("header companions.battles is missing or invalid")
     return result
 
 
@@ -374,8 +439,14 @@ def validate_schema(documents: list[dict[str, Any]], schema_path: Path) -> None:
     except jsonschema.SchemaError as exc:
         raise VGTError(f"invalid schema: {exc.message}") from exc
     except jsonschema.ValidationError as exc:
-        location = "".join(f"[{part!r}]" for part in exc.absolute_path)
-        raise VGTError(f"schema validation failed at transcript{location}: {exc.message}") from exc
+        detail = exc
+        while detail.context:
+            nested = jsonschema.exceptions.best_match(detail.context)
+            if nested is None or nested is detail:
+                break
+            detail = nested
+        location = "".join(f"[{part!r}]" for part in detail.absolute_path)
+        raise VGTError(f"schema validation failed at transcript{location}: {detail.message}") from exc
 
 
 def command_check(args: argparse.Namespace) -> int:
@@ -385,8 +456,13 @@ def command_check(args: argparse.Namespace) -> int:
     transcript_header = header(documents)
     if args.resource_root:
         validate_map_hash(transcript_header["map"], args.resource_root)
+    expanded = expand_battle_companion(documents, args.transcript)
+    if args.schema:
+        validate_schema(expanded, args.schema)
+    # Validate the optional tactical stream as eagerly as the main story.
+    collections.deque(iter_records(expanded), maxlen=0)
     if args.strict:
-        fail_on_unmodelled(documents)
+        fail_on_unmodelled(expanded)
 
     counts = summarize(documents)
     total_records = sum(counts.values())
@@ -583,6 +659,9 @@ def command_replay(args: argparse.Namespace) -> int:
     transcript_header = header(documents)
     if args.resource_root:
         validate_map_hash(transcript_header["map"], args.resource_root)
+    documents = expand_battle_companion(documents, args.transcript)
+    if args.schema:
+        validate_schema(documents, args.schema)
     if args.strict:
         fail_on_unmodelled(documents)
 

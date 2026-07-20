@@ -25,6 +25,7 @@ set(vcmiservercommon_SRCS
 		NetPacksLobbyServer.cpp
 		TurnTimerHandler.cpp
 		TurnStartVisitScheduler.cpp
+		VGTDiscovery.cpp
 		VGTRecorder.cpp
 		VGTReplay.cpp
 )
@@ -58,6 +59,7 @@ set(vcmiservercommon_HEADERS
 		ServerNetPackVisitors.h
 		TurnTimerHandler.h
 		TurnStartVisitScheduler.h
+		VGTDiscovery.h
 		VGTRecorder.h
 		VGTReplay.h
 )

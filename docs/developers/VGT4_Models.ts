@@ -18,6 +18,7 @@ export interface Header {
     readonly vgt: 4;
     readonly format: "VCMI readable event transcript";
     readonly engine: { readonly version: string };
+    readonly companions: { readonly battles: string };
     readonly map: {
         readonly uri: string;
         readonly name?: string;
@@ -101,7 +102,12 @@ export interface InitialHero {
 }
 
 export interface TurnDocument {
-    readonly turn: { readonly date: string | 0; readonly player: PlayerColor };
+    readonly turn: {
+        readonly date: string | 0;
+        readonly player: PlayerColor;
+        readonly resources: ResourceMap;
+        readonly heroes?: Readonly<Record<Identifier, { readonly movement: number; readonly mana: number }>>;
+    };
     readonly actions: readonly TranscriptRecord[];
 }
 
@@ -120,7 +126,10 @@ export interface ActorContext {
     readonly actor?: Actor;
 }
 
-export type MovementBody = { readonly transit?: boolean } & (
+/** First strategic sightings asserted against, but never applied by, replay. */
+export type DiscoveryList = readonly [Identifier, ...Identifier[]];
+
+export type MovementBody = { readonly transit?: boolean; readonly discovers?: DiscoveryList } & (
     | { readonly to: Position; readonly steps?: never }
     | { readonly to: Position; /** Compass runs such as "NE E*7". */ readonly steps: string }
 );
@@ -148,7 +157,6 @@ export interface Recruit extends ActorContext {
     readonly units: Readonly<Record<Identifier, number>> | readonly RecruitUnit[];
     readonly pool?: Identifier;
     readonly paid?: ResourceMap;
-    readonly remaining?: Readonly<Record<Identifier, number>>;
 }
 
 export interface Choice {
@@ -161,6 +169,7 @@ export interface Encounter extends ActorContext {
     readonly hero: Identifier;
     readonly with: Identifier;
     readonly approach?: Approach;
+    readonly discovers?: DiscoveryList;
     /** A semantic quest request; one artifact stays scalar for readability. */
     readonly quest?: {
         readonly bring: Identifier | readonly [Identifier, Identifier, ...Identifier[]];
@@ -222,7 +231,8 @@ export interface BattleMove {
     readonly side?: "attacker" | "defender";
     readonly unit: BattleUnitName;
     readonly to: number;
-    readonly path?: readonly number[];
+    /** Exact nonempty applied path. Rejected and zero-distance requests are absent. */
+    readonly path: readonly number[];
     readonly teleport?: boolean;
     /** Siege gate state change folded into this uninterrupted applied path. */
     readonly gate?: string;
@@ -231,6 +241,8 @@ export interface BattleMove {
 export interface Retaliation {
     readonly damage?: number;
     readonly killed?: number;
+    readonly after?: BattleStackAfter;
+    readonly reborn?: BattleRebirth;
     /** Ordered outcomes when a breath or area retaliation affects multiple stacks. */
     readonly hits?: readonly [BattleHit, BattleHit, ...BattleHit[]];
     readonly luck?: "good" | "bad";
@@ -244,7 +256,23 @@ export interface BattleHit {
     readonly target: BattleUnitName;
     readonly damage: number;
     readonly killed?: number;
+    readonly after: BattleStackAfter;
+    readonly reborn?: BattleRebirth;
     readonly spell?: Identifier;
+}
+
+/** Exact stack health immediately after one hit. */
+export interface BattleStackAfter {
+    readonly count: number;
+    readonly topHp?: number;
+    readonly at?: number;
+}
+
+/** Explicit post-strike health when a lethal hit triggered rebirth. */
+export interface BattleRebirth {
+    readonly count: number;
+    readonly topHp: number;
+    readonly at?: number;
 }
 
 /** Secondary damage resolved within an attack exchange. */
@@ -253,6 +281,8 @@ export interface BattleAttackEffect {
     readonly target: BattleUnitName;
     readonly damage: number;
     readonly killed?: number;
+    readonly after?: BattleStackAfter;
+    readonly reborn?: BattleRebirth;
 }
 
 export interface AttackExchange {
@@ -260,9 +290,12 @@ export interface AttackExchange {
     readonly side?: "attacker" | "defender";
     readonly by: BattleUnitName;
     readonly target?: BattleUnitName;
-    /** Exact original tactical targets; outcomes are expressed by the named fields. */
-    readonly aim: readonly BattleTarget[];
-    readonly approach?: readonly number[];
+    /** Exact cell occupied by the attacker when it struck. */
+    readonly from: number;
+    /** Exact cell occupied by the primary target when struck. */
+    readonly targetAt: number;
+    /** Exact traversed cells before `from`; absent when the attacker did not move. */
+    readonly via?: readonly number[];
     readonly returnsTo?: number;
     readonly returnPath?: readonly [number, number, ...number[]];
     readonly ranged?: boolean;
@@ -272,6 +305,8 @@ export interface AttackExchange {
     readonly strikes?: number;
     readonly damage?: number;
     readonly killed?: number;
+    /** Frozen post-hit health; absent only for multi-target attacks whose hits each carry it. */
+    readonly after?: BattleStackAfter;
     /** Ordered logical outcomes when one attack affects multiple stacks. */
     readonly hits?: readonly [BattleHit, BattleHit, ...BattleHit[]];
     /** Named spell effects applied by a creature attack. */
@@ -298,6 +333,18 @@ export interface BattleCast {
     readonly killed?: number;
     /** Total hit points restored by this cast. */
     readonly healed?: number;
+}
+
+/** Automatic healing with enough post-state to remain stable across engine changes. */
+export interface BattleHeal {
+    readonly by: BattleUnitName;
+    readonly target: BattleUnitName;
+    readonly amount: number;
+    readonly after: {
+        readonly count: number;
+        readonly topHp: number;
+        readonly at?: number;
+    };
 }
 
 export interface NamedBattleEffect {
@@ -334,6 +381,7 @@ export type BattleEvent =
     | { readonly move: BattleMove }
     | { readonly attack: AttackExchange }
     | { readonly cast: BattleCast }
+    | { readonly heal: BattleHeal }
     | { readonly bonus: BattleBonusEffect }
     | NamedBattleEffect
     | SemanticEffectRecord;
@@ -361,7 +409,9 @@ export interface BattleOutcome {
 		readonly count: number;
 		readonly hex: number;
 	}>>;
-	/** Compact RNG continuation at the tactical/strategic boundary. */
+	/** Replay-only RNG checkpoint after tactics and before strategic aftermath. */
+	readonly randomBeforeAftermath: BattleRandomizerContinuation;
+	/** RNG continuation after generated aftermath, before its first follow-up decision. */
 	readonly continuation: BattleRandomizerContinuation;
     /** Net persistent hero mana changes caused by the battle. */
     readonly mana?: Readonly<Record<Identifier, number>>;
@@ -370,12 +420,17 @@ export interface BattleOutcome {
     readonly grownArtifacts?: number;
     readonly dischargedArtifacts?: number;
     readonly raised?: { readonly creature: Identifier; readonly count: number };
-    readonly removeDefender?: true;
     readonly aftermath?: readonly TranscriptRecord[];
 }
 
 export interface BattleRandomizerContinuation {
 	readonly global: string;
+	/** Level-up RNG for participating hero types only. */
+	readonly heroSkill?: Readonly<Record<Identifier, {
+		readonly seed: string;
+		readonly magicSchoolCounter: number;
+		readonly wisdomCounter: number;
+	}>>;
 	readonly goodMorale?: readonly BattleRandomizerStream[];
 	readonly badMorale?: readonly BattleRandomizerStream[];
 	readonly goodLuck?: readonly BattleRandomizerStream[];
@@ -393,9 +448,30 @@ export interface BattleScene {
     readonly attacker?: Identifier;
     readonly defender?: Identifier;
     readonly units?: Readonly<Record<BattleUnitName, BattleRosterEntry>>;
+	/** Frozen participant RNG state after battle setup and before the first decision. */
+	readonly randomBefore: BattleRandomizerContinuation;
     readonly events: readonly (BattleEvent | BattleRound)[];
     /** Required semantic boundary for replay modes that skip tactical events. */
     readonly outcome: BattleOutcome;
+}
+
+export interface BattleSummary {
+    readonly tactics: number;
+    readonly attacker: Identifier;
+    readonly defender: Identifier;
+    readonly forces: Readonly<Record<BattleUnitName, number>>;
+    readonly outcome: {
+        readonly victory?: PlayerColor;
+        readonly escaped?: PlayerColor;
+        readonly surrendered?: PlayerColor;
+        readonly result?: string;
+        readonly winner?: PlayerColor;
+        readonly casualties: BattleOutcome["casualties"];
+        readonly experience?: Readonly<Record<Identifier, number>>;
+        readonly mana?: Readonly<Record<Identifier, number>>;
+        readonly armies: Readonly<Record<Identifier, readonly unknown[]>>;
+        readonly aftermath?: readonly TranscriptRecord[];
+    };
 }
 
 /** One capture record serves both the action and its semantic ownership outcome. */
@@ -404,6 +480,7 @@ export interface CaptureRecord extends ActorContext {
     readonly object: Identifier;
     readonly owner?: PlayerColor;
     readonly approach?: Approach;
+    readonly discovers?: DiscoveryList;
     readonly opened?: OpenedActivity;
     readonly income?: ResourceMap;
 }
@@ -418,8 +495,13 @@ export type SemanticEffectRecord =
     | { readonly mana: Readonly<Record<Identifier, number>> }
     | { readonly setMana: Readonly<Record<Identifier, number>> }
     | { readonly setMovement: Readonly<Record<Identifier, number>> }
+    | { readonly discovers: ActorContext & { readonly hero: Identifier; readonly objects: DiscoveryList } }
     | { readonly available: Readonly<Record<Identifier, CreaturePool>> }
     | { readonly availability: { readonly towns?: Readonly<Record<Identifier, CreaturePool>>; readonly dwellings?: Readonly<Record<Identifier, CreaturePool>> } }
+    | { readonly weeklyAvailability: { readonly towns?: Readonly<Record<Identifier, CreaturePool>>; readonly dwellings?: Readonly<Record<Identifier, CreaturePool>> } }
+    | { readonly weeklyRewards: readonly { readonly at: readonly Identifier[]; readonly reward?: ResourceMap; readonly text?: string }[] }
+    | { readonly spawns: Readonly<Record<Identifier, readonly { readonly at: Position; readonly count: number }[]>> }
+    | { readonly dayStart: true }
     | { readonly growth: Readonly<Record<Identifier, CreaturePool>> }
     | { readonly income: Readonly<Record<PlayerColor, ResourceMap>> }
     | { readonly refresh: Readonly<Record<Identifier, { readonly movement?: number; readonly mana?: number }>> }
@@ -481,9 +563,19 @@ export type OtherDecisionRecord =
 
 export interface ArmySlot { readonly army: Identifier; readonly slot: number }
 export type SingleResourceAmount = Readonly<Record<Identifier, number>>;
+export interface ArrangeArmies extends ActorContext {
+    readonly armies: Readonly<Record<Identifier, readonly {
+        readonly slot: number;
+        readonly creature: Identifier;
+        readonly count: number;
+        readonly experience?: number;
+    }[]>>;
+    /** Rare replay detail preserving internal bonus order after undead stacks temporarily left an army. */
+    readonly refreshUndeadMorale?: readonly Identifier[];
+}
 
 export type MarketDecisionRecord =
-    | { readonly trade: ActorContext & { readonly at: Identifier; readonly exchanges: readonly { readonly sold: SingleResourceAmount; readonly received: SingleResourceAmount }[] } }
+    | { readonly trade: ActorContext & { readonly at: Identifier; readonly exchanges: readonly string[] } }
     | { readonly sendResources: ActorContext & { readonly at: Identifier; readonly to: PlayerColor; readonly resources: ResourceMap } }
     | { readonly sellCreatures: ActorContext & { readonly at: Identifier; readonly hero: Identifier; readonly sales: readonly { readonly slot: number; readonly creature: Identifier; readonly count: number; readonly received: SingleResourceAmount }[] } }
     | { readonly buyArtifacts: ActorContext & { readonly at: Identifier; readonly hero: Identifier; readonly purchases: readonly { readonly artifact: Identifier; readonly paid: SingleResourceAmount }[] } }
@@ -493,10 +585,20 @@ export type MarketDecisionRecord =
     | { readonly sacrificeCreatures: ActorContext & { readonly at: Identifier; readonly hero: Identifier; readonly stacks: readonly { readonly slot: number; readonly creature: Identifier; readonly count: number }[] } }
     | { readonly sacrificeArtifacts: ActorContext & { readonly at: Identifier; readonly hero: Identifier; readonly artifacts: readonly { readonly artifact: Identifier; readonly instance: number }[] } };
 
+export interface MoveArtifacts extends ActorContext {
+    readonly from: Identifier;
+    readonly to: Identifier;
+    readonly artifacts: readonly {
+        readonly artifact: Identifier;
+        readonly from: number | string;
+        readonly to: number | string;
+    }[];
+}
+
 export type TravelDecisionRecord =
-    | { readonly visit: ActorContext & { readonly hero: Identifier; readonly object: Identifier; readonly approach?: Approach } }
+    | { readonly visit: ActorContext & { readonly hero: Identifier; readonly object: Identifier; readonly approach?: Approach; readonly discovers?: DiscoveryList } }
     | { readonly capture: CaptureRecord }
-    | { readonly teleport: ActorContext & { readonly hero: Identifier; readonly via: Identifier; readonly exit?: Identifier; readonly to?: Position; readonly blocked?: true; readonly random?: true; readonly approach?: Approach; readonly outcome?: readonly TranscriptRecord[] } };
+    | { readonly teleport: ActorContext & { readonly hero: Identifier; readonly via: Identifier; readonly exit?: Identifier; readonly to?: Position; readonly blocked?: true; readonly random?: true; readonly approach?: Approach; readonly discovers?: DiscoveryList; readonly outcome?: readonly TranscriptRecord[] } };
 
 export interface RemoveEffect {
     readonly object: Identifier;
@@ -513,7 +615,9 @@ export interface HeroRecruitedEffect {
 
 export interface LevelUpEffect {
     readonly hero: Identifier;
+    /** Frozen result; replay corrects a regenerated primary roll before the choice. */
     readonly primary: Identifier;
+    /** Frozen offered skills; the later chooseSkill record identifies the decision. */
     readonly choices?: readonly Identifier[];
 }
 
@@ -527,7 +631,7 @@ export interface VisibilityRun {
 
 export type AuditEffectRecord =
     | { readonly turnEnd: { readonly player: PlayerColor; readonly timer: { readonly start: unknown; readonly end: unknown } } }
-    | { readonly playerEnd: { readonly player: PlayerColor; readonly result: "victory" | "loss" | "ingame"; readonly silent?: boolean } }
+    | { readonly playerEnd: { readonly player?: PlayerColor; readonly result: "victory" | "loss" | "ingame"; readonly silent?: boolean } }
     | { readonly stackExperience: { readonly army: Identifier; readonly values: readonly { readonly slot: number; readonly amount: number }[] } }
     | { readonly spells: { readonly hero: Identifier; readonly mode: "learn" | "forget"; readonly spells: readonly Identifier[] } }
     | { readonly visibility: { readonly player?: PlayerColor; readonly mode: "hidden" | "revealed" | "unknown"; readonly runs: readonly VisibilityRun[] } }
@@ -551,10 +655,11 @@ export type AuditEffectRecord =
 
 export type HeroSceneAction =
     | { readonly move: MovementBody }
+    | { readonly discovers: ActorContext & { readonly objects: DiscoveryList } }
     | { readonly encounter: Omit<Encounter, "actor" | "hero"> }
-    | { readonly visit: { readonly object: Identifier; readonly approach?: Approach } }
-    | { readonly capture: { readonly object: Identifier; readonly owner?: PlayerColor; readonly opened?: OpenedActivity; readonly approach?: Approach } }
-    | { readonly teleport: { readonly via: Identifier; readonly exit?: Identifier; readonly to?: Position; readonly blocked?: true; readonly random?: true; readonly approach?: Approach } }
+    | { readonly visit: { readonly object: Identifier; readonly approach?: Approach; readonly discovers?: DiscoveryList } }
+    | { readonly capture: { readonly object: Identifier; readonly owner?: PlayerColor; readonly opened?: OpenedActivity; readonly approach?: Approach; readonly discovers?: DiscoveryList } }
+    | { readonly teleport: { readonly via: Identifier; readonly exit?: Identifier; readonly to?: Position; readonly blocked?: true; readonly random?: true; readonly approach?: Approach; readonly discovers?: DiscoveryList } }
     | { readonly levelUp: Omit<LevelUpEffect, "hero"> }
     | { readonly chooseSkill: { readonly skill: Identifier } }
     | { readonly dig: Readonly<Record<never, never>> }
@@ -571,9 +676,11 @@ export type TranscriptRecord =
     | { readonly build: Build }
     | { readonly recruit: Recruit }
     | { readonly encounter: Encounter }
-    | { readonly battle: BattleScene }
+    | { readonly battle: BattleSummary }
     | SemanticEffectRecord
     | OtherDecisionRecord
+    | { readonly moveArtifacts: MoveArtifacts }
+    | { readonly arrangeArmies: ArrangeArmies }
     | MarketDecisionRecord
     | TravelDecisionRecord
     | AuditEffectRecord

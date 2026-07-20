@@ -483,7 +483,7 @@ void CGameHandler::handleClientDisconnection(GameConnectionID connectionID, cons
 
 void CGameHandler::handleReceivedPack(GameConnectionID connection, CPackForServer & pack)
 {
-	VGTRecorder::get().recordDecision(gameState(), pack);
+	VGTRecorder::get().recordDecision(*this, pack);
 
 	//prepare struct informing that action was applied
 	auto sendPackageResponse = [&](bool successfullyApplied)

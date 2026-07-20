@@ -333,6 +333,11 @@ bool BattleProcessor::makePlayerBattleAction(
 	return result;
 }
 
+bool BattleProcessor::battleIsEnding(const CBattleInfoCallback & battle) const
+{
+	return resultProcessor->battleIsEnding(battle);
+}
+
 void BattleProcessor::setBattleResult(const CBattleInfoCallback & battle, EBattleResult resultType, BattleSide victoriusSide)
 {
 	resultProcessor->setBattleResult(battle, resultType, victoriusSide);

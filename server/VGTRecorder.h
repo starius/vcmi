@@ -8,14 +8,18 @@
  */
 #pragma once
 
+#include "VGTDiscovery.h"
+
 #include "../lib/constants/EntityIdentifiers.h"
 
 #include <fstream>
 #include <array>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -25,6 +29,8 @@ class CGameHandler;
 struct CPackForClient;
 struct CPackForServer;
 struct SetAvailableCreatures;
+struct TryMoveHero;
+struct Bonus;
 
 class VGTRecorder final
 {
@@ -34,6 +40,7 @@ class VGTRecorder final
 		std::string hero;
 		std::array<int, 3> start = {};
 		std::vector<std::array<int, 3>> route;
+		std::vector<std::string> discoveries;
 		int z = 0;
 		bool transit = false;
 	};
@@ -71,6 +78,28 @@ class VGTRecorder final
 		std::vector<Exchange> exchanges;
 	};
 
+	struct PendingArtifactTransfer
+	{
+		struct Move
+		{
+			std::string artifact;
+			std::string from;
+			std::string to;
+		};
+
+		std::string actor;
+		std::string from;
+		std::string to;
+		std::vector<Move> moves;
+	};
+
+	struct PendingArmyArrangement
+	{
+		std::string actor;
+		std::set<ObjectInstanceID> armies;
+		std::map<ObjectInstanceID, std::shared_ptr<const Bonus>> initialUndeadMoraleBonuses;
+	};
+
 	struct PendingEncounter
 	{
 		struct TeleportExit
@@ -93,6 +122,7 @@ class VGTRecorder final
 		std::optional<std::string> quest;
 		bool standardQuestText = false;
 		std::vector<std::string> outcomes;
+		std::vector<std::string> discoveries;
 		std::optional<PendingMove> approach;
 		bool teleport = false;
 		bool impassable = false;
@@ -127,21 +157,36 @@ class VGTRecorder final
 		std::string attacker;
 		std::string defender;
 		std::vector<std::string> units;
+		std::map<std::string, int> positions;
 		std::vector<std::string> events;
+		std::string initialRandom;
 		std::vector<std::string> outcome;
 		std::vector<std::string> survivors;
 		std::vector<std::string> createdUnits;
+		std::string randomBeforeAftermath;
 		std::string continuation;
 		std::map<std::string, int64_t> manaChanges;
+		std::set<ObjectInstanceID> randomizerParticipants;
+		std::set<HeroTypeID> randomizerHeroes;
 		std::vector<ObjectInstanceID> armyIDs;
 		std::map<std::string, std::string> armies;
 		std::vector<std::string> aftermath;
 		bool ended = false;
+		bool aftermathDecisionStarted = false;
+	};
+
+	struct PendingWeeklyReward
+	{
+		std::string object;
+		std::string reward;
+		std::string text;
 	};
 
 	std::ofstream output;
+	std::ofstream battleOutput;
 	mutable std::mutex outputMutex;
 	std::string outputPath;
+	std::string battleOutputPath;
 	std::string baselineSavePath;
 	std::string baselineGameStateSavePath;
 	std::string turnStateDirectory;
@@ -164,15 +209,22 @@ class VGTRecorder final
 	std::optional<PendingMove> pendingMove;
 	std::optional<PendingRecruit> pendingRecruit;
 	std::optional<PendingTrade> pendingTrade;
+	std::optional<PendingArtifactTransfer> pendingArtifactTransfer;
+	std::optional<PendingArmyArrangement> pendingArmyArrangement;
 	std::optional<PendingEncounter> pendingEncounter;
 	std::optional<PendingHeroScene> pendingHeroScene;
 	std::map<int, PendingQuery> pendingQueries;
 	std::map<std::string, std::string> pendingInitialTownAvailability;
 	std::map<std::string, std::string> pendingInitialDwellingAvailability;
+	std::map<std::string, std::string> pendingWeeklyTownAvailability;
+	std::map<std::string, std::string> pendingWeeklyDwellingAvailability;
+	std::vector<PendingWeeklyReward> pendingWeeklyRewards;
+	std::map<std::string, std::vector<std::string>> pendingWeeklySpawns;
 	bool suppressDerivedEffects = false;
 	bool betweenPlayerTurns = false;
 	std::map<PlayerColor, std::string> latestTimerStates;
 	std::map<PlayerColor, std::string> turnStartTimerStates;
+	VGTDiscoveryTracker discoveryTracker;
 
 	VGTRecorder() = default;
 
@@ -184,11 +236,16 @@ class VGTRecorder final
 	void flushPendingMove(const CGameState & gameState);
 	void flushPendingRecruit(const CGameState & gameState);
 	void flushPendingTrade(const CGameState & gameState);
+	void flushPendingArtifactTransfer(const CGameState & gameState);
+	void flushPendingArmyArrangement(const CGameState & gameState);
 	void flushPendingEncounter(const CGameState & gameState);
 	void flushPendingHeroScene();
 	void flushPendingBattle(const CGameState & gameState);
 	void collectInitialAvailability(const CGameState & gameState, const SetAvailableCreatures & availability);
 	void flushPendingInitialAvailability(const CGameState & gameState);
+	void collectWeeklyAvailability(const CGameState & gameState, const SetAvailableCreatures & availability);
+	void flushPendingWeeklyWorldEvents(const CGameState & gameState);
+	void collectDiscoveries(const CGameState & gameState, const TryMoveHero & move);
 	void writeBaselineSave(CGameHandler & gameHandler);
 	void writeTurnState(CGameHandler & gameHandler);
 
@@ -198,7 +255,7 @@ public:
 	bool isEnabled();
 	void setRandomSeed(int seed);
 
-	void recordDecision(const CGameState & gameState, CPackForServer & pack);
+	void recordDecision(CGameHandler & gameHandler, CPackForServer & pack);
 	void recordEffect(CGameHandler & gameHandler, CPackForClient & pack);
 	void recordTimerEndTurn(const CGameState & gameState, PlayerColor player);
 	void recordTimerBattleAction(const CGameState & gameState, PlayerColor player, BattleID battleID, const BattleAction & action);

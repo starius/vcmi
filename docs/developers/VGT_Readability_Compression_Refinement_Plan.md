@@ -214,11 +214,11 @@ purchase. Preserve order and destination slots where they affect the resulting a
       - { creature: airElemental, count: 5, slot: 1 }
       - { creature: pixie, count: 2, slot: 2 }
     paid: { gold: 3100 }
-    remaining: { airElemental: 1, pixie: 18 }
 ```
 
 The batch expands to the same ordered server requests. It must split when another
-decision, query, failure, or material side effect interrupts recruitment.
+decision, query, failure, or material side effect interrupts recruitment. The
+remaining pool is the deterministic result of those requests and is not repeated.
 
 ### 8. Global Day Chapters
 
@@ -397,8 +397,9 @@ attack results.
     side: attacker
     by: attacker/air-elementals
     target: defender/stone-gargoyles
-    aim: [{ hex: 27 }, { hex: 44 }]
-    approach: [9, 27]
+    via: [9]
+    from: 27
+    targetAt: 44
     damage: 48
     killed: 3
     retaliation:
@@ -565,6 +566,20 @@ They supersede any older example above when the two differ.
    war-machine attacks remain readable attacks marked `automatic: true`, so replay
    observes them without submitting a duplicate decision.
 
+   Automatic healing is similarly one frozen semantic event rather than separate
+   `spellCast` and `unitsChanged` implementation packets:
+
+   ```yaml
+   - heal:
+       by: attacker/first-aid-tents
+       target: attacker/cavaliers
+       amount: 10
+       after: { count: 2, topHp: 48, at: 98 }
+   ```
+
+   `after` prevents a reader or future engine from having to reconstruct hidden
+   battle state in order to know exactly what survived the heal.
+
 9. Monoliths, whirlpools, and teleporters are one `teleport` with `via`, semantic
    exit selection, final position or `blocked`, and optional folded `approach`.
 
@@ -598,6 +613,172 @@ They supersede any older example above when the two differ.
 Automatic notifications that the next player's resident hero is visiting their own
 town are omitted between `endTurn` and the next turn header. They are repeated server
 bookkeeping, not new visits in the story.
+
+## Final Corpus Pass
+
+The long-game space profile produced one further accepted iteration. These rules
+supersede older examples in this document where they differ.
+
+1. A turn begins with a compact absolute snapshot for its current player. Routine
+   all-player income and refresh packet summaries are omitted; deterministic replay
+   regenerates them.
+
+   ```yaml
+   turn:
+     date: 2/3/4
+     player: red
+     resources: { wood: 17, ore: 9, gold: 12350 }
+     heroes: { grindan: { movement: 1710, mana: 42 } }
+   ```
+
+2. Weekly availability is absolute, not a growth delta. Town pools and all
+   non-deterministic dwelling pools, notably Refugee Camps, are grouped. Ordinary
+   map-dwelling growth remains omitted only when it is fixed by content and game
+   settings.
+
+   ```yaml
+   - weeklyAvailability:
+       towns:
+         town/froisan-conflux@7.5: { pixie: 38, airElemental: 12 }
+       dwellings:
+         refugee-camp@10.18: { angel: 1 }
+   ```
+
+3. Realized stochastic facts are frozen transcript authority. They are never
+   replaced with a request to reroll using a future engine's RNG. Identical weekly
+   rewards and wandering-monster spawns are grouped without hiding their exact
+   locations, amounts, or counts.
+
+   ```yaml
+   - weeklyRewards:
+       - { at: [mystical-garden@184.4, mystical-garden@249.8], reward: { gold: 500 } }
+   - spawns:
+       pegasus:
+         - { at: [227, 84, 1], count: 26 }
+         - { at: [115, 174], count: 22 }
+   ```
+
+4. Resource trades use natural named quantities. Repeated resource pairs in one
+   uninterrupted market transaction are aggregated.
+
+   ```yaml
+   - trade:
+       at: town/bocc-stronghold@25.4.1
+       exchanges: ["5 ore for 100 gold", "2 sulfur for 1 crystal"]
+   ```
+
+5. Consecutive artifact transfers name the artifacts and share their holder
+   context. Exact slots remain because they are required to reproduce equipment and
+   backpack order.
+
+   ```yaml
+   - moveArtifacts:
+       from: ignissa
+       to: tyris
+       artifacts:
+         - { artifact: spellBook, from: 17, to: 17 }
+         - { artifact: badgeOfCourage, from: 9, to: 10 }
+   ```
+
+6. An uninterrupted stack-management session records its strategically meaningful
+   final armies rather than a packet-like series of swaps, merges, and one-creature
+   splits. The result is absolute and replay applies it through server-owned state
+   changes.
+
+   ```yaml
+   - arrangeArmies:
+       armies:
+         thunar: [{ slot: 0, creature: troglodyte, count: 1 }]
+         dace: [{ slot: 0, creature: troglodyte, count: 46 }]
+   ```
+
+   If undead stacks temporarily leave and re-enter an army during the collapsed
+   session, the recorder adds `refreshUndeadMorale: [hero]`. This rare replay
+   detail preserves byte-identical bonus ordering without exposing the discarded
+   low-level moves.
+
+7. The main transcript contains a concise strategic battle scene. Full tactics are
+   kept in the adjacent `*.battles.yaml` companion named by the header and are
+   automatically rejoined for tactical replay. The main outcome still records
+   forces, victory/escape/surrender, casualties, experience, mana, exceptional
+   rewards, and absolute post-battle armies. Raw stack numbers, tactical-only
+   survivor bookkeeping, and the RNG continuation do not interrupt the strategic
+   story.
+
+   The tactical companion freezes participant RNG immediately after battle setup
+   in `randomBefore`, freezes a replay-only `randomBeforeAftermath` checkpoint after
+   tactics, then freezes its continuation at battle-scene exit: after
+   generated strategic aftermath and before its first follow-up decision. These
+   compact states include level-up RNG only for participating hero types. A recorded
+   `levelUp` also freezes the rolled primary skill and offered secondary skills;
+   replay corrects regenerated values before applying `chooseSkill`. This keeps
+   action-by-action replay independent of battle-AI calculations that may otherwise
+   advance random streams between setup and the first decision.
+
+   Turn-relative terminal results omit their redundant player (`playerEnd: {
+   result: loss }`). Derived town-visit notifications for a different player during
+   elimination or between-turn cleanup are not part of the acting player's story
+   and are omitted.
+
+8. Every tactical attack freezes its exact geometry. `from` is always the cell from
+   which the attack was made; `via` is the exact preceding route and is absent only
+   without movement; `targetAt` is the target cell. Return routes remain explicit.
+
+   ```yaml
+   - attack:
+       by: attacker/air-elementals
+       via: [182, 183, 167, 149]
+       from: 133
+       target: defender/stone-gargoyles
+       targetAt: 150
+       damage: 48
+   ```
+
+   Tactical replay must not rely on a future pathfinder selecting the same canonical
+   route. The recorded route and final attacker cell are the frozen facts.
+
+   Each hit also carries its compact frozen post-state. `damage` and `killed` are
+   the readable story; `after` prevents poison, death-blow, rebirth, or later rule
+   changes from making the surviving stack ambiguous:
+
+   ```yaml
+   - attack:
+       by: attacker/wyvern-monarches
+       from: 157
+       target: defender/royal-griffins
+       targetAt: 172
+       damage: 278
+       killed: 11
+       after: { count: 11, topHp: 17, at: 172 }
+   ```
+
+9. A zero strategic stack-experience value is the defined default and is absent.
+   Recruitment pool `remaining`, derived artifact effects, derived chosen-skill
+   effects, and `removeDefender: true` are also absent because each duplicates one
+   unambiguous semantic action or outcome.
+
+10. Movement names only first sightings with durable strategic value: towns,
+    creature banks, Libraries of Enlightenment, quest objects, major/relic
+    artifacts, level 5+ dwellings, and enemy-owned armies. Routine resources,
+    decoration, roads, and ordinary pickups remain implicit in the visibility
+    change, so exploration stays readable.
+
+    ```yaml
+    - move:
+        hero: grindan
+        to: [48, 31]
+        steps: "NE*3 E"
+        discovers: [town/black-quarter@50.30, dragon-utopia@52.27]
+    ```
+
+    `discovers` is an assertion, never a state-changing replay input. Normal FoW
+    logic reveals the map first; replay then requires the independently derived
+    first-sighting set to match the transcript exactly. An absent field asserts an
+    empty set, so replay also rejects an omitted sighting before the next decision
+    or document boundary. Deterministic effect records may occur between the action
+    and its assertion. The same field is available on a teleport. A displacement
+    that has no enclosing travel action uses `discovers: { hero, objects }` as a
+    checked observation.
 
 ## Implementation Sequence
 

@@ -71,6 +71,8 @@ public:
 		PlayerColor player,
 		const BattleAction & ba,
 		const std::vector<uint32_t> & orderedSecondaryTargets);
+	/// Whether the server has already created and begun processing this result.
+	bool battleIsEnding(const CBattleInfoCallback & battle) const;
 	/// Completes a replay battle from its recorded tactical outcome.
 	void setBattleResultFromReplay(
 		const CBattleInfoCallback & battle,

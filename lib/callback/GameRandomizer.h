@@ -100,6 +100,8 @@ class DLL_LINKAGE GameRandomizer final : public IGameRandomizer
 	std::map<ObjectInstanceID, RandomGeneratorWithBias> combatAbilitySeed;
 
 	bool rollMoraleLuck(std::map<ObjectInstanceID, RandomGeneratorWithBias> & seeds, ObjectInstanceID actor, int moraleLuckValue, EGameSettings biasValue, EGameSettings diceSize, EGameSettings diceWeights);
+	JsonNode heroSkillVGTJson(const std::set<HeroTypeID> * heroes) const;
+	void loadHeroSkillVGTJson(const JsonNode * heroSkills, bool clearExisting);
 
 public:
 	explicit GameRandomizer(const IGameInfoCallback & gameInfo);
@@ -130,7 +132,9 @@ public:
 	int getDefaultSeed() const;
 	JsonNode toVGTJson() const;
 	void loadVGTJson(const JsonNode & node);
-	JsonNode toVGTBattleJson(const std::set<ObjectInstanceID> & participants) const;
+	JsonNode toVGTBattleJson(
+		const std::set<ObjectInstanceID> & participants,
+		const std::set<HeroTypeID> & heroes) const;
 	void loadVGTBattleJson(const JsonNode & node);
 
 	template<typename Handler>
