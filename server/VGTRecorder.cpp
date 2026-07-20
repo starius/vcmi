@@ -4382,6 +4382,12 @@ void writeBattleArmyStates(
 	const std::string & indent,
 	const std::map<std::string, std::string> & armies)
 {
+	if(armies.empty())
+	{
+		stream << indent << "armies: {}\n";
+		return;
+	}
+
 	stream << indent << "armies:\n";
 	for(const auto & [army, state] : armies)
 	{
