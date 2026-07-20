@@ -495,13 +495,20 @@ void GameRandomizer::loadVGTJson(const JsonNode & node)
 	readBiasMap(combatAbilitySeed, findField(node, "combatAbility"), "combatAbility");
 }
 
-void GameRandomizer::loadVGTBattleJson(const JsonNode & node)
+void GameRandomizer::loadVGTBattleJson(
+	const JsonNode & node,
+	const std::set<ObjectInstanceID> & participants,
+	const std::set<HeroTypeID> & heroes)
 {
 	globalRandomNumberGenerator.setSerializedState(requireString(node, "global"));
+	for(const auto hero : heroes)
+		heroSkillSeed.erase(hero);
 	loadHeroSkillVGTJson(findField(node, "heroSkill"), false);
 
-	auto readBiasMap = [](auto & target, const JsonNode * source, const std::string & name)
+	auto readBiasMap = [&participants](auto & target, const JsonNode * source, const std::string & name)
 	{
+		for(const auto participant : participants)
+			target.erase(participant);
 		if(!source)
 			return;
 		if(!source->isVector())

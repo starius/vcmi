@@ -135,7 +135,10 @@ public:
 	JsonNode toVGTBattleJson(
 		const std::set<ObjectInstanceID> & participants,
 		const std::set<HeroTypeID> & heroes) const;
-	void loadVGTBattleJson(const JsonNode & node);
+	void loadVGTBattleJson(
+		const JsonNode & node,
+		const std::set<ObjectInstanceID> & participants,
+		const std::set<HeroTypeID> & heroes);
 
 	template<typename Handler>
 	void serialize(Handler & h)

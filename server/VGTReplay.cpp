@@ -3879,11 +3879,38 @@ void replaySemanticBattleCast(
 	applyRecordedBattleDamage(gameHandler, battleID, roster, healthBefore, healthLoss);
 }
 
+std::set<ObjectInstanceID> battleRandomizerParticipants(const IBattleInfo & battle)
+{
+	std::set<ObjectInstanceID> result;
+	for(const auto side : {BattleSide::ATTACKER, BattleSide::DEFENDER})
+	{
+		if(const auto * army = battle.getSideArmy(side))
+			result.insert(army->id);
+		if(const auto * hero = battle.getSideHero(side))
+			result.insert(hero->id);
+	}
+	return result;
+}
+
+std::set<HeroTypeID> battleRandomizerHeroes(const IBattleInfo & battle)
+{
+	std::set<HeroTypeID> result;
+	for(const auto side : {BattleSide::ATTACKER, BattleSide::DEFENDER})
+	{
+		const auto * hero = battle.getSideHero(side);
+		if(hero && hero->getHeroTypeID().hasValue())
+			result.insert(hero->getHeroTypeID());
+	}
+	return result;
+}
+
 void fastForwardBattle(
 	CGameHandler & gameHandler,
 	const std::string & battleID,
 	const std::map<std::string, int> & roster,
-	const JsonNode & outcome)
+	const JsonNode & outcome,
+	const std::set<ObjectInstanceID> & randomizerParticipants,
+	const std::set<HeroTypeID> & randomizerHeroes)
 {
 	const BattleID liveBattleID(std::stoi(battleID));
 	auto * battle = gameHandler.gs->getBattle(liveBattleID);
@@ -4060,7 +4087,8 @@ void fastForwardBattle(
 		}
 	}
 
-	gameHandler.randomizer->loadVGTBattleJson(requireField(outcome, "randomBeforeAftermath"));
+	gameHandler.randomizer->loadVGTBattleJson(
+		requireField(outcome, "randomBeforeAftermath"), randomizerParticipants, randomizerHeroes);
 	gameHandler.battles->setBattleResultFromReplay(*battle, result, winnerSide, experience);
 }
 
@@ -4070,6 +4098,11 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 	const std::string battleID = resolveLiveBattleID(
 		gameHandler,
 		recordedBattleID);
+	const auto * initialBattle = gameHandler.gs->getBattle(BattleID(std::stoi(battleID)));
+	if(!initialBattle)
+		throw std::runtime_error("VGT battle block references missing battle: " + battleID);
+	const auto randomizerParticipants = battleRandomizerParticipants(*initialBattle);
+	const auto randomizerHeroes = battleRandomizerHeroes(*initialBattle);
 	std::map<std::string, int> roster;
 	if(const auto * units = findField(node, "units"))
 	{
@@ -4078,7 +4111,8 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 		for(const auto & [name, value] : units->Struct())
 			roster[name] = static_cast<int>(requireInteger(value, "stack"));
 	}
-	gameHandler.randomizer->loadVGTBattleJson(requireField(node, "randomBefore"));
+	gameHandler.randomizer->loadVGTBattleJson(
+		requireField(node, "randomBefore"), randomizerParticipants, randomizerHeroes);
 	const JsonNode & events = requireField(node, "events");
 	if(!events.isVector())
 		throw std::runtime_error("VGT battle block events field is not a list");
@@ -4221,7 +4255,8 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 		}
 	};
 	if(fastForwardBattles)
-		fastForwardBattle(gameHandler, battleID, roster, outcome);
+		fastForwardBattle(
+			gameHandler, battleID, roster, outcome, randomizerParticipants, randomizerHeroes);
 	else
 	{
 		try
@@ -4241,7 +4276,8 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 			// outcome. Direct health corrections can kill the last stack without
 			// invoking the normal action processor that starts the result.
 			if(!gameHandler.battles->battleIsEnding(*battle))
-				fastForwardBattle(gameHandler, battleID, roster, outcome);
+				fastForwardBattle(
+					gameHandler, battleID, roster, outcome, randomizerParticipants, randomizerHeroes);
 		}
 	}
 
@@ -4253,7 +4289,8 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 			// Tactical reconstruction may consume a different number of combat-only
 			// random draws while still reaching the frozen outcome. Strategic aftermath
 			// (notably level-up offers) starts at this recorded boundary.
-			gameHandler.randomizer->loadVGTBattleJson(requireField(outcome, "randomBeforeAftermath"));
+			gameHandler.randomizer->loadVGTBattleJson(
+				requireField(outcome, "randomBeforeAftermath"), randomizerParticipants, randomizerHeroes);
 			gameHandler.battles->endBattleConfirm(liveBattleID);
 		}
 		catch(const std::exception & error)
@@ -4263,7 +4300,8 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 	}
 	if(gameHandler.gs->getBattle(liveBattleID))
 		throw std::runtime_error("VGT battle outcome did not finalize battle: " + battleID);
-	gameHandler.randomizer->loadVGTBattleJson(requireField(outcome, "continuation"));
+	gameHandler.randomizer->loadVGTBattleJson(
+		requireField(outcome, "continuation"), randomizerParticipants, randomizerHeroes);
 
 	requireString(outcome, "result");
 	requireString(outcome, "winnerSide");
