@@ -42,6 +42,8 @@ enum class HeroLockedReason
 	HERO_CHAIN = 3
 };
 
+const char * heroLockReasonName(HeroLockedReason reason);
+
 enum class ScanDepth
 {
 	MAIN_FULL = 0,
@@ -76,7 +78,7 @@ enum class TaskFailureAction
 	STOP_TURN
 };
 
-TaskFailureAction chooseTaskFailureAction(bool hasAnySuccess, bool hasRemainingTasks, bool canReplan);
+TaskFailureAction chooseTaskFailureAction(bool madeProgress, bool hasRemainingTasks, bool canReplan);
 
 class NullkillerTestAccess;
 
