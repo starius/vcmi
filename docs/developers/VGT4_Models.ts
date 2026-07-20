@@ -501,10 +501,12 @@ export type SemanticEffectRecord =
     | { readonly weeklyAvailability: { readonly towns?: Readonly<Record<Identifier, CreaturePool>>; readonly dwellings?: Readonly<Record<Identifier, CreaturePool>> } }
     | { readonly weeklyRewards: readonly { readonly at: readonly Identifier[]; readonly reward?: ResourceMap; readonly text?: string }[] }
     | { readonly spawns: Readonly<Record<Identifier, readonly { readonly at: Position; readonly count: number }[]>> }
-    | { readonly dayStart: true }
+    | { readonly dayStart: {
+        readonly movement: Readonly<Record<PlayerColor, Readonly<Record<Identifier, number>>>>;
+        readonly mana: Readonly<Record<PlayerColor, Readonly<Record<Identifier, number>>>>;
+    } }
     | { readonly growth: Readonly<Record<Identifier, CreaturePool>> }
     | { readonly income: Readonly<Record<PlayerColor, ResourceMap>> }
-    | { readonly refresh: Readonly<Record<Identifier, { readonly movement?: number; readonly mana?: number }>> }
     | { readonly refresh: { readonly object: Identifier; readonly reward?: ResourceMap; readonly text?: string } }
     | { readonly week: { readonly type: string; readonly creature?: Identifier } }
     | { readonly townless: { readonly player?: PlayerColor; readonly days?: number; readonly cleared?: true } }

@@ -1123,6 +1123,24 @@ std::string namedIntegerMap(const std::map<std::string, int64_t> & values)
 	return "{ " + boost::algorithm::join(entries, ", ") + " }";
 }
 
+std::string heroRefreshMap(const std::map<std::string, int64_t> & values)
+{
+	std::map<std::string, std::vector<std::string>> players;
+	for(const auto & [alias, value] : values)
+	{
+		const size_t separator = alias.find('/');
+		if(separator == std::string::npos)
+			throw std::runtime_error("VGT new-day hero alias has no player: " + alias);
+		players[alias.substr(0, separator)].push_back(
+			yamlIdentifier(alias.substr(separator + 1)) + ": " + std::to_string(value));
+	}
+
+	std::vector<std::string> entries;
+	for(const auto & [player, heroes] : players)
+		entries.push_back(yamlIdentifier(player) + ": { " + boost::algorithm::join(heroes, ", ") + " }");
+	return "{ " + boost::algorithm::join(entries, ", ") + " }";
+}
+
 std::string startingBonus(PlayerStartingBonus value)
 {
 	switch(value)
@@ -3269,7 +3287,14 @@ public:
 	void visitNewTurn(NewTurn & pack) override
 	{
 		std::vector<std::string> records;
-		records.push_back("dayStart: true");
+		std::map<std::string, int64_t> movementRefreshes;
+		std::map<std::string, int64_t> manaRefreshes;
+		for(const auto & movement : pack.heroesMovement)
+			movementRefreshes[heroAlias(gameState, movement.hid)] = movement.val;
+		for(const auto & mana : pack.heroesMana)
+			manaRefreshes[heroAlias(gameState, mana.hid)] = mana.val;
+		records.push_back("dayStart: { movement: " + heroRefreshMap(movementRefreshes) +
+			", mana: " + heroRefreshMap(manaRefreshes) + " }");
 
 		if(pack.specialWeek != EWeekType::NORMAL || pack.creatureid != CreatureID::NONE)
 		{

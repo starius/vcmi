@@ -70,6 +70,16 @@ std::string canonicalObjectAlias(const CGObjectInstance & object);
 thread_local VGTDiscoveryTracker replayDiscoveryTracker;
 thread_local std::vector<std::string> replayDerivedDiscoveries;
 
+struct RecordedNewDayState
+{
+	std::optional<std::map<std::string, si32>> movement;
+	std::optional<std::map<std::string, si32>> mana;
+};
+
+thread_local std::map<ui32, RecordedNewDayState> replayRecordedNewDays;
+
+ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::string & alias);
+
 class ReplayGameServer : public IGameServer
 {
 	CGameHandler * gameHandler = nullptr;
@@ -333,6 +343,33 @@ public:
 		}
 		if(auto * result = dynamic_cast<BattleResult *>(&pack))
 			captureBattleOutcome(*result);
+		if(auto * newTurn = dynamic_cast<NewTurn *>(&pack))
+		{
+			const auto recorded = replayRecordedNewDays.find(newTurn->day);
+			if(recorded == replayRecordedNewDays.end())
+				throw std::runtime_error("VGT replay has no frozen hero refresh for new day " + std::to_string(newTurn->day));
+
+			const auto resolveHero = [&](const std::string & alias)
+			{
+				const ObjectInstanceID heroID = resolveObjectAlias(gameHandler->gameState(), alias);
+				if(!gameHandler->gameState().getHero(heroID))
+					throw std::runtime_error("VGT new-day refresh references a non-hero object: " + alias);
+				return heroID;
+			};
+			if(recorded->second.movement)
+			{
+				newTurn->heroesMovement.clear();
+				for(const auto & [alias, value] : *recorded->second.movement)
+					newTurn->heroesMovement.emplace_back(resolveHero(alias), value);
+			}
+			if(recorded->second.mana)
+			{
+				newTurn->heroesMana.clear();
+				for(const auto & [alias, value] : *recorded->second.mana)
+					newTurn->heroesMana.emplace_back(resolveHero(alias), value, ChangeValueMode::ABSOLUTE);
+			}
+			replayRecordedNewDays.erase(recorded);
+		}
 		gameHandler->gs->apply(pack);
 		if(auto * end = dynamic_cast<PlayerEndsTurn *>(&pack))
 			processTurnState(end->player);
@@ -4453,6 +4490,73 @@ void applyLocalState(CGameHandler & gameHandler, const JsonNode & node)
 	*playerState->playerLocalSettings = requireField(node, "data");
 }
 
+ui32 calendarDayNumber(const std::string & date)
+{
+	std::istringstream input(date);
+	int month = 0;
+	int week = 0;
+	int day = 0;
+	char firstSeparator = 0;
+	char secondSeparator = 0;
+	if(!(input >> month >> firstSeparator >> week >> secondSeparator >> day) ||
+		firstSeparator != '/' || secondSeparator != '/' || month < 1 || week < 1 || week > 4 || day < 1 || day > 7)
+	{
+		throw std::runtime_error("Invalid VGT calendar date: " + date);
+	}
+	input >> std::ws;
+	if(!input.eof())
+		throw std::runtime_error("Invalid VGT calendar date: " + date);
+	return static_cast<ui32>(((month - 1) * 4 + week - 1) * 7 + day);
+}
+
+void prepareRecordedNewDays(const JsonNode & documents)
+{
+	replayRecordedNewDays.clear();
+	for(const auto & document : documents.Vector())
+	{
+		const auto * world = findField(document, "world");
+		const auto * events = findField(document, "events");
+		if(!world || !events || !events->isVector() || requireString(*world, "phase") != "newDay")
+			continue;
+
+		const ui32 dayNumber = calendarDayNumber(requireString(*world, "date"));
+		for(const auto & record : events->Vector())
+		{
+			const auto * dayStart = findField(record, "dayStart");
+			if(!dayStart)
+				continue;
+			if(!dayStart->isStruct())
+				throw std::runtime_error("VGT dayStart must contain frozen hero refreshes");
+			if(replayRecordedNewDays.contains(dayNumber))
+				throw std::runtime_error("VGT new-day chapter contains duplicate dayStart records");
+
+			RecordedNewDayState state;
+			const auto readHeroValues = [](const JsonNode & players, const std::string & field)
+			{
+				if(!players.isStruct())
+					throw std::runtime_error("VGT dayStart " + field + " must be a mapping");
+				std::map<std::string, si32> result;
+				for(const auto & [player, heroes] : players.Struct())
+				{
+					if(!heroes.isStruct())
+						throw std::runtime_error("VGT dayStart " + field + " player entry must be a mapping");
+					for(const auto & [hero, value] : heroes.Struct())
+						result.emplace(player + "/" + hero, static_cast<si32>(value.Integer()));
+				}
+				return result;
+			};
+			if(const auto * movement = findField(*dayStart, "movement"))
+				state.movement = readHeroValues(*movement, "movement");
+			if(const auto * mana = findField(*dayStart, "mana"))
+				state.mana = readHeroValues(*mana, "mana");
+			if(!state.movement && !state.mana)
+				throw std::runtime_error("VGT dayStart has no frozen hero refreshes");
+			replayRecordedNewDays.emplace(dayNumber, std::move(state));
+			break;
+		}
+	}
+}
+
 void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & documents, bool fastForwardBattles)
 {
 	if(documents.Vector().size() == 1)
@@ -5065,6 +5169,7 @@ int replayVGTJson(const VGTReplayOptions & options)
 	applyMapEngineState(gameHandler, header);
 	applyInitialState(gameHandler, header);
 	applyGameSettingsOverrides(gameHandler, header);
+	prepareRecordedNewDays(documents);
 	if(documents.Vector().size() > 1)
 		gameHandler.start(false);
 	replayTranscriptDocuments(gameHandler, documents, options.fastForwardBattles);
