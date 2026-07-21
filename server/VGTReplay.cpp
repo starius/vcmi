@@ -1889,11 +1889,49 @@ ObjectInstanceID resolveInitialHeroState(const CGameState & gameState, const Jso
 		}
 
 		const auto position = decodePosition(requireField(node, "position"));
+		const auto separator = id->String().find('/');
+		if(separator != std::string::npos)
+		{
+			const auto owner = decodeColor(id->String().substr(0, separator));
+			const auto heroType = decodeHeroType(id->String().substr(separator + 1));
+			const auto player = gameState.players.find(owner);
+			if(player != gameState.players.end())
+			{
+				for(const auto * hero : player->second.getHeroes())
+				{
+					if(hero && hero->getHeroTypeID() == heroType)
+						return hero->id;
+				}
+			}
+			for(const auto * town : gameState.getMap().getObjects<CGTownInstance>())
+			{
+				for(const auto * hero : {town->getVisitingHero(), town->getGarrisonHero()})
+				{
+					if(hero && hero->getHeroTypeID() == heroType)
+						return hero->id;
+				}
+			}
+		}
 		for(const auto * object : gameState.getMap().getObjects())
 		{
 			const auto * hero = dynamic_cast<const CGHeroInstance *>(object);
 			if(hero && hero->visitablePos() == position)
 				return hero->id;
+		}
+
+		if(!findField(node, "owner") || !findField(node, "type"))
+		{
+			std::vector<std::string> available;
+			for(const auto heroID : gameState.getMap().getHeroesOnMap())
+			{
+				if(const auto * hero = gameState.getMap().getObject(heroID))
+					available.push_back(canonicalObjectAlias(*hero) + objectLocation(hero->visitablePos()));
+			}
+			throw std::runtime_error(
+				"Unable to resolve VGT initial hero " + id->String() + " at " +
+				std::to_string(position.x) + "." + std::to_string(position.y) + "." +
+				std::to_string(position.z) + "; available [" +
+				boost::algorithm::join(available, ", ") + "]");
 		}
 	}
 
@@ -3849,6 +3887,42 @@ void replaySemanticBattleAttack(
 	const int from = static_cast<int>(requireInteger(node, "from"));
 	const int targetAt = static_cast<int>(requireInteger(node, "targetAt"));
 	const bool ranged = optionalBool(node, "ranged", false);
+	if(!ranged)
+	{
+		const auto * target = findField(node, "target");
+		const auto * after = findField(node, "after");
+		const auto * afterCount = after && after->isStruct() ? findField(*after, "count") : nullptr;
+		auto * battle = gameHandler.gs->getBattle(BattleID(std::stoi(battleID)));
+		const auto * targetStack = target && target->isString() && roster.contains(target->String()) && battle
+			? battle->battleGetStackByID(roster.at(target->String()), false)
+			: nullptr;
+		if(target && target->isString() && afterCount && afterCount->Integer() == 0 &&
+			(!targetStack || !targetStack->alive()))
+		{
+			restoreRecordedBattlePosition(
+				gameHandler,
+				battleID,
+				rosterStack(roster, requireString(node, "by")),
+				from);
+			JsonNode noAction;
+			if(const auto * actor = findField(node, "actor"))
+				noAction["actor"].String() = actor->String();
+			if(const auto * side = findField(node, "side"))
+				noAction["side"].String() = side->String();
+			noAction["unit"].String() = requireString(node, "by");
+			replayReadableBattleAction(gameHandler, "none", noAction, battleID, roster);
+			applyRecordedBattleDamage(
+				gameHandler,
+				battleID,
+				roster,
+				healthBefore,
+				recordedBattleDamage(node),
+				recordedBattleKills(node),
+				recordedBattleAfters(node),
+				recordedBattleRebirths(node));
+			return;
+		}
+	}
 	if(ranged)
 	{
 		restoreRecordedBattlePosition(
