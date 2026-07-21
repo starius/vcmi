@@ -2787,6 +2787,8 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 		const auto topQuery = gameHandler.queries->topQuery(player);
 		if(!topQuery)
 			throw std::runtime_error("VGT encounter has no active decision query");
+		const auto blockingQuery = std::dynamic_pointer_cast<CBlockingDialogQuery>(topQuery);
+		const auto * encounterCaller = blockingQuery ? blockingQuery->caller : nullptr;
 		QueryReply pack;
 		pack.qid = topQuery->queryID;
 		const auto & value = requireField(*choice, "value");
@@ -2825,7 +2827,7 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 			{
 				const auto query = std::dynamic_pointer_cast<CBlockingDialogQuery>(
 					gameHandler.queries->topQuery(player));
-				if(!query)
+				if(!query || query->caller != encounterCaller)
 					break;
 				pack.qid = query->queryID;
 				pack.reply = 0;
