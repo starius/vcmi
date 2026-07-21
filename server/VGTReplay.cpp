@@ -1888,20 +1888,12 @@ ObjectInstanceID resolveInitialHeroState(const CGameState & gameState, const Jso
 		{
 		}
 
-		const auto separator = id->String().find('/');
-		if(separator != std::string::npos)
+		const auto position = decodePosition(requireField(node, "position"));
+		for(const auto * object : gameState.getMap().getObjects())
 		{
-			const auto owner = decodeColor(id->String().substr(0, separator));
-			const auto heroType = decodeHeroType(id->String().substr(separator + 1));
-			const auto position = decodePosition(requireField(node, "position"));
-
-			for(const auto * object : gameState.getMap().getObjects())
-			{
-				const auto * hero = dynamic_cast<const CGHeroInstance *>(object);
-				if(hero && hero->tempOwner == owner && hero->getHeroTypeID() == heroType &&
-					hero->visitablePos() == position)
-					return hero->id;
-			}
+			const auto * hero = dynamic_cast<const CGHeroInstance *>(object);
+			if(hero && hero->visitablePos() == position)
+				return hero->id;
 		}
 	}
 
@@ -3342,7 +3334,8 @@ void replaySemanticBattleMove(
 	catch(const std::runtime_error & error)
 	{
 		std::vector<std::string> walls;
-		const auto * battle = gameHandler.gameState().getBattle(BattleID(std::stoi(battleID)));
+		const auto liveBattleID = BattleID(std::stoi(battleID));
+		const auto * battle = gameHandler.gameState().getBattle(liveBattleID);
 		if(battle)
 		{
 			for(int part = 0; part < static_cast<int>(EWallPart::PARTS_COUNT); ++part)
@@ -3351,9 +3344,35 @@ void replaySemanticBattleMove(
 		}
 		const int stackID = rosterStack(roster, requireString(node, "unit"));
 		const auto * stack = battle ? battle->battleGetStackByID(stackID, false) : nullptr;
-		throw std::runtime_error(
-			"VGT battle move from " + std::to_string(stack ? stack->getPosition().toInt() : -1) +
-			" with walls [" + boost::algorithm::join(walls, ", ") + "]: " + error.what());
+		const std::string_view message(error.what());
+		const bool reconstructedObstruction = stack && stack->alive() &&
+			(message.find("battle action was rejected") != std::string_view::npos ||
+				message.find("Movement terminated abnormally") != std::string_view::npos);
+		if(!reconstructedObstruction)
+		{
+			throw std::runtime_error(
+				"VGT battle move from " + std::to_string(stack ? stack->getPosition().toInt() : -1) +
+				" with walls [" + boost::algorithm::join(walls, ", ") + "]: " + error.what());
+		}
+
+		// The transcript freezes both the path and destination. If reconstructed
+		// temporary blockers reject it, restore that path as a state change and use
+		// a no-op action to advance the acting unit without adding defend effects.
+		BattleStackMoved moved;
+		moved.battleID = liveBattleID;
+		moved.stack = static_cast<uint32_t>(stackID);
+		for(const auto & hex : path.Vector())
+			moved.tilesToMove.insert(BattleHex(static_cast<int>(hex.Integer())));
+		moved.distance = static_cast<int>(moved.tilesToMove.size());
+		gameHandler.sendAndApply(moved);
+
+		JsonNode noAction;
+		if(const auto * actor = findField(node, "actor"))
+			noAction["actor"].String() = actor->String();
+		if(const auto * side = findField(node, "side"))
+			noAction["side"].String() = side->String();
+		noAction["unit"].String() = requireString(node, "unit");
+		replayReadableBattleAction(gameHandler, "none", noAction, battleID, roster);
 	}
 }
 
