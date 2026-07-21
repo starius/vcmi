@@ -78,6 +78,13 @@ public:
 		return getObjectImpl(index);
 	}
 
+	const _ObjectBase * getByIndexUnchecked(const int32_t index) const
+	{
+		assert(index >= 0);
+		assert(static_cast<size_t>(index) < objects.size());
+		return objects[index].get();
+	}
+
 	const _ObjectBase * getByName(const std::string & name) const override
 	{
 		// TODO: provide actual scope? Perhaps pass it as json node?
