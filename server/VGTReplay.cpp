@@ -4474,6 +4474,79 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 		if(!record.isStruct() || record.Struct().size() != 1)
 			throw std::runtime_error("VGT battle aftermath record is not a one-key mapping");
 		const auto & entry = *record.Struct().begin();
+		if(entry.first == "resources" || entry.first == "setResources")
+		{
+			if(!entry.second.isStruct())
+				throw std::runtime_error("VGT battle aftermath resources must be a mapping");
+			for(const auto & [playerName, values] : entry.second.Struct())
+			{
+				SetResources resources;
+				resources.player = decodeColor(playerName);
+				resources.res = decodeResources(values);
+				resources.mode = entry.first == "setResources"
+					? ChangeValueMode::ABSOLUTE
+					: ChangeValueMode::RELATIVE;
+				applyEffectPack(gameHandler, resources);
+			}
+			continue;
+		}
+		if(entry.first == "skills" || entry.first == "setSkills")
+		{
+			if(!entry.second.isStruct())
+				throw std::runtime_error("VGT battle aftermath skills must be a mapping");
+			const auto mode = entry.first == "setSkills"
+				? ChangeValueMode::ABSOLUTE
+				: ChangeValueMode::RELATIVE;
+			for(const auto & [heroName, skills] : entry.second.Struct())
+			{
+				if(!skills.isStruct())
+					throw std::runtime_error("VGT battle aftermath hero skills must be a mapping");
+				const auto heroID = resolveObjectAlias(gameHandler.gameState(), heroName);
+				for(const auto & [skillName, value] : skills.Struct())
+				{
+					if(!value.isNumber())
+						throw std::runtime_error("VGT battle aftermath skill value must be numeric");
+					if(skillName == "attack" || skillName == "defence" || skillName == "spellpower" ||
+						skillName == "knowledge")
+					{
+						SetPrimarySkill skill;
+						skill.id = heroID;
+						skill.which = decodePrimarySkill(skillName);
+						skill.val = static_cast<si32>(value.Integer());
+						skill.mode = mode;
+						applyEffectPack(gameHandler, skill);
+					}
+					else
+					{
+						SetSecSkill skill;
+						skill.id = heroID;
+						skill.which = decodeSecondarySkill(skillName);
+						skill.val = static_cast<si32>(value.Integer());
+						skill.mode = mode;
+						applyEffectPack(gameHandler, skill);
+					}
+				}
+			}
+			continue;
+		}
+		if(entry.first == "artifact")
+		{
+			const auto * create = findField(entry.second, "create");
+			if(!create || !create->isStruct())
+				throw std::runtime_error("VGT battle aftermath artifact must contain create");
+			const auto heroID = resolveObjectAlias(
+				gameHandler.gameState(), requireString(*create, "holder"));
+			auto * hero = gameHandler.gs->getHero(heroID);
+			if(!hero)
+				throw std::runtime_error("VGT battle aftermath artifact holder is not a hero");
+			const auto position = decodeArtifactPosition(requireField(*create, "position"));
+			const auto artifactType = decodeArtifact(requireString(*create, "artifact"));
+			if(hero->getArt(position, false))
+				gameHandler.gs->getMap().removeArtifactInstance(*hero, position);
+			auto * artifactInstance = gameHandler.gs->getMap().createArtifact(artifactType);
+			gameHandler.gs->getMap().putArtifactInstance(*hero, artifactInstance->getId(), position);
+			continue;
+		}
 		if(entry.first == "query")
 		{
 			if(const auto * player = findField(entry.second, "player"); player && player->isString())
