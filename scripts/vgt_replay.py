@@ -439,12 +439,17 @@ def validate_schema(documents: list[dict[str, Any]], schema_path: Path) -> None:
     except jsonschema.SchemaError as exc:
         raise VGTError(f"invalid schema: {exc.message}") from exc
     except jsonschema.ValidationError as exc:
-        detail = exc
-        while detail.context:
-            nested = jsonschema.exceptions.best_match(detail.context)
-            if nested is None or nested is detail:
-                break
-            detail = nested
+        leaves: list[jsonschema.ValidationError] = []
+
+        def collect_leaves(error: jsonschema.ValidationError) -> None:
+            if not error.context:
+                leaves.append(error)
+                return
+            for nested in error.context:
+                collect_leaves(nested)
+
+        collect_leaves(exc)
+        detail = max(leaves, key=lambda error: len(error.absolute_path), default=exc)
         location = "".join(f"[{part!r}]" for part in detail.absolute_path)
         raise VGTError(f"schema validation failed at transcript{location}: {detail.message}") from exc
 
