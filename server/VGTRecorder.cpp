@@ -4467,6 +4467,17 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 	battleOutput << "      events:\n";
 	int round = 0;
 	std::string eventIndent = "        ";
+	bool roundHeaderPending = false;
+	auto writeBattleEvent = [&](const std::string & event)
+	{
+		if(roundHeaderPending)
+		{
+			battleOutput << "        - round: " << round << "\n";
+			battleOutput << "          events:\n";
+			roundHeaderPending = false;
+		}
+		writeYamlRecord(battleOutput, eventIndent, event);
+	};
 	auto positions = pendingBattle->positions;
 	for(size_t index = 0; index < pendingBattle->events.size();)
 	{
@@ -4478,9 +4489,9 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 		}
 		if(isBattlePacketEvent(pendingBattle->events[index], "nextRound"))
 		{
-			battleOutput << "        - round: " << ++round << "\n";
-			battleOutput << "          events:\n";
+			++round;
 			eventIndent = "            ";
+			roundHeaderPending = true;
 			++index;
 			continue;
 		}
@@ -4537,7 +4548,7 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 			}
 			if(gate)
 				fields.push_back("gate: " + *gate);
-			writeYamlRecord(battleOutput, eventIndent, battleFlowRecord("move", fields));
+			writeBattleEvent(battleFlowRecord("move", fields));
 			index = end;
 			continue;
 		}
@@ -4762,8 +4773,8 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 			}
 
 			for(const auto & effect : concurrentEffects)
-				writeYamlRecord(battleOutput, eventIndent, effect);
-			writeYamlRecord(battleOutput, eventIndent, battleFlowRecord("attack", fields));
+				writeBattleEvent(effect);
+			writeBattleEvent(battleFlowRecord("attack", fields));
 			index = end;
 			continue;
 		}
@@ -4839,7 +4850,7 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 			if(healed)
 				fields.push_back("healed: " + std::to_string(*healed));
 
-			writeYamlRecord(battleOutput, eventIndent, battleFlowRecord("cast", fields));
+			writeBattleEvent(battleFlowRecord("cast", fields));
 			index = end;
 			continue;
 		}
@@ -4861,7 +4872,7 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 			}
 			else
 				boost::algorithm::replace_all(attack, ", retaliation: true", ", counterattack: true");
-			writeYamlRecord(battleOutput, eventIndent, "attack: { " + attack + " }");
+			writeBattleEvent("attack: { " + attack + " }");
 			++index;
 			continue;
 		}
@@ -4891,7 +4902,7 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 						"topHp: " + std::to_string(change.topHP)};
 					if(change.position)
 						after.push_back("at: " + std::to_string(*change.position));
-					writeYamlRecord(battleOutput, eventIndent, battleFlowRecord("heal", {
+					writeBattleEvent(battleFlowRecord("heal", {
 						"by: " + *caster,
 						"target: " + change.unit,
 						"amount: " + std::to_string(change.amount),
@@ -4917,7 +4928,7 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 			}
 			if(!units.empty())
 			{
-				writeYamlRecord(battleOutput, eventIndent, "wait: " + (units.size() == 1 ? units.front() : flowList(units)));
+				writeBattleEvent("wait: " + (units.size() == 1 ? units.front() : flowList(units)));
 				index = end;
 				continue;
 			}
@@ -4941,7 +4952,7 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 			}
 			if(!units.empty())
 			{
-				writeYamlRecord(battleOutput, eventIndent, "defend: " + (units.size() == 1 ? units.front() : flowList(units)));
+				writeBattleEvent("defend: " + (units.size() == 1 ? units.front() : flowList(units)));
 				index = end;
 				continue;
 			}
@@ -4960,14 +4971,14 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 				if(!field.starts_with("actor: ") && !field.starts_with("side: "))
 					compact.push_back(field);
 			}
-			writeYamlRecord(battleOutput, eventIndent, battleFlowRecord(kind, compact));
+			writeBattleEvent(battleFlowRecord(kind, compact));
 			++index;
 			compactedDecision = true;
 			break;
 		}
 		if(compactedDecision)
 			continue;
-		writeYamlRecord(battleOutput, eventIndent, pendingBattle->events[index]);
+		writeBattleEvent(pendingBattle->events[index]);
 		++index;
 	}
 	if(!pendingBattle->outcome.empty() || !pendingBattle->manaChanges.empty() ||
