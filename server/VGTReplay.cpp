@@ -3565,8 +3565,16 @@ std::map<std::string, RecordedBattleHealth> recordedBattleAfters(const JsonNode 
 	{
 		const auto * target = findField(hit, "target");
 		const auto * after = findField(hit, "after");
-		if(!target || !target->isString() || !after || !after->isStruct())
+		if(!target || !target->isString())
 			return;
+		if(!after || !after->isStruct())
+		{
+			// A later effect without an `after` snapshot invalidates an earlier
+			// retaliation snapshot for the same unit. Its cumulative recorded
+			// damage is the authoritative final health in that case.
+			result.erase(target->String());
+			return;
+		}
 		const auto * topHP = findField(*after, "topHp");
 		result[target->String()] = {
 			requireInteger(*after, "count"),
