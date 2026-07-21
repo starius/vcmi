@@ -39,4 +39,7 @@ public:
 		const CGameState & gameState,
 		PlayerColor player,
 		const std::set<int3> & tiles);
+
+	/// Returns whether normal fog-of-war processing has discovered an object for the player's team.
+	bool wasDiscovered(const CGameState & gameState, PlayerColor player, ObjectInstanceID objectID);
 };

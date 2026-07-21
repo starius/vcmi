@@ -197,3 +197,11 @@ std::vector<ObjectInstanceID> VGTDiscoveryTracker::discoverInTiles(
 	}
 	return result;
 }
+
+bool VGTDiscoveryTracker::wasDiscovered(
+	const CGameState & gameState,
+	PlayerColor player,
+	ObjectInstanceID objectID)
+{
+	return initialize(gameState, player).contains(objectID);
+}

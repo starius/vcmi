@@ -1011,6 +1011,7 @@ void beginDiscoveryCheck(const CGameState & gameState, PlayerColor player)
 }
 
 void verifyDiscoveryCheck(
+	const CGameState & gameState,
 	const JsonNode & node,
 	const char * field,
 	PlayerColor player,
@@ -1049,6 +1050,12 @@ void verifyDiscoveryCheck(
 			}
 		}
 		actual.push_back(matchingRelative.value_or(relativeObjectAlias(discovery, player)));
+	}
+	for(const auto & discovery : expected)
+	{
+		if(!vstd::contains(actual, discovery) && replayDiscoveryTracker.wasDiscovered(
+			gameState, player, resolveObjectAlias(gameState, discovery)))
+			actual.push_back(discovery);
 	}
 	std::ranges::sort(expected);
 	std::ranges::sort(actual);
@@ -2065,7 +2072,7 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 				pack.path = {destination};
 				replayPack(gameHandler, pack, player);
 			}
-			verifyDiscoveryCheck(decision, "discovers", player, "move");
+			verifyDiscoveryCheck(gameHandler.gameState(), decision, "discovers", player, "move");
 			return;
 		}
 		if(const auto * destination = findField(decision, "to"))
@@ -2073,7 +2080,7 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 		else
 			throw std::runtime_error("VGT move action must contain to");
 		replayPack(gameHandler, pack, player);
-		verifyDiscoveryCheck(decision, "discovers", player, "move");
+		verifyDiscoveryCheck(gameHandler.gameState(), decision, "discovers", player, "move");
 		return;
 	}
 
@@ -2705,7 +2712,7 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 		beginDiscoveryCheck(gameHandler.gameState(), player);
 		replayPack(gameHandler, pack, player);
 		if(hasField(decision, "discovers"))
-			verifyDiscoveryCheck(decision, "discovers", player, "adventure spell");
+			verifyDiscoveryCheck(gameHandler.gameState(), decision, "discovers", player, "adventure spell");
 		return;
 	}
 
@@ -2781,7 +2788,7 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 		const auto * choice = findField(decision, "choice");
 		if(!choice)
 		{
-			verifyDiscoveryCheck(decision, "discovers", player, "encounter");
+			verifyDiscoveryCheck(gameHandler.gameState(), decision, "discovers", player, "encounter");
 			return;
 		}
 		const auto topQuery = gameHandler.queries->topQuery(player);
@@ -2836,7 +2843,7 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 		}
 		else
 			replayPack(gameHandler, pack, player);
-		verifyDiscoveryCheck(decision, "discovers", player, "encounter");
+		verifyDiscoveryCheck(gameHandler.gameState(), decision, "discovers", player, "encounter");
 		return;
 	}
 
@@ -2881,7 +2888,7 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 			if(!hero || hero->visitablePos() != decodePosition(*destination))
 				throw std::runtime_error("VGT teleport did not reach its declared destination");
 		}
-		verifyDiscoveryCheck(decision, "discovers", player, "teleport");
+		verifyDiscoveryCheck(gameHandler.gameState(), decision, "discovers", player, "teleport");
 		return;
 	}
 
@@ -2896,7 +2903,7 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 			replayDecision(gameHandler, move);
 		}
 		beginDiscoveryCheck(gameHandler.gameState(), player);
-		verifyDiscoveryCheck(decision, "discovers", player, "visit");
+		verifyDiscoveryCheck(gameHandler.gameState(), decision, "discovers", player, "visit");
 		return;
 	}
 
@@ -2911,7 +2918,7 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 			replayDecision(gameHandler, move);
 		}
 		beginDiscoveryCheck(gameHandler.gameState(), player);
-		verifyDiscoveryCheck(decision, "discovers", player, "capture");
+		verifyDiscoveryCheck(gameHandler.gameState(), decision, "discovers", player, "capture");
 		return;
 	}
 
@@ -4636,7 +4643,7 @@ void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & docu
 							throw std::runtime_error("VGT discovery record has no acting player");
 						const PlayerColor player = playerFromActor(actor);
 						ScopedAliasDefaultPlayer aliasScope(player);
-						verifyDiscoveryCheck(entry.second, "objects", player, "displacement");
+						verifyDiscoveryCheck(gameHandler.gameState(), entry.second, "objects", player, "displacement");
 						continue;
 					}
 					if(entry.first == "levelUp")
@@ -4676,7 +4683,7 @@ void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & docu
 					throw std::runtime_error("VGT discovery record has no acting player");
 				const PlayerColor player = playerFromActor(actor);
 				ScopedAliasDefaultPlayer aliasScope(player);
-				verifyDiscoveryCheck(entry.second, "objects", player, "displacement");
+				verifyDiscoveryCheck(gameHandler.gameState(), entry.second, "objects", player, "displacement");
 				continue;
 			}
 			if(entry.first == "levelUp" && defaultActor)
