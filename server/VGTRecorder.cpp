@@ -4692,6 +4692,12 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 			std::vector<std::string> attackEffects;
 			while(end < pendingBattle->events.size())
 			{
+				if(isBattlePacketEvent(pendingBattle->events[end], "obstaclesChanged"))
+				{
+					concurrentEffects.push_back(pendingBattle->events[end]);
+					++end;
+					continue;
+				}
 				if(isBattlePacketEvent(pendingBattle->events[end], "stackEffects"))
 				{
 					++end;
