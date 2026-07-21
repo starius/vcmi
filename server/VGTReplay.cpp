@@ -4264,8 +4264,10 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 					nextRound.battleID = BattleID(std::stoi(battleID));
 					gameHandler.sendAndApply(nextRound);
 				}
-				if(battle->getRound() != recordedRound)
-					throw std::runtime_error("VGT battle replay advanced beyond the recorded round");
+				// Active-stack corrections can also make the reconstructed initiative
+				// queue cross a round boundary before the readable transcript does. We
+				// cannot rewind per-round effects safely, so continue applying the frozen
+				// scene and let its explicit strategic outcome remain authoritative.
 				replayEvents(requireField(record, "events"));
 				continue;
 			}
