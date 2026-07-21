@@ -1887,6 +1887,22 @@ ObjectInstanceID resolveInitialHeroState(const CGameState & gameState, const Jso
 		catch(const std::exception &)
 		{
 		}
+
+		const auto separator = id->String().find('/');
+		if(separator != std::string::npos)
+		{
+			const auto owner = decodeColor(id->String().substr(0, separator));
+			const auto heroType = decodeHeroType(id->String().substr(separator + 1));
+			const auto position = decodePosition(requireField(node, "position"));
+
+			for(const auto * object : gameState.getMap().getObjects())
+			{
+				const auto * hero = dynamic_cast<const CGHeroInstance *>(object);
+				if(hero && hero->tempOwner == owner && hero->getHeroTypeID() == heroType &&
+					hero->visitablePos() == position)
+					return hero->id;
+			}
+		}
 	}
 
 	const auto owner = decodeColor(requireString(node, "owner"));
@@ -3588,9 +3604,17 @@ void applyRecordedBattleDamage(
 	changes.battleID = BattleID(std::stoi(battleID));
 	for(const auto & [alias, amount] : damage)
 	{
-		if(!healthBefore.contains(alias) || !roster.contains(alias))
+		if(!roster.contains(alias))
 			throw std::runtime_error("Invalid recorded VGT battle damage for " + alias);
 		const auto * stack = battle->battleGetStackByID(roster.at(alias), false);
+		if(!healthBefore.contains(alias))
+		{
+			const auto frozenAfter = afters.find(alias);
+			if(frozenAfter != afters.end() && frozenAfter->second.count == 0 &&
+				(!stack || !stack->alive()))
+				continue;
+			throw std::runtime_error("Invalid recorded VGT battle damage for " + alias);
+		}
 		if(!stack)
 			throw std::runtime_error("Recorded VGT battle damage references missing unit " + alias);
 
@@ -3900,55 +3924,76 @@ void replaySemanticBattleAttack(
 					}
 				}
 			}
-			throw std::runtime_error(
-				std::string(error.what()) +
-				"; recorded shooter=" + std::to_string(from) +
-				", target=" + std::to_string(targetAt) +
-				", stackCanShoot=" + std::to_string(stack && stack->canShoot()) +
-				", blocked=" + std::to_string(stack && battle && battle->battleIsUnitBlocked(stack)) +
-				", canShoot=" + std::to_string(stack && battle && battle->battleCanShoot(stack)) +
-				", canShootTarget=" + std::to_string(
-					stack && battle && battle->battleCanShoot(stack, BattleHex(targetAt))) +
-				", adjacent=[" + boost::algorithm::join(adjacent, ", ") +
-				"], live positions=[" + boost::algorithm::join(positions, ", ") + "]");
-		}
-		const std::string_view message(error.what());
-		const bool interruptedMovement =
-			message.find("battle action was rejected") != std::string_view::npos ||
-			message.find("Movement terminated abnormally") != std::string_view::npos;
-		const bool canRestoreRecordedPath =
-			!ranged && interruptedMovement && stack && stack->getPosition().toInt() != from;
-		if(!canRestoreRecordedPath)
-			throw;
+			const std::string_view message(error.what());
+			const bool reconstructedBlocker =
+				message.find("battle action was rejected") != std::string_view::npos &&
+				stack && battle && battle->battleIsUnitBlocked(stack);
+			if(!reconstructedBlocker)
+			{
+				throw std::runtime_error(
+					std::string(error.what()) +
+						"; recorded shooter=" + std::to_string(from) +
+						", target=" + std::to_string(targetAt) +
+						", stackCanShoot=" + std::to_string(stack && stack->canShoot()) +
+						", blocked=" + std::to_string(stack && battle && battle->battleIsUnitBlocked(stack)) +
+						", canShoot=" + std::to_string(stack && battle && battle->battleCanShoot(stack)) +
+						", canShootTarget=" + std::to_string(
+							stack && battle && battle->battleCanShoot(stack, BattleHex(targetAt))) +
+						", adjacent=[" + boost::algorithm::join(adjacent, ", ") +
+						"], live positions=[" + boost::algorithm::join(positions, ", ") + "]");
+			}
 
-		// `from` is a frozen tactical fact. Normally the battle processor
-		// rediscovers the path and applies all of its mechanics. If transient
-		// reconstructed blockers make that exact strike unreachable, restore the
-		// recorded movement segment and retry from its authoritative attack cell.
-		BattleStackMoved moved;
-		moved.battleID = BattleID(std::stoi(battleID));
-		moved.stack = static_cast<uint32_t>(stackID);
-		if(const auto * via = findField(node, "via"); via && via->isVector())
-		{
-			for(const auto & hex : via->Vector())
-				moved.tilesToMove.insert(BattleHex(static_cast<int>(hex.Integer())));
+			// A previous frozen strike can kill a unit that reconstructed tactical
+			// mechanics leave alive. Consume the shooter's turn without granting a
+			// defensive bonus, then apply this shot's explicit damage below.
+			JsonNode noAction;
+			if(const auto * actor = findField(node, "actor"))
+				noAction["actor"].String() = actor->String();
+			if(const auto * side = findField(node, "side"))
+				noAction["side"].String() = side->String();
+			noAction["unit"].String() = requireString(node, "by");
+			replayReadableBattleAction(gameHandler, "none", noAction, battleID, roster);
 		}
-		moved.tilesToMove.insert(BattleHex(from));
-		moved.distance = static_cast<int>(moved.tilesToMove.size());
-		gameHandler.sendAndApply(moved);
-		try
+		else
 		{
-			replayReadableBattleAction(gameHandler, "walkAndAttack", action, battleID, roster);
-		}
-		catch(const std::runtime_error & retryError)
-		{
-			battle = gameHandler.gs->getBattle(BattleID(std::stoi(battleID)));
-			stack = battle ? battle->battleGetStackByID(stackID, false) : nullptr;
-			throw std::runtime_error(
-				std::string(retryError.what()) +
-				"; retry position=" + std::to_string(stack ? stack->getPosition().toInt() : -1) +
-				", occupied=" + std::to_string(stack ? stack->occupiedHex().toInt() : -1) +
-				", recorded from=" + std::to_string(from));
+			const std::string_view message(error.what());
+			const bool interruptedMovement =
+				message.find("battle action was rejected") != std::string_view::npos ||
+				message.find("Movement terminated abnormally") != std::string_view::npos;
+			const bool canRestoreRecordedPath =
+				interruptedMovement && stack && stack->getPosition().toInt() != from;
+			if(!canRestoreRecordedPath)
+				throw;
+
+			// `from` is a frozen tactical fact. Normally the battle processor
+			// rediscovers the path and applies all of its mechanics. If transient
+			// reconstructed blockers make that exact strike unreachable, restore the
+			// recorded movement segment and retry from its authoritative attack cell.
+			BattleStackMoved moved;
+			moved.battleID = BattleID(std::stoi(battleID));
+			moved.stack = static_cast<uint32_t>(stackID);
+			if(const auto * via = findField(node, "via"); via && via->isVector())
+			{
+				for(const auto & hex : via->Vector())
+					moved.tilesToMove.insert(BattleHex(static_cast<int>(hex.Integer())));
+			}
+			moved.tilesToMove.insert(BattleHex(from));
+			moved.distance = static_cast<int>(moved.tilesToMove.size());
+			gameHandler.sendAndApply(moved);
+			try
+			{
+				replayReadableBattleAction(gameHandler, "walkAndAttack", action, battleID, roster);
+			}
+			catch(const std::runtime_error & retryError)
+			{
+				battle = gameHandler.gs->getBattle(BattleID(std::stoi(battleID)));
+				stack = battle ? battle->battleGetStackByID(stackID, false) : nullptr;
+				throw std::runtime_error(
+					std::string(retryError.what()) +
+						"; retry position=" + std::to_string(stack ? stack->getPosition().toInt() : -1) +
+						", occupied=" + std::to_string(stack ? stack->occupiedHex().toInt() : -1) +
+						", recorded from=" + std::to_string(from));
+			}
 		}
 	}
 	applyRecordedBattleDamage(
