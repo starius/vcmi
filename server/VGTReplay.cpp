@@ -3384,7 +3384,8 @@ void replayReadableBattleAction(
 	JsonNode action = node;
 	const std::string side = inferredBattleSide(action);
 	const BattleSide battleSide = side == "defender" ? BattleSide::DEFENDER : BattleSide::ATTACKER;
-	const std::string actor = hasField(action, "actor")
+	const bool hasExplicitActor = hasField(action, "actor");
+	std::string actor = hasExplicitActor
 		? requireString(action, "actor")
 		: battleActorForSide(gameHandler, battleID, battleSide);
 	action.Struct().erase("actor");
@@ -3402,6 +3403,11 @@ void replayReadableBattleAction(
 				if(!requested || !requested->alive())
 					throw std::runtime_error(
 						"Recorded VGT battle action references dead unit " + unit->String());
+				if(!hasExplicitActor)
+				{
+					const PlayerColor controller = battle->battleGetOwner(requested);
+					actor = controller.isValidPlayer() ? controller.toString() : "world";
+				}
 			}
 			const auto * active = battle->battleActiveUnit();
 			int activeStack = requestedStack;
