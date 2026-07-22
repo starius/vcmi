@@ -39,6 +39,7 @@
 #include "../lib/mapping/CMap.h"
 #include "../lib/mapObjects/CGObjectInstance.h"
 #include "../lib/mapObjects/CGCreature.h"
+#include "../lib/mapObjects/CGDwelling.h"
 #include "../lib/mapObjects/CGHeroInstance.h"
 #include "../lib/mapObjects/CGTownInstance.h"
 #include "../lib/mapObjects/CRewardableObject.h"
@@ -1874,6 +1875,79 @@ void applyEffectPack(CGameHandler & gameHandler, CPackForClient & pack)
 	if(!gameHandler.gs)
 		throw std::runtime_error("VGT replay cannot apply effects before game state initialization");
 	gameHandler.gs->apply(pack);
+}
+
+void applyRecordedAvailability(CGameHandler & gameHandler, const JsonNode & node)
+{
+	if(!node.isStruct())
+		throw std::runtime_error("VGT available effect must be a mapping");
+
+	for(const auto & [objectName, pools] : node.Struct())
+	{
+		const ObjectInstanceID objectID = resolveObjectAlias(gameHandler.gameState(), objectName);
+		const auto * dwelling = dynamic_cast<const CGDwelling *>(gameHandler.gs->getMap().getObject(objectID));
+		if(!dwelling)
+			throw std::runtime_error("VGT available effect references a non-dwelling object: " + objectName);
+		if(!pools.isStruct())
+			throw std::runtime_error("VGT available creature pools must be a mapping: " + objectName);
+
+		SetAvailableCreatures pack;
+		pack.tid = objectID;
+		pack.creatures = dwelling->creatures;
+		std::set<size_t> assignedSlots;
+		auto assignPool = [&](const std::vector<CreatureID> & creatures, ui32 count)
+		{
+			for(size_t index = 0; index < pack.creatures.size(); ++index)
+			{
+				if(!assignedSlots.contains(index) && pack.creatures[index].second == creatures)
+				{
+					pack.creatures[index] = {count, creatures};
+					assignedSlots.insert(index);
+					return;
+				}
+			}
+
+			const auto * town = dynamic_cast<const CGTownInstance *>(dwelling);
+			const size_t portalSlot = town ? town->getTown()->creatures.size() : pack.creatures.size();
+			if(town && portalSlot < pack.creatures.size() && !assignedSlots.contains(portalSlot))
+			{
+				pack.creatures[portalSlot] = {count, creatures};
+				assignedSlots.insert(portalSlot);
+				return;
+			}
+
+			throw std::runtime_error("Unable to match a recorded VGT creature pool for " + objectName);
+		};
+
+		if(const auto * shared = findField(pools, "shared"))
+		{
+			if(!shared->isVector())
+				throw std::runtime_error("VGT shared creature pools must be a list: " + objectName);
+			for(const auto & pool : shared->Vector())
+			{
+				const auto & creatureNodes = requireField(pool, "creatures");
+				if(!creatureNodes.isVector())
+					throw std::runtime_error("VGT shared creature pool choices must be a list: " + objectName);
+				std::vector<CreatureID> creatures;
+				for(const auto & creatureNode : creatureNodes.Vector())
+					creatures.push_back(decodeCreature(creatureNode.String()));
+				const int64_t count = requireInteger(pool, "count");
+				if(count < 0 || count > std::numeric_limits<ui32>::max())
+					throw std::runtime_error("Invalid VGT shared creature pool count: " + objectName);
+				assignPool(creatures, static_cast<ui32>(count));
+			}
+		}
+
+		for(const auto & [creatureName, count] : pools.Struct())
+		{
+			if(creatureName == "shared")
+				continue;
+			if(!count.isNumber() || count.Integer() < 0 || count.Integer() > std::numeric_limits<ui32>::max())
+				throw std::runtime_error("VGT available creature count must be numeric: " + objectName);
+			assignPool({decodeCreature(creatureName)}, static_cast<ui32>(count.Integer()));
+		}
+		applyEffectPack(gameHandler, pack);
+	}
 }
 
 ObjectInstanceID resolveInitialHeroState(const CGameState & gameState, const JsonNode & node)
@@ -4629,6 +4703,11 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 		if(entry.first == "levelUp")
 		{
 			applyRecordedHeroLevelUp(gameHandler, entry.second);
+			continue;
+		}
+		if(entry.first == "available")
+		{
+			applyRecordedAvailability(gameHandler, entry.second);
 			continue;
 		}
 		// Battle resolution already produced all state effects. Only replay choices

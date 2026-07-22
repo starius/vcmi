@@ -172,6 +172,7 @@ class VGTRecorder final
 		std::map<std::string, std::string> armies;
 		std::vector<std::string> aftermath;
 		bool ended = false;
+		bool armiesCaptured = false;
 		bool aftermathDecisionStarted = false;
 	};
 

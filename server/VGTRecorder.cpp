@@ -4439,7 +4439,7 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 	if(!pendingBattle)
 		return;
 	flushPendingHeroScene();
-	if(pendingBattle->ended)
+	if(pendingBattle->ended && !pendingBattle->armiesCaptured)
 	{
 		pendingBattle->armies.clear();
 		for(const auto armyID : pendingBattle->armyIDs)
@@ -4448,6 +4448,7 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 			if(army)
 				pendingBattle->armies[objectAlias(gameState, armyID)] = strategicArmyState(*army);
 		}
+		pendingBattle->armiesCaptured = true;
 	}
 
 	battleOutput << "  - battle:\n";
@@ -5867,6 +5868,8 @@ void VGTRecorder::recordDecision(CGameHandler & gameHandler, CPackForServer & pa
 	if(auto * reply = dynamic_cast<QueryReply *>(&pack);
 		reply && pendingEncounter && pendingEncounter->query == reply->qid.getNum())
 	{
+		if(pendingBattle && pendingBattle->ended)
+			pendingBattle->aftermathDecisionStarted = true;
 		pendingEncounter->answered = true;
 		pendingEncounter->answer = reply->reply;
 		return;
@@ -5891,6 +5894,19 @@ void VGTRecorder::recordDecision(CGameHandler & gameHandler, CPackForServer & pa
 					name = "answer" + std::to_string(answer);
 				pendingBattle->aftermath.push_back("answer: { name: " + name + ", value: " +
 					(reply->reply ? std::to_string(answer) : "null") + " }");
+				pendingQueries.erase(pending);
+				return;
+			}
+			if(pending->second.kind == "levelUp" && pendingBattle)
+			{
+				pendingBattle->aftermathDecisionStarted = true;
+				if(reply->reply && *reply->reply >= 0 &&
+					static_cast<size_t>(*reply->reply) < pending->second.choices.size())
+				{
+					pendingBattle->aftermath.push_back("chooseSkill: { hero: " + pending->second.subject +
+						", skill: " + pending->second.choices[*reply->reply] + " }");
+					suppressDerivedEffects = true;
+				}
 				pendingQueries.erase(pending);
 				return;
 			}
@@ -6397,6 +6413,14 @@ void VGTRecorder::recordEffect(CGameHandler & gameHandler, CPackForClient & pack
 			return field.starts_with("loser: ");
 		}))
 			pendingBattle->outcome.push_back("loser: " + color(ended->loser));
+		pendingBattle->armies.clear();
+		for(const auto armyID : pendingBattle->armyIDs)
+		{
+			const auto * army = dynamic_cast<const CArmedInstance *>(gameState.getMap().getObject(armyID));
+			if(army)
+				pendingBattle->armies[objectAlias(gameState, armyID)] = strategicArmyState(*army);
+		}
+		pendingBattle->armiesCaptured = true;
 		pendingBattle->ended = true;
 		return;
 	}
@@ -6734,6 +6758,11 @@ void VGTRecorder::recordEffect(CGameHandler & gameHandler, CPackForClient & pack
 			if(outcome.starts_with("usedToday: { "))
 				boost::algorithm::replace_first(outcome, "object: magicWell", "object: " + pendingEncounter->object);
 			pendingEncounter->outcomes.push_back(std::move(outcome));
+			return;
+		}
+		if(pendingBattle && dynamic_cast<SetAvailableCreatures *>(&pack))
+		{
+			pendingBattle->aftermath.push_back(recorder.result());
 			return;
 		}
 		flushPendingMove(gameState);
