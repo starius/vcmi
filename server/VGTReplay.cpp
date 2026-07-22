@@ -28,6 +28,10 @@
 #include "../lib/StartInfo.h"
 #include "../lib/callback/GameRandomizer.h"
 #include "../lib/campaign/CampaignState.h"
+#include "../lib/bonuses/BonusParameters.h"
+#include "../lib/bonuses/Limiters.h"
+#include "../lib/bonuses/Propagators.h"
+#include "../lib/bonuses/Updaters.h"
 #include "../lib/constants/StringConstants.h"
 #include "../lib/entities/artifact/CArtifactInstance.h"
 #include "../lib/entities/artifact/CArtifactSet.h"
@@ -45,6 +49,7 @@
 #include "../lib/mapObjects/CRewardableObject.h"
 #include "../lib/mapObjects/MiscObjects.h"
 #include "../lib/mapObjects/ObjectTemplate.h"
+#include "../lib/mapObjects/TownBuildingInstance.h"
 #include "../lib/mapObjects/army/CArmedInstance.h"
 #include "../lib/networkPacks/PacksForClient.h"
 #include "../lib/networkPacks/PacksForClientBattle.h"
@@ -629,6 +634,64 @@ BuildingID decodeBuilding(const std::string & value)
 	}
 
 	return BuildingID(BuildingID::decode(identifier));
+}
+
+std::optional<BuildingID> decodeNamedSpecialTownBuilding(FactionID faction, const std::string & identifier)
+{
+	using Entry = std::tuple<FactionID, BuildingID, const char *>;
+	static const std::vector<Entry> entries = {
+		{FactionID::CASTLE, BuildingID::SPECIAL_1, "lighthouse"},
+		{FactionID::CASTLE, BuildingID::SPECIAL_2, "stables"},
+		{FactionID::CASTLE, BuildingID::SPECIAL_3, "brotherhoodOfSword"},
+		{FactionID::RAMPART, BuildingID::SPECIAL_1, "mysticPond"},
+		{FactionID::RAMPART, BuildingID::SPECIAL_2, "fountainOfFortune"},
+		{FactionID::RAMPART, BuildingID::SPECIAL_3, "treasury"},
+		{FactionID::TOWER, BuildingID::SPECIAL_1, "artifactMerchants"},
+		{FactionID::TOWER, BuildingID::SPECIAL_2, "lookoutTower"},
+		{FactionID::TOWER, BuildingID::SPECIAL_3, "library"},
+		{FactionID::TOWER, BuildingID::SPECIAL_4, "wallOfKnowledge"},
+		{FactionID::INFERNO, BuildingID::SPECIAL_2, "brimstoneStormclouds"},
+		{FactionID::INFERNO, BuildingID::SPECIAL_3, "castleGate"},
+		{FactionID::INFERNO, BuildingID::SPECIAL_4, "orderOfFire"},
+		{FactionID::NECROPOLIS, BuildingID::SPECIAL_1, "coverOfDarkness"},
+		{FactionID::NECROPOLIS, BuildingID::SPECIAL_2, "necromancyAmplifier"},
+		{FactionID::NECROPOLIS, BuildingID::SPECIAL_3, "skeletonTransformer"},
+		{FactionID::DUNGEON, BuildingID::SPECIAL_1, "artifactMerchants"},
+		{FactionID::DUNGEON, BuildingID::SPECIAL_2, "manaVortex"},
+		{FactionID::DUNGEON, BuildingID::SPECIAL_3, "portalOfSummoning"},
+		{FactionID::DUNGEON, BuildingID::SPECIAL_4, "battleScholarAcademy"},
+		{FactionID::STRONGHOLD, BuildingID::SPECIAL_1, "escapeTunnel"},
+		{FactionID::STRONGHOLD, BuildingID::SPECIAL_2, "freelancersGuild"},
+		{FactionID::STRONGHOLD, BuildingID::SPECIAL_3, "ballistaYard"},
+		{FactionID::STRONGHOLD, BuildingID::SPECIAL_4, "hallOfValhalla"},
+		{FactionID::FORTRESS, BuildingID::SPECIAL_1, "cageOfWarlords"},
+		{FactionID::FORTRESS, BuildingID::SPECIAL_2, "bloodObelisk"},
+		{FactionID::FORTRESS, BuildingID::SPECIAL_3, "glyphsOfFear"},
+		{FactionID::CONFLUX, BuildingID::SPECIAL_1, "artifactMerchants"},
+		{FactionID::CONFLUX, BuildingID::SPECIAL_2, "magicUniversity"},
+	};
+	const auto entry = std::ranges::find_if(entries, [faction, &identifier](const Entry & candidate)
+	{
+		return std::get<0>(candidate) == faction && std::get<2>(candidate) == identifier;
+	});
+	if(entry == entries.end())
+		return std::nullopt;
+	return std::get<1>(*entry);
+}
+
+BuildingID decodeTownBuilding(const CGameState & gameState, ObjectInstanceID townID, const std::string & value)
+{
+	std::string identifier = normalizeScopedIdentifier(value);
+	const std::string corePrefix = "core:";
+	if(identifier.starts_with(corePrefix))
+		identifier.erase(0, corePrefix.size());
+	const auto * town = gameState.getTown(townID);
+	if(town)
+	{
+		if(const auto building = decodeNamedSpecialTownBuilding(town->getFactionID(), identifier))
+			return *building;
+	}
+	return decodeBuilding(value);
 }
 
 EArmyFormation decodeArmyFormation(const std::string & value)
@@ -2242,7 +2305,7 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 	{
 		BuildStructure pack;
 		pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "town"));
-		pack.bid = decodeBuilding(requireString(decision, "building"));
+		pack.bid = decodeTownBuilding(gameHandler.gameState(), pack.tid, requireString(decision, "building"));
 		replayPack(gameHandler, pack, player);
 		const auto * town = gameHandler.gameState().getTown(pack.tid);
 		if(!town || !town->hasBuilt(pack.bid))
@@ -2252,9 +2315,25 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 
 	if(kind == "visitTownBuilding")
 	{
+		const ObjectInstanceID townID = resolveObjectAlias(
+			gameHandler.gameState(), requireString(decision, "town"));
+		const BuildingID buildingID = decodeTownBuilding(
+			gameHandler.gameState(), townID, requireString(decision, "building"));
+		if(const auto * hero = findField(decision, "hero"))
+		{
+			auto * town = gameHandler.gs->getTown(townID);
+			if(!town)
+				throw std::runtime_error("VGT town-building visit references a missing town");
+			const auto building = town->rewardableBuildings.find(buildingID);
+			if(building == town->rewardableBuildings.end())
+				throw std::runtime_error("VGT town-building visit references a non-rewardable building");
+			const ObjectInstanceID heroID = resolveObjectAlias(gameHandler.gameState(), hero->String());
+			building->second->setProperty(ObjProperty::VISITORS, heroID);
+			return;
+		}
 		VisitTownBuilding pack;
-		pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "town"));
-		pack.bid = decodeBuilding(requireString(decision, "building"));
+		pack.tid = townID;
+		pack.bid = buildingID;
 		replayPack(gameHandler, pack, player);
 		return;
 	}
@@ -2263,7 +2342,7 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 	{
 		RazeStructure pack;
 		pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "town"));
-		pack.bid = decodeBuilding(requireString(decision, "building"));
+		pack.bid = decodeTownBuilding(gameHandler.gameState(), pack.tid, requireString(decision, "building"));
 		replayPack(gameHandler, pack, player);
 		return;
 	}
@@ -5461,6 +5540,8 @@ void writeGameStateSummary(const CGameState & gameState, std::ostream & output)
 			<< " movement=" << hero->movementPointsRemaining()
 			<< " moveDir=" << static_cast<int>(hero->moveDir)
 			<< " tactics=" << hero->tacticFormationEnabled
+			<< " visitedTown=" << (hero->getVisitedTown() ? hero->getVisitedTown()->id.getNum() : -1)
+			<< " garrisoned=" << (hero->isGarrisoned() ? "true" : "false")
 			<< " secondarySkills=";
 		for(const auto & [skill, level] : hero->secSkills)
 			output << SecondarySkill::encode(skill.getNum()) << ":" << static_cast<int>(level) << ",";
@@ -5484,6 +5565,8 @@ void writeGameStateSummary(const CGameState & gameState, std::ostream & output)
 			<< " pos=" << town->visitablePos().toString()
 			<< " built=" << town->built
 			<< " destroyed=" << town->destroyed
+			<< " garrisonHero=" << (town->getGarrisonHero() ? town->getGarrisonHero()->id.getNum() : -1)
+			<< " visitingHero=" << (town->getVisitingHero() ? town->getVisitingHero()->id.getNum() : -1)
 			<< " buildings=";
 		bool first = true;
 		for(const auto & building : town->getBuildings())
@@ -5507,6 +5590,13 @@ void writeGameStateSummary(const CGameState & gameState, std::ostream & output)
 			}
 		}
 		output << "\n";
+		for(const auto & [buildingID, building] : town->rewardableBuildings)
+		{
+			output << "townRewardable town=" << town->id.getNum()
+				<< " building=" << BuildingID::encode(buildingID.getNum())
+				<< " bytes=" << serializedValueFingerprint(*building)
+				<< "\n";
+		}
 	}
 
 	for(const auto * creature : gameState.getMap().getObjects<CGCreature>())

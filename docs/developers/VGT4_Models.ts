@@ -554,7 +554,8 @@ export type OtherDecisionRecord =
     | { readonly dig: ActorContext & { readonly hero: Identifier } }
     | { readonly pauseTimer: ActorContext }
     | { readonly castleTeleportHero: ActorContext & { readonly hero: Identifier; readonly destination: Identifier; readonly source: number } }
-    | { readonly visitTownBuilding: ActorContext & { readonly town: Identifier; readonly building: Identifier } }
+    /** hero is present when an automatic per-hero or weekly reward is consumed. */
+    | { readonly visitTownBuilding: ActorContext & { readonly hero?: Identifier; readonly town: Identifier; readonly building: Identifier } }
     | { readonly razeStructure: ActorContext & { readonly town: Identifier; readonly building: Identifier } }
     | { readonly spellResearch: ActorContext & { readonly town: Identifier; readonly spell: Identifier; readonly accepted: boolean } }
     | { readonly hire: ActorContext & { readonly at: Identifier; readonly hero: Identifier; readonly paid: ResourceMap; readonly replacement?: Identifier; readonly arrival?: Position; readonly boat?: Identifier } }

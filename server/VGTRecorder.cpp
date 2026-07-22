@@ -735,6 +735,60 @@ std::string building(BuildingID id)
 	return transcriptIdentifier("building:" + std::to_string(id.getNum()));
 }
 
+std::optional<std::string> namedSpecialTownBuilding(FactionID faction, BuildingID id)
+{
+	using Entry = std::tuple<FactionID, BuildingID, const char *>;
+	static const std::vector<Entry> entries = {
+		{FactionID::CASTLE, BuildingID::SPECIAL_1, "lighthouse"},
+		{FactionID::CASTLE, BuildingID::SPECIAL_2, "stables"},
+		{FactionID::CASTLE, BuildingID::SPECIAL_3, "brotherhoodOfSword"},
+		{FactionID::RAMPART, BuildingID::SPECIAL_1, "mysticPond"},
+		{FactionID::RAMPART, BuildingID::SPECIAL_2, "fountainOfFortune"},
+		{FactionID::RAMPART, BuildingID::SPECIAL_3, "treasury"},
+		{FactionID::TOWER, BuildingID::SPECIAL_1, "artifactMerchants"},
+		{FactionID::TOWER, BuildingID::SPECIAL_2, "lookoutTower"},
+		{FactionID::TOWER, BuildingID::SPECIAL_3, "library"},
+		{FactionID::TOWER, BuildingID::SPECIAL_4, "wallOfKnowledge"},
+		{FactionID::INFERNO, BuildingID::SPECIAL_2, "brimstoneStormclouds"},
+		{FactionID::INFERNO, BuildingID::SPECIAL_3, "castleGate"},
+		{FactionID::INFERNO, BuildingID::SPECIAL_4, "orderOfFire"},
+		{FactionID::NECROPOLIS, BuildingID::SPECIAL_1, "coverOfDarkness"},
+		{FactionID::NECROPOLIS, BuildingID::SPECIAL_2, "necromancyAmplifier"},
+		{FactionID::NECROPOLIS, BuildingID::SPECIAL_3, "skeletonTransformer"},
+		{FactionID::DUNGEON, BuildingID::SPECIAL_1, "artifactMerchants"},
+		{FactionID::DUNGEON, BuildingID::SPECIAL_2, "manaVortex"},
+		{FactionID::DUNGEON, BuildingID::SPECIAL_3, "portalOfSummoning"},
+		{FactionID::DUNGEON, BuildingID::SPECIAL_4, "battleScholarAcademy"},
+		{FactionID::STRONGHOLD, BuildingID::SPECIAL_1, "escapeTunnel"},
+		{FactionID::STRONGHOLD, BuildingID::SPECIAL_2, "freelancersGuild"},
+		{FactionID::STRONGHOLD, BuildingID::SPECIAL_3, "ballistaYard"},
+		{FactionID::STRONGHOLD, BuildingID::SPECIAL_4, "hallOfValhalla"},
+		{FactionID::FORTRESS, BuildingID::SPECIAL_1, "cageOfWarlords"},
+		{FactionID::FORTRESS, BuildingID::SPECIAL_2, "bloodObelisk"},
+		{FactionID::FORTRESS, BuildingID::SPECIAL_3, "glyphsOfFear"},
+		{FactionID::CONFLUX, BuildingID::SPECIAL_1, "artifactMerchants"},
+		{FactionID::CONFLUX, BuildingID::SPECIAL_2, "magicUniversity"},
+	};
+	const auto entry = std::ranges::find_if(entries, [faction, id](const Entry & candidate)
+	{
+		return std::get<0>(candidate) == faction && std::get<1>(candidate) == id;
+	});
+	if(entry == entries.end())
+		return std::nullopt;
+	return std::get<2>(*entry);
+}
+
+std::string townBuilding(const CGameState & gameState, ObjectInstanceID townID, BuildingID id)
+{
+	const auto * town = gameState.getTown(townID);
+	if(town)
+	{
+		if(const auto name = namedSpecialTownBuilding(town->getFactionID(), id))
+			return *name;
+	}
+	return building(id);
+}
+
 std::string artifact(ArtifactID id)
 {
 	if(id.getNum() < 0)
@@ -2654,21 +2708,21 @@ public:
 	{
 		line = "decision: { actor: " + actorForPlayer(pack.player) +
 			", kind: buildStructure, town: " + objectAlias(gameState, pack.tid) +
-			", building: " + building(pack.bid) + " }";
+			", building: " + townBuilding(gameState, pack.tid, pack.bid) + " }";
 	}
 
 	void visitVisitTownBuilding(VisitTownBuilding & pack) override
 	{
 		line = "decision: { actor: " + actorForPlayer(pack.player) +
 			", kind: visitTownBuilding, town: " + objectAlias(gameState, pack.tid) +
-			", building: " + building(pack.bid) + " }";
+			", building: " + townBuilding(gameState, pack.tid, pack.bid) + " }";
 	}
 
 	void visitRazeStructure(RazeStructure & pack) override
 	{
 		line = "decision: { actor: " + actorForPlayer(pack.player) +
 			", kind: razeStructure, town: " + objectAlias(gameState, pack.tid) +
-			", building: " + building(pack.bid) + " }";
+			", building: " + townBuilding(gameState, pack.tid, pack.bid) + " }";
 	}
 
 	void visitSpellResearch(SpellResearch & pack) override
@@ -3316,6 +3370,26 @@ public:
 		{
 			line = "capture: { object: " + objectAlias(gameState, pack.id) +
 				", owner: " + color(pack.identifier.as<PlayerColor>()) + " }";
+			return;
+		}
+		if(pack.what == ObjProperty::STRUCTURE_ADD_VISITING_HERO ||
+			pack.what == ObjProperty::STRUCTURE_ADD_GARRISONED_HERO)
+		{
+			const auto * town = gameState.getTown(pack.id);
+			const auto * hero = town
+				? (pack.what == ObjProperty::STRUCTURE_ADD_VISITING_HERO
+					? town->getVisitingHero()
+					: town->getGarrisonHero())
+				: nullptr;
+			if(!town || !hero)
+			{
+				unmodelled(pack);
+				return;
+			}
+			const BuildingID buildingID(pack.identifier.getNum());
+			line = "visitTownBuilding: { hero: " + heroAlias(gameState, hero->id) +
+				", town: " + objectAlias(gameState, town->id) +
+				", building: " + townBuilding(gameState, town->id, buildingID) + " }";
 			return;
 		}
 		line.clear();

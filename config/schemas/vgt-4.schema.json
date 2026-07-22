@@ -243,8 +243,8 @@
 		"armySlot": { "type":"object", "required":["army","slot"], "properties":{"army":{"$ref":"#/$defs/identifier"},"slot":{"type":"integer"}}, "additionalProperties":false },
 		"townBuildingAction": {
 			"type":"object", "required":["town","building"],
-			"properties":{"actor":{"$ref":"#/$defs/actor"},"town":{"$ref":"#/$defs/identifier"},"building":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false,
-			"description":"Builds, visits, or razes one named structure in a town; the enclosing record key selects the operation."
+			"properties":{"actor":{"$ref":"#/$defs/actor"},"hero":{"$ref":"#/$defs/identifier"},"town":{"$ref":"#/$defs/identifier"},"building":{"$ref":"#/$defs/identifier"}}, "additionalProperties":false,
+			"description":"Builds, visits, or razes one named structure in a town; the enclosing record key selects the operation. An explicit hero on visitTownBuilding records consumption of an automatic per-hero or weekly town reward such as a Mana Vortex."
 		},
 		"buildAction": {
 			"type":"object", "required":["town","building","cost"],
