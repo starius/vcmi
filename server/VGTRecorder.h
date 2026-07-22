@@ -173,7 +173,9 @@ class VGTRecorder final
 		std::vector<std::string> aftermath;
 		bool ended = false;
 		bool armiesCaptured = false;
+		bool refreshArmiesAfterApply = false;
 		bool aftermathDecisionStarted = false;
+		bool armyDecisionStarted = false;
 	};
 
 	struct PendingWeeklyReward
@@ -242,6 +244,7 @@ class VGTRecorder final
 	void flushPendingEncounter(const CGameState & gameState);
 	void flushPendingHeroScene();
 	void flushPendingBattle(const CGameState & gameState);
+	void capturePendingBattleArmies(const CGameState & gameState);
 	void collectInitialAvailability(const CGameState & gameState, const SetAvailableCreatures & availability);
 	void flushPendingInitialAvailability(const CGameState & gameState);
 	void collectWeeklyAvailability(const CGameState & gameState, const SetAvailableCreatures & availability);

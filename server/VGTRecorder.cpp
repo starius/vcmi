@@ -4434,22 +4434,28 @@ void writeBattleArmyStates(
 }
 }
 
+void VGTRecorder::capturePendingBattleArmies(const CGameState & gameState)
+{
+	if(!pendingBattle)
+		return;
+
+	pendingBattle->armies.clear();
+	for(const auto armyID : pendingBattle->armyIDs)
+	{
+		const auto * army = dynamic_cast<const CArmedInstance *>(gameState.getMap().getObject(armyID));
+		if(army)
+			pendingBattle->armies[objectAlias(gameState, armyID)] = strategicArmyState(*army);
+	}
+	pendingBattle->armiesCaptured = true;
+}
+
 void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 {
 	if(!pendingBattle)
 		return;
 	flushPendingHeroScene();
 	if(pendingBattle->ended && !pendingBattle->armiesCaptured)
-	{
-		pendingBattle->armies.clear();
-		for(const auto armyID : pendingBattle->armyIDs)
-		{
-			const auto * army = dynamic_cast<const CArmedInstance *>(gameState.getMap().getObject(armyID));
-			if(army)
-				pendingBattle->armies[objectAlias(gameState, armyID)] = strategicArmyState(*army);
-		}
-		pendingBattle->armiesCaptured = true;
-	}
+		capturePendingBattleArmies(gameState);
 
 	battleOutput << "  - battle:\n";
 	battleOutput << "      id: " << pendingBattle->id << "\n";
@@ -5869,7 +5875,10 @@ void VGTRecorder::recordDecision(CGameHandler & gameHandler, CPackForServer & pa
 		reply && pendingEncounter && pendingEncounter->query == reply->qid.getNum())
 	{
 		if(pendingBattle && pendingBattle->ended)
+		{
 			pendingBattle->aftermathDecisionStarted = true;
+			pendingBattle->armyDecisionStarted = true;
+		}
 		pendingEncounter->answered = true;
 		pendingEncounter->answer = reply->reply;
 		return;
@@ -5882,6 +5891,7 @@ void VGTRecorder::recordDecision(CGameHandler & gameHandler, CPackForServer & pa
 			if(pending->second.kind == "battleChoice" && pendingBattle)
 			{
 				pendingBattle->aftermathDecisionStarted = true;
+				pendingBattle->armyDecisionStarted = true;
 				const int answer = reply->reply.value_or(0);
 				std::string name;
 				if(pending->second.selection)
@@ -6413,14 +6423,7 @@ void VGTRecorder::recordEffect(CGameHandler & gameHandler, CPackForClient & pack
 			return field.starts_with("loser: ");
 		}))
 			pendingBattle->outcome.push_back("loser: " + color(ended->loser));
-		pendingBattle->armies.clear();
-		for(const auto armyID : pendingBattle->armyIDs)
-		{
-			const auto * army = dynamic_cast<const CArmedInstance *>(gameState.getMap().getObject(armyID));
-			if(army)
-				pendingBattle->armies[objectAlias(gameState, armyID)] = strategicArmyState(*army);
-		}
-		pendingBattle->armiesCaptured = true;
+		capturePendingBattleArmies(gameState);
 		pendingBattle->ended = true;
 		return;
 	}
@@ -6632,9 +6635,7 @@ void VGTRecorder::recordEffect(CGameHandler & gameHandler, CPackForClient & pack
 		collectWeeklyAvailability(gameState, *availability);
 		return;
 	}
-	if(suppressDerivedEffects && !documentBoundary)
-		return;
-	if(pendingBattle && (
+	const bool battleArmyChange =
 		dynamic_cast<ChangeStackCount *>(&pack) ||
 		dynamic_cast<SetStackType *>(&pack) ||
 		dynamic_cast<EraseStack *>(&pack) ||
@@ -6642,7 +6643,14 @@ void VGTRecorder::recordEffect(CGameHandler & gameHandler, CPackForClient & pack
 		dynamic_cast<InsertNewStack *>(&pack) ||
 		dynamic_cast<RebalanceStacks *>(&pack) ||
 		dynamic_cast<GiveStackExperience *>(&pack) ||
-		dynamic_cast<SetHeroExperience *>(&pack)))
+		dynamic_cast<SetHeroExperience *>(&pack);
+	if(pendingBattle && battleArmyChange)
+	{
+		if(pendingBattle->ended && !pendingBattle->armyDecisionStarted)
+			pendingBattle->refreshArmiesAfterApply = true;
+		return;
+	}
+	if(suppressDerivedEffects && !documentBoundary)
 		return;
 	if(!pendingEncounter && !pendingBattle && !documentBoundary && (
 		dynamic_cast<FoWChange *>(&pack) ||
@@ -6800,6 +6808,11 @@ void VGTRecorder::recordAppliedState(CGameHandler & gameHandler)
 {
 	std::scoped_lock lock(outputMutex);
 	initializeFromEnvironment();
+	if(pendingBattle && pendingBattle->refreshArmiesAfterApply)
+	{
+		capturePendingBattleArmies(gameHandler.gameState());
+		pendingBattle->refreshArmiesAfterApply = false;
+	}
 	writeBaselineSave(gameHandler);
 	writeTurnState(gameHandler);
 	if(exitAfterAppliedState)
