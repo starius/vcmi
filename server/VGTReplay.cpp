@@ -4699,6 +4699,13 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 	}
 
 	const BattleID liveBattleID(std::stoi(battleID));
+	const auto * aftermath = findField(outcome, "aftermath");
+	if(aftermath && !aftermath->isVector())
+		throw std::runtime_error("VGT battle aftermath is not a list");
+	std::optional<std::string> aftermathActor;
+	if(const auto * winner = findField(outcome, "winner"); winner && winner->isString())
+		aftermathActor = winner->String();
+	size_t earlyAftermathRecords = 0;
 	if(gameHandler.gs->getBattle(liveBattleID))
 	{
 		try
@@ -4714,6 +4721,42 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 		{
 			throw std::runtime_error("battle confirmation: " + std::string(error.what()));
 		}
+	}
+	// A defending hero's level-up can be exposed above the defender's half of a
+	// shared player-versus-player battle query. Apply the frozen choice at the
+	// same point as the recorded game; removing that dialog then exposes the
+	// remaining battle query and lets normal cleanup finish in byte-identical order.
+	while(gameHandler.gs->getBattle(liveBattleID) && aftermath &&
+		earlyAftermathRecords < aftermath->Vector().size())
+	{
+		const auto & record = aftermath->Vector()[earlyAftermathRecords];
+		if(!record.isStruct() || record.Struct().size() != 1)
+			throw std::runtime_error("VGT battle aftermath record is not a one-key mapping");
+		const auto & entry = *record.Struct().begin();
+		if(entry.first == "query")
+		{
+			if(const auto * player = findField(entry.second, "player"); player && player->isString())
+				aftermathActor = player->String();
+			++earlyAftermathRecords;
+			continue;
+		}
+		if(entry.first == "levelUp")
+		{
+			applyRecordedHeroLevelUp(gameHandler, entry.second);
+			++earlyAftermathRecords;
+			const ObjectInstanceID heroID = resolveObjectAlias(
+				gameHandler.gameState(), requireString(entry.second, "hero"));
+			if(const auto * hero = gameHandler.gameState().getHero(heroID))
+				completeRecordedChoiceFreeLevelUp(gameHandler, hero->tempOwner);
+			continue;
+		}
+		if(isDecisionKind(entry.first) && !isEffectKind(entry.first))
+		{
+			replayReadableDecision(gameHandler, entry.first, entry.second, std::nullopt, aftermathActor);
+			++earlyAftermathRecords;
+			continue;
+		}
+		break;
 	}
 	if(gameHandler.gs->getBattle(liveBattleID))
 		throw std::runtime_error("VGT battle outcome did not finalize battle: " + battleID);
@@ -4755,17 +4798,11 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 			throw std::runtime_error("final army " + armyName + ": " + error.what());
 		}
 	}
-	const auto * aftermath = findField(outcome, "aftermath");
 	if(!aftermath)
 		return;
-	if(!aftermath->isVector())
-		throw std::runtime_error("VGT battle aftermath is not a list");
-
-	std::optional<std::string> aftermathActor;
-	if(const auto * winner = findField(outcome, "winner"); winner && winner->isString())
-		aftermathActor = winner->String();
-	for(const auto & record : aftermath->Vector())
+	for(size_t recordIndex = earlyAftermathRecords; recordIndex < aftermath->Vector().size(); ++recordIndex)
 	{
+		const auto & record = aftermath->Vector()[recordIndex];
 		if(!record.isStruct() || record.Struct().size() != 1)
 			throw std::runtime_error("VGT battle aftermath record is not a one-key mapping");
 		const auto & entry = *record.Struct().begin();
