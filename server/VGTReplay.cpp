@@ -78,6 +78,7 @@ struct RecordedNewDayState
 };
 
 thread_local std::map<ui32, RecordedNewDayState> replayRecordedNewDays;
+thread_local std::optional<QueryID> replayChoiceFreeLevelUpQuery;
 
 ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::string & alias);
 
@@ -1870,6 +1871,26 @@ void replayPack(CGameHandler & gameHandler, CPackForServer & pack, PlayerColor p
 	gameHandler.handleReceivedPack(GameConnectionID::FIRST_CONNECTION, pack);
 }
 
+void completeRecordedChoiceFreeLevelUp(CGameHandler & gameHandler, PlayerColor player)
+{
+	if(!replayChoiceFreeLevelUpQuery)
+		return;
+
+	const auto query = std::dynamic_pointer_cast<CHeroLevelUpDialogQuery>(
+		gameHandler.queries->topQuery(player));
+	if(!query || query->queryID != *replayChoiceFreeLevelUpQuery)
+	{
+		replayChoiceFreeLevelUpQuery.reset();
+		return;
+	}
+
+	QueryReply reply;
+	reply.qid = query->queryID;
+	reply.reply = 0;
+	replayChoiceFreeLevelUpQuery.reset();
+	replayPack(gameHandler, reply, player);
+}
+
 void applyEffectPack(CGameHandler & gameHandler, CPackForClient & pack)
 {
 	if(!gameHandler.gs)
@@ -3193,6 +3214,8 @@ void applyRecordedHeroLevelUp(CGameHandler & gameHandler, const JsonNode & node)
 {
 	const ObjectInstanceID heroID = resolveObjectAlias(gameHandler.gameState(), requireString(node, "hero"));
 	const auto * hero = gameHandler.gameState().getHero(heroID);
+	if(hero)
+		completeRecordedChoiceFreeLevelUp(gameHandler, hero->tempOwner);
 	const auto query = hero
 		? std::dynamic_pointer_cast<CHeroLevelUpDialogQuery>(gameHandler.queries->topQuery(hero->tempOwner))
 		: nullptr;
@@ -3220,16 +3243,22 @@ void applyRecordedHeroLevelUp(CGameHandler & gameHandler, const JsonNode & node)
 
 	query->hlu.skills.clear();
 	const auto * choices = findField(node, "choices");
-	if(!choices)
-		return;
-	if(!choices->isVector())
-		throw std::runtime_error("VGT level-up choices are not a list");
-	for(const auto & choice : choices->Vector())
+	if(choices)
 	{
-		if(!choice.isString())
-			throw std::runtime_error("VGT level-up choice is not a skill identifier");
-		query->hlu.skills.push_back(decodeSecondarySkill(choice.String()));
+		if(!choices->isVector())
+			throw std::runtime_error("VGT level-up choices are not a list");
+		for(const auto & choice : choices->Vector())
+		{
+			if(!choice.isString())
+				throw std::runtime_error("VGT level-up choice is not a skill identifier");
+			query->hlu.skills.push_back(decodeSecondarySkill(choice.String()));
+		}
 	}
+
+	if(query->hlu.skills.empty())
+		replayChoiceFreeLevelUpQuery = query->queryID;
+	else
+		replayChoiceFreeLevelUpQuery.reset();
 }
 
 void replayReadableDecision(
@@ -3250,12 +3279,15 @@ void replayReadableDecision(
 		decision["actor"].String() = *defaultActor;
 	if(battleID && !hasField(decision, "battle"))
 		decision["battle"].String() = *battleID;
+	const auto player = tryPlayerFromActor(requireString(decision, "actor"));
+	if(player && kind != "answer")
+		completeRecordedChoiceFreeLevelUp(gameHandler, *player);
 	const bool handlesActiveQuery = kind == "answer" || kind == "finish" ||
 		kind == "chooseSkill" || kind == "teleport" ||
 		(kind == "encounter" && hasField(decision, "choice"));
 	if(!handlesActiveQuery)
 	{
-		if(const auto player = tryPlayerFromActor(requireString(decision, "actor")))
+		if(player)
 		{
 			// Routine one-button UI notices are deliberately absent from the readable
 			// transcript. Dismiss only acknowledgements (or dialogs explicitly marked
@@ -5426,6 +5458,7 @@ int replayVGTJson(const VGTReplayOptions & options)
 	objectAliasCache.clear();
 	replayDiscoveryTracker = VGTDiscoveryTracker();
 	replayDerivedDiscoveries.clear();
+	replayChoiceFreeLevelUpQuery.reset();
 	const JsonNode documents = readJsonFile(options.inputJson);
 	if(!documents.isVector() || documents.Vector().empty())
 		throw std::runtime_error("VGT replay JSON must contain transcript documents");

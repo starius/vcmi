@@ -12,6 +12,8 @@
 #include "CGameHandler.h"
 #include "VGTDiscovery.h"
 #include "processors/HeroPoolProcessor.h"
+#include "queries/MapQueries.h"
+#include "queries/QueriesProcessor.h"
 
 #include "../Version.h"
 #include "../lib/GameConstants.h"
@@ -5942,6 +5944,10 @@ void VGTRecorder::recordDecision(CGameHandler & gameHandler, CPackForServer & pa
 			pendingQueries.erase(pending);
 			return;
 		}
+		const auto levelUp = std::dynamic_pointer_cast<CHeroLevelUpDialogQuery>(
+			gameHandler.queries->topQuery(reply->player));
+		if(levelUp && levelUp->queryID == reply->qid && levelUp->hlu.skills.empty())
+			return;
 	}
 	flushPendingEncounter(gameState);
 	if(auto * reply = dynamic_cast<QueryReply *>(&pack); reply)
