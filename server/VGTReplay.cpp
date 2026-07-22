@@ -3948,6 +3948,48 @@ void restoreRecordedBattlePosition(
 	gameHandler.sendAndApply(moved);
 }
 
+void restoreRecordedBattleActor(
+	CGameHandler & gameHandler,
+	const JsonNode & attack,
+	const std::string & battleID,
+	const std::map<std::string, int> & roster)
+{
+	const std::string actor = requireString(attack, "by");
+	const int stackID = rosterStack(roster, actor);
+	auto * battle = gameHandler.gs->getBattle(BattleID(std::stoi(battleID)));
+	const auto * stack = battle ? battle->battleGetStackByID(stackID, false) : nullptr;
+	if(!stack)
+		throw std::runtime_error("Recorded VGT battle action references missing unit " + actor);
+	if(stack->alive())
+		return;
+
+	const auto damage = recordedBattleDamage(attack);
+	const auto afters = recordedBattleAfters(attack);
+	const auto actorDamage = damage.find(actor);
+	const auto actorAfter = afters.find(actor);
+	if(actorDamage == damage.end() || actorAfter == afters.end())
+		throw std::runtime_error("Recorded VGT battle action references dead unit " + actor);
+
+	auto state = stack->acquireState();
+	const int64_t afterHealth = actorAfter->second.count == 0
+		? 0
+		: (actorAfter->second.count - 1) * state->getMaxHealth() + actorAfter->second.topHP;
+	const int64_t targetHealth = std::clamp<int64_t>(
+		afterHealth + actorDamage->second, 1, state->getTotalHealth());
+	int64_t correction = targetHealth;
+	state->heal(correction, EHealLevel::RESURRECT, EHealPower::PERMANENT);
+	if(state->getAvailableHealth() != targetHealth)
+		throw std::runtime_error("Unable to restore recorded VGT battle actor " + actor);
+
+	BattleUnitsChanged changes;
+	changes.battleID = BattleID(std::stoi(battleID));
+	UnitChanges change(stack->unitId(), BattleChanges::EOperation::UPDATE);
+	change.healthDelta = targetHealth;
+	change.data = state->save();
+	changes.changedStacks.push_back(std::move(change));
+	gameHandler.sendAndApply(changes);
+}
+
 void replaySemanticBattleAttack(
 	CGameHandler & gameHandler,
 	const JsonNode & node,
@@ -3959,6 +4001,7 @@ void replaySemanticBattleAttack(
 	if(optionalBool(node, "automatic", false))
 		return;
 
+	restoreRecordedBattleActor(gameHandler, node, battleID, roster);
 	const auto healthBefore = captureBattleHealth(gameHandler, battleID, roster);
 	JsonNode action;
 	if(const auto * actor = findField(node, "actor"))
