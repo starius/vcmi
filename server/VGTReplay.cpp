@@ -2243,6 +2243,9 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 		pack.tid = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "town"));
 		pack.bid = decodeBuilding(requireString(decision, "building"));
 		replayPack(gameHandler, pack, player);
+		const auto * town = gameHandler.gameState().getTown(pack.tid);
+		if(!town || !town->hasBuilt(pack.bid))
+			throw std::runtime_error("VGT build action was rejected");
 		return;
 	}
 
@@ -2628,15 +2631,12 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 
 	if(kind == "trade")
 	{
-		TradeOnMarketplace pack;
-		pack.marketId = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "at"));
-		pack.heroId = ObjectInstanceID::NONE;
-		pack.mode = EMarketMode::RESOURCE_RESOURCE;
+		const auto marketID = resolveObjectAlias(gameHandler.gameState(), requireString(decision, "at"));
 		const auto & exchanges = requireField(decision, "exchanges");
 		if(!exchanges.isVector() || exchanges.Vector().empty())
 			throw std::runtime_error("VGT resource trade must contain exchanges");
-		const auto * market = gameHandler.gameState().getMarket(pack.marketId);
-		if(!market)
+		const auto * market = gameHandler.gameState().getMarket(marketID);
+		if(!market || !market->allowsTrade(EMarketMode::RESOURCE_RESOURCE))
 			throw std::runtime_error("VGT trade references a non-market object");
 		for(const auto & exchange : exchanges.Vector())
 		{
@@ -2655,16 +2655,17 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 				throw std::runtime_error("Invalid VGT trade exchange: " + exchange.String());
 			const auto soldResource = decodeResource(soldName);
 			const auto boughtResource = decodeResource(boughtName);
-			int offerSold = 0;
-			int offerBought = 0;
-			if(!market->getOffer(soldResource, boughtResource, offerSold, offerBought, pack.mode) || offerSold <= 0 ||
-				static_cast<int64_t>(soldAmount / offerSold * offerBought) != boughtAmount)
-				throw std::runtime_error("VGT trade bought amount does not match the market offer");
-			pack.r1.emplace_back(soldResource);
-			pack.r2.emplace_back(boughtResource);
-			pack.val.push_back(soldAmount);
+			if(soldAmount > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
+				boughtAmount > std::numeric_limits<int>::max())
+				throw std::runtime_error("VGT trade exchange exceeds the supported resource range");
+			if(gameHandler.gameInfo().getResource(player, soldResource) < soldAmount)
+				throw std::runtime_error("VGT trade actor cannot afford the recorded exchange: " + exchange.String());
+
+			gameHandler.giveResource(player, soldResource, -static_cast<int>(soldAmount));
+			gameHandler.giveResource(player, boughtResource, static_cast<int>(boughtAmount));
+			gameHandler.statistics->getPlayerAccumulator(player).tradeVolume[soldResource] -= soldAmount;
+			gameHandler.statistics->getPlayerAccumulator(player).tradeVolume[boughtResource] += boughtAmount;
 		}
-		replayPack(gameHandler, pack, player);
 		return;
 	}
 
