@@ -3821,7 +3821,8 @@ void applyRecordedBattleDamage(
 	const std::map<std::string, int64_t> & damage,
 	const std::map<std::string, int64_t> & kills = {},
 	const std::map<std::string, RecordedBattleHealth> & afters = {},
-	const std::map<std::string, RecordedBattleHealth> & rebirths = {})
+	const std::map<std::string, RecordedBattleHealth> & rebirths = {},
+	bool restoreUnrecorded = false)
 {
 	auto * battle = gameHandler.gs->getBattle(BattleID(std::stoi(battleID)));
 	if(!battle)
@@ -3829,7 +3830,13 @@ void applyRecordedBattleDamage(
 
 	BattleUnitsChanged changes;
 	changes.battleID = BattleID(std::stoi(battleID));
-	for(const auto & [alias, amount] : damage)
+	std::map<std::string, int64_t> frozenDamage = damage;
+	if(restoreUnrecorded)
+	{
+		for(const auto & health : healthBefore)
+			frozenDamage.try_emplace(health.first, 0);
+	}
+	for(const auto & [alias, amount] : frozenDamage)
 	{
 		if(!roster.contains(alias))
 			throw std::runtime_error("Invalid recorded VGT battle damage for " + alias);
@@ -4036,38 +4043,45 @@ void restoreRecordedBattlePosition(
 	gameHandler.sendAndApply(moved);
 }
 
-void restoreRecordedBattleActor(
+void restoreRecordedBattleUnit(
 	CGameHandler & gameHandler,
-	const JsonNode & attack,
+	const JsonNode & exchange,
 	const std::string & battleID,
-	const std::map<std::string, int> & roster)
+	const std::map<std::string, int> & roster,
+	const std::string & alias)
 {
-	const std::string actor = requireString(attack, "by");
-	const int stackID = rosterStack(roster, actor);
+	const int stackID = rosterStack(roster, alias);
 	auto * battle = gameHandler.gs->getBattle(BattleID(std::stoi(battleID)));
 	const auto * stack = battle ? battle->battleGetStackByID(stackID, false) : nullptr;
 	if(!stack)
-		throw std::runtime_error("Recorded VGT battle action references missing unit " + actor);
+		throw std::runtime_error("Recorded VGT battle action references missing unit " + alias);
 	if(stack->alive())
 		return;
 
-	const auto damage = recordedBattleDamage(attack);
-	const auto afters = recordedBattleAfters(attack);
-	const auto actorDamage = damage.find(actor);
-	const auto actorAfter = afters.find(actor);
-	if(actorDamage == damage.end() || actorAfter == afters.end())
-		throw std::runtime_error("Recorded VGT battle action references dead unit " + actor);
+	const auto damage = recordedBattleDamage(exchange);
+	const auto afters = recordedBattleAfters(exchange);
+	const auto actorDamage = damage.find(alias);
+	const auto actorAfter = afters.find(alias);
 
 	auto state = stack->acquireState();
-	const int64_t afterHealth = actorAfter->second.count == 0
-		? 0
-		: (actorAfter->second.count - 1) * state->getMaxHealth() + actorAfter->second.topHP;
-	const int64_t targetHealth = std::clamp<int64_t>(
-		afterHealth + actorDamage->second, 1, state->getTotalHealth());
+	int64_t targetHealth = 1;
+	if(actorDamage != damage.end() && actorAfter != afters.end())
+	{
+		const int64_t afterHealth = actorAfter->second.count == 0
+			? 0
+			: (actorAfter->second.count - 1) * state->getMaxHealth() + actorAfter->second.topHP;
+		targetHealth = std::clamp<int64_t>(
+			afterHealth + actorDamage->second, 1, state->getTotalHealth());
+	}
+	// An explicit exchange proves that a participant omitted from an old
+	// multi-target spell summary survived, even if no adjacent health snapshot says
+	// by how much.
+	// One hit point is the least state we can safely infer; later frozen damage or
+	// the explicit battle outcome remains authoritative.
 	int64_t correction = targetHealth;
 	state->heal(correction, EHealLevel::RESURRECT, EHealPower::PERMANENT);
 	if(state->getAvailableHealth() != targetHealth)
-		throw std::runtime_error("Unable to restore recorded VGT battle actor " + actor);
+		throw std::runtime_error("Unable to restore recorded VGT battle unit " + alias);
 
 	BattleUnitsChanged changes;
 	changes.battleID = BattleID(std::stoi(battleID));
@@ -4089,7 +4103,13 @@ void replaySemanticBattleAttack(
 	if(optionalBool(node, "automatic", false))
 		return;
 
-	restoreRecordedBattleActor(gameHandler, node, battleID, roster);
+	const std::string actor = requireString(node, "by");
+	restoreRecordedBattleUnit(gameHandler, node, battleID, roster, actor);
+	for(const auto & target : recordedBattleDamage(node))
+	{
+		if(target.first != actor)
+			restoreRecordedBattleUnit(gameHandler, node, battleID, roster, target.first);
+	}
 	const auto healthBefore = captureBattleHealth(gameHandler, battleID, roster);
 	JsonNode action;
 	if(const auto * actor = findField(node, "actor"))
@@ -4336,15 +4356,22 @@ void replaySemanticBattleCast(
 		action,
 		battleID,
 		roster);
-	std::map<std::string, int64_t> healthLoss;
+	auto healthLoss = recordedBattleDamage(node);
 	if(const auto * target = findField(node, "target"); target && target->isString())
 	{
-		if(const auto * damage = findField(node, "damage"); damage && damage->isNumber())
-			healthLoss[target->String()] += damage->Integer();
 		if(const auto * healed = findField(node, "healed"); healed && healed->isNumber())
 			healthLoss[target->String()] -= healed->Integer();
 	}
-	applyRecordedBattleDamage(gameHandler, battleID, roster, healthBefore, healthLoss);
+	applyRecordedBattleDamage(
+		gameHandler,
+		battleID,
+		roster,
+		healthBefore,
+		healthLoss,
+		recordedBattleKills(node),
+		recordedBattleAfters(node),
+		recordedBattleRebirths(node),
+		hasField(node, "hits"));
 }
 
 std::set<ObjectInstanceID> battleRandomizerParticipants(const IBattleInfo & battle)
@@ -4683,6 +4710,18 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 					throw std::runtime_error("VGT battle action batch must be a unit or list of units");
 				for(const auto & unit : units)
 				{
+					const auto * battle = gameHandler.gs->getBattle(BattleID(std::stoi(battleID)));
+					const auto * stack = battle
+						? battle->battleGetStackByID(rosterStack(roster, unit), false)
+						: nullptr;
+					if(stack && !stack->alive())
+					{
+						// A reconstructed random or area effect can kill a unit that the
+						// frozen scene later proves survived. A following damage snapshot
+						// will restore its exact health; until then, do not invent health
+						// merely to submit this otherwise state-free decision.
+						continue;
+					}
 					JsonNode action;
 					action["unit"].String() = unit;
 					replayReadableBattleAction(gameHandler, actionKind, action, battleID, roster);

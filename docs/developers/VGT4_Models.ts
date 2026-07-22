@@ -331,6 +331,9 @@ export interface BattleCast {
     readonly mana?: number;
     readonly damage?: number;
     readonly killed?: number;
+    readonly after?: BattleStackAfter;
+    /** Ordered frozen outcomes when a chain or area spell affects multiple stacks. */
+    readonly hits?: readonly [BattleHit, BattleHit, ...BattleHit[]];
     /** Total hit points restored by this cast. */
     readonly healed?: number;
 }

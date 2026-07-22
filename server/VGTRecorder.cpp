@@ -4213,32 +4213,48 @@ void appendBattleRetaliation(
 		outputFields.push_back("retaliation: { " + boost::algorithm::join(fields, ", ") + " }");
 }
 
-std::optional<std::vector<std::string>> battleInjurySummary(const std::string & record)
+std::optional<std::vector<std::vector<std::string>>> battleInjurySummaries(const std::string & record)
 {
 	const auto fields = wrappedFlowFields(record);
 	if(!fields || flowField(*fields, "event") != "injured")
 		return std::nullopt;
 	const auto stacks = flowField(*fields, "stacks");
 	if(!stacks || *stacks == "[]")
-		return std::vector<std::string>{};
+		return std::vector<std::vector<std::string>>{};
+	if(stacks->size() < 2 || !stacks->starts_with('[') || !stacks->ends_with(']'))
+		return std::nullopt;
 
-	std::vector<std::string> summary;
-	const auto entriesStart = stacks->find("[{ ");
-	if(entriesStart != std::string::npos)
+	std::vector<std::vector<std::string>> summaries;
+	for(const auto & item : splitFlowFields(std::string_view(*stacks).substr(1, stacks->size() - 2)))
 	{
-		const auto entriesEnd = stacks->find(" }]", entriesStart);
-		if(entriesEnd != std::string::npos)
+		const auto body = flowMappingBody(item);
+		if(!body)
+			return std::nullopt;
+		const auto injury = splitFlowFields(*body);
+		std::vector<std::string> summary;
+		if(const auto target = flowField(injury, "target"))
+			summary.push_back("target: " + *target);
+		if(const auto damage = flowField(injury, "damage"))
+			summary.push_back("damage: " + *damage);
+		if(const auto killed = flowField(injury, "killed"); killed && *killed != "0")
+			summary.push_back("killed: " + *killed);
+		const auto state = nestedFlowFields(injury, "state");
+		const auto health = state ? nestedFlowFields(*state, "health") : std::nullopt;
+		if(health)
 		{
-			const auto injury = splitFlowFields(std::string_view(*stacks).substr(entriesStart + 3, entriesEnd - entriesStart - 3));
-			if(const auto target = flowField(injury, "target"))
-				summary.push_back("target: " + *target);
-			if(const auto damage = flowField(injury, "damage"))
-				summary.push_back("damage: " + *damage);
-			if(const auto killed = flowField(injury, "killed"); killed && *killed != "0")
-				summary.push_back("killed: " + *killed);
+			const int fullUnits = std::stoi(flowField(*health, "fullUnits").value_or("0"));
+			const int topHP = std::stoi(flowField(*health, "firstHPleft").value_or("0"));
+			std::vector<std::string> after = {"count: " + std::to_string(fullUnits + (topHP > 0 ? 1 : 0))};
+			if(topHP > 0)
+				after.push_back("topHp: " + std::to_string(topHP));
+			if(const auto position = state ? flowField(*state, "position") : std::nullopt)
+				after.push_back("at: " + *position);
+			summary.push_back("after: { " + boost::algorithm::join(after, ", ") + " }");
 		}
+		if(!summary.empty())
+			summaries.push_back(std::move(summary));
 	}
-	return summary;
+	return summaries;
 }
 
 std::optional<int> battleHealingSummary(const std::string & record)
@@ -4719,20 +4735,30 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 					++end;
 					continue;
 				}
-				if(const auto injury = battleInjurySummary(pendingBattle->events[end]); injury && !injury->empty())
+				if(const auto injuries = battleInjurySummaries(pendingBattle->events[end]); injuries && !injuries->empty())
 				{
-					const auto target = flowField(*injury, "target");
-					const auto attacker = flowField(*attackAction, "unit");
-					std::optional<std::string> effect;
-					if(!appliedSpells.empty())
-						effect = appliedSpells.back();
-					else if(target && target == attacker)
-						effect = "reflection";
-					if(effect)
+					std::vector<std::string> parsedEffects;
+					for(const auto & injury : *injuries)
 					{
+						const auto target = flowField(injury, "target");
+						const auto attacker = flowField(*attackAction, "unit");
+						std::optional<std::string> effect;
+						if(!appliedSpells.empty())
+							effect = appliedSpells.back();
+						else if(target && target == attacker)
+							effect = "reflection";
+						if(!effect)
+						{
+							parsedEffects.clear();
+							break;
+						}
 						std::vector<std::string> effectFields = {"effect: " + *effect};
-						effectFields.insert(effectFields.end(), injury->begin(), injury->end());
-						attackEffects.push_back("{ " + boost::algorithm::join(effectFields, ", ") + " }");
+						effectFields.insert(effectFields.end(), injury.begin(), injury.end());
+						parsedEffects.push_back("{ " + boost::algorithm::join(effectFields, ", ") + " }");
+					}
+					if(!parsedEffects.empty())
+					{
+						attackEffects.insert(attackEffects.end(), parsedEffects.begin(), parsedEffects.end());
 						++end;
 						continue;
 					}
@@ -4844,10 +4870,20 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 					++end;
 					continue;
 				}
-				if(const auto summary = battleInjurySummary(pendingBattle->events[end]))
+				if(const auto summaries = battleInjurySummaries(pendingBattle->events[end]))
 				{
-					if(!summary->empty())
-						injury = *summary;
+					if(!summaries->empty())
+					{
+						if(summaries->size() == 1)
+							injury = summaries->front();
+						else
+						{
+							std::vector<std::string> hits;
+							for(const auto & summary : *summaries)
+								hits.push_back("{ " + boost::algorithm::join(summary, ", ") + " }");
+							injury = {"hits: " + flowList(hits)};
+						}
+					}
 					++end;
 					continue;
 				}
