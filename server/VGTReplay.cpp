@@ -81,6 +81,7 @@ thread_local std::map<ui32, RecordedNewDayState> replayRecordedNewDays;
 thread_local std::optional<QueryID> replayChoiceFreeLevelUpQuery;
 
 ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::string & alias);
+void applyRecordedEncounterLevelUps(CGameHandler & gameHandler, const JsonNode & encounter);
 
 class ReplayGameServer : public IGameServer
 {
@@ -2987,6 +2988,7 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 		else
 			replayPack(gameHandler, pack, player);
 		verifyDiscoveryCheck(gameHandler.gameState(), decision, "discovers", player, "encounter");
+		applyRecordedEncounterLevelUps(gameHandler, decision);
 		return;
 	}
 
@@ -3260,6 +3262,53 @@ void applyRecordedHeroLevelUp(CGameHandler & gameHandler, const JsonNode & node)
 		replayChoiceFreeLevelUpQuery = query->queryID;
 	else
 		replayChoiceFreeLevelUpQuery.reset();
+}
+
+void applyRecordedEncounterLevelUps(CGameHandler & gameHandler, const JsonNode & encounter)
+{
+	const auto * outcomes = findField(encounter, "outcome");
+	if(!outcomes || !outcomes->isVector())
+		return;
+	for(const auto & outcome : outcomes->Vector())
+	{
+		if(!outcome.isStruct() || outcome.Struct().size() != 1 || outcome.Struct().begin()->first != "levelUp")
+			continue;
+		JsonNode levelUp = outcome.Struct().begin()->second;
+		if(!hasField(levelUp, "hero"))
+			levelUp["hero"].String() = requireString(encounter, "hero");
+		applyRecordedHeroLevelUp(gameHandler, levelUp);
+	}
+}
+
+bool encounterCreatesRecordedSkillChoice(const JsonNode & encounter, const JsonNode & choice)
+{
+	if(!encounter.isStruct() || !choice.isStruct())
+		return false;
+	const auto * encounterHero = findField(encounter, "hero");
+	const auto * choiceHero = findField(choice, "hero");
+	const auto * selectedSkill = findField(choice, "skill");
+	const auto * outcomes = findField(encounter, "outcome");
+	if(!encounterHero || !choiceHero || !selectedSkill || !outcomes ||
+		!encounterHero->isString() || !choiceHero->isString() || !selectedSkill->isString() ||
+		!outcomes->isVector() || encounterHero->String() != choiceHero->String())
+		return false;
+
+	for(const auto & outcome : outcomes->Vector())
+	{
+		if(!outcome.isStruct() || outcome.Struct().size() != 1 || outcome.Struct().begin()->first != "levelUp")
+			continue;
+		const auto & levelUp = outcome.Struct().begin()->second;
+		const auto * levelUpHero = findField(levelUp, "hero");
+		const auto * choices = findField(levelUp, "choices");
+		if(!levelUpHero || !choices || !levelUpHero->isString() || !choices->isVector() ||
+			levelUpHero->String() != choiceHero->String())
+			continue;
+		return std::any_of(choices->Vector().begin(), choices->Vector().end(), [selectedSkill](const JsonNode & skill)
+		{
+			return skill.isString() && skill.String() == selectedSkill->String();
+		});
+	}
+	return false;
 }
 
 void replayReadableDecision(
@@ -4749,6 +4798,29 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 	if(const auto * winner = findField(outcome, "winner"); winner && winner->isString())
 		aftermathActor = winner->String();
 	size_t earlyAftermathRecords = 0;
+	const auto replayEncounterBeforeItsSkillChoice = [&](size_t recordIndex)
+	{
+		if(!aftermath || recordIndex + 1 >= aftermath->Vector().size())
+			return false;
+		const auto & choiceRecord = aftermath->Vector()[recordIndex];
+		const auto & encounterRecord = aftermath->Vector()[recordIndex + 1];
+		if(!choiceRecord.isStruct() || choiceRecord.Struct().size() != 1 ||
+			choiceRecord.Struct().begin()->first != "chooseSkill" ||
+			!encounterRecord.isStruct() || encounterRecord.Struct().size() != 1 ||
+			encounterRecord.Struct().begin()->first != "encounter")
+			return false;
+		const auto & choice = choiceRecord.Struct().begin()->second;
+		const auto & encounter = encounterRecord.Struct().begin()->second;
+		if(!encounterCreatesRecordedSkillChoice(encounter, choice))
+			return false;
+
+		const auto player = playerFromActor(aftermathActor.value_or(""));
+		if(std::dynamic_pointer_cast<CHeroLevelUpDialogQuery>(gameHandler.queries->topQuery(player)))
+			return false;
+		replayReadableDecision(gameHandler, "encounter", encounter, std::nullopt, aftermathActor);
+		replayReadableDecision(gameHandler, "chooseSkill", choice, std::nullopt, aftermathActor);
+		return true;
+	};
 	if(gameHandler.gs->getBattle(liveBattleID))
 	{
 		try
@@ -4772,6 +4844,11 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 	while(gameHandler.gs->getBattle(liveBattleID) && aftermath &&
 		earlyAftermathRecords < aftermath->Vector().size())
 	{
+		if(replayEncounterBeforeItsSkillChoice(earlyAftermathRecords))
+		{
+			earlyAftermathRecords += 2;
+			continue;
+		}
 		const auto & record = aftermath->Vector()[earlyAftermathRecords];
 		if(!record.isStruct() || record.Struct().size() != 1)
 			throw std::runtime_error("VGT battle aftermath record is not a one-key mapping");
@@ -4846,6 +4923,11 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 		return;
 	for(size_t recordIndex = earlyAftermathRecords; recordIndex < aftermath->Vector().size(); ++recordIndex)
 	{
+		if(replayEncounterBeforeItsSkillChoice(recordIndex))
+		{
+			++recordIndex;
+			continue;
+		}
 		const auto & record = aftermath->Vector()[recordIndex];
 		if(!record.isStruct() || record.Struct().size() != 1)
 			throw std::runtime_error("VGT battle aftermath record is not a one-key mapping");
@@ -4859,6 +4941,10 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 		if(entry.first == "levelUp")
 		{
 			applyRecordedHeroLevelUp(gameHandler, entry.second);
+			const ObjectInstanceID heroID = resolveObjectAlias(
+				gameHandler.gameState(), requireString(entry.second, "hero"));
+			if(const auto * hero = gameHandler.gameState().getHero(heroID))
+				completeRecordedChoiceFreeLevelUp(gameHandler, hero->tempOwner);
 			continue;
 		}
 		if(entry.first == "available")
@@ -5003,14 +5089,26 @@ void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & docu
 				const auto & sceneActions = requireField(record, "actions");
 				if(!sceneActions.isVector())
 					throw std::runtime_error("VGT hero scene actions must be a list");
-				for(const auto & sceneAction : sceneActions.Vector())
+				for(size_t sceneActionIndex = 0; sceneActionIndex < sceneActions.Vector().size(); ++sceneActionIndex)
 				{
+					const auto & sceneAction = sceneActions.Vector()[sceneActionIndex];
 					if(sceneAction.isString())
 					{
 						requireNoPendingDiscoveryCheck("the next hero-scene action");
 						JsonNode action;
 						action["hero"].String() = hero;
-						replayReadableDecision(gameHandler, sceneAction.String(), action, std::nullopt, defaultActor);
+						try
+						{
+							replayReadableDecision(gameHandler, sceneAction.String(), action, std::nullopt, defaultActor);
+						}
+						catch(const std::exception & error)
+						{
+							throw std::runtime_error(
+								"VGT replay document " + std::to_string(documentIndex) +
+								" record " + std::to_string(recordIndex) + " hero-scene action " +
+								std::to_string(sceneActionIndex) + " " + sceneAction.String() +
+								" failed: " + error.what());
+						}
 						continue;
 					}
 					if(!sceneAction.isStruct() || sceneAction.Struct().size() != 1)
@@ -5044,7 +5142,18 @@ void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & docu
 						if(!action.isStruct())
 							throw std::runtime_error("VGT hero scene decision must be a mapping");
 						action["hero"].String() = hero;
-						replayReadableDecision(gameHandler, entry.first, action, std::nullopt, defaultActor);
+						try
+						{
+							replayReadableDecision(gameHandler, entry.first, action, std::nullopt, defaultActor);
+						}
+						catch(const std::exception & error)
+						{
+							throw std::runtime_error(
+								"VGT replay document " + std::to_string(documentIndex) +
+								" record " + std::to_string(recordIndex) + " hero-scene action " +
+								std::to_string(sceneActionIndex) + " " + entry.first +
+								" failed: " + error.what());
+						}
 						continue;
 					}
 					if(!isEffectKind(entry.first))
@@ -5083,7 +5192,17 @@ void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & docu
 			if(isDecisionKind(entry.first))
 			{
 				requireNoPendingDiscoveryCheck("the next decision");
-				replayReadableDecision(gameHandler, entry.first, entry.second, std::nullopt, defaultActor);
+				try
+				{
+					replayReadableDecision(gameHandler, entry.first, entry.second, std::nullopt, defaultActor);
+				}
+				catch(const std::exception & error)
+				{
+					throw std::runtime_error(
+						"VGT replay document " + std::to_string(documentIndex) +
+						" record " + std::to_string(recordIndex) + " " + entry.first +
+						" failed: " + error.what());
+				}
 				continue;
 			}
 			if(entry.first == "battle")

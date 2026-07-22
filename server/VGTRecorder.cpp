@@ -5912,6 +5912,10 @@ void VGTRecorder::recordDecision(CGameHandler & gameHandler, CPackForServer & pa
 			if(pending->second.kind == "levelUp" && pendingBattle)
 			{
 				pendingBattle->aftermathDecisionStarted = true;
+				// A guarded destination can open immediately after its battle. Its
+				// encounter creates the level-up query being answered here, so keep
+				// that cause before the recorded choice in the battle aftermath.
+				flushPendingEncounter(gameState);
 				if(reply->reply && *reply->reply >= 0 &&
 					static_cast<size_t>(*reply->reply) < pending->second.choices.size())
 				{
