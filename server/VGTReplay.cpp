@@ -4316,6 +4316,55 @@ std::set<HeroTypeID> battleRandomizerHeroes(const IBattleInfo & battle)
 	return result;
 }
 
+struct RecordedBattleHeroMana
+{
+	ObjectInstanceID objectID;
+	HeroTypeID heroType;
+	si32 initialMana = 0;
+};
+
+void applyRecordedBattleMana(
+	CGameHandler & gameHandler,
+	const JsonNode & outcome,
+	const std::map<std::string, RecordedBattleHeroMana> & participants)
+{
+	const auto * mana = findField(outcome, "mana");
+	if(!mana)
+		return;
+	if(!mana->isStruct())
+		throw std::runtime_error("VGT battle outcome mana is not a mapping");
+
+	for(const auto & [hero, amount] : mana->Struct())
+	{
+		if(!amount.isNumber())
+			throw std::runtime_error("VGT battle outcome mana change is not numeric: " + hero);
+		const auto participant = participants.find(hero);
+		if(participant == participants.end())
+			throw std::runtime_error("VGT battle outcome mana hero is not a battle participant: " + hero);
+
+		const int64_t targetMana = std::max<int64_t>(0, participant->second.initialMana + amount.Integer());
+		if(targetMana > std::numeric_limits<si32>::max())
+			throw std::runtime_error("VGT battle outcome mana is out of range: " + hero);
+
+		if(gameHandler.gameState().getHero(participant->second.objectID))
+		{
+			SetMana change;
+			change.hid = participant->second.objectID;
+			change.val = static_cast<si32>(targetMana);
+			change.mode = ChangeValueMode::ABSOLUTE;
+			gameHandler.sendAndApply(change);
+			continue;
+		}
+
+		// A retreating hero has already left the map and entered the tavern pool.
+		// SetMana addresses map objects only, so update this server-owned saved state
+		// directly after verifying that it is the same hero instance.
+		auto * pooledHero = gameHandler.gs->getMap().tryGetFromHeroPool(participant->second.heroType);
+		if(pooledHero && pooledHero->id == participant->second.objectID)
+			pooledHero->mana = static_cast<si32>(targetMana);
+	}
+}
+
 void fastForwardBattle(
 	CGameHandler & gameHandler,
 	const std::string & battleID,
@@ -4451,32 +4500,6 @@ void fastForwardBattle(
 			throw std::runtime_error("VGT fast-forward lacks createdUnits state for dynamic survivor: " + alias);
 	}
 
-	if(const auto * mana = findField(outcome, "mana"))
-	{
-		if(!mana->isStruct())
-			throw std::runtime_error("VGT battle outcome mana is not a mapping");
-		for(const auto & [hero, amount] : mana->Struct())
-		{
-			if(!amount.isNumber())
-				throw std::runtime_error("VGT battle outcome mana change is not numeric: " + hero);
-			const ObjectInstanceID heroID = resolveObjectAlias(gameHandler.gameState(), hero);
-			std::optional<int32_t> initialMana;
-			for(const auto side : {BattleSide::ATTACKER, BattleSide::DEFENDER})
-			{
-				const auto & battleSide = battle->getSide(side);
-				if(battleSide.heroID == heroID)
-					initialMana = battleSide.initialMana;
-			}
-			if(!initialMana)
-				throw std::runtime_error("VGT battle outcome mana hero is not a battle participant: " + hero);
-			SetMana change;
-			change.hid = heroID;
-			change.val = static_cast<si32>(*initialMana + amount.Integer());
-			change.mode = ChangeValueMode::ABSOLUTE;
-			gameHandler.sendAndApply(change);
-		}
-	}
-
 	BattleSideArray<TExpType> experience{0, 0};
 	if(const auto * recordedExperience = findField(outcome, "experience"))
 	{
@@ -4515,6 +4538,19 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 		throw std::runtime_error("VGT battle block references missing battle: " + battleID);
 	const auto randomizerParticipants = battleRandomizerParticipants(*initialBattle);
 	const auto randomizerHeroes = battleRandomizerHeroes(*initialBattle);
+	std::map<std::string, RecordedBattleHeroMana> battleManaParticipants;
+	for(const auto side : {BattleSide::ATTACKER, BattleSide::DEFENDER})
+	{
+		const auto * hero = initialBattle->getSideHero(side);
+		if(!hero)
+			continue;
+		battleManaParticipants.emplace(
+			canonicalObjectAlias(*hero),
+			RecordedBattleHeroMana{
+				hero->id,
+				hero->getHeroTypeID(),
+				initialBattle->getSide(side).initialMana});
+	}
 	std::map<std::string, int> roster;
 	if(const auto * units = findField(node, "units"))
 	{
@@ -4760,6 +4796,7 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 	}
 	if(gameHandler.gs->getBattle(liveBattleID))
 		throw std::runtime_error("VGT battle outcome did not finalize battle: " + battleID);
+	applyRecordedBattleMana(gameHandler, outcome, battleManaParticipants);
 	gameHandler.randomizer->loadVGTBattleJson(
 		requireField(outcome, "continuation"), randomizerParticipants, randomizerHeroes);
 
