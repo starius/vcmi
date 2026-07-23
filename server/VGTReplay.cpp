@@ -3406,6 +3406,17 @@ void replayReadableDecision(
 	decision["kind"].String() = kind;
 	if(defaultActor && !hasField(decision, "actor"))
 		decision["actor"].String() = *defaultActor;
+	if(kind == "visitTownBuilding" && !hasField(decision, "actor"))
+	{
+		const auto * heroNode = findField(decision, "hero");
+		if(!heroNode || !heroNode->isString())
+			throw std::runtime_error("VGT automatic town-building visit has no hero");
+		const auto * hero = gameHandler.gameState().getHero(
+			resolveObjectAlias(gameHandler.gameState(), heroNode->String()));
+		if(!hero || !hero->tempOwner.isValidPlayer())
+			throw std::runtime_error("VGT automatic town-building visit has no player-owned hero");
+		decision["actor"].String() = hero->tempOwner.toString();
+	}
 	if(battleID && !hasField(decision, "battle"))
 		decision["battle"].String() = *battleID;
 	const auto player = tryPlayerFromActor(requireString(decision, "actor"));
