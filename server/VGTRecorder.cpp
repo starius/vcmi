@@ -1932,6 +1932,17 @@ std::string battleUnitState(const UnitChanges & change)
 	fields.push_back("operation: " + battleChangeOperation(change.operation));
 	if(change.healthDelta)
 		fields.push_back("healthDelta: " + std::to_string(change.healthDelta));
+	if(change.operation == BattleChanges::EOperation::ADD)
+	{
+		battle::UnitInfo info;
+		info.load(change.id, change.data);
+		fields.push_back("creature: " + creature(info.type));
+		fields.push_back("count: " + std::to_string(info.count));
+		fields.push_back("side: " + battleSide(info.side));
+		fields.push_back("position: " + std::to_string(info.position.toInt()));
+		if(info.summoned)
+			fields.push_back("summoned: true");
+	}
 
 	const JsonNode & state = change.data["state"];
 	if(!state.isNull() && state.isStruct())
@@ -4386,6 +4397,57 @@ struct BattleHealingChange
 	std::optional<int> position;
 };
 
+struct BattleUnitChangeSummary
+{
+	std::string unit;
+	std::string operation;
+	std::optional<std::string> creature;
+	std::optional<int> count;
+	std::optional<int> position;
+	bool summoned = false;
+};
+
+std::optional<std::vector<BattleUnitChangeSummary>> battleUnitChangeSummaries(const std::string & record)
+{
+	const auto fields = wrappedFlowFields(record);
+	if(!fields || flowField(*fields, "event") != "unitsChanged")
+		return std::nullopt;
+	const auto changes = flowField(*fields, "changes");
+	if(!changes || changes->size() < 4 || !changes->starts_with("[{") || !changes->ends_with("}]"))
+		return std::nullopt;
+
+	std::vector<BattleUnitChangeSummary> result;
+	for(const auto & item : splitFlowFields(std::string_view(*changes).substr(1, changes->size() - 2)))
+	{
+		const auto change = wrappedFlowFields(item);
+		const auto unit = change ? flowField(*change, "unit") : std::nullopt;
+		const auto operation = change ? flowField(*change, "operation") : std::nullopt;
+		const auto state = change ? nestedFlowFields(*change, "state") : std::nullopt;
+		if(!change || !unit || !operation || !state)
+			return std::nullopt;
+
+		BattleUnitChangeSummary value;
+		value.unit = *unit;
+		value.operation = *operation;
+		value.creature = flowField(*state, "creature");
+		if(const auto count = flowField(*state, "count"))
+			value.count = std::stoi(*count);
+		if(const auto position = flowField(*state, "position"))
+			value.position = std::stoi(*position);
+		value.summoned = flowBool(*state, "summoned");
+
+		const auto health = nestedFlowFields(*state, "health");
+		const auto topHP = health ? flowField(*health, "firstHPleft") : std::nullopt;
+		if(health && topHP)
+		{
+			const int fullUnits = std::stoi(flowField(*health, "fullUnits").value_or("0"));
+			value.count = fullUnits + (std::stoi(*topHP) > 0 ? 1 : 0);
+		}
+		result.push_back(std::move(value));
+	}
+	return result.empty() ? std::nullopt : std::optional(std::move(result));
+}
+
 std::optional<std::vector<BattleHealingChange>> battleHealingChanges(const std::string & record)
 {
 	const auto fields = wrappedFlowFields(record);
@@ -4934,9 +4996,11 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 			std::optional<int> mana;
 			std::optional<int> healed;
 			std::vector<std::string> injury;
+			std::vector<BattleUnitChangeSummary> creations;
 			size_t end = index + 1;
 			while(end < pendingBattle->events.size())
 			{
+				updateBattlePositions(pendingBattle->events[end], positions);
 				if(isBattlePacketEvent(pendingBattle->events[end], "spellCast") ||
 					isBattlePacketEvent(pendingBattle->events[end], "stackEffects"))
 				{
@@ -4972,6 +5036,47 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 					++end;
 					continue;
 				}
+				if(const auto changes = battleUnitChangeSummaries(pendingBattle->events[end]))
+				{
+					for(const auto & change : *changes)
+					{
+						if(change.operation == "add")
+						{
+							creations.push_back(change);
+							continue;
+						}
+						if(change.operation != "update")
+							continue;
+						const auto created = std::find_if(creations.begin(), creations.end(), [&](const auto & value)
+						{
+							return value.unit == change.unit;
+						});
+						if(created == creations.end())
+							continue;
+						if(change.count)
+							created->count = change.count;
+						if(change.position)
+							created->position = change.position;
+					}
+					++end;
+					continue;
+				}
+				auto casts = keyedFlowFields(pendingBattle->events[end], "casts");
+				if(!casts)
+				{
+					const auto wrapped = wrappedFlowFields(pendingBattle->events[end]);
+					if(wrapped)
+						casts = nestedFlowFields(*wrapped, "casts");
+				}
+				if(casts)
+				{
+					const auto caster = flowField(*spellAction, "unit");
+					if(caster && flowField(*casts, "unit") == caster)
+					{
+						++end;
+						continue;
+					}
+				}
 				break;
 			}
 			if(!injury.empty())
@@ -4985,6 +5090,22 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 				fields.push_back("mana: " + std::to_string(*mana));
 			if(healed)
 				fields.push_back("healed: " + std::to_string(*healed));
+			if(!creations.empty())
+			{
+				std::vector<std::string> values;
+				for(const auto & creation : creations)
+				{
+					if(!creation.creature || !creation.count || !creation.position)
+						continue;
+					values.push_back("{ unit: " + creation.unit +
+						", creature: " + *creation.creature +
+						", count: " + std::to_string(*creation.count) +
+						", at: " + std::to_string(*creation.position) +
+						", temporary: " + std::string(creation.summoned ? "true" : "false") + " }");
+				}
+				if(!values.empty())
+					fields.push_back("creates: " + flowList(values));
+			}
 
 			writeBattleEvent(battleFlowRecord("cast", fields));
 			index = end;

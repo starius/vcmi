@@ -4423,6 +4423,69 @@ void replaySemanticBattleAttack(
 		recordedBattleRebirths(node));
 }
 
+void applyRecordedBattleCreations(
+	CGameHandler & gameHandler,
+	const JsonNode & cast,
+	const std::string & battleID,
+	const std::map<std::string, int> & roster)
+{
+	const auto * creations = findField(cast, "creates");
+	if(!creations)
+		return;
+	if(!creations->isVector() || creations->Vector().empty())
+		throw std::runtime_error("VGT battle cast creations must be a nonempty list");
+
+	const BattleID liveBattleID(std::stoi(battleID));
+	for(const auto & creation : creations->Vector())
+	{
+		const std::string alias = requireString(creation, "unit");
+		const auto stackEntry = roster.find(alias);
+		if(stackEntry == roster.end())
+			throw std::runtime_error("VGT battle cast creates an unregistered unit " + alias);
+		const int64_t count = requireInteger(creation, "count");
+		const int64_t hex = requireInteger(creation, "at");
+		if(count <= 0 || count > std::numeric_limits<int>::max() ||
+			hex < 0 || hex >= GameConstants::BFIELD_SIZE)
+			throw std::runtime_error("Invalid VGT battle cast creation for " + alias);
+
+		const CreatureID creature = decodeCreature(requireString(creation, "creature"));
+		const BattleSide side = alias.starts_with("defender/")
+			? BattleSide::DEFENDER
+			: BattleSide::ATTACKER;
+		const bool temporary = requireField(creation, "temporary").Bool();
+		auto * battle = gameHandler.gs->getBattle(liveBattleID);
+		const auto * stack = battle
+			? battle->battleGetStackByID(stackEntry->second, false)
+			: nullptr;
+		if(!stack)
+		{
+			battle::UnitInfo info;
+			info.id = stackEntry->second;
+			info.count = static_cast<int>(count);
+			info.type = creature;
+			info.side = side;
+			info.position = BattleHex(static_cast<si16>(hex));
+			info.summoned = temporary;
+			JsonNode data;
+			info.save(data);
+
+			BattleUnitsChanged addition;
+			addition.battleID = liveBattleID;
+			UnitChanges added(info.id, BattleChanges::EOperation::ADD);
+			added.data = std::move(data);
+			addition.changedStacks.push_back(std::move(added));
+			gameHandler.sendAndApply(addition);
+			battle = gameHandler.gs->getBattle(liveBattleID);
+			stack = battle ? battle->battleGetStackByID(stackEntry->second, false) : nullptr;
+		}
+		if(!stack || stack->creatureId() != creature || stack->unitSide() != side ||
+			stack->summoned != temporary || stack->getCount() != count)
+			throw std::runtime_error("Unable to restore VGT battle cast creation " + alias);
+		if(stack->getPosition().toInt() != hex)
+			restoreRecordedBattlePosition(gameHandler, battleID, stackEntry->second, static_cast<int>(hex));
+	}
+}
+
 void replaySemanticBattleCast(
 	CGameHandler & gameHandler,
 	const JsonNode & node,
@@ -4446,6 +4509,7 @@ void replaySemanticBattleCast(
 		action,
 		battleID,
 		roster);
+	applyRecordedBattleCreations(gameHandler, node, battleID, roster);
 	auto healthLoss = recordedBattleDamage(node);
 	if(const auto * target = findField(node, "target"); target && target->isString())
 	{
