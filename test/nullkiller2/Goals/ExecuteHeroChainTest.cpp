@@ -17,6 +17,7 @@
 #include "lib/callback/IClient.h"
 #include "lib/gameState/CGameState.h"
 #include "lib/mapObjects/CGHeroInstance.h"
+#include "lib/mapObjects/MiscObjects.h"
 #include "lib/mapping/CMap.h"
 #include "lib/networkPacks/PacksForClient.h"
 #include "lib/networkPacks/PacksForServer.h"
@@ -79,6 +80,55 @@ private:
 	int lastRequestID = 0;
 };
 
+class SuccessfulMovementClient : public IClient
+{
+public:
+	std::optional<BattleAction> makeSurrenderRetreatDecision(
+		PlayerColor,
+		const BattleID &,
+		const BattleStateInfoForRetreat &) override
+	{
+		return std::nullopt;
+	}
+
+	int sendRequest(const CPackForServer & request, PlayerColor, bool) override
+	{
+		const auto * movement = dynamic_cast<const MoveHero *>(&request);
+		if(!movement)
+			return ++lastRequestID;
+
+		auto * hero = gameState->getHero(movement->hid);
+		EXPECT_NE(hero, nullptr);
+		EXPECT_FALSE(movement->path.empty());
+		if(!hero || movement->path.empty())
+			return ++lastRequestID;
+
+		TryMoveHero result;
+		result.id = hero->id;
+		result.start = hero->pos;
+		result.end = movement->path.back();
+		result.movePoints = hero->movementPointsRemaining();
+		result.result = TryMoveHero::SUCCESS;
+		gameState->apply(result);
+		gateway->heroMoved(result, false);
+		++movementRequests;
+		return ++lastRequestID;
+	}
+
+	void connect(CGameState & state, NK2AI::AIGateway & aiGateway)
+	{
+		gameState = &state;
+		gateway = &aiGateway;
+	}
+
+	int movementRequests = 0;
+
+private:
+	CGameState * gameState = nullptr;
+	NK2AI::AIGateway * gateway = nullptr;
+	int lastRequestID = 0;
+};
+
 NK2AI::AIPathNodeInfo pathNode(
 	const CGHeroInstance & hero,
 	const int3 & coordinate,
@@ -124,6 +174,70 @@ protected:
 	BlockingVisitClient client;
 };
 
+class ExecuteWhirlpoolChainTest : public NullkillerTest
+{
+protected:
+	void startGame()
+	{
+		TinyH3M::TinyH3MBuilder builder(EMapFormat::SOD);
+		builder
+			.size(36, false)
+			.playerActive(PLAYER)
+			.hero({5, 5, 0}, HeroTypeID(0), PLAYER)
+			.heroGarrison({{CreatureID(0), 1}})
+			.whirlpool({12, 12, 0});
+
+		startWithMap(std::move(builder));
+	}
+
+	std::vector<int3> getWhirlpoolTiles(ObjectInstanceID whirlpool) const
+	{
+		std::vector<int3> result;
+		for(int z = 0; z < map->levels(); ++z)
+			for(int x = 0; x < map->width; ++x)
+				for(int y = 0; y < map->height; ++y)
+				{
+					const int3 tile(x, y, z);
+					if(vstd::contains(map->getTile(tile).visitableObjects, whirlpool))
+						result.push_back(tile);
+				}
+		return result;
+	}
+
+	SuccessfulMovementClient movementClient;
+};
+}
+
+TEST_F(ExecuteWhirlpoolChainTest, movesAcrossWhirlpoolWhenNoTeleportOccurred)
+{
+	startGame();
+
+	auto * hero = findHeroByOwner(PLAYER);
+	const auto * whirlpool = findFirst<CGWhirlpool>();
+	ASSERT_NE(hero, nullptr);
+	ASSERT_NE(whirlpool, nullptr);
+	const auto whirlpoolTiles = getWhirlpoolTiles(whirlpool->id);
+	ASSERT_GE(whirlpoolTiles.size(), 2);
+
+	ChangeObjPos placeHero;
+	placeHero.objid = hero->id;
+	placeHero.nPos = hero->convertFromVisitablePos(whirlpoolTiles[0]);
+	placeHero.initiator = PLAYER;
+	gameState->apply(placeHero);
+	hero->setMovementPoints(2000);
+	revealMap(PLAYER);
+
+	auto gateway = makeGateway(PLAYER, &movementClient);
+	movementClient.connect(*gameState, *gateway);
+	NK2AI::AIPath path;
+	path.targetHero = hero;
+	path.heroArmy = hero;
+	path.chainMask = 1;
+	path.nodes.push_back(pathNode(*hero, whirlpoolTiles[1], 0));
+	path.nodes.push_back(pathNode(*hero, whirlpoolTiles[0], 0));
+
+	EXPECT_NO_THROW(NK2AI::Goals::ExecuteHeroChain(path).accept(gateway.get()));
+	EXPECT_EQ(hero->visitablePos(), whirlpoolTiles[1]);
 }
 
 TEST_F(ExecuteHeroChainMovementTest, blockingVisitIsProgressInsteadOfRouteFailure)

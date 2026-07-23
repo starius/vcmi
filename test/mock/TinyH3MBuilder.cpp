@@ -344,6 +344,17 @@ TinyH3MBuilder & TinyH3MBuilder::scroll(const int3 & pos, SpellID spell)
 	return *this;
 }
 
+TinyH3MBuilder & TinyH3MBuilder::whirlpool(const int3 & pos)
+{
+	ObjectSpec spec;
+	spec.id            = Obj::WHIRLPOOL;
+	spec.subid         = MapObjectSubID(0);
+	spec.position      = pos;
+	spec.templateIndex = registerTemplate(spec.id, spec.subid);
+	registerObject(std::move(spec));
+	return *this;
+}
+
 TinyH3MBuilder & TinyH3MBuilder::keymaster(const int3 & pos, int color)
 {
 	ObjectSpec spec;
@@ -979,6 +990,9 @@ void TinyH3MBuilder::writeObjects(TinyH3MWriter & w) const
 
 			case Obj::SPELL_SCROLL:
 				writeScrollBody(w, obj);
+				break;
+
+			case Obj::WHIRLPOOL:
 				break;
 
 			case Obj::KEYMASTER:

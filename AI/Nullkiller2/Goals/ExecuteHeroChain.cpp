@@ -291,10 +291,20 @@ void ExecuteHeroChain::accept(AIGateway * aiGw)
 
 				auto sourceWhirlpool = findWhirlpool(hero->visitablePos());
 				auto targetWhirlpool = findWhirlpool(node->coord);
+				const bool hasPreviousNode = i + 1 < chainPath.nodes.size();
+				const int3 previousNodePosition = hasPreviousNode
+					? chainPath.nodes[i + 1].coord
+					: int3(-1);
+				const bool intermediateNodeAlreadyReached = i > 0 && hero->visitablePos() == node->coord;
+				const bool exitedWhirlpoolAtDifferentTile = hasPreviousNode
+					&& hero->visitablePos() != previousNodePosition
+					&& sourceWhirlpool.hasValue()
+					&& sourceWhirlpool == targetWhirlpool;
 
-				if(i != chainPath.nodes.size() - 1 && sourceWhirlpool.hasValue() && sourceWhirlpool == targetWhirlpool)
+				if(intermediateNodeAlreadyReached || exitedWhirlpoolAtDifferentTile)
 				{
-					logAi->trace("AI exited whirlpool at %s but expected at %s", hero->visitablePos().toString(), node->coord.toString());
+					if(hero->visitablePos() != node->coord)
+						logAi->trace("AI exited whirlpool at %s but expected at %s", hero->visitablePos().toString(), node->coord.toString());
 					continue;
 				}
 

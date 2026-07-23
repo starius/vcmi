@@ -170,6 +170,9 @@ public:
 	/// Spell scroll pickup containing the given spell.
 	TinyH3MBuilder & scroll(const int3 & pos, SpellID spell);
 
+	/// Whirlpool entrance. Subid 0 uses the standard H3 template.
+	TinyH3MBuilder & whirlpool(const int3 & pos);
+
 	// ---- quest objects -------------------------------------------------
 
 	/// Keymaster Tent. Subid encodes the keymaster colour (0..7).
