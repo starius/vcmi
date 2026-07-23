@@ -6188,6 +6188,7 @@ void VGTRecorder::recordDecision(CGameHandler & gameHandler, CPackForServer & pa
 			writeActionLine(gameState, "unmodelled: { stream: decision, pack: TradeOnMarketplace, material: true }");
 			return;
 		}
+		auto resources = gameState.getPlayerState(trade->player)->resources;
 		for(size_t index = 0; index < trade->val.size(); ++index)
 		{
 			const auto sold = trade->r1[index].as<GameResID>();
@@ -6200,12 +6201,20 @@ void VGTRecorder::recordDecision(CGameHandler & gameHandler, CPackForServer & pa
 				writeActionLine(gameState, "unmodelled: { stream: decision, pack: TradeOnMarketplace, material: true }");
 				return;
 			}
+			const auto soldAmount = std::min<TResourceCap>(trade->val[index], resources[sold]);
+			if(soldAmount <= 0 || soldAmount % offerSold != 0)
+				continue;
+			const auto boughtAmount = soldAmount / offerSold * offerBought;
+			resources[sold] -= soldAmount;
+			resources[bought] += boughtAmount;
 			pendingTrade->exchanges.push_back({
 				GameResID::encode(sold.getNum()),
-				trade->val[index],
+				static_cast<uint32_t>(soldAmount),
 				GameResID::encode(bought.getNum()),
-				static_cast<uint32_t>(trade->val[index] / offerSold * offerBought)});
+				static_cast<uint32_t>(boughtAmount)});
 		}
+		if(pendingTrade->exchanges.empty())
+			pendingTrade.reset();
 		suppressDerivedEffects = true;
 		return;
 	}
