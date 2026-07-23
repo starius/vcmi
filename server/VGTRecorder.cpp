@@ -3502,12 +3502,23 @@ public:
 
 	void visitBattleAttack(BattleAttack & pack) override
 	{
+		const auto * battle = gameState.getBattle(pack.battleID);
+		const auto * attacker = battle
+			? battle->battleGetStackByID(pack.stackAttacking, false)
+			: nullptr;
+		std::vector<std::string> fields;
+		fields.push_back("by: " + yamlIdentifier(battleUnitAlias(gameState, pack.battleID, pack.stackAttacking)));
+		if(attacker)
+			fields.push_back("from: " + std::to_string(attacker->getPosition().toInt()));
 		if(pack.bsa.size() == 1)
 		{
 			const auto & result = pack.bsa.front();
-			std::vector<std::string> fields;
-			fields.push_back("by: " + yamlIdentifier(battleUnitAlias(gameState, pack.battleID, pack.stackAttacking)));
 			fields.push_back("target: " + yamlIdentifier(battleUnitAlias(gameState, pack.battleID, result.stackAttacked)));
+			const auto * target = battle
+				? battle->battleGetStackByID(result.stackAttacked, false)
+				: nullptr;
+			if(target)
+				fields.push_back("targetAt: " + std::to_string(target->getPosition().toInt()));
 			fields.push_back("damage: " + std::to_string(result.damageAmount));
 			if(result.killedAmount != 0)
 				fields.push_back("killed: " + std::to_string(result.killedAmount));
@@ -3529,9 +3540,9 @@ public:
 				", attack: { " + boost::algorithm::join(fields, ", ") + " } }";
 			return;
 		}
-		std::vector<std::string> fields;
-		fields.push_back("by: " + yamlIdentifier(battleUnitAlias(gameState, pack.battleID, pack.stackAttacking)));
 		fields.push_back("hits: " + battleAttackHits(gameState, pack.battleID, pack.bsa));
+		if(pack.tile.isValid())
+			fields.push_back("targetAt: " + std::to_string(pack.tile.toInt()));
 		if(pack.counter()) fields.push_back("retaliation: true");
 		if(pack.shot()) fields.push_back("ranged: true");
 		if(pack.lucky()) fields.push_back("luck: good");
@@ -4984,12 +4995,14 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 		if(pendingBattle->events[index].starts_with(attackPrefix) && pendingBattle->events[index].ends_with(" } }"))
 		{
 			auto attack = pendingBattle->events[index].substr(attackPrefix.size(), pendingBattle->events[index].size() - attackPrefix.size() - 4);
+			boost::algorithm::replace_all(attack, ", left: ", ", after: ");
 			if(index + 1 < pendingBattle->events.size() && pendingBattle->events[index + 1].starts_with(attackPrefix) &&
 				pendingBattle->events[index + 1].find(", retaliation: true") != std::string::npos)
 			{
 				auto retaliation = pendingBattle->events[index + 1].substr(
 					attackPrefix.size(), pendingBattle->events[index + 1].size() - attackPrefix.size() - 4);
 				boost::algorithm::erase_first(retaliation, ", retaliation: true");
+				boost::algorithm::replace_all(retaliation, ", left: ", ", after: ");
 				if(const auto damage = retaliation.find("damage: "); damage != std::string::npos)
 					retaliation.erase(0, damage);
 				attack += ", retaliation: { " + retaliation + " }";
