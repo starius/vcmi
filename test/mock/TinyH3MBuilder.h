@@ -170,6 +170,9 @@ public:
 	/// Spell scroll pickup containing the given spell.
 	TinyH3MBuilder & scroll(const int3 & pos, SpellID spell);
 
+	/// Fixed creature dwelling owned by `owner`.
+	TinyH3MBuilder & dwelling(const int3 & pos, MapObjectSubID type, PlayerColor owner);
+
 	/// Whirlpool entrance. Subid 0 uses the standard H3 template.
 	TinyH3MBuilder & whirlpool(const int3 & pos);
 
