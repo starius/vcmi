@@ -3522,7 +3522,7 @@ std::string battleUnitBase(BattleSide side, CreatureID creatureID)
 		pluralizedBattleCreature(creatureID);
 }
 
-std::map<std::string, int> liveBattleRoster(const IBattleInfo & battle, const JsonNode & forces)
+std::map<std::string, int> liveBattleRoster(const BattleInfo & battle, const JsonNode & forces)
 {
 	if(!forces.isStruct())
 		throw std::runtime_error("VGT battle forces field is not a mapping");
