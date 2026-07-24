@@ -427,15 +427,26 @@ JsonNode GameRandomizer::toVGTBattleJson(
 	auto writeBiasMap = [&participants](const auto & source) -> JsonNode
 	{
 		JsonNode result;
-		result.Vector();
+		result.Struct();
 		for(const auto & [object, generator] : source)
 		{
 			if(!participants.contains(object))
 				continue;
-			JsonNode entry;
-			entry["object"].Integer() = object.getNum();
-			entry["state"] = generator.toVGTJson();
-			result.Vector().push_back(entry);
+			const JsonNode state = generator.toVGTJson();
+			const std::string serialized = requireString(state, "generator");
+			size_t parsed = 0;
+			const int64_t generatorState = std::stoll(serialized, &parsed);
+			if(parsed != serialized.size())
+				throw std::runtime_error("VGT battle randomizer generator state is not an integer");
+
+			auto & entry = result[std::to_string(object.getNum())];
+			if(const auto * bias = findField(state, "bias"))
+			{
+				entry["generator"].Integer() = generatorState;
+				entry["bias"].Integer() = bias->Integer();
+			}
+			else
+				entry.Integer() = generatorState;
 		}
 		return result;
 	};
@@ -448,7 +459,7 @@ JsonNode GameRandomizer::toVGTBattleJson(
 		std::pair{"combatAbility", &combatAbilitySeed}})
 	{
 		const auto values = writeBiasMap(*source);
-		if(!values.Vector().empty())
+		if(!values.Struct().empty())
 			result[name] = values;
 	}
 	return result;
@@ -511,13 +522,32 @@ void GameRandomizer::loadVGTBattleJson(
 			target.erase(participant);
 		if(!source)
 			return;
-		if(!source->isVector())
-			throw std::runtime_error("VGT battle randomizer " + name + " field is not a list");
-		for(const auto & entry : source->Vector())
+		if(!source->isStruct())
+			throw std::runtime_error("VGT battle randomizer " + name + " field is not a mapping");
+		for(const auto & [objectText, value] : source->Struct())
 		{
-			const ObjectInstanceID object(requireInteger(entry, "object"));
+			size_t parsed = 0;
+			const int64_t objectValue = std::stoll(objectText, &parsed);
+			if(parsed != objectText.size() || objectValue < 0 || objectValue > std::numeric_limits<si32>::max())
+				throw std::runtime_error("VGT battle randomizer " + name + " object is invalid: " + objectText);
+			const ObjectInstanceID object(static_cast<si32>(objectValue));
+			JsonNode state;
+			if(value.isNumber())
+				state["generator"].String() = std::to_string(value.Integer());
+			else if(value.isStruct())
+			{
+				state["generator"].String() = std::to_string(requireInteger(value, "generator"));
+				if(const auto * bias = findField(value, "bias"))
+				{
+					if(!bias->isNumber())
+						throw std::runtime_error("VGT battle randomizer " + name + " bias is invalid: " + objectText);
+					state["bias"].Integer() = bias->Integer();
+				}
+			}
+			else
+				throw std::runtime_error("VGT battle randomizer " + name + " state is invalid: " + objectText);
 			auto [iter, inserted] = target.try_emplace(object);
-			iter->second.loadVGTJson(requireField(entry, "state"));
+			iter->second.loadVGTJson(state);
 		}
 	};
 

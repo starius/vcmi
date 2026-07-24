@@ -9,7 +9,6 @@ import collections
 import hashlib
 import json
 from pathlib import Path
-import re
 import subprocess
 import sys
 import tempfile
@@ -59,12 +58,13 @@ def load_documents(path: Path) -> list[dict[str, Any]]:
 
 
 def expand_battle_companion(
-    documents: list[dict[str, Any]], transcript_path: Path
+    documents: list[dict[str, Any]], transcript_path: Path, *, required: bool
 ) -> list[dict[str, Any]]:
-    companion_info = documents[0].get("companions")
-    if not isinstance(companion_info, dict) or not isinstance(companion_info.get("battles"), str):
-        raise VGTError("header companions.battles is missing or invalid")
-    companion_path = transcript_path.parent / companion_info["battles"]
+    companion_path = Path(str(transcript_path) + ".battles.yaml")
+    if not companion_path.is_file():
+        if required:
+            raise VGTError(f"tactical battle companion is missing: {companion_path}")
+        return documents
     try:
         companion = yaml.safe_load(companion_path.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
@@ -73,6 +73,12 @@ def expand_battle_companion(
         raise VGTError(f"failed to read battle companion {companion_path}: {exc}") from exc
     if not isinstance(companion, dict) or companion.get("vgtBattles") != 4:
         raise VGTError(f"{companion_path} is not a VGT 4 battle companion")
+    if set(companion) != {"vgtBattles", "main", "battles"}:
+        raise VGTError(f"{companion_path} has unsupported top-level fields")
+    if companion.get("main") != transcript_path.name:
+        raise VGTError(
+            f"{companion_path} belongs to {companion.get('main')!r}, not {transcript_path.name!r}"
+        )
     battles = companion.get("battles")
     if battles is None:
         battles = []
@@ -83,7 +89,15 @@ def expand_battle_companion(
     for index, entry in enumerate(battles):
         battle = entry.get("battle") if isinstance(entry, dict) else None
         battle_id = battle.get("id") if isinstance(battle, dict) else None
-        if type(battle_id) is not int or battle_id in by_id:
+        if (
+            not isinstance(entry, dict)
+            or set(entry) != {"battle"}
+            or not isinstance(battle, dict)
+            or set(battle) != {"id", "randomBefore", "events"}
+            or type(battle_id) is not int
+            or battle_id < 0
+            or battle_id in by_id
+        ):
             raise VGTError(f"battle companion entry {index} has an invalid or duplicate id")
         by_id[battle_id] = battle
 
@@ -95,13 +109,19 @@ def expand_battle_companion(
         records: list[Any] = []
         for record in copy[record_key]:
             battle = record.get("battle") if isinstance(record, dict) else None
-            reference = battle.get("tactics") if isinstance(battle, dict) else None
+            reference = battle.get("id") if isinstance(battle, dict) else None
             if reference is None:
                 records.append(record)
                 continue
             if type(reference) is not int or reference not in by_id or reference in used:
                 raise VGTError(f"invalid or repeated tactical battle reference {reference!r}")
-            records.append({"battle": by_id[reference]})
+            merged = dict(battle)
+            tactical = by_id[reference]
+            for field in ("randomBefore", "events"):
+                if field not in tactical:
+                    raise VGTError(f"battle companion entry {reference} has no {field}")
+                merged[field] = tactical[field]
+            records.append({"battle": merged})
             used.add(reference)
         copy[record_key] = records
         expanded.append(copy)
@@ -227,17 +247,15 @@ def validate_move(value: Any, document_index: int, record_index: int, require_he
 
 
 def validate_battle_block(value: Any, document_index: int, record_index: int) -> None:
-    if isinstance(value, dict) and type(value.get("tactics")) is int:
-        if not isinstance(value.get("forces"), dict) or not isinstance(value.get("outcome"), dict):
-            raise VGTError(f"document {document_index} record {record_index} battle summary is incomplete")
-        return
-    if not isinstance(value, dict) or not isinstance(value.get("events"), list):
-        raise VGTError(f"document {document_index} record {record_index} battle has no event list")
-    random_before = value.get("randomBefore")
-    if not isinstance(random_before, dict) or not isinstance(random_before.get("global"), str):
-        raise VGTError(
-            f"document {document_index} record {record_index} battle has no frozen initial RNG state"
-        )
+    if not isinstance(value, dict) or type(value.get("id")) is not int:
+        raise VGTError(f"document {document_index} record {record_index} battle has no numeric id")
+    for field in ("attacker", "defender"):
+        if not isinstance(value.get(field), str):
+            raise VGTError(
+                f"document {document_index} record {record_index} battle has no {field}"
+            )
+    if not isinstance(value.get("forces"), dict):
+        raise VGTError(f"document {document_index} record {record_index} battle has no forces mapping")
     outcome = value.get("outcome")
     if not isinstance(outcome, dict):
         raise VGTError(f"document {document_index} record {record_index} battle has no explicit outcome")
@@ -250,15 +268,74 @@ def validate_battle_block(value: Any, document_index: int, record_index: int) ->
         raise VGTError(
             f"document {document_index} record {record_index} battle outcome has no casualties mapping"
         )
-    units = value.get("units", {})
-    if not isinstance(units, dict):
-        raise VGTError(f"document {document_index} record {record_index} battle units is not a mapping")
-    for name, unit in units.items():
+    if not isinstance(outcome.get("survivors"), dict):
+        raise VGTError(
+            f"document {document_index} record {record_index} battle outcome has no survivors mapping"
+        )
+    if not isinstance(outcome.get("armies"), dict):
+        raise VGTError(
+            f"document {document_index} record {record_index} battle outcome has no armies mapping"
+        )
+    random = outcome.get("random")
+    if not isinstance(random, dict):
+        raise VGTError(
+            f"document {document_index} record {record_index} battle outcome has no random mapping"
+        )
+    validate_battle_randomizer(
+        random.get("beforeContinuation"), document_index, record_index, "outcome.random.beforeContinuation"
+    )
+    if "atContinuation" in random:
+        validate_battle_randomizer(
+            random["atContinuation"], document_index, record_index, "outcome.random.atContinuation"
+        )
+    for name, count in value["forces"].items():
         if not isinstance(name, str) or not name.startswith(("attacker/", "defender/")):
             raise VGTError(f"document {document_index} record {record_index} has non-descriptive battle unit {name!r}")
-        if not isinstance(unit, dict) or type(unit.get("stack")) is not int:
-            raise VGTError(f"document {document_index} record {record_index} battle unit {name!r} has no raw stack id")
-    validate_battle_events(value["events"], document_index, record_index)
+        if type(count) is not int or count <= 0:
+            raise VGTError(f"document {document_index} record {record_index} battle force {name!r} has invalid count")
+    if ("events" in value) != ("randomBefore" in value):
+        raise VGTError(
+            f"document {document_index} record {record_index} battle tactical fields are incomplete"
+        )
+    if "events" in value:
+        if not isinstance(value["events"], list):
+            raise VGTError(f"document {document_index} record {record_index} battle events is not a list")
+        validate_battle_randomizer(
+            value.get("randomBefore"), document_index, record_index, "randomBefore"
+        )
+        validate_battle_events(value["events"], document_index, record_index)
+
+
+def validate_battle_randomizer(
+    value: Any, document_index: int, record_index: int, field: str
+) -> None:
+    if not isinstance(value, dict) or not isinstance(value.get("global"), str):
+        raise VGTError(
+            f"document {document_index} record {record_index} battle {field} is not a randomizer mapping"
+        )
+    for stream in ("goodMorale", "badMorale", "goodLuck", "badLuck", "combatAbility"):
+        entries = value.get(stream)
+        if entries is None:
+            continue
+        if not isinstance(entries, dict):
+            raise VGTError(
+                f"document {document_index} record {record_index} battle {field}.{stream} is not a mapping"
+            )
+        for object_id, state in entries.items():
+            if not isinstance(object_id, str) or not object_id.isdigit():
+                raise VGTError(
+                    f"document {document_index} record {record_index} battle {field}.{stream} has invalid object id"
+                )
+            if type(state) is int:
+                continue
+            if (
+                not isinstance(state, dict)
+                or type(state.get("generator")) is not int
+                or type(state.get("bias")) is not int
+            ):
+                raise VGTError(
+                    f"document {document_index} record {record_index} battle {field}.{stream}[{object_id!r}] is invalid"
+                )
 
 
 def validate_battle_events(
@@ -368,9 +445,6 @@ def header(documents: list[dict[str, Any]]) -> dict[str, Any]:
     initial_state = result.get("initialState")
     if not isinstance(initial_state, dict) or not isinstance(initial_state.get("heroes"), dict):
         raise VGTError("header initialState.heroes must be a mapping keyed by hero")
-    companions = result.get("companions")
-    if not isinstance(companions, dict) or not isinstance(companions.get("battles"), str):
-        raise VGTError("header companions.battles is missing or invalid")
     return result
 
 
@@ -461,11 +535,13 @@ def command_check(args: argparse.Namespace) -> int:
     transcript_header = header(documents)
     if args.resource_root:
         validate_map_hash(transcript_header["map"], args.resource_root)
-    expanded = expand_battle_companion(documents, args.transcript)
-    if args.schema:
-        validate_schema(expanded, args.schema)
-    # Validate the optional tactical stream as eagerly as the main story.
-    collections.deque(iter_records(expanded), maxlen=0)
+    # The main story is independently valid. When present, validate the optional
+    # tactical stream by joining it to the main battle boundaries.
+    expanded = expand_battle_companion(documents, args.transcript, required=False)
+    if expanded is not documents:
+        if args.schema:
+            validate_schema(expanded, args.schema)
+        collections.deque(iter_records(expanded), maxlen=0)
     if args.strict:
         fail_on_unmodelled(expanded)
 
@@ -494,169 +570,6 @@ def write_normalized_json(documents: list[dict[str, Any]], path: Path) -> None:
         handle.write("\n")
 
 
-_BATTLE_ROSTER_RE = re.compile(r'^        (.+): \{ stack: ([0-9]+),')
-_AVAILABLE_RE = re.compile(r'^  - available: \{ (.+?): \{ (.*?) \} \}\s*$')
-_PLAYER_COLORS = {"red", "blue", "tan", "green", "orange", "purple", "teal", "pink"}
-
-
-def short_identifier(value: str) -> str:
-    value = value.replace(":", "/")
-    return value.removeprefix("core/")
-
-
-def command_enrich_battle_outcomes(args: argparse.Namespace) -> int:
-    try:
-        snapshots = json.loads(args.captured.read_text(encoding="utf-8"))
-        lines = args.transcript.read_text(encoding="utf-8").splitlines(keepends=True)
-    except (OSError, json.JSONDecodeError) as exc:
-        raise VGTError(f"failed to read enrichment input: {exc}") from exc
-    if not isinstance(snapshots, list):
-        raise VGTError("captured battle outcomes must be a JSON list")
-
-    output: list[str] = []
-    battle_index = 0
-    battle_id: int | None = None
-    roster: dict[int, str] = {}
-    participants: dict[str, str] = {}
-    in_battle = False
-    in_units = False
-    outcome_enrichment: list[str] = []
-    seen_dwellings: set[str] = set()
-    suppressed_refreshes = 0
-
-    for line in lines:
-        if outcome_enrichment and (
-            line == "        aftermath:\n"
-            or line.startswith("  - ")
-            or line.startswith("---")
-        ):
-            output.extend(outcome_enrichment)
-            outcome_enrichment = []
-        if outcome_enrichment and line.startswith("        mana: "):
-            continue
-        if line == "  - battle:\n":
-            battle_id = None
-            roster = {}
-            participants = {}
-            in_battle = True
-            in_units = False
-        elif in_battle and line.startswith("      id: "):
-            try:
-                battle_id = int(line.removeprefix("      id: ").strip())
-            except ValueError:
-                pass
-        elif in_battle and (line.startswith("      attacker: ") or line.startswith("      defender: ")):
-            side, value = line.strip().split(": ", 1)
-            participant = yaml.safe_load(value)
-            if not isinstance(participant, str):
-                raise VGTError(f"battle {battle_id} {side} is not a string")
-            participants[side] = participant
-        elif in_battle and line == "      units:\n":
-            in_units = True
-        elif line == "      events:\n":
-            in_units = False
-        elif in_units:
-            match = _BATTLE_ROSTER_RE.match(line)
-            if match:
-                alias = yaml.safe_load(match.group(1))
-                if not isinstance(alias, str):
-                    raise VGTError("battle unit name is not a string")
-                roster[int(match.group(2))] = alias
-
-        available = _AVAILABLE_RE.match(line)
-        if available:
-            object_name = available.group(1)
-            normalized = "/".join(
-                part for part in object_name.split("/") if part not in _PLAYER_COLORS
-            )
-            is_refugee_camp = normalized.startswith("refugee-camp@")
-            if not is_refugee_camp and normalized in seen_dwellings:
-                suppressed_refreshes += 1
-                continue
-            seen_dwellings.add(normalized)
-
-        output.append(line)
-        if line != "      outcome:\n" or battle_id is None:
-            continue
-        if battle_index >= len(snapshots):
-            raise VGTError("transcript contains more battles than captured outcomes")
-        snapshot = snapshots[battle_index]
-        battle_index += 1
-        if not isinstance(snapshot, dict) or snapshot.get("battle") != battle_id:
-            raise VGTError(
-                f"captured battle {battle_index} does not match transcript battle id {battle_id}"
-            )
-        captured_survivors = snapshot.get("survivors")
-        captured_created_units = snapshot.get("createdUnits")
-        captured_mana = snapshot.get("mana")
-        continuation = snapshot.get("continuation")
-        if (
-            not isinstance(captured_survivors, dict)
-            or not isinstance(captured_created_units, dict)
-            or not isinstance(captured_mana, dict)
-            or not isinstance(continuation, dict)
-        ):
-            raise VGTError(f"captured battle {battle_index} has invalid outcome state")
-        survivors: list[str] = []
-        for stack_text, count in sorted(captured_survivors.items(), key=lambda item: int(item[0])):
-            stack = int(stack_text)
-            if stack not in roster:
-                raise VGTError(
-                    f"captured survivor stack {stack} is absent from battle {battle_index} roster"
-                )
-            survivors.append(f"{json.dumps(roster[stack], ensure_ascii=False)}: {int(count)}")
-        outcome_enrichment.append(f"        survivors: {{ {', '.join(survivors)} }}\n")
-        created_units: list[str] = []
-        for stack_text, created in sorted(
-            captured_created_units.items(), key=lambda item: int(item[0])
-        ):
-            stack = int(stack_text)
-            if stack not in roster or stack_text not in captured_survivors:
-                raise VGTError(f"captured created unit {stack} is invalid in battle {battle_index}")
-            if not isinstance(created, dict) or not isinstance(created.get("creature"), str):
-                raise VGTError(f"captured created unit {stack} has invalid state")
-            created_units.append(
-                f"{json.dumps(roster[stack], ensure_ascii=False)}: {{ creature: "
-                f"{json.dumps(short_identifier(created['creature']), ensure_ascii=False)}, "
-                f"count: {int(created['count'])}, hex: {int(created['hex'])} }}"
-            )
-        if created_units:
-            outcome_enrichment.append(
-                f"        createdUnits: {{ {', '.join(created_units)} }}\n"
-            )
-        outcome_enrichment.append(
-            "        continuation: "
-            + json.dumps(continuation, ensure_ascii=False, separators=(",", ":"))
-            + "\n"
-        )
-        mana: list[str] = []
-        for side in ("attacker", "defender"):
-            if side not in captured_mana:
-                continue
-            if side not in participants:
-                raise VGTError(f"captured battle {battle_index} has mana for absent {side}")
-            mana.append(
-                f"{json.dumps(participants[side], ensure_ascii=False)}: {int(captured_mana[side])}"
-            )
-        if mana:
-            outcome_enrichment.append(f"        mana: {{ {', '.join(mana)} }}\n")
-        battle_id = None
-        in_battle = False
-
-    output.extend(outcome_enrichment)
-    if battle_index != len(snapshots):
-        raise VGTError(
-            f"captured outcome count mismatch: transcript used {battle_index}, capture has {len(snapshots)}"
-        )
-    try:
-        args.output.write_text("".join(output), encoding="utf-8")
-    except OSError as exc:
-        raise VGTError(f"failed to write enriched transcript: {exc}") from exc
-    print(f"enriched battles: {battle_index}")
-    print(f"suppressed deterministic dwelling refreshes: {suppressed_refreshes}")
-    return 0
-
-
 def command_replay(args: argparse.Namespace) -> int:
     documents = load_documents(args.transcript)
     if args.schema:
@@ -664,9 +577,10 @@ def command_replay(args: argparse.Namespace) -> int:
     transcript_header = header(documents)
     if args.resource_root:
         validate_map_hash(transcript_header["map"], args.resource_root)
-    documents = expand_battle_companion(documents, args.transcript)
-    if args.schema:
-        validate_schema(documents, args.schema)
+    if not args.fast_forward_battles:
+        documents = expand_battle_companion(documents, args.transcript, required=True)
+        if args.schema:
+            validate_schema(documents, args.schema)
     if args.strict:
         fail_on_unmodelled(documents)
 
@@ -735,15 +649,6 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--schema", type=Path, help="validate the parsed YAML stream against a JSON Schema")
     check.add_argument("--normalized-json", type=Path, help="write parsed documents as normalized JSON")
     check.set_defaults(func=command_check)
-
-    enrich = subcommands.add_parser(
-        "enrich-battle-outcomes",
-        help="add captured battle fast-forward state and suppress repeated deterministic dwelling refreshes",
-    )
-    enrich.add_argument("transcript", type=Path)
-    enrich.add_argument("captured", type=Path)
-    enrich.add_argument("output", type=Path)
-    enrich.set_defaults(func=command_enrich_battle_outcomes)
 
     replay = subcommands.add_parser("replay", help="rebuild game state from a transcript")
     replay.add_argument("transcript", type=Path)

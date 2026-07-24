@@ -697,19 +697,34 @@ supersede older examples in this document where they differ.
    detail preserves byte-identical bonus ordering without exposing the discarded
    low-level moves.
 
-7. The main transcript contains a concise strategic battle scene. Full tactics are
-   kept in the adjacent `*.battles.yaml` companion named by the header and are
-   automatically rejoined for tactical replay. The main outcome still records
-   forces, victory/escape/surrender, casualties, experience, mana, exceptional
-   rewards, and absolute post-battle armies. Raw stack numbers, tactical-only
-   survivor bookkeeping, and the RNG continuation do not interrupt the strategic
-   story.
+7. The main transcript contains a complete strategic battle boundary and is
+   independently replayable without its adjacent `*.battles.yaml` companion.
+   `battle.id` joins the optional tactical detail; it is not described as
+   `tactics`, because it is simply a stable battle index. The main outcome owns
+   the explicit result and winning side, winner and loser, casualties, survivors,
+   permanently created units, experience, mana, rewards, absolute post-battle
+   armies, ordered aftermath, and the RNG state required to continue the game.
 
-   The tactical companion freezes participant RNG immediately after battle setup
-   in `randomBefore`, freezes a replay-only `randomBeforeAftermath` checkpoint after
-   tactics, then freezes its continuation at battle-scene exit: after
-   generated strategic aftermath and before its first follow-up decision. These
-   compact states include level-up RNG only for participating hero types. A recorded
+   The append-only tactical companion depends on the main transcript, declares it
+   with `main: game.vgt`, and stores only `id`, `randomBefore`, and `events`. It
+   does not repeat the initial unit roster or any strategic outcome field. Full
+   tactical replay reconstructs battle inputs from the main game state and merges
+   these fields by id. Main-only fast-forward replay never opens the companion.
+
+   The main RNG boundary uses `random.beforeContinuation` after tactics and before
+   strategic cleanup. A complete `random.atContinuation` is present only when
+   cleanup changes it; otherwise the former is also the continuation state. The
+   tactical-only `randomBefore` freezes participant RNG after battle setup and
+   before the first tactical decision. Participant-scoped biased streams use the
+   compact object-id mapping:
+
+   ```yaml
+   combatAbility:
+     "11180": 471476864
+     "18652": { generator: 2140859999, bias: -2000 }
+   ```
+
+   These states include level-up RNG only for participating hero types. A recorded
    `levelUp` also freezes the rolled primary skill and offered secondary skills;
    replay corrects regenerated values before applying `chooseSkill`. This keeps
    action-by-action replay independent of battle-AI calculations that may otherwise

@@ -3753,6 +3753,7 @@ void VGTRecorder::initializeFromEnvironment()
 			if(battleOutput)
 			{
 				battleOutput << "vgtBattles: 4\n";
+				battleOutput << "main: " << yamlString(transcriptPath.filename().string()) << "\n";
 				battleOutput << "battles:\n";
 				enabled = true;
 			}
@@ -3840,7 +3841,6 @@ void VGTRecorder::ensureHeader(const CGameState & gameState)
 	output << "vgt: 4\n";
 	output << "format: " << yamlString("VCMI readable event transcript") << "\n";
 	output << "engine: { version: " << yamlString(GameConstants::VCMI_VERSION) << " }\n";
-	output << "companions: { battles: " << yamlString(boost::filesystem::path(battleOutputPath).filename().string()) << " }\n";
 	output << "map:\n";
 	output << "  uri: " << yamlString(startInfo->fileURI) << "\n";
 	if(startInfo->mapname != startInfo->fileURI)
@@ -4624,16 +4624,6 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 
 	battleOutput << "  - battle:\n";
 	battleOutput << "      id: " << pendingBattle->id << "\n";
-	if(!pendingBattle->attacker.empty())
-		battleOutput << "      attacker: " << pendingBattle->attacker << "\n";
-	if(!pendingBattle->defender.empty())
-		battleOutput << "      defender: " << pendingBattle->defender << "\n";
-	if(!pendingBattle->units.empty())
-	{
-		battleOutput << "      units:\n";
-		for(const auto & unit : pendingBattle->units)
-			battleOutput << "        " << unit << "\n";
-	}
 	if(!pendingBattle->initialRandom.empty())
 		battleOutput << "      randomBefore: " << pendingBattle->initialRandom << "\n";
 	battleOutput << "      events:\n";
@@ -5240,56 +5230,12 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 		writeBattleEvent(pendingBattle->events[index]);
 		++index;
 	}
-	if(!pendingBattle->outcome.empty() || !pendingBattle->manaChanges.empty() ||
-		!pendingBattle->armies.empty() || !pendingBattle->aftermath.empty())
-	{
-		battleOutput << "      outcome:\n";
-		for(const auto & field : pendingBattle->outcome)
-			battleOutput << "        " << field << "\n";
-		if(pendingBattle->survivors.empty())
-			battleOutput << "        survivors: {}\n";
-		else
-		{
-			battleOutput << "        survivors:\n";
-			for(const auto & survivor : pendingBattle->survivors)
-				battleOutput << "          " << survivor << "\n";
-		}
-		if(!pendingBattle->createdUnits.empty())
-			battleOutput << "        createdUnits: { " + boost::algorithm::join(pendingBattle->createdUnits, ", ") + " }\n";
-		if(!pendingBattle->randomBeforeAftermath.empty())
-			battleOutput << "        randomBeforeAftermath: " << pendingBattle->randomBeforeAftermath << "\n";
-		if(!pendingBattle->continuation.empty())
-			battleOutput << "        continuation: " << pendingBattle->continuation << "\n";
-		if(!pendingBattle->manaChanges.empty())
-			battleOutput << "        mana: " << namedIntegerMap(pendingBattle->manaChanges) << "\n";
-		if(pendingBattle->ended)
-			writeBattleArmyStates(battleOutput, "        ", pendingBattle->armies);
-		if(!pendingBattle->aftermath.empty())
-		{
-			battleOutput << "        aftermath:\n";
-			for(const auto & record : pendingBattle->aftermath)
-				battleOutput << "          - { " << record << " }\n";
-		}
-	}
 	battleOutput.flush();
 
-	auto outcomeValue = [&](const std::string & key) -> std::optional<std::string>
-	{
-		const std::string prefix = key + ": ";
-		for(const auto & field : pendingBattle->outcome)
-		{
-			if(field.starts_with(prefix))
-				return field.substr(prefix.size());
-		}
-		return std::nullopt;
-	};
-
 	output << "  - battle:\n";
-	output << "      tactics: " << pendingBattle->id << "\n";
-	if(!pendingBattle->attacker.empty())
-		output << "      attacker: " << pendingBattle->attacker << "\n";
-	if(!pendingBattle->defender.empty())
-		output << "      defender: " << pendingBattle->defender << "\n";
+	output << "      id: " << pendingBattle->id << "\n";
+	output << "      attacker: " << pendingBattle->attacker << "\n";
+	output << "      defender: " << pendingBattle->defender << "\n";
 	if(!pendingBattle->units.empty())
 	{
 		output << "      forces:\n";
@@ -5305,31 +5251,25 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 		}
 	}
 	output << "      outcome:\n";
-	const std::string result = outcomeValue("result").value_or("unknown");
-	const std::string winner = outcomeValue("winner").value_or("unknown");
-	const std::string loser = outcomeValue("loser").value_or("unknown");
-	if(result == "normal")
-		output << "        victory: " << winner << "\n";
-	else if(result == "escape")
-	{
-		output << "        victory: " << winner << "\n";
-		output << "        escaped: " << loser << "\n";
-	}
-	else if(result == "surrender")
-	{
-		output << "        victory: " << winner << "\n";
-		output << "        surrendered: " << loser << "\n";
-	}
+	for(const auto & field : pendingBattle->outcome)
+		output << "        " << field << "\n";
+	if(pendingBattle->survivors.empty())
+		output << "        survivors: {}\n";
 	else
 	{
-		output << "        result: " << result << "\n";
-		output << "        winner: " << winner << "\n";
+		output << "        survivors:\n";
+		for(const auto & survivor : pendingBattle->survivors)
+			output << "          " << survivor << "\n";
 	}
-	for(const auto & field : pendingBattle->outcome)
+	if(!pendingBattle->createdUnits.empty())
+		output << "        createdUnits: { " + boost::algorithm::join(pendingBattle->createdUnits, ", ") + " }\n";
+	if(!pendingBattle->randomBeforeContinuation.empty())
 	{
-		if(!field.starts_with("result: ") && !field.starts_with("winnerSide: ") &&
-			!field.starts_with("winner: ") && !field.starts_with("loser: "))
-			output << "        " << field << "\n";
+		output << "        random:\n";
+		output << "          beforeContinuation: " << pendingBattle->randomBeforeContinuation << "\n";
+		if(!pendingBattle->randomAtContinuation.empty() &&
+			pendingBattle->randomAtContinuation != pendingBattle->randomBeforeContinuation)
+			output << "          atContinuation: " << pendingBattle->randomAtContinuation << "\n";
 	}
 	if(!pendingBattle->manaChanges.empty())
 		output << "        mana: " << namedIntegerMap(pendingBattle->manaChanges) << "\n";
@@ -6107,7 +6047,7 @@ void VGTRecorder::recordDecision(CGameHandler & gameHandler, CPackForServer & pa
 	if(!enabled)
 		return;
 	if(pendingBattle && pendingBattle->ended && !pendingBattle->aftermathDecisionStarted && gameHandler.randomizer)
-		pendingBattle->continuation = singleLineJson(gameHandler.randomizer->toVGTBattleJson(
+		pendingBattle->randomAtContinuation = singleLineJson(gameHandler.randomizer->toVGTBattleJson(
 			pendingBattle->randomizerParticipants, pendingBattle->randomizerHeroes));
 	if(dynamic_cast<QueryReply *>(&pack))
 	{
@@ -6532,7 +6472,7 @@ void VGTRecorder::recordEffect(CGameHandler & gameHandler, CPackForClient & pack
 	}
 	if(pendingBattle && pendingBattle->ended && !pendingBattle->aftermathDecisionStarted &&
 		!dynamic_cast<BattleEnded *>(&pack) && gameHandler.randomizer)
-		pendingBattle->continuation = singleLineJson(gameHandler.randomizer->toVGTBattleJson(
+		pendingBattle->randomAtContinuation = singleLineJson(gameHandler.randomizer->toVGTBattleJson(
 			pendingBattle->randomizerParticipants, pendingBattle->randomizerHeroes));
 	if(dynamic_cast<PlayerStartsTurn *>(&pack))
 		betweenPlayerTurns = false;
@@ -6560,14 +6500,7 @@ void VGTRecorder::recordEffect(CGameHandler & gameHandler, CPackForClient & pack
 				continue;
 			battle::UnitInfo info;
 			info.load(change.id, change.data);
-			const auto alias = registerBattleUnitAlias(changed->battleID, static_cast<int>(change.id), info.side, info.type);
-			if(pendingBattle && pendingBattle->id == battleAlias(changed->battleID))
-			{
-				const auto * battle = gameState.getBattle(changed->battleID);
-				const auto owner = battle ? battle->getSidePlayer(info.side) : PlayerColor::NEUTRAL;
-				pendingBattle->units.push_back(yamlKey(alias) + ": { stack: " + std::to_string(change.id) +
-					", owner: " + color(owner) + ", count: " + std::to_string(info.count) + " }");
-			}
+			registerBattleUnitAlias(changed->battleID, static_cast<int>(change.id), info.side, info.type);
 		}
 	}
 	if(auto * startAction = dynamic_cast<StartAction *>(&pack))
@@ -6619,7 +6552,7 @@ void VGTRecorder::recordEffect(CGameHandler & gameHandler, CPackForClient & pack
 		pendingBattle->survivors = battleSurvivors(gameState, result->battleID);
 		pendingBattle->createdUnits = battleCreatedUnits(gameState, result->battleID);
 		if(gameHandler.randomizer)
-			pendingBattle->randomBeforeAftermath = singleLineJson(gameHandler.randomizer->toVGTBattleJson(
+			pendingBattle->randomBeforeContinuation = singleLineJson(gameHandler.randomizer->toVGTBattleJson(
 				pendingBattle->randomizerParticipants, pendingBattle->randomizerHeroes));
 		pendingBattle->outcome.push_back("result: " + battleResult(result->result));
 		pendingBattle->outcome.push_back("winnerSide: " + battleSide(result->winner));
@@ -6673,7 +6606,7 @@ void VGTRecorder::recordEffect(CGameHandler & gameHandler, CPackForClient & pack
 				pendingBattle->randomizerParticipants = battleRandomizerParticipants(gameState, ended->battleID);
 			if(pendingBattle->randomizerHeroes.empty())
 				pendingBattle->randomizerHeroes = battleRandomizerHeroes(gameState, ended->battleID);
-			pendingBattle->continuation = singleLineJson(gameHandler.randomizer->toVGTBattleJson(
+			pendingBattle->randomAtContinuation = singleLineJson(gameHandler.randomizer->toVGTBattleJson(
 				pendingBattle->randomizerParticipants, pendingBattle->randomizerHeroes));
 		}
 		if(std::none_of(pendingBattle->outcome.begin(), pendingBattle->outcome.end(), [](const std::string & field)

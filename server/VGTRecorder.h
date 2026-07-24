@@ -163,8 +163,8 @@ class VGTRecorder final
 		std::vector<std::string> outcome;
 		std::vector<std::string> survivors;
 		std::vector<std::string> createdUnits;
-		std::string randomBeforeAftermath;
-		std::string continuation;
+		std::string randomBeforeContinuation;
+		std::string randomAtContinuation;
 		std::map<std::string, int64_t> manaChanges;
 		std::set<ObjectInstanceID> randomizerParticipants;
 		std::set<HeroTypeID> randomizerHeroes;

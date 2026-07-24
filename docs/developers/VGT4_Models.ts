@@ -18,7 +18,6 @@ export interface Header {
     readonly vgt: 4;
     readonly format: "VCMI readable event transcript";
     readonly engine: { readonly version: string };
-    readonly companions: { readonly battles: string };
     readonly map: {
         readonly uri: string;
         readonly name?: string;
@@ -191,13 +190,6 @@ export interface CreaturePool {
 }
 
 export type BattleUnitName = string;
-
-export interface BattleRosterEntry {
-    /** Raw stack IDs occur only here. */
-    readonly stack: number;
-    readonly owner: PlayerColor;
-    readonly count: number;
-}
 
 export interface BattleTarget {
     readonly unit?: BattleUnitName;
@@ -412,12 +404,15 @@ export interface BattleOutcome {
 		readonly count: number;
 		readonly hex: number;
 	}>>;
-	/** Replay-only RNG checkpoint after tactics and before strategic aftermath. */
-	readonly randomBeforeAftermath: BattleRandomizerContinuation;
-	/** RNG continuation after generated aftermath, before its first follow-up decision. */
-	readonly continuation: BattleRandomizerContinuation;
+	readonly random: {
+		/** Participant RNG checkpoint after tactics and before strategic aftermath. */
+		readonly beforeContinuation: BattleRandomizerState;
+		/** Complete post-aftermath checkpoint; omitted when it is unchanged. */
+		readonly atContinuation?: BattleRandomizerState;
+	};
     /** Net persistent hero mana changes caused by the battle. */
     readonly mana?: Readonly<Record<Identifier, number>>;
+    readonly armies: Readonly<Record<Identifier, readonly unknown[]>>;
     readonly artifactMoves?: readonly unknown[];
     readonly learnedSpells?: { readonly hero: Identifier; readonly spells: readonly Identifier[] };
     readonly grownArtifacts?: number;
@@ -426,7 +421,7 @@ export interface BattleOutcome {
     readonly aftermath?: readonly TranscriptRecord[];
 }
 
-export interface BattleRandomizerContinuation {
+export interface BattleRandomizerState {
 	readonly global: string;
 	/** Level-up RNG for participating hero types only. */
 	readonly heroSkill?: Readonly<Record<Identifier, {
@@ -434,47 +429,35 @@ export interface BattleRandomizerContinuation {
 		readonly magicSchoolCounter: number;
 		readonly wisdomCounter: number;
 	}>>;
-	readonly goodMorale?: readonly BattleRandomizerStream[];
-	readonly badMorale?: readonly BattleRandomizerStream[];
-	readonly goodLuck?: readonly BattleRandomizerStream[];
-	readonly badLuck?: readonly BattleRandomizerStream[];
-	readonly combatAbility?: readonly BattleRandomizerStream[];
+	readonly goodMorale?: BattleRandomizerStreams;
+	readonly badMorale?: BattleRandomizerStreams;
+	readonly goodLuck?: BattleRandomizerStreams;
+	readonly badLuck?: BattleRandomizerStreams;
+	readonly combatAbility?: BattleRandomizerStreams;
 }
 
-export interface BattleRandomizerStream {
-	readonly object: number;
-	readonly state: { readonly generator: string; readonly bias?: number };
-}
+export type BattleRandomizerStreams = Readonly<Record<
+	string,
+	number | { readonly generator: number; readonly bias: number }
+>>;
 
-export interface BattleScene {
+/** A standalone strategic boundary in the main transcript. */
+export interface BattleBlock {
     readonly id: number;
-    readonly attacker?: Identifier;
-    readonly defender?: Identifier;
-    readonly units?: Readonly<Record<BattleUnitName, BattleRosterEntry>>;
-	/** Frozen participant RNG state after battle setup and before the first decision. */
-	readonly randomBefore: BattleRandomizerContinuation;
-    readonly events: readonly (BattleEvent | BattleRound)[];
-    /** Required semantic boundary for replay modes that skip tactical events. */
-    readonly outcome: BattleOutcome;
-}
-
-export interface BattleSummary {
-    readonly tactics: number;
     readonly attacker: Identifier;
     readonly defender: Identifier;
     readonly forces: Readonly<Record<BattleUnitName, number>>;
-    readonly outcome: {
-        readonly victory?: PlayerColor;
-        readonly escaped?: PlayerColor;
-        readonly surrendered?: PlayerColor;
-        readonly result?: string;
-        readonly winner?: PlayerColor;
-        readonly casualties: BattleOutcome["casualties"];
-        readonly experience?: Readonly<Record<Identifier, number>>;
-        readonly mana?: Readonly<Record<Identifier, number>>;
-        readonly armies: Readonly<Record<Identifier, readonly unknown[]>>;
-        readonly aftermath?: readonly TranscriptRecord[];
-    };
+    readonly outcome: BattleOutcome;
+	/** Optional tactical fields merged from the companion by id. */
+	readonly randomBefore?: BattleRandomizerState;
+	readonly events?: readonly (BattleEvent | BattleRound)[];
+}
+
+/** One append-only battle companion entry; it depends on the main transcript. */
+export interface BattleCompanionScene {
+	readonly id: number;
+	readonly randomBefore: BattleRandomizerState;
+	readonly events: readonly (BattleEvent | BattleRound)[];
 }
 
 /** One capture record serves both the action and its semantic ownership outcome. */
@@ -682,7 +665,7 @@ export type TranscriptRecord =
     | { readonly build: Build }
     | { readonly recruit: Recruit }
     | { readonly encounter: Encounter }
-    | { readonly battle: BattleSummary }
+    | { readonly battle: BattleBlock }
     | SemanticEffectRecord
     | OtherDecisionRecord
     | { readonly moveArtifacts: MoveArtifacts }
