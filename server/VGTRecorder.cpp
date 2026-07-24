@@ -3755,6 +3755,7 @@ void VGTRecorder::initializeFromEnvironment()
 				battleOutput << "vgtBattles: 4\n";
 				battleOutput << "main: " << yamlString(transcriptPath.filename().string()) << "\n";
 				battleOutput << "battles:\n";
+				battleOutput.flush();
 				enabled = true;
 			}
 			else
