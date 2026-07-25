@@ -4519,6 +4519,18 @@ void replaySemanticBattleAttack(
 	if(!appliedSpells->isVector() || appliedSpells->Vector().empty())
 		throw std::runtime_error("VGT battle attack applies must be a nonempty list");
 
+	std::vector<SpellID> persistentSpells;
+	for(const auto & spellNode : appliedSpells->Vector())
+	{
+		if(!spellNode.isString())
+			throw std::runtime_error("VGT battle attack spell is not an identifier");
+		const SpellID spellID = decodeSpell(spellNode.String());
+		if(spellID.toSpell()->isPersistent())
+			persistentSpells.push_back(spellID);
+	}
+	if(persistentSpells.empty())
+		return;
+
 	auto * battle = gameHandler.gs->getBattle(BattleID(std::stoi(battleID)));
 	if(!battle || battle->battleIsFinished())
 		return;
@@ -4539,13 +4551,8 @@ void replaySemanticBattleAttack(
 	const auto * defender = battle
 		? battle->battleGetStackByID(rosterStack(roster, defenderAlias), false)
 		: nullptr;
-	for(const auto & spellNode : appliedSpells->Vector())
+	for(const SpellID spellID : persistentSpells)
 	{
-		if(!spellNode.isString())
-			throw std::runtime_error("VGT battle attack spell is not an identifier");
-		const SpellID spellID = decodeSpell(spellNode.String());
-		if(!spellID.toSpell()->isPersistent())
-			continue;
 		if((actorStack && vstd::contains(actorStack->activeSpells(), spellID)) ||
 			(defender && vstd::contains(defender->activeSpells(), spellID)))
 			continue;
@@ -4564,7 +4571,7 @@ void replaySemanticBattleAttack(
 		if(actorCasts == defenderCasts)
 			throw std::runtime_error(
 				"Cannot identify the caster of recorded VGT attack spell " +
-				spellNode.String());
+				spellID.toSpell()->getJsonKey());
 		const auto * caster = actorCasts ? actorStack : defender;
 		const auto * target = actorCasts ? defender : actorStack;
 		if(!target->alive())
