@@ -4575,7 +4575,7 @@ void replaySemanticBattleAttack(
 		const auto * caster = actorCasts ? actorStack : defender;
 		const auto * target = actorCasts ? defender : actorStack;
 		if(!target->alive())
-			throw std::runtime_error("Recorded VGT creature attack spell targets a dead unit");
+			continue;
 
 		spells::AbilityCaster spellCaster(caster, 0);
 		spells::Target spellTarget;
