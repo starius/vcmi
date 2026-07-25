@@ -60,6 +60,9 @@
 #include "../lib/serializer/CSaveFile.h"
 #include "../lib/serializer/JsonDeserializer.h"
 #include "../lib/serializer/JsonSerializer.h"
+#include "../lib/spells/AbilityCaster.h"
+#include "../lib/spells/CSpell.h"
+#include "../lib/spells/ISpellMechanics.h"
 
 #include <algorithm>
 #include <boost/algorithm/string.hpp>
@@ -4509,6 +4512,71 @@ void replaySemanticBattleAttack(
 		recordedBattleKills(node),
 		recordedBattleAfters(node),
 		recordedBattleRebirths(node));
+
+	const auto * appliedSpells = findField(node, "applies");
+	if(!appliedSpells)
+		return;
+	if(!appliedSpells->isVector() || appliedSpells->Vector().empty())
+		throw std::runtime_error("VGT battle attack applies must be a nonempty list");
+
+	auto * battle = gameHandler.gs->getBattle(BattleID(std::stoi(battleID)));
+	if(!battle || battle->battleIsFinished())
+		return;
+	const std::string actorAlias = requireString(node, "by");
+	std::string defenderAlias;
+	if(const auto * target = findField(node, "target"); target && target->isString())
+		defenderAlias = target->String();
+	else
+	{
+		const auto & hits = requireField(node, "hits");
+		if(!hits.isVector() || hits.Vector().empty())
+			throw std::runtime_error("VGT attack spell has no primary target");
+		defenderAlias = requireString(hits.Vector().front(), "target");
+	}
+	const auto * actorStack = battle
+		? battle->battleGetStackByID(rosterStack(roster, actorAlias), false)
+		: nullptr;
+	const auto * defender = battle
+		? battle->battleGetStackByID(rosterStack(roster, defenderAlias), false)
+		: nullptr;
+	for(const auto & spellNode : appliedSpells->Vector())
+	{
+		if(!spellNode.isString())
+			throw std::runtime_error("VGT battle attack spell is not an identifier");
+		const SpellID spellID = decodeSpell(spellNode.String());
+		if(!spellID.toSpell()->isPersistent())
+			continue;
+		if((actorStack && vstd::contains(actorStack->activeSpells(), spellID)) ||
+			(defender && vstd::contains(defender->activeSpells(), spellID)))
+			continue;
+		if(!actorStack || !defender)
+			throw std::runtime_error("Cannot apply a recorded VGT creature attack spell");
+		const auto castsSpell = [&](const battle::Unit * unit)
+		{
+			const auto selector =
+				Selector::typeSubtype(BonusType::SPELL_AFTER_ATTACK, BonusSubtypeID(spellID))
+					.Or(Selector::typeSubtype(
+						BonusType::SPELL_BEFORE_ATTACK, BonusSubtypeID(spellID)));
+			return unit->hasBonus(selector);
+		};
+		const bool actorCasts = castsSpell(actorStack);
+		const bool defenderCasts = castsSpell(defender);
+		if(actorCasts == defenderCasts)
+			throw std::runtime_error(
+				"Cannot identify the caster of recorded VGT attack spell " +
+				spellNode.String());
+		const auto * caster = actorCasts ? actorStack : defender;
+		const auto * target = actorCasts ? defender : actorStack;
+		if(!target->alive())
+			throw std::runtime_error("Recorded VGT creature attack spell targets a dead unit");
+
+		spells::AbilityCaster spellCaster(caster, 0);
+		spells::Target spellTarget;
+		spellTarget.emplace_back(target);
+		spells::BattleCast parameters(
+			battle, &spellCaster, spells::Mode::PASSIVE, spellID.toSpell());
+		parameters.cast(gameHandler.spellcastEnvironment(), spellTarget);
+	}
 }
 
 void applyRecordedBattleCreations(
@@ -4609,14 +4677,58 @@ void replaySemanticBattleCast(
 	const std::string caster = requireString(node, "caster");
 	const bool stackCast = roster.contains(caster);
 	action["unit"].String() = stackCast ? caster : "hero";
-	action["spell"].String() = requireString(node, "spell");
+	const std::string spellName = requireString(node, "spell");
+	action["spell"].String() = spellName;
 	action["target"] = requireField(node, "aim");
-	replayReadableBattleAction(
-		gameHandler,
-		stackCast ? "monsterSpell" : "heroSpell",
-		action,
-		battleID,
-		roster);
+	try
+	{
+		replayReadableBattleAction(
+			gameHandler,
+			stackCast ? "monsterSpell" : "heroSpell",
+			action,
+			battleID,
+			roster);
+	}
+	catch(const std::runtime_error &)
+	{
+		const SpellID spellID = decodeSpell(spellName);
+		const auto & aim = requireField(node, "aim");
+		auto * battle = gameHandler.gs->getBattle(BattleID(std::stoi(battleID)));
+		const auto * target = battle && aim.isVector() && aim.Vector().size() == 1
+			? battle->battleGetStackByPos(
+				BattleHex(static_cast<int>(requireInteger(aim.Vector().front(), "hex"))), true)
+			: nullptr;
+		const bool alreadyDispelled =
+			!stackCast && spellID == SpellID(SpellID::DISPEL) && target &&
+			target->activeSpells().empty();
+		if(!alreadyDispelled)
+			throw;
+
+		// A frozen earlier proc may already be absent after reconstructed round
+		// bookkeeping. In that case Dispel's desired state is already true. Preserve
+		// the successful cast's remaining battle bookkeeping without inventing an
+		// effect merely to remove it again.
+		const BattleSide side = decodeBattleSide(requireString(node, "side"));
+		BattleSpellCast cast;
+		cast.battleID = BattleID(std::stoi(battleID));
+		cast.side = side;
+		cast.spellID = spellID;
+		cast.tile = target->getPosition();
+		cast.castByHero = true;
+		gameHandler.sendAndApply(cast);
+
+		if(const auto * mana = findField(node, "mana"))
+		{
+			const auto * hero = battle->getSideHero(side);
+			if(!hero || !mana->isNumber() || mana->Integer() <= 0)
+				throw std::runtime_error("Invalid VGT no-op Dispel mana");
+			SetMana spent;
+			spent.hid = hero->id;
+			spent.val = -static_cast<si32>(mana->Integer());
+			spent.mode = ChangeValueMode::RELATIVE;
+			gameHandler.sendAndApply(spent);
+		}
+	}
 	applyRecordedBattleCreations(gameHandler, node, battleID, roster);
 	auto healthLoss = recordedBattleDamage(node);
 	if(const auto * target = findField(node, "target"); target && target->isString())
