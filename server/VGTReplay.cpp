@@ -4829,6 +4829,43 @@ void applyRecordedBattleMana(
 	}
 }
 
+void applyRecordedBattleLearnedSpells(CGameHandler & gameHandler, const JsonNode & outcome)
+{
+	const auto * learnedSpells = findField(outcome, "learnedSpells");
+	if(!learnedSpells)
+		return;
+	if(!learnedSpells->isStruct())
+		throw std::runtime_error("VGT battle outcome learnedSpells is not a mapping");
+
+	const ObjectInstanceID heroID = resolveObjectAlias(
+		gameHandler.gameState(), requireString(*learnedSpells, "hero"));
+	const auto * hero = gameHandler.gameState().getHero(heroID);
+	if(!hero)
+		throw std::runtime_error("VGT battle outcome learnedSpells hero is not on the map");
+
+	const auto & spells = requireField(*learnedSpells, "spells");
+	if(!spells.isVector())
+		throw std::runtime_error("VGT battle outcome learnedSpells.spells is not a sequence");
+
+	std::set<SpellID> missingSpells;
+	for(const auto & spell : spells.Vector())
+	{
+		if(!spell.isString())
+			throw std::runtime_error("VGT battle outcome learned spell is not a string");
+		const SpellID spellID = decodeSpell(spell.String());
+		if(!hero->spellbookContainsSpell(spellID))
+			missingSpells.insert(spellID);
+	}
+	if(missingSpells.empty())
+		return;
+
+	ChangeSpells change;
+	change.hid = heroID;
+	change.spells = std::move(missingSpells);
+	change.learn = true;
+	gameHandler.sendAndApply(change);
+}
+
 const JsonNode & battleRandomBeforeContinuation(const JsonNode & outcome)
 {
 	return requireField(requireField(outcome, "random"), "beforeContinuation");
@@ -5313,6 +5350,7 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 	}
 	if(gameHandler.gs->getBattle(liveBattleID))
 		throw std::runtime_error("VGT battle outcome did not finalize battle: " + battleID);
+	applyRecordedBattleLearnedSpells(gameHandler, outcome);
 	applyRecordedBattleMana(gameHandler, outcome, battleManaParticipants);
 	gameHandler.randomizer->loadVGTBattleJson(
 		battleRandomAtContinuation(outcome), randomizerParticipants, randomizerHeroes);
