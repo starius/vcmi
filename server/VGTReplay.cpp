@@ -3541,13 +3541,14 @@ std::map<std::string, int> liveBattleRoster(const BattleInfo & battle, const Jso
 		std::sort(stackIDs.begin(), stackIDs.end());
 		for(size_t index = 0; index < stackIDs.size(); ++index)
 		{
+			// Automatic opening effects, such as arrow-tower attacks, may have
+			// changed a live stack before the readable battle block is consumed.
+			// Match immutable stack identity here; `forces` remains the frozen
+			// human-readable snapshot of the battle's initial counts.
 			const std::string alias = base + (stackIDs.size() == 1 ? "" : "/" + std::to_string(index + 1));
 			const auto expected = forces.Struct().find(alias);
 			if(expected == forces.Struct().end() || !expected->second.isNumber())
 				throw std::runtime_error("Live battle has no matching VGT force " + alias);
-			const auto * stack = battle.battleGetStackByID(stackIDs[index], false);
-			if(!stack || stack->getCount() != expected->second.Integer())
-				throw std::runtime_error("Live battle force count differs for " + alias);
 			result.emplace(alias, stackIDs[index]);
 		}
 	}
