@@ -5530,6 +5530,11 @@ void VGTRecorder::flushPendingMove(const CGameState & gameState)
 {
 	if(!pendingMove)
 		return;
+	if(pendingMove->route.empty())
+	{
+		pendingMove.reset();
+		return;
+	}
 
 	std::string line = "move: { ";
 	if(!currentTurnPlayer || pendingMove->actor != currentTurnPlayer->toString())
@@ -6180,9 +6185,9 @@ void VGTRecorder::recordDecision(CGameHandler & gameHandler, CPackForServer & pa
 					const auto position = heroObject->anchorPos();
 					start = {position.x, position.y, position.z};
 				}
-				pendingMove = PendingMove{actor, hero, start, {}, {}, routeZ, move->transit};
+				pendingMove = PendingMove{actor, hero, start, {}, {}, {}, routeZ, move->transit};
 			}
-			pendingMove->route.push_back({destination.x, destination.y, destination.z});
+			pendingMove->requestedRoute.push_back({destination.x, destination.y, destination.z});
 		}
 		return;
 	}
@@ -6800,6 +6805,27 @@ void VGTRecorder::recordEffect(CGameHandler & gameHandler, CPackForClient & pack
 	}
 	if(auto * move = dynamic_cast<TryMoveHero *>(&pack))
 	{
+		const std::string movingHero = heroAlias(gameState, move->id);
+		if(pendingMove && pendingMove->hero == movingHero)
+		{
+			if(move->result == TryMoveHero::FAILED)
+			{
+				// MoveHero decisions are observed before the server resolves them.
+				// A failed request has no strategic effect, and recording it would
+				// make replay try the move again under a slightly different query
+				// context. Discard the failed destination and any unattempted tail.
+				pendingMove->requestedRoute.clear();
+			}
+			else
+			{
+				const std::array<int, 3> destination = {move->end.x, move->end.y, move->end.z};
+				const auto requested = std::find(
+					pendingMove->requestedRoute.begin(), pendingMove->requestedRoute.end(), destination);
+				if(requested != pendingMove->requestedRoute.end())
+					pendingMove->requestedRoute.erase(pendingMove->requestedRoute.begin(), std::next(requested));
+				pendingMove->route.push_back(destination);
+			}
+		}
 		collectDiscoveries(gameState, *move);
 		return;
 	}

@@ -40,6 +40,7 @@ class VGTRecorder final
 		std::string hero;
 		std::array<int, 3> start = {};
 		std::vector<std::array<int, 3>> route;
+		std::vector<std::array<int, 3>> requestedRoute;
 		std::vector<std::string> discoveries;
 		int z = 0;
 		bool transit = false;
