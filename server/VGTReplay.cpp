@@ -91,6 +91,7 @@ thread_local std::optional<QueryID> replayChoiceFreeLevelUpQuery;
 
 ObjectInstanceID resolveObjectAlias(const CGameState & gameState, const std::string & alias);
 void applyRecordedEncounterLevelUps(CGameHandler & gameHandler, const JsonNode & encounter);
+void applyRecordedEncounterUsedToday(CGameHandler & gameHandler, const JsonNode & encounter);
 
 class ReplayGameServer : public IGameServer
 {
@@ -101,7 +102,6 @@ class ReplayGameServer : public IGameServer
 	std::string capturedBattleOutcomePath;
 	JsonNode capturedBattleOutcomes;
 	int replayedTurnStates = 0;
-	std::optional<PlayerColor> pendingTurnStatePlayer;
 
 	std::string turnStateFileName(PlayerColor player) const
 	{
@@ -265,16 +265,6 @@ public:
 		capturedBattleOutcomes.Vector();
 	}
 
-	void flushPendingTurnState()
-	{
-		if(!pendingTurnStatePlayer)
-			return;
-
-		const PlayerColor player = *pendingTurnStatePlayer;
-		pendingTurnStatePlayer.reset();
-		processTurnState(player);
-	}
-
 	void writeCapturedBattleOutcomes() const
 	{
 		if(capturedBattleOutcomePath.empty())
@@ -395,15 +385,7 @@ public:
 		}
 		gameHandler->gs->apply(pack);
 		if(auto * end = dynamic_cast<PlayerEndsTurn *>(&pack))
-		{
-			if(pendingTurnStatePlayer)
-				throw std::runtime_error("VGT replay received two turn boundaries in one transcript document");
-			// PlayerEndsTurn can synchronously trigger start-of-turn object visits
-			// and their state changes after this pack is applied. The recorder's
-			// turn save contains that complete derived state, so compare only after
-			// the current transcript document has finished replaying.
-			pendingTurnStatePlayer = end->player;
-		}
+			processTurnState(end->player);
 	}
 
 	void sendPack(CPackForClient &, GameConnectionID) override
@@ -3035,6 +3017,7 @@ void replayDecision(CGameHandler & gameHandler, const JsonNode & decision)
 		if(!choice)
 		{
 			verifyDiscoveryCheck(gameHandler.gameState(), decision, "discovers", player, "encounter");
+			applyRecordedEncounterUsedToday(gameHandler, decision);
 			return;
 		}
 		const auto topQuery = gameHandler.queries->topQuery(player);
@@ -3379,6 +3362,51 @@ void applyRecordedEncounterLevelUps(CGameHandler & gameHandler, const JsonNode &
 		if(!hasField(levelUp, "hero"))
 			levelUp["hero"].String() = requireString(encounter, "hero");
 		applyRecordedHeroLevelUp(gameHandler, levelUp);
+	}
+}
+
+void applyRecordedEncounterUsedToday(CGameHandler & gameHandler, const JsonNode & encounter)
+{
+	const auto * outcomes = findField(encounter, "outcome");
+	if(!outcomes || !outcomes->isVector())
+		return;
+
+	for(const auto & outcome : outcomes->Vector())
+	{
+		const auto * usedToday = findField(outcome, "usedToday");
+		if(!usedToday)
+			continue;
+		if(!usedToday->isStruct())
+			throw std::runtime_error("VGT encounter usedToday is not a mapping");
+
+		const ObjectInstanceID heroID = resolveObjectAlias(
+			gameHandler.gameState(), requireString(*usedToday, "hero"));
+		const ObjectInstanceID objectID = resolveObjectAlias(
+			gameHandler.gameState(), requireString(*usedToday, "object"));
+		const auto * hero = gameHandler.gameState().getHero(heroID);
+		const auto * object = gameHandler.gameState().getMap().getObject(objectID);
+		const auto * rewardable = dynamic_cast<const CRewardableObject *>(object);
+		if(!hero || !rewardable || object->ID != Obj::MAGIC_WELL)
+			throw std::runtime_error("VGT encounter usedToday does not reference a hero and Magic Well");
+
+		if(!rewardable->isOnceVisitableObjectCleared())
+			gameHandler.setObjPropertyValue(objectID, ObjProperty::REWARD_CLEARED, true);
+		if(!hero->visitedObjects.contains(objectID))
+		{
+			ChangeObjectVisitors visitors(ChangeObjectVisitors::VISITOR_ADD_HERO, objectID, heroID);
+			gameHandler.sendAndApply(visitors);
+		}
+		if(!hero->hasBonusFrom(BonusSource::OBJECT_TYPE, BonusSourceID(object->ID)))
+		{
+			Bonus bonus(
+				BonusDuration::ONE_DAY,
+				BonusType::NONE,
+				BonusSource::OBJECT_TYPE,
+				0,
+				BonusSourceID(object->ID));
+			GiveBonus giveBonus(GiveBonus::ETarget::OBJECT, heroID, bonus);
+			gameHandler.sendAndApply(giveBonus);
+		}
 	}
 }
 
@@ -5527,11 +5555,7 @@ void prepareRecordedNewDays(const JsonNode & documents)
 	}
 }
 
-void replayTranscriptDocuments(
-	ReplayGameServer & replayServer,
-	CGameHandler & gameHandler,
-	const JsonNode & documents,
-	bool fastForwardBattles)
+void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & documents, bool fastForwardBattles)
 {
 	if(documents.Vector().size() == 1)
 		return;
@@ -5727,7 +5751,6 @@ void replayTranscriptDocuments(
 				throw std::runtime_error("Unsupported VGT record kind: " + entry.first);
 		}
 		requireNoPendingDiscoveryCheck("the end of document " + std::to_string(documentIndex));
-		replayServer.flushPendingTurnState();
 	}
 }
 
@@ -6192,7 +6215,7 @@ int replayVGTJson(const VGTReplayOptions & options)
 	prepareRecordedNewDays(documents);
 	if(documents.Vector().size() > 1)
 		gameHandler.start(false);
-	replayTranscriptDocuments(replayServer, gameHandler, documents, options.fastForwardBattles);
+	replayTranscriptDocuments(gameHandler, documents, options.fastForwardBattles);
 	replayServer.verifyTurnStatesComplete();
 	replayServer.writeCapturedBattleOutcomes();
 	if(!options.outputSave.empty())
