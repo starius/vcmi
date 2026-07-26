@@ -112,6 +112,7 @@ public:
 	void recreateBuildingsBonuses();
 	void setVisitingHero(CGHeroInstance *h);
 	void setGarrisonedHero(CGHeroInstance *h);
+	void repairHeroAssignments();
 	const CArmedInstance *getUpperArmy() const; //garrisoned hero if present or the town itself
 	const CGHeroInstance * getVisitingHero() const;
 	const CGHeroInstance * getGarrisonHero() const;
@@ -221,6 +222,7 @@ protected:
 	void serializeJsonOptions(JsonSerializeFormat & handler) override;
 
 private:
+	void clearHeroAssignment(ObjectInstanceID & heroId, bool garrisoned, bool requireConsistent);
 	FactionID randomizeFaction(vstd::RNG & rand);
 	void setOwner(IGameEventCallback & gameEvents, const PlayerColor & owner) const;
 	void onTownCaptured(IGameEventCallback & gameEvents, const PlayerColor & winner) const;
@@ -228,4 +230,6 @@ private:
 	bool townEnvisagesBuilding(BuildingSubID::EBuildingSubID bid) const;
 	void initializeConfigurableBuildings(IGameRandomizer & gameRandomizer);
 	void initializeNeutralTownGarrison(vstd::RNG & rand);
+
+	friend class CGameState;
 };

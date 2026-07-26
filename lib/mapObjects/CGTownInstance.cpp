@@ -798,9 +798,18 @@ void CGTownInstance::recreateBuildingsBonuses()
 
 void CGTownInstance::setVisitingHero(CGHeroInstance *h)
 {
-	if(getVisitingHero() == h)
+	if(h && getVisitingHero() == h)
+	{
+		if(h->getVisitedTown() != this || h->isGarrisoned())
+			throw std::runtime_error("Town visiting hero assignment is inconsistent");
 		return;
-	
+	}
+
+	if(h && h->getVisitedTown())
+		throw std::runtime_error("Hero is already assigned to a town");
+
+	clearHeroAssignment(visitingHero, false, true);
+
 	if(h)
 	{
 		h->detachFromBonusSystem(cb->gameState());
@@ -808,21 +817,22 @@ void CGTownInstance::setVisitingHero(CGHeroInstance *h)
 		h->attachToBonusSystem(cb->gameState());
 		visitingHero = h->id;
 	}
-	else if (visitingHero.hasValue())
-	{
-		auto oldVisitor = dynamic_cast<CGHeroInstance*>(cb->gameState().getObjInstance(visitingHero));
-		oldVisitor->detachFromBonusSystem(cb->gameState());
-		oldVisitor->setVisitedTown(nullptr, false);
-		oldVisitor->attachToBonusSystem(cb->gameState());
-		visitingHero = {};
-	}
 }
 
 void CGTownInstance::setGarrisonedHero(CGHeroInstance *h)
 {
-	if(getGarrisonHero() == h)
+	if(h && getGarrisonHero() == h)
+	{
+		if(h->getVisitedTown() != this || !h->isGarrisoned())
+			throw std::runtime_error("Town garrison hero assignment is inconsistent");
 		return;
-	
+	}
+
+	if(h && h->getVisitedTown())
+		throw std::runtime_error("Hero is already assigned to a town");
+
+	clearHeroAssignment(garrisonHero, true, true);
+
 	if(h)
 	{
 		h->detachFromBonusSystem(cb->gameState());
@@ -830,15 +840,55 @@ void CGTownInstance::setGarrisonedHero(CGHeroInstance *h)
 		h->attachToBonusSystem(cb->gameState());
 		garrisonHero = h->id;
 	}
-	else if (garrisonHero.hasValue())
-	{
-		auto oldVisitor = dynamic_cast<CGHeroInstance*>(cb->gameState().getObjInstance(garrisonHero));
-		oldVisitor->detachFromBonusSystem(cb->gameState());
-		oldVisitor->setVisitedTown(nullptr, false);
-		oldVisitor->attachToBonusSystem(cb->gameState());
-		garrisonHero = {};
-	}
+
 	updateMoraleBonusFromArmy(); //avoid giving morale bonus for same army twice
+}
+
+void CGTownInstance::clearHeroAssignment(ObjectInstanceID & heroId, bool garrisoned, bool requireConsistent)
+{
+	if(!heroId.hasValue())
+		return;
+
+	auto * hero = dynamic_cast<CGHeroInstance*>(cb->gameState().getObjInstance(heroId));
+	const bool reverseAssignmentMatches = hero
+		&& hero->getVisitedTown() == this
+		&& hero->isGarrisoned() == garrisoned;
+	if(requireConsistent && !reverseAssignmentMatches)
+		throw std::runtime_error("Town hero assignment is inconsistent");
+
+	if(reverseAssignmentMatches)
+	{
+		hero->detachFromBonusSystem(cb->gameState());
+		hero->setVisitedTown(nullptr, false);
+		hero->attachToBonusSystem(cb->gameState());
+	}
+
+	heroId = {};
+}
+
+void CGTownInstance::repairHeroAssignments()
+{
+	const auto repairAssignment = [this](ObjectInstanceID & heroId, bool garrisoned, const char * description)
+	{
+		if(!heroId.hasValue())
+			return false;
+
+		auto * hero = dynamic_cast<CGHeroInstance*>(cb->gameState().getObjInstance(heroId));
+		const bool valid = hero
+			&& hero->getVisitedTown() == this
+			&& hero->isGarrisoned() == garrisoned
+			&& hero->visitablePos() == visitablePos();
+		if(valid)
+			return false;
+
+		logGlobal->warn("Removing invalid %s hero assignment from town %d.", description, id.getNum());
+		clearHeroAssignment(heroId, garrisoned, false);
+		return true;
+	};
+
+	repairAssignment(visitingHero, false, "visiting");
+	if(repairAssignment(garrisonHero, true, "garrison"))
+		updateMoraleBonusFromArmy();
 }
 
 const CGHeroInstance * CGTownInstance::getVisitingHero() const
