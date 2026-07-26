@@ -71,6 +71,7 @@ class BattleResultProcessor : boost::noncopyable
 
 	std::map<BattleID, std::unique_ptr<BattleResult>> battleResults;
 	std::map<BattleID, std::unique_ptr<FinishingBattleHelper>> finishingBattles;
+	std::map<BattleID, BattleSideArray<TExpType>> replayExperienceOverrides;
 
 public:
 	explicit BattleResultProcessor(CGameHandler * gameHandler);
@@ -81,6 +82,9 @@ public:
 	void endBattle(
 		const CBattleInfoCallback & battle,
 		const std::optional<BattleSideArray<TExpType>> & replayExperience = std::nullopt); //ends battle
+	void setBattleExperienceFromReplay(
+		const CBattleInfoCallback & battle,
+		const BattleSideArray<TExpType> & experience);
 	void endBattleConfirm(const CBattleInfoCallback & battle);
 	void battleFinalize(const BattleID & battleID, const BattleResult & result);
 };

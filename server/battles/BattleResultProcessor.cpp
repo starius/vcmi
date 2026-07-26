@@ -227,12 +227,21 @@ void BattleResultProcessor::endBattle(
 
 	LOG_TRACE(logGlobal);
 
-	auto * battleResult = battleResults.at(battle.getBattle()->getBattleID()).get();
+	const BattleID battleID = battle.getBattle()->getBattleID();
+	auto * battleResult = battleResults.at(battleID).get();
 	const auto * heroAttacker = battle.battleGetFightingHero(BattleSide::ATTACKER);
 	const auto * heroDefender = battle.battleGetFightingHero(BattleSide::DEFENDER);
+	auto effectiveReplayExperience = replayExperience;
+	if(!effectiveReplayExperience)
+	{
+		const auto replayOverride = replayExperienceOverrides.find(battleID);
+		if(replayOverride != replayExperienceOverrides.end())
+			effectiveReplayExperience = replayOverride->second;
+	}
+	replayExperienceOverrides.erase(battleID);
 
-	if(replayExperience)
-		battleResult->exp = *replayExperience;
+	if(effectiveReplayExperience)
+		battleResult->exp = *effectiveReplayExperience;
 	else
 	{
 		//Fill BattleResult structure with exp info
@@ -314,6 +323,13 @@ void BattleResultProcessor::endBattle(
 
 	if (battleResult->queryID == QueryID::NONE)
 		endBattleConfirm(battle);
+}
+
+void BattleResultProcessor::setBattleExperienceFromReplay(
+	const CBattleInfoCallback & battle,
+	const BattleSideArray<TExpType> & experience)
+{
+	replayExperienceOverrides[battle.getBattle()->getBattleID()] = experience;
 }
 
 void BattleResultProcessor::endBattleConfirm(const CBattleInfoCallback & battle)

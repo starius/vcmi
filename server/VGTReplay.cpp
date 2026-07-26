@@ -4926,6 +4926,37 @@ const JsonNode & battleRandomAtContinuation(const JsonNode & outcome)
 	return requireField(random, "beforeContinuation");
 }
 
+BattleSideArray<TExpType> recordedBattleExperience(
+	CGameHandler & gameHandler,
+	const CBattleInfoCallback & battle,
+	const JsonNode & outcome)
+{
+	BattleSideArray<TExpType> experience{0, 0};
+	const auto * recordedExperience = findField(outcome, "experience");
+	if(!recordedExperience)
+		return experience;
+	if(!recordedExperience->isStruct())
+		throw std::runtime_error("VGT battle outcome experience is not a mapping");
+
+	for(const auto & [hero, amount] : recordedExperience->Struct())
+	{
+		if(!amount.isNumber() || amount.Integer() < 0)
+			throw std::runtime_error("Invalid VGT battle outcome experience for " + hero);
+		const ObjectInstanceID heroID = resolveObjectAlias(gameHandler.gameState(), hero);
+		std::optional<BattleSide> heroSide;
+		for(const auto side : {BattleSide::ATTACKER, BattleSide::DEFENDER})
+		{
+			const auto * sideHero = battle.battleGetFightingHero(side);
+			if(sideHero && sideHero->id == heroID)
+				heroSide = side;
+		}
+		if(!heroSide)
+			throw std::runtime_error("VGT battle outcome experience hero is not a participant: " + hero);
+		experience[*heroSide] = amount.Integer();
+	}
+	return experience;
+}
+
 void fastForwardBattle(
 	CGameHandler & gameHandler,
 	const std::string & battleID,
@@ -5063,27 +5094,7 @@ void fastForwardBattle(
 			throw std::runtime_error("VGT fast-forward lacks createdUnits state for dynamic survivor: " + alias);
 	}
 
-	BattleSideArray<TExpType> experience{0, 0};
-	if(const auto * recordedExperience = findField(outcome, "experience"))
-	{
-		if(!recordedExperience->isStruct())
-			throw std::runtime_error("VGT battle outcome experience is not a mapping");
-		for(const auto & [hero, amount] : recordedExperience->Struct())
-		{
-			if(!amount.isNumber() || amount.Integer() < 0)
-				throw std::runtime_error("Invalid VGT battle outcome experience for " + hero);
-			const ObjectInstanceID heroID = resolveObjectAlias(gameHandler.gameState(), hero);
-			std::optional<BattleSide> heroSide;
-			for(const auto side : {BattleSide::ATTACKER, BattleSide::DEFENDER})
-			{
-				if(battle->getSide(side).heroID == heroID)
-					heroSide = side;
-			}
-			if(!heroSide)
-				throw std::runtime_error("VGT battle outcome experience hero is not a participant: " + hero);
-			experience[*heroSide] = amount.Integer();
-		}
-	}
+	const auto experience = recordedBattleExperience(gameHandler, *battle, outcome);
 
 	gameHandler.randomizer->loadVGTBattleJson(
 		battleRandomBeforeContinuation(outcome), randomizerParticipants, randomizerHeroes);
@@ -5126,6 +5137,8 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 	else if(!fastForwardBattles)
 		throw std::runtime_error("VGT tactical battle replay has no companion events");
 	const auto & outcome = requireField(node, "outcome");
+	gameHandler.battles->setBattleExperienceFromReplay(
+		*initialBattle, recordedBattleExperience(gameHandler, *initialBattle, outcome));
 	bool tacticalFinishedEarly = false;
 	std::string currentEvent;
 	std::function<void(const JsonNode &)> replayEvents;

@@ -79,6 +79,10 @@ public:
 		EBattleResult resultType,
 		BattleSide victoriousSide,
 		const BattleSideArray<TExpType> & experience);
+	/// Registers experience to use when the replayed battle result is produced.
+	void setBattleExperienceFromReplay(
+		const CBattleInfoCallback & battle,
+		const BattleSideArray<TExpType> & experience);
 
 	/// Applies results of a battle once player agrees to them
 	void endBattleConfirm(const BattleID & battleID);

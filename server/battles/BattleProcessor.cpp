@@ -354,6 +354,13 @@ void BattleProcessor::setBattleResultFromReplay(
 	resultProcessor->endBattle(battle, experience);
 }
 
+void BattleProcessor::setBattleExperienceFromReplay(
+	const CBattleInfoCallback & battle,
+	const BattleSideArray<TExpType> & experience)
+{
+	resultProcessor->setBattleExperienceFromReplay(battle, experience);
+}
+
 bool BattleProcessor::makeAutomaticBattleAction(const CBattleInfoCallback & battle, const BattleAction &ba)
 {
 	return actionsProcessor->makeAutomaticBattleAction(battle, ba);
