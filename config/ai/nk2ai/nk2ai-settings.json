@@ -39,6 +39,8 @@
 	// - this becomes 100% if AI player loses all towns, it's willing to risk it all
 	// - example: the higher the value, the higher the chance it will die in a battle
 	// - example: beginners are more likely to loose their heroes, thus pawn level also has a higher percentage here
+	// armyGoldRatioPerTurn: share of currently available army that resource trading may fund in one turn
+	// - values approximate the old cumulative 10%-per-pass budget without repeating the trade phase
 
 	"pawn" : {
 		"maxRoamingHeroes" : 3, //H3 value: 3,
@@ -60,7 +62,8 @@
 		"retreatThresholdRelative" : 0.1,
 		"retreatThresholdAbsolute" : 2000,
 		"safeAttackRatio" : 1.1,
-		"maxArmyLossTarget" : 0.65
+		"maxArmyLossTarget" : 0.65,
+		"armyGoldRatioPerTurn" : 0.4
 	},
 
 	"knight" : {
@@ -83,7 +86,8 @@
 		"retreatThresholdRelative" : 0.1,
 		"retreatThresholdAbsolute" : 5000,
 		"safeAttackRatio" : 1.1,
-		"maxArmyLossTarget" : 0.50
+		"maxArmyLossTarget" : 0.50,
+		"armyGoldRatioPerTurn" : 0.65
 	},
 
 	"rook" : {
@@ -106,7 +110,8 @@
 		"retreatThresholdRelative" : 0.3,
 		"retreatThresholdAbsolute" : 10000,
 		"safeAttackRatio" : 1.1,
-		"maxArmyLossTarget" : 0.35
+		"maxArmyLossTarget" : 0.35,
+		"armyGoldRatioPerTurn" : 1.0
 	},
 
 	"queen" : {
@@ -129,7 +134,8 @@
 		"retreatThresholdRelative" : 0.3,
 		"retreatThresholdAbsolute" : 10000,
 		"safeAttackRatio" : 1.1,
-		"maxArmyLossTarget" : 0.35
+		"maxArmyLossTarget" : 0.35,
+		"armyGoldRatioPerTurn" : 1.0
 	},
 
 	"king" : {
@@ -152,6 +158,7 @@
 		"retreatThresholdRelative" : 0.3,
 		"retreatThresholdAbsolute" : 10000,
 		"safeAttackRatio" : 1.1,
-		"maxArmyLossTarget" : 0.35
+		"maxArmyLossTarget" : 0.35,
+		"armyGoldRatioPerTurn" : 1.0
 	}
 }

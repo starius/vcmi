@@ -39,6 +39,7 @@ namespace NK2AI
 		retreatThresholdAbsolute(10000),
 		safeAttackRatio(1.1),
 		maxArmyLossTarget(0.35f),
+		armyGoldRatioPerTurn(1.0f),
 		allowObjectGraph(true),
 		useTroopsFromGarrisons(false),
 		useOneWayMonoliths(false),
@@ -62,6 +63,7 @@ namespace NK2AI
 		retreatThresholdRelative = node["retreatThresholdRelative"].Float();
 		retreatThresholdAbsolute = node["retreatThresholdAbsolute"].Float();
 		maxArmyLossTarget = node["maxArmyLossTarget"].Float();
+		armyGoldRatioPerTurn = node["armyGoldRatioPerTurn"].Float();
 		safeAttackRatio = node["safeAttackRatio"].Float();
 		allowObjectGraph = node["allowObjectGraph"].Bool();
 		updateHitmapOnTileReveal = node["updateHitmapOnTileReveal"].Bool();

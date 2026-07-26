@@ -31,6 +31,7 @@ namespace NK2AI
 		float retreatThresholdAbsolute;
 		float safeAttackRatio;
 		float maxArmyLossTarget;
+		float armyGoldRatioPerTurn;
 		bool allowObjectGraph;
 		bool useTroopsFromGarrisons;
 		bool useOneWayMonoliths;
@@ -48,6 +49,7 @@ namespace NK2AI
 		float getRetreatThresholdAbsolute() const { return retreatThresholdAbsolute; }
 		float getSafeAttackRatio() const { return safeAttackRatio; }
 		float getMaxArmyLossTarget() const { return maxArmyLossTarget; }
+		float getArmyGoldRatioPerTurn() const { return armyGoldRatioPerTurn; }
 		int getMaxRoamingHeroes() const { return maxRoamingHeroes; }
 		int getMaxRoamingHeroesPerTown() const { return maxRoamingHeroesPerTown; }
 		int getMainHeroTurnDistanceLimit() const { return mainHeroTurnDistanceLimit; }

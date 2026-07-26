@@ -592,6 +592,7 @@ void Nullkiller::makeTurn()
 	resetState();
 	Goals::TGoalVec tasks;
 	tracePlayerStatus(true);
+	bool resourceTradeAttempted = false;
 
 	for(int pass = 1; pass <= settings->getMaxPass() && cc->getPlayerStatus(playerID) == EPlayerStatus::INGAME; pass++)
 	{
@@ -754,7 +755,16 @@ void Nullkiller::makeTurn()
 			}
 		}
 
-		madeProgress |= ResourceTrader::trade(*buildAnalyzer, *cc, getFreeResources());
+		if(!resourceTradeAttempted)
+		{
+			resourceTradeAttempted = true;
+			madeProgress |= ResourceTrader::trade(
+				*buildAnalyzer,
+				*cc,
+				getFreeResources(),
+				settings->getArmyGoldRatioPerTurn());
+		}
+
 		if(!madeProgress && !needsAnotherPass)
 		{
 			if(hasUnlockedHeroWithMovement())
