@@ -101,6 +101,7 @@ class ReplayGameServer : public IGameServer
 	std::string capturedBattleOutcomePath;
 	JsonNode capturedBattleOutcomes;
 	int replayedTurnStates = 0;
+	std::optional<PlayerColor> pendingTurnStatePlayer;
 
 	std::string turnStateFileName(PlayerColor player) const
 	{
@@ -264,6 +265,16 @@ public:
 		capturedBattleOutcomes.Vector();
 	}
 
+	void flushPendingTurnState()
+	{
+		if(!pendingTurnStatePlayer)
+			return;
+
+		const PlayerColor player = *pendingTurnStatePlayer;
+		pendingTurnStatePlayer.reset();
+		processTurnState(player);
+	}
+
 	void writeCapturedBattleOutcomes() const
 	{
 		if(capturedBattleOutcomePath.empty())
@@ -384,7 +395,15 @@ public:
 		}
 		gameHandler->gs->apply(pack);
 		if(auto * end = dynamic_cast<PlayerEndsTurn *>(&pack))
-			processTurnState(end->player);
+		{
+			if(pendingTurnStatePlayer)
+				throw std::runtime_error("VGT replay received two turn boundaries in one transcript document");
+			// PlayerEndsTurn can synchronously trigger start-of-turn object visits
+			// and their state changes after this pack is applied. The recorder's
+			// turn save contains that complete derived state, so compare only after
+			// the current transcript document has finished replaying.
+			pendingTurnStatePlayer = end->player;
+		}
 	}
 
 	void sendPack(CPackForClient &, GameConnectionID) override
@@ -5508,7 +5527,11 @@ void prepareRecordedNewDays(const JsonNode & documents)
 	}
 }
 
-void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & documents, bool fastForwardBattles)
+void replayTranscriptDocuments(
+	ReplayGameServer & replayServer,
+	CGameHandler & gameHandler,
+	const JsonNode & documents,
+	bool fastForwardBattles)
 {
 	if(documents.Vector().size() == 1)
 		return;
@@ -5704,6 +5727,7 @@ void replayTranscriptDocuments(CGameHandler & gameHandler, const JsonNode & docu
 				throw std::runtime_error("Unsupported VGT record kind: " + entry.first);
 		}
 		requireNoPendingDiscoveryCheck("the end of document " + std::to_string(documentIndex));
+		replayServer.flushPendingTurnState();
 	}
 }
 
@@ -6168,7 +6192,7 @@ int replayVGTJson(const VGTReplayOptions & options)
 	prepareRecordedNewDays(documents);
 	if(documents.Vector().size() > 1)
 		gameHandler.start(false);
-	replayTranscriptDocuments(gameHandler, documents, options.fastForwardBattles);
+	replayTranscriptDocuments(replayServer, gameHandler, documents, options.fastForwardBattles);
 	replayServer.verifyTurnStatesComplete();
 	replayServer.writeCapturedBattleOutcomes();
 	if(!options.outputSave.empty())
