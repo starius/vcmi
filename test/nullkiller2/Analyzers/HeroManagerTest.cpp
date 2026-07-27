@@ -10,22 +10,23 @@
 
 #include "AI/Nullkiller2/Analyzers/HeroManager.h"
 
-TEST(Nullkiller2_Analyzers_HeroManager, armyCarrierBeatsBetterHeroProfileForMainRole)
+TEST(Nullkiller2_Analyzers_HeroManager, strongestArmyIsAlwaysMeaningful)
 {
-	constexpr uint64_t strongestArmy = 10000;
-
-	EXPECT_GT(
-		NK2AI::evaluateMainHeroRoleScore(5.0f, strongestArmy, strongestArmy),
-		NK2AI::evaluateMainHeroRoleScore(40.0f, strongestArmy / 20, strongestArmy))
-		<< "the hero carrying the army should not be treated as a scout just because another hero has better skills";
+	EXPECT_TRUE(NK2AI::isMeaningfulArmyCarrierStrength(1, 1, true));
 }
 
-TEST(Nullkiller2_Analyzers_HeroManager, heroProfileBreaksSimilarArmyTies)
+TEST(Nullkiller2_Analyzers_HeroManager, reinforcementMustExceedRelativeThreshold)
 {
 	constexpr uint64_t strongestArmy = 10000;
 
-	EXPECT_GT(
-		NK2AI::evaluateMainHeroRoleScore(30.0f, strongestArmy, strongestArmy),
-		NK2AI::evaluateMainHeroRoleScore(20.0f, strongestArmy, strongestArmy))
-		<< "normal hero profile scoring should still decide between comparable army carriers";
+	EXPECT_FALSE(NK2AI::isMeaningfulArmyCarrierStrength(1000, strongestArmy, false));
+	EXPECT_TRUE(NK2AI::isMeaningfulArmyCarrierStrength(1001, strongestArmy, false));
+}
+
+TEST(Nullkiller2_Analyzers_HeroManager, reinforcementMustExceedAbsoluteThreshold)
+{
+	constexpr uint64_t strongestArmy = 4000;
+
+	EXPECT_FALSE(NK2AI::isMeaningfulArmyCarrierStrength(500, strongestArmy, false));
+	EXPECT_TRUE(NK2AI::isMeaningfulArmyCarrierStrength(501, strongestArmy, false));
 }

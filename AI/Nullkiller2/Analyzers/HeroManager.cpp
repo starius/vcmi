@@ -21,13 +21,13 @@
 namespace NK2AI
 {
 
-float evaluateMainHeroRoleScore(float heroProfileScore, uint64_t heroTotalStrength, uint64_t strongestHeroTotalStrength)
+bool isMeaningfulArmyCarrierStrength(uint64_t armyStrength, uint64_t strongestArmy, bool isStrongestArmy)
 {
-	if(strongestHeroTotalStrength == 0)
-		return heroProfileScore;
+	static constexpr uint64_t MIN_REINFORCEMENT_ARMY_STRENGTH = 500;
+	static constexpr uint64_t REINFORCEMENT_ARMY_STRENGTH_DIVISOR = 10;
 
-	const float armyShare = heroTotalStrength / static_cast<float>(strongestHeroTotalStrength);
-	return heroProfileScore + 50.0f * armyShare;
+	return isStrongestArmy
+		|| armyStrength > std::max(MIN_REINFORCEMENT_ARMY_STRENGTH, strongestArmy / REINFORCEMENT_ARMY_STRENGTH_DIVISOR);
 }
 
 const SecondarySkillEvaluator HeroManager::mainSkillsEvaluator = SecondarySkillEvaluator(
@@ -121,14 +121,10 @@ void HeroManager::update()
 
 	HeroMap<float> scores;
 	auto myHeroes = cc->getHeroesInfo();
-	uint64_t strongestHeroTotalStrength = 0;
-
-	for(auto & hero : myHeroes)
-		vstd::amax(strongestHeroTotalStrength, hero->getTotalStrength());
 
 	for(auto & hero : myHeroes)
 	{
-		scores[hero] = evaluateMainHeroRoleScore(evaluateFightingStrength(hero), hero->getTotalStrength(), strongestHeroTotalStrength);
+		scores[hero] = evaluateFightingStrength(hero);
 		knownFightingStrength[hero->id] = normalizeHeroStrength(hero->getHeroStrength());
 	}
 
@@ -175,9 +171,6 @@ HeroRole HeroManager::getHeroRoleOrDefaultInefficient(const  CGHeroInstance * he
 
 bool HeroManager::isMeaningfulArmyCarrier(const CGHeroInstance * hero) const
 {
-	static constexpr uint64_t MIN_REINFORCEMENT_ARMY_STRENGTH = 500;
-	static constexpr uint64_t REINFORCEMENT_ARMY_STRENGTH_DIVISOR = 10;
-
 	if(!hero)
 		return false;
 
@@ -197,8 +190,7 @@ bool HeroManager::isMeaningfulArmyCarrier(const CGHeroInstance * hero) const
 			isStrongestArmy = false;
 	}
 
-	return isStrongestArmy
-		|| armyStrength > std::max(MIN_REINFORCEMENT_ARMY_STRENGTH, strongestArmy / REINFORCEMENT_ARMY_STRENGTH_DIVISOR);
+	return isMeaningfulArmyCarrierStrength(armyStrength, strongestArmy, isStrongestArmy);
 }
 
 // TODO: Mircea: Do we need this map on HeroPtr or is enough just on hero?

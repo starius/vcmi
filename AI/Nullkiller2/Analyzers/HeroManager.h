@@ -18,7 +18,7 @@
 namespace NK2AI
 {
 
-float evaluateMainHeroRoleScore(float heroProfileScore, uint64_t heroTotalStrength, uint64_t strongestHeroTotalStrength);
+bool isMeaningfulArmyCarrierStrength(uint64_t armyStrength, uint64_t strongestArmy, bool isStrongestArmy);
 
 class DLL_EXPORT ISecondarySkillRule
 {
