@@ -66,6 +66,7 @@ TEST(Nullkiller2_Pathfinding_ArmyLoss, targetBattleDoesNotDependOnEstimatedLoss)
 TEST(Nullkiller2_Pathfinding_ArmyLoss, routeBattleIsNotTargetBattle)
 {
 	NK2AI::AIPath path;
+	path.targetHero = nullptr;
 	NK2AI::AIPathNodeInfo targetNode;
 	NK2AI::AIPathNodeInfo routeNode;
 	targetNode.action = EPathNodeAction::NORMAL;
@@ -80,6 +81,7 @@ TEST(Nullkiller2_Pathfinding_ArmyLoss, routeBattleIsNotTargetBattle)
 TEST(Nullkiller2_Pathfinding_ArmyLoss, targetBattleActionIsDetected)
 {
 	NK2AI::AIPath path;
+	path.targetHero = nullptr;
 	NK2AI::AIPathNodeInfo targetNode;
 	targetNode.action = EPathNodeAction::BATTLE;
 	path.nodes.push_back(targetNode);
