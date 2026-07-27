@@ -1736,9 +1736,9 @@ float PriorityEvaluator::evaluate(Goals::TSubgoal task, int priorityTier)
 						};
 
 						bool targetGivesCriticalResource = targetResourceType.has_value() && isCriticalResource(*targetResourceType);
-						if(!targetGivesCriticalResource && isWeeklyRevisitable(aiNk->playerID, targetObject))
+						if(!targetGivesCriticalResource && task->hero)
 						{
-							auto rewardable = dynamic_cast<const Rewardable::Interface *>(targetObject);
+							const auto * rewardable = dynamic_cast<const Rewardable::Interface *>(targetObject);
 							if(rewardable)
 							{
 								for(int index : rewardable->getAvailableRewards(task->hero, Rewardable::EEventType::EVENT_FIRST_VISIT))
