@@ -135,6 +135,7 @@ EvaluationContext::EvaluationContext(const Nullkiller* aiNk)
 	conquestValue(0),
 	evaluator(aiNk),
 	targetObject(nullptr),
+	targetHero(nullptr),
 	enemyHeroDangerRatio(0),
 	threat(0),
 	armyGrowth(0),
@@ -1157,6 +1158,7 @@ public:
 		if (target)
 		{
 			evaluationContext.targetObject = target;
+			evaluationContext.targetHero = hero;
 			evaluationContext.targetRequiresBattle = path.targetRequiresBattle();
 			evaluationContext.goldReward += evaluationContext.evaluator.getGoldReward(target, hero);
 			evaluationContext.armyReward += evaluationContext.evaluator.getArmyReward(target, hero, army, checkGold);
@@ -1495,6 +1497,7 @@ float PriorityEvaluator::evaluate(Goals::TSubgoal task, int priorityTier)
 {
 	auto evaluationContext = buildEvaluationContext(task);
 	const auto * targetObject = evaluationContext.targetObject;
+	const auto * evaluatedHero = evaluationContext.targetHero ? evaluationContext.targetHero : task->hero;
 	std::optional<GameResID> targetResourceType;
 
 	// Loose resources and mines satisfy the same build shortage pressure
@@ -1695,14 +1698,14 @@ float PriorityEvaluator::evaluate(Goals::TSubgoal task, int priorityTier)
 
 				const auto requiresBattle = evaluationContext.requiresBattle || evaluationContext.armyLossRatio > 0;
 				const auto targetRequiresBattle = evaluationContext.targetRequiresBattle;
-				const bool meaningfulArmyCarrier = task->hero && aiNk->heroManager->isMeaningfulArmyCarrier(task->hero);
+				const bool meaningfulArmyCarrier = evaluatedHero && aiNk->heroManager->isMeaningfulArmyCarrier(evaluatedHero);
 				if(priorityTier == EXPLORE_AND_GATHER
 					&& !requiresBattle
 					&& !evaluationContext.isExchange
 					&& evaluationContext.heroRole != MAIN
 					&& meaningfulArmyCarrier)
 				{
-					if(findReachableMainForArmyDelivery(aiNk, task->hero))
+					if(findReachableMainForArmyDelivery(aiNk, evaluatedHero))
 						return 0;
 				}
 
@@ -1738,12 +1741,12 @@ float PriorityEvaluator::evaluate(Goals::TSubgoal task, int priorityTier)
 						};
 
 						bool targetGivesCriticalResource = targetResourceType.has_value() && isCriticalResource(*targetResourceType);
-						if(!targetGivesCriticalResource && task->hero)
+						if(!targetGivesCriticalResource && evaluatedHero)
 						{
 							const auto * rewardable = dynamic_cast<const Rewardable::Interface *>(targetObject);
 							if(rewardable)
 							{
-								for(int index : rewardable->getAvailableRewards(task->hero, Rewardable::EEventType::EVENT_FIRST_VISIT))
+								for(int index : rewardable->getAvailableRewards(evaluatedHero, Rewardable::EEventType::EVENT_FIRST_VISIT))
 								{
 									for(TResources::nziterator it(rewardable->configuration.info[index].reward.resources); it.valid(); it++)
 									{
@@ -1777,7 +1780,7 @@ float PriorityEvaluator::evaluate(Goals::TSubgoal task, int priorityTier)
 								for(const auto & path : paths)
 								{
 									const auto * hero = path.targetHero;
-									if(hero == task->hero)
+									if(hero == evaluatedHero)
 										continue;
 									if(hero->getOwner() != aiNk->playerID)
 										continue;

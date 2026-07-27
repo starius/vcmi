@@ -65,6 +65,7 @@ struct DLL_EXPORT EvaluationContext
 	uint8_t turn;
 	RewardEvaluator evaluator;
 	const CGObjectInstance * targetObject;
+	const CGHeroInstance * targetHero;
 	float enemyHeroDangerRatio; // dangerRatio = enemyDanger.danger / (double)ourStrength. A float value between 0 and 1 (or higher) representing the ratio of enemy hero danger to our army strength
 	float threat;
 	float armyInvolvement;
