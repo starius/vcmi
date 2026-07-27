@@ -1691,31 +1691,14 @@ float PriorityEvaluator::evaluate(Goals::TSubgoal task, int priorityTier)
 				const auto requiresBattle = evaluationContext.requiresBattle || evaluationContext.armyLossRatio > 0;
 				const auto targetRequiresBattle = evaluationContext.targetRequiresBattle;
 				const bool meaningfulArmyCarrier = task->hero && aiNk->heroManager->isMeaningfulArmyCarrier(task->hero);
-				const std::string tempLogPriorityTier = std::to_string(priorityTier);
-				const std::string tempLogHeroName = task->hero ? task->hero->getObjectName() : "<no hero>";
-				const std::string tempLogHeroRole = evaluationContext.heroRole == MAIN ? "MAIN" : "SCOUT";
-				const std::string tempLogObjectName = targetObject ? targetObject->getObjectName() : "<no object>";
-				const std::string tempLogObjectPos = targetObject ? targetObject->visitablePos().toString() : task->tile.toString();
-				const std::string tempLogBattleReason = targetRequiresBattle
-					? "target requires battle"
-					: "path/army loss is not target guard";
-				const bool tempLogHasVisitTarget = task->hero && targetObject;
 				if(priorityTier == EXPLORE_AND_GATHER
 					&& !requiresBattle
 					&& !evaluationContext.isExchange
 					&& evaluationContext.heroRole != MAIN
 					&& meaningfulArmyCarrier)
 				{
-					if(const auto * mainHero = findReachableMainForArmyDelivery(aiNk, task->hero))
-					{
-						if(tempLogHasVisitTarget)
-							logGlobal->warn("TEMP_LOG priorityTier " + tempLogPriorityTier
-								+ ", hero " + tempLogHeroName
-								+ " role " + tempLogHeroRole
-								+ " rejects " + task->toString()
-								+ " because MAIN " + mainHero->getObjectName() + " can receive army within one turn");
+					if(findReachableMainForArmyDelivery(aiNk, task->hero))
 						return 0;
-					}
 				}
 
 				score += evaluationContext.strategicalValue * 1000;
@@ -1737,9 +1720,6 @@ float PriorityEvaluator::evaluate(Goals::TSubgoal task, int priorityTier)
 					{
 						const auto missingNow = aiNk->buildAnalyzer->getMissingResourcesNow();
 						const auto freeResources = aiNk->getFreeResources();
-						const std::string tempLogResourceStock = targetResourceType.has_value()
-							? ", stock of target resource=" + std::to_string(freeResources[*targetResourceType])
-							: ", free resources=" + freeResources.toString();
 						const auto isCriticalResource = [&](GameResID resType) -> bool
 						{
 							if(missingNow[resType] <= 0)
@@ -1778,21 +1758,7 @@ float PriorityEvaluator::evaluate(Goals::TSubgoal task, int priorityTier)
 						if(evaluationContext.heroRole != MAIN)
 						{
 							if(!targetRequiresBattle && !targetGivesCriticalResource && isWeeklyRevisitable(aiNk->playerID, targetObject))
-							{
-								if(tempLogHasVisitTarget)
-									logGlobal->warn("TEMP_LOG priorityTier " + tempLogPriorityTier
-										+ ", hero " + tempLogHeroName
-										+ " role " + tempLogHeroRole
-										+ " rejects visit of " + tempLogObjectName + " at " + tempLogObjectPos
-										+ " because reward is non-critical and weekly revisitable" + tempLogResourceStock);
 								return 0;
-							}
-							if(tempLogHasVisitTarget)
-								logGlobal->warn("TEMP_LOG priorityTier " + tempLogPriorityTier
-									+ ", hero " + tempLogHeroName
-									+ " role " + tempLogHeroRole
-									+ " allows resource/visit " + tempLogObjectName + " at " + tempLogObjectPos
-									+ " because reward is critical or not weekly-blocked");
 						}
 						else
 						{
@@ -1837,63 +1803,26 @@ float PriorityEvaluator::evaluate(Goals::TSubgoal task, int priorityTier)
 							}
 
 							if(scoutCanReachResourceThisTurn)
-							{
-								if(tempLogHasVisitTarget)
-									logGlobal->warn("TEMP_LOG priorityTier " + tempLogPriorityTier
-										+ ", hero " + tempLogHeroName
-										+ " role MAIN rejects resource " + tempLogObjectName + " at " + tempLogObjectPos
-										+ " because a SCOUT can reach it this turn");
 								return 0;
-							}
 
 							if(targetRequiresBattle)
 							{
-								if(tempLogHasVisitTarget)
-									logGlobal->warn("TEMP_LOG priorityTier " + tempLogPriorityTier
-										+ ", hero " + tempLogHeroName
-										+ " role MAIN accepts visit of " + tempLogObjectName + " at " + tempLogObjectPos
-										+ " because " + tempLogBattleReason);
 								// Encourage MAIN to fight for crypts and similar
 								score *= 2;
 							}
 							else if(targetGivesCriticalResource)
 							{
-								if(tempLogHasVisitTarget)
-									logGlobal->warn("TEMP_LOG priorityTier " + tempLogPriorityTier
-										+ ", hero " + tempLogHeroName
-										+ " role MAIN accepts resource/visit " + tempLogObjectName + " at " + tempLogObjectPos
-										+ " because reward is critical");
 								// Critical no-battle resources are still worth MAIN movement if waiting blocks builds or hero hiring.
 								score *= 2;
 							}
 							else if(meaningfulArmyCarrier && isWeeklyRevisitable(aiNk->playerID, targetObject))
-							{
-								if(tempLogHasVisitTarget)
-									logGlobal->warn("TEMP_LOG priorityTier " + tempLogPriorityTier
-										+ ", hero " + tempLogHeroName
-										+ " role MAIN rejects visit of " + tempLogObjectName + " at " + tempLogObjectPos
-										+ " because army carrier should skip non-critical weekly reward" + tempLogResourceStock);
 								return 0;
-							}
 							else
 							{
-								if(tempLogHasVisitTarget)
-									logGlobal->warn("TEMP_LOG priorityTier " + tempLogPriorityTier
-										+ ", hero " + tempLogHeroName
-										+ " role MAIN discourages resource/visit " + tempLogObjectName + " at " + tempLogObjectPos
-										+ " because reward is non-critical" + tempLogResourceStock);
 								// Discourage MAIN to waste time picking resources if they don't require a fight
 								score *= 0.33;
 							}
 						}
-					}
-					else
-					{
-						if(tempLogHasVisitTarget)
-							logGlobal->warn("TEMP_LOG priorityTier " + tempLogPriorityTier
-								+ ", hero " + tempLogHeroName
-								+ " role " + tempLogHeroRole
-								+ " uses default reward scoring for resource/visit " + tempLogObjectName + " at " + tempLogObjectPos);
 					}
 				}
 
