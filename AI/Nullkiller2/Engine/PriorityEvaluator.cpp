@@ -1679,7 +1679,8 @@ float PriorityEvaluator::evaluate(Goals::TSubgoal task, int priorityTier)
 					? "target requires battle"
 					: "path/army loss is not target guard";
 				const bool tempLogHasVisitTarget = task->hero && targetObject;
-				if(!requiresBattle
+				if(priorityTier == EXPLORE_AND_GATHER
+					&& !requiresBattle
 					&& !evaluationContext.isExchange
 					&& evaluationContext.heroRole != MAIN
 					&& meaningfulArmyCarrier)
