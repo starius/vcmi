@@ -1081,7 +1081,6 @@ public:
 
 		vstd::amax(evaluationContext.danger, path.getTotalDanger());
 		evaluationContext.requiresBattle = evaluationContext.requiresBattle || path.requiresBattle();
-		evaluationContext.targetRequiresBattle = evaluationContext.targetRequiresBattle || path.targetRequiresBattle();
 		evaluationContext.movementCost += path.movementCost();
 		evaluationContext.closestWayRatio = chain.closestWayRatio;
 
@@ -1158,6 +1157,7 @@ public:
 		if (target)
 		{
 			evaluationContext.targetObject = target;
+			evaluationContext.targetRequiresBattle = path.targetRequiresBattle();
 			evaluationContext.goldReward += evaluationContext.evaluator.getGoldReward(target, hero);
 			evaluationContext.armyReward += evaluationContext.evaluator.getArmyReward(target, hero, army, checkGold);
 			evaluationContext.armyGrowth += evaluationContext.evaluator.getArmyGrowth(target, hero, army);
