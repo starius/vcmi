@@ -92,6 +92,7 @@ private:
 	bool openMap;
 	bool useObjectGraph;
 	bool pathfinderInvalidated;
+	bool pickRemovablesEnabled;
 
 public:
 	static std::unique_ptr<ObjectGraph> baseGraph;
@@ -142,6 +143,7 @@ public:
 	ScanDepth getScanDepth() const { return scanDepth; }
 	bool isOpenMap() const { return openMap; }
 	bool isObjectGraphAllowed() const { return useObjectGraph; }
+	bool isPickRemovablesEnabled() const { return pickRemovablesEnabled; }
 	void invalidatePathfinderData();
 	std::shared_ptr<const CPathsInfo> getPathsInfo(const CGHeroInstance * h) const;
 	void invalidatePaths();

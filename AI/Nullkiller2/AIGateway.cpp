@@ -160,6 +160,8 @@ void AIGateway::gameOver(PlayerColor player, const EVictoryLossCheckResult & vic
 {
 	LOG_TRACE_PARAMS(logAi, "victoryLossCheckResult '%s'", victoryLossCheckResult.messageToSelf.toString());
 	logAi->debug("Player %d (%s): I heard that player %d (%s) %s.", playerID, playerID.toString(), player, player.toString(), (victoryLossCheckResult.victory() ? "won" : "lost"));
+	if(std::getenv("NK2AI_EXPERIMENT_SNAPSHOTS") && victoryLossCheckResult.loss())
+		logAi->info("NK2_EXPERIMENT_GAME_OVER {\"player\":%d,\"result\":\"loss\"}", player.getNum());
 
 	// some whitespace to flush stream
 	logAi->debug(std::string(200, ' '));
@@ -421,9 +423,12 @@ void AIGateway::battleResultsApplied()
 	LOG_TRACE(logAi);
 	assert(status.getBattle() == ENDING_BATTLE);
 
-	std::unique_lock lockGuard(nullkiller->aiStateMutex);
-	nullkiller->heroManager->update();
-	nullkiller->invalidatePathfinderData();
+	if(nullkiller->isPickRemovablesEnabled())
+	{
+		std::unique_lock lockGuard(nullkiller->aiStateMutex);
+		nullkiller->heroManager->update();
+		nullkiller->invalidatePathfinderData();
+	}
 }
 
 void AIGateway::battleEnded()

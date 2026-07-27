@@ -195,7 +195,9 @@ Goals::TGoalVec GatherArmyBehavior::upgradeArmy(const Nullkiller * aiNk, const C
 	for(const AIPath & path : paths)
 	{
 		auto heroRole = aiNk->heroManager->getHeroRoleOrDefaultInefficient(path.targetHero);
-		if((heroRole == HeroRole::MAIN || aiNk->heroManager->isMeaningfulArmyCarrier(path.targetHero))
+		const bool isEnabledCarrier = aiNk->isPickRemovablesEnabled()
+			&& aiNk->heroManager->isMeaningfulArmyCarrier(path.targetHero);
+		if((heroRole == HeroRole::MAIN || isEnabledCarrier)
 			&& path.turn() < aiNk->settings->getScoutHeroTurnDistanceLimit())
 		{
 			hasMainAround = true;
@@ -246,10 +248,12 @@ Goals::TGoalVec GatherArmyBehavior::upgradeArmy(const Nullkiller * aiNk, const C
 		}
 
 		auto upgrade = aiNk->armyManager->calculateCreaturesUpgrade(path.heroArmy, upgrader, availableResources);
+		const bool isEnabledCarrier = aiNk->isPickRemovablesEnabled()
+			&& aiNk->heroManager->isMeaningfulArmyCarrier(path.targetHero);
 		if(!upgrader->getGarrisonHero()
 			&& (hasMainAround
 				|| aiNk->heroManager->getHeroRoleOrDefaultInefficient(path.targetHero) == HeroRole::MAIN
-				|| aiNk->heroManager->isMeaningfulArmyCarrier(path.targetHero)))
+				|| isEnabledCarrier))
 		{
 			ArmyUpgradeInfo armyToGetOrBuy;
 			armyToGetOrBuy.addArmyToGet(aiNk->armyManager->getBestArmy(path.targetHero, path.heroArmy, upgrader->getUpperArmy(), TerrainId::NONE));

@@ -569,6 +569,8 @@ void CGameHandler::init(StartInfo *si, Load::ProgressAccumulator & progressTrack
 	CMapService mapService;
 	gs = std::make_shared<CGameState>();
 	int requestedSeed = settings["server"]["seed"].Integer();
+	if(const char * experimentSeed = std::getenv("NK2AI_EXPERIMENT_SEED"))
+		requestedSeed = std::stoi(experimentSeed);
 	randomizer = std::make_unique<GameRandomizer>(*gs);
 	if (requestedSeed != 0)
 		randomizer->setSeed(requestedSeed);

@@ -464,6 +464,9 @@ float RewardEvaluator::getNowResourceRequirementStrength(GameResID resType) cons
 	if(requiredResources[resType] == 0)
 		return 0;
 
+	if(!aiNk->isPickRemovablesEnabled())
+		return dailyIncome[resType] == 0 ? 1.0f : 0.8f;
+
 	return computeResourceRequirementStrength(aiNk, resType, requiredResources[resType], dailyIncome[resType], 0.8f);
 }
 
@@ -475,6 +478,9 @@ float RewardEvaluator::getTotalResourceRequirementStrength(GameResID resType) co
 
 	if(requiredResources[resType] == 0)
 		return 0;
+
+	if(!aiNk->isPickRemovablesEnabled())
+		return dailyIncome[resType] == 0 ? 1.0f : 0.8f;
 
 	return computeResourceRequirementStrength(aiNk, resType, requiredResources[resType], dailyIncome[resType], 0.7f);
 }
@@ -511,7 +517,9 @@ float RewardEvaluator::getCombinedResourceRequirementStrength(const TResources &
 			+ 0.5f * getTotalResourceRequirementStrength(it->resType);
 
 		// Even not required resources should be valuable because they shouldn't be left for the enemies to collect
-		sum += std::max(MINIMUM_STRATEGICAL_VALUE_NON_TOWN, calculation);
+		sum += aiNk->isPickRemovablesEnabled()
+			? std::max(MINIMUM_STRATEGICAL_VALUE_NON_TOWN, calculation)
+			: std::min(MINIMUM_STRATEGICAL_VALUE_NON_TOWN, calculation);
 	}
 
 	return sum;
@@ -866,7 +874,9 @@ public:
 
 		evaluationContext.addNonCriticalStrategicalValue(additionalArmyRatio);
 		evaluationContext.armyGrowth = additionalArmyStrength;
-		if(deliversArmyToMain && heroExchange.exchangePath.turn() <= 1)
+		if(evaluationContext.evaluator.aiNk->isPickRemovablesEnabled()
+			&& deliversArmyToMain
+			&& heroExchange.exchangePath.turn() <= 1)
 			evaluationContext.armyGrowth *= 3;
 		evaluationContext.movementCost = heroExchange.exchangePath.movementCost();
 		evaluationContext.danger = heroExchange.exchangePath.getTotalDanger();
@@ -1496,6 +1506,7 @@ float PriorityEvaluator::evaluateConquestValue(float score, const float conquest
 float PriorityEvaluator::evaluate(Goals::TSubgoal task, int priorityTier)
 {
 	auto evaluationContext = buildEvaluationContext(task);
+	const bool pickRemovablesEnabled = aiNk->isPickRemovablesEnabled();
 	const auto * targetObject = evaluationContext.targetObject;
 	const auto * evaluatedHero = evaluationContext.targetHero ? evaluationContext.targetHero : task->hero;
 	std::optional<GameResID> targetResourceType;
@@ -1696,10 +1707,15 @@ float PriorityEvaluator::evaluate(Goals::TSubgoal task, int priorityTier)
 				//    && ((evaluationContext.enemyHeroDangerRatio > 0 && arriveNextWeek) || evaluationContext.enemyHeroDangerRatio > involvedStrengthOutOfTotalRatio))
 				// 	return 0;
 
-				const auto requiresBattle = evaluationContext.requiresBattle || evaluationContext.armyLossRatio > 0;
+				const auto requiresBattle = pickRemovablesEnabled
+					? evaluationContext.requiresBattle || evaluationContext.armyLossRatio > 0
+					: evaluationContext.armyLossRatio > 0 || evaluationContext.danger > 0;
 				const auto targetRequiresBattle = evaluationContext.targetRequiresBattle;
-				const bool meaningfulArmyCarrier = evaluatedHero && aiNk->heroManager->isMeaningfulArmyCarrier(evaluatedHero);
-				if(priorityTier == EXPLORE_AND_GATHER
+				const bool meaningfulArmyCarrier = pickRemovablesEnabled
+					&& evaluatedHero
+					&& aiNk->heroManager->isMeaningfulArmyCarrier(evaluatedHero);
+				if(pickRemovablesEnabled
+					&& priorityTier == EXPLORE_AND_GATHER
 					&& !requiresBattle
 					&& !evaluationContext.isExchange
 					&& evaluationContext.heroRole != MAIN
@@ -1724,7 +1740,7 @@ float PriorityEvaluator::evaluate(Goals::TSubgoal task, int priorityTier)
 					// try to balance other resources vs gold, especially 2500 gold treasures
 					score += evaluationContext.goldReward > 500 ? evaluationContext.goldReward / 2.0f : evaluationContext.goldReward * 2.0f;
 
-					if(evaluationContext.heroRole == MAIN || meaningfulArmyCarrier)
+					if(pickRemovablesEnabled && (evaluationContext.heroRole == MAIN || meaningfulArmyCarrier))
 					{
 						const auto missingNow = aiNk->buildAnalyzer->getMissingResourcesNow();
 						const auto freeResources = aiNk->getFreeResources();
@@ -1831,6 +1847,13 @@ float PriorityEvaluator::evaluate(Goals::TSubgoal task, int priorityTier)
 								score *= 0.33;
 							}
 						}
+					}
+					else if(evaluationContext.heroRole == MAIN)
+					{
+						if(requiresBattle)
+							score *= 2;
+						else
+							score *= 0.33;
 					}
 				}
 

@@ -11,6 +11,7 @@
 #include "Nullkiller.h"
 
 #include "../../../lib/CPlayerState.h"
+#include "../../../lib/ScopeGuard.h"
 #include "../../../lib/StartInfo.h"
 #include "../../../lib/pathfinder/PathfinderCache.h"
 #include "../../../lib/pathfinder/PathfinderOptions.h"
@@ -38,10 +39,34 @@ using namespace Goals;
 // while we play vcmieagles graph can be shared
 std::unique_ptr<ObjectGraph> Nullkiller::baseGraph;
 
+static bool isPickRemovablesEnabledForPlayer(PlayerColor player)
+{
+	const char * configuredPlayers = std::getenv("NK2AI_PICK_REMOVABLES_PLAYERS");
+	if(!configuredPlayers)
+		return true;
+
+	const std::string playerList(configuredPlayers);
+	if(playerList == "all")
+		return true;
+	if(playerList.empty() || playerList == "none")
+		return false;
+
+	std::istringstream input(playerList);
+	std::string token;
+	while(std::getline(input, token, ','))
+	{
+		if(token == std::to_string(player.getNum()))
+			return true;
+	}
+
+	return false;
+}
+
 Nullkiller::Nullkiller()
 	: activeHero(nullptr)
 	, scanDepth(ScanDepth::MAIN_FULL)
 	, useHeroChain(true)
+	, pickRemovablesEnabled(true)
 	, memory(std::make_unique<AIMemory>())
 {
 
@@ -82,6 +107,10 @@ void Nullkiller::init(const std::shared_ptr<CCallback> & cbInput, AIGateway * ai
 	cc = cbInput;
 	aiGw = aiGwInput;
 	playerID = aiGwInput->playerID;
+	pickRemovablesEnabled = isPickRemovablesEnabledForPlayer(playerID);
+
+	if(std::getenv("NK2AI_PICK_REMOVABLES_PLAYERS"))
+		logAi->info("NK2 pick-removables experiment: player %d is %s", playerID.getNum(), pickRemovablesEnabled ? "enabled" : "disabled");
 
 	settings = std::make_unique<Settings>(cc->getStartInfo()->difficulty);
 
@@ -293,10 +322,13 @@ void Nullkiller::updateState()
 	buildAnalyzer->update();
 	methodToElapsedMs.emplace("buildAnalyzer->update", timeElapsed(startMethod));
 
-	startMethod = std::chrono::high_resolution_clock::now();
-	makingTurnInterruption.interruptionPoint();
-	heroManager->update();
-	methodToElapsedMs.emplace("heroManager->update()", timeElapsed(startMethod));
+	if(isPickRemovablesEnabled())
+	{
+		startMethod = std::chrono::high_resolution_clock::now();
+		makingTurnInterruption.interruptionPoint();
+		heroManager->update();
+		methodToElapsedMs.emplace("heroManager->update()", timeElapsed(startMethod));
+	}
 
 	if(!pathfinderInvalidated && dangerHitMap->isHitMapUpToDate() && dangerHitMap->isTileOwnersUpToDate())
 		logAi->trace("Skipping full state regeneration - up to date");
@@ -311,6 +343,14 @@ void Nullkiller::updateState()
 		startMethod = std::chrono::high_resolution_clock::now();
 		dangerHitMap->calculateTileOwners();
 		methodToElapsedMs.emplace("dangerHitMap->calculateTileOwners()", timeElapsed(startMethod));
+
+		if(!isPickRemovablesEnabled())
+		{
+			startMethod = std::chrono::high_resolution_clock::now();
+			makingTurnInterruption.interruptionPoint();
+			heroManager->update();
+			methodToElapsedMs.emplace("heroManager->update()", timeElapsed(startMethod));
+		}
 
 		logAi->trace("Updating paths");
 		PathfinderSettings cfg;
@@ -534,6 +574,10 @@ void Nullkiller::makeTurn()
 	resetState();
 	Goals::TGoalVec tasks;
 	tracePlayerStatus(true);
+	auto traceTurnEnd = vstd::makeScopeGuard([this]()
+		{
+			tracePlayerStatus(false);
+		});
 
 	for(int pass = 1; pass <= settings->getMaxPass() && cc->getPlayerStatus(playerID) == EPlayerStatus::INGAME; pass++)
 	{
@@ -682,7 +726,7 @@ void Nullkiller::makeTurn()
 					return;
 				}
 				hasAnySuccess = true;
-				if(selectedTask->getHeroExchangeCount() > 1)
+				if(isPickRemovablesEnabled() && selectedTask->getHeroExchangeCount() > 1)
 					break;
 			}
 		}
@@ -691,7 +735,6 @@ void Nullkiller::makeTurn()
 		if(!hasAnySuccess)
 		{
 			logAi->trace("Nothing was done this turn pass. Ending turn.");
-			tracePlayerStatus(false);
 			return;
 		}
 
@@ -866,21 +909,89 @@ void Nullkiller::invalidatePaths()
 
 void Nullkiller::tracePlayerStatus(bool beginning) const
 {
-#if NK2AI_TRACE_LEVEL >= 1
-	float totalHeroesStrength = 0;
+	const bool experimentSnapshotsEnabled = std::getenv("NK2AI_EXPERIMENT_SNAPSHOTS") != nullptr;
+#if NK2AI_TRACE_LEVEL < 1
+	if(!experimentSnapshotsEnabled)
+		return;
+#endif
+
+	uint64_t totalHeroArmyStrength = 0;
+	uint64_t totalHeroesStrength = 0;
+	uint64_t totalTownGarrisonStrength = 0;
+	uint64_t mainHeroMaxArmyStrength = 0;
+	uint64_t mainHeroMaxTotalStrength = 0;
 	int totalTownsLevel = 0;
-	for (const auto *heroInfo : cc->getHeroesInfo())
+	int mainHeroCount = 0;
+	int mainHeroMaxLevel = 0;
+	const auto heroes = cc->getHeroesInfo();
+	const auto towns = cc->getTownsInfo();
+
+	for(const auto * heroInfo : heroes)
 	{
+		totalHeroArmyStrength += heroInfo->getArmyStrength();
 		totalHeroesStrength += heroInfo->getTotalStrength();
+
+		if(heroManager->getHeroRoleOrDefaultInefficient(heroInfo) == HeroRole::MAIN)
+		{
+			mainHeroCount++;
+			mainHeroMaxLevel = std::max(mainHeroMaxLevel, static_cast<int>(heroInfo->level));
+			mainHeroMaxArmyStrength = std::max(mainHeroMaxArmyStrength, heroInfo->getArmyStrength());
+			mainHeroMaxTotalStrength = std::max(mainHeroMaxTotalStrength, heroInfo->getTotalStrength());
+		}
 	}
-	for (const auto *townInfo : cc->getTownsInfo())
+	for(const auto * townInfo : towns)
 	{
 		totalTownsLevel += townInfo->getTownLevel();
+		totalTownGarrisonStrength += townInfo->getArmyStrength();
 	}
 
+#if NK2AI_TRACE_LEVEL >= 1
 	const auto *firstWord = beginning ? "Beginning:" : "End:";
-	logAi->info("%s totalHeroesStrength: %f, totalTownsLevel: %d, resources: %s", firstWord, totalHeroesStrength, totalTownsLevel, cc->getResourceAmount().toString());
+	logAi->info(
+		"%s totalHeroesStrength: %llu, totalTownsLevel: %d, resources: %s",
+		firstWord,
+		static_cast<unsigned long long>(totalHeroesStrength),
+		totalTownsLevel,
+		cc->getResourceAmount().toString());
 #endif
+
+	if(!experimentSnapshotsEnabled)
+		return;
+
+	const auto resources = cc->getResourceAmount();
+	TResources nonGoldResources = resources;
+	nonGoldResources[EGameResID::GOLD] = 0;
+
+	std::ostringstream snapshot;
+	snapshot
+		<< "NK2_EXPERIMENT_SNAPSHOT {"
+		<< "\"phase\":\"" << (beginning ? "begin" : "end") << "\","
+		<< "\"day\":" << cc->getCalendar().getCurrentDay() << ","
+		<< "\"player\":" << playerID.getNum() << ","
+		<< "\"feature\":" << (isPickRemovablesEnabled() ? 1 : 0) << ","
+		<< "\"status\":" << static_cast<int>(cc->getPlayerStatus(playerID)) << ","
+		<< "\"towns\":" << towns.size() << ","
+		<< "\"town_levels\":" << totalTownsLevel << ","
+		<< "\"heroes\":" << heroes.size() << ","
+		<< "\"main_heroes\":" << mainHeroCount << ","
+		<< "\"main_hero_level\":" << mainHeroMaxLevel << ","
+		<< "\"main_hero_army\":" << mainHeroMaxArmyStrength << ","
+		<< "\"main_hero_strength\":" << mainHeroMaxTotalStrength << ","
+		<< "\"hero_army\":" << totalHeroArmyStrength << ","
+		<< "\"hero_strength\":" << totalHeroesStrength << ","
+		<< "\"town_garrison_army\":" << totalTownGarrisonStrength << ","
+		<< "\"total_army\":" << totalHeroArmyStrength + totalTownGarrisonStrength << ","
+		<< "\"wood\":" << resources[EGameResID::WOOD] << ","
+		<< "\"mercury\":" << resources[EGameResID::MERCURY] << ","
+		<< "\"ore\":" << resources[EGameResID::ORE] << ","
+		<< "\"sulfur\":" << resources[EGameResID::SULFUR] << ","
+		<< "\"crystal\":" << resources[EGameResID::CRYSTAL] << ","
+		<< "\"gems\":" << resources[EGameResID::GEMS] << ","
+		<< "\"gold\":" << resources[EGameResID::GOLD] << ","
+		<< "\"non_gold_value\":" << nonGoldResources.marketValue() << ","
+		<< "\"resource_value\":" << resources.marketValue()
+		<< "}";
+	logAi->info(snapshot.str());
 }
 
 HeroMap<HeroRole> Nullkiller::getHeroesForPathfinding() const
