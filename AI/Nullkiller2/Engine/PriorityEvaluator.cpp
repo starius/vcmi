@@ -1791,27 +1791,35 @@ float PriorityEvaluator::evaluate(Goals::TSubgoal task, int priorityTier)
 							if(!targetRequiresBattle && targetResourceType.has_value())
 							{
 								const auto targetTile = targetObject->visitablePos();
+								const auto paths = aiNk->pathfinder->getPathInfo(targetTile);
 
 								// Only same-turn SCOUT pickup is certain enough to make MAIN abandon this target.
-								for(const auto * hero : aiNk->cc->getHeroesInfo())
+								for(const auto & path : paths)
 								{
+									const auto * hero = path.targetHero;
 									if(hero == task->hero)
 										continue;
-									if(aiNk->getHeroLockedReason(hero) != HeroLockedReason::NOT_LOCKED)
+									if(hero->getOwner() != aiNk->playerID)
 										continue;
 									if(aiNk->heroManager->getHeroRoleOrDefaultInefficient(hero) != HeroRole::SCOUT)
 										continue;
-
-									auto paths = aiNk->getPathsInfo(hero);
-									if(!paths)
+									if(path.turn() != 0)
+										continue;
+									if((path.getTotalDanger() == 0 || path.turn() > 0) && path.exchangeCount > 1)
+										continue;
+									if(aiNk->arePathHeroesLocked(path))
+										continue;
+									if(path.getFirstBlockedAction())
+										continue;
+									if(!shouldVisit(aiNk, hero, targetObject))
 										continue;
 
-									auto pathNode = paths->getPathInfo(targetTile);
-									if(pathNode->reachable() && pathNode->turns == 0)
-									{
-										scoutCanReachResourceThisTurn = true;
-										break;
-									}
+									const auto safeAttackRatio = aiNk->settings->getSafeAttackRatio();
+									if(!isSafeToVisit(hero, path.heroArmy, path.getTotalDanger(), safeAttackRatio))
+										continue;
+
+									scoutCanReachResourceThisTurn = true;
+									break;
 								}
 							}
 
