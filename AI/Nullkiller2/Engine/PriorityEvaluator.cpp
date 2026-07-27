@@ -94,6 +94,27 @@ static float computeResourceRequirementStrength(const Nullkiller * aiNk, GameRes
 	return std::min(1.5f, strength);
 }
 
+static const CGHeroInstance * findReachableMainForArmyDelivery(const Nullkiller * aiNk, const CGHeroInstance * carrier)
+{
+	const auto paths = aiNk->getPathsInfo(carrier);
+	if(!paths)
+		return nullptr;
+
+	for(const auto * hero : aiNk->cc->getHeroesInfo())
+	{
+		if(hero == carrier)
+			continue;
+		if(aiNk->heroManager->getHeroRoleOrDefaultInefficient(hero) != HeroRole::MAIN)
+			continue;
+
+		const auto pathNode = paths->getPathInfo(hero->visitablePos());
+		if(pathNode->reachable() && pathNode->turns <= 1)
+			return hero;
+	}
+
+	return nullptr;
+}
+
 EvaluationContext::EvaluationContext(const Nullkiller* aiNk)
 	: movementCost(0.0),
 	manaCost(0),
@@ -1685,27 +1706,15 @@ float PriorityEvaluator::evaluate(Goals::TSubgoal task, int priorityTier)
 					&& evaluationContext.heroRole != MAIN
 					&& meaningfulArmyCarrier)
 				{
-					const auto paths = aiNk->getPathsInfo(task->hero);
-					for(const auto * hero : aiNk->cc->getHeroesInfo())
+					if(const auto * mainHero = findReachableMainForArmyDelivery(aiNk, task->hero))
 					{
-						if(hero == task->hero)
-							continue;
-						if(aiNk->heroManager->getHeroRoleOrDefaultInefficient(hero) != HeroRole::MAIN)
-							continue;
-						if(!paths)
-							continue;
-
-						const auto pathNode = paths->getPathInfo(hero->visitablePos());
-						if(pathNode->reachable() && pathNode->turns <= 1)
-						{
-							if(tempLogHasVisitTarget)
-								logGlobal->warn("TEMP_LOG priorityTier " + tempLogPriorityTier
-									+ ", hero " + tempLogHeroName
-									+ " role " + tempLogHeroRole
-									+ " rejects " + task->toString()
-									+ " because MAIN " + hero->getObjectName() + " can receive army within one turn");
-							return 0;
-						}
+						if(tempLogHasVisitTarget)
+							logGlobal->warn("TEMP_LOG priorityTier " + tempLogPriorityTier
+								+ ", hero " + tempLogHeroName
+								+ " role " + tempLogHeroRole
+								+ " rejects " + task->toString()
+								+ " because MAIN " + mainHero->getObjectName() + " can receive army within one turn");
+						return 0;
 					}
 				}
 
@@ -1816,6 +1825,10 @@ float PriorityEvaluator::evaluate(Goals::TSubgoal task, int priorityTier)
 
 									const auto safeAttackRatio = aiNk->settings->getSafeAttackRatio();
 									if(!isSafeToVisit(hero, path.heroArmy, path.getTotalDanger(), safeAttackRatio))
+										continue;
+									if(aiNk->heroManager->isMeaningfulArmyCarrier(hero)
+										&& !path.requiresBattle()
+										&& findReachableMainForArmyDelivery(aiNk, hero))
 										continue;
 
 									scoutCanReachResourceThisTurn = true;
