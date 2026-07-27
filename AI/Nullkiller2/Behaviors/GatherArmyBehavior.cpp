@@ -25,6 +25,43 @@ namespace NK2AI
 
 using namespace Goals;
 
+bool isSafeArmyDeliveryPath(const Nullkiller * aiNk, const CGHeroInstance * receiverHero, const AIPath & path)
+{
+	if(path.targetHero->getOwner() != aiNk->playerID)
+		return false;
+
+	if(path.containsHero(receiverHero) || aiNk->arePathHeroesLocked(path))
+		return false;
+
+	// TODO: Artifact value is not considered here even though exchanges move artifacts too.
+	HeroExchange heroExchange(receiverHero, path);
+	const uint64_t additionalArmyStrength = heroExchange.getReinforcementArmyStrength(aiNk);
+	const auto receiverArmyStrength = receiverHero->getArmyStrength();
+	const float additionalArmyRatio = receiverArmyStrength > 0
+		? static_cast<float>(additionalArmyStrength) / receiverArmyStrength
+		: std::numeric_limits<float>::infinity();
+
+	if((additionalArmyRatio < 0.1f && additionalArmyStrength < 20000) || additionalArmyStrength < 500)
+		return false;
+
+	const auto targetHeroScore = aiNk->heroManager->evaluateHero(receiverHero);
+	for(const auto & node : path.nodes)
+	{
+		if(!node.targetHero)
+			continue;
+
+		if(aiNk->heroManager->getHeroRoleOrDefaultInefficient(node.targetHero) == MAIN
+			&& aiNk->heroManager->evaluateHero(node.targetHero) >= targetHeroScore)
+			return false;
+	}
+
+	return isSafeToVisit(
+		receiverHero,
+		path.heroArmy,
+		path.getTotalDanger(),
+		aiNk->settings->getSafeAttackRatio());
+}
+
 std::string GatherArmyBehavior::toString() const
 {
 	return "Gather army";
@@ -60,7 +97,6 @@ Goals::TGoalVec GatherArmyBehavior::deliverArmyToHero(const Nullkiller * aiNk, c
 {
 	Goals::TGoalVec tasks;
 	const int3 pos = receiverHero->visitablePos();
-	auto targetHeroScore = aiNk->heroManager->evaluateHero(receiverHero);
 
 #if NK2AI_TRACE_LEVEL >= 1
 	logAi->trace("GatherArmyBehavior::deliverArmyToHero Checking ways to gaher army for hero %s, %s", receiverHero->getObjectName(), pos.toString());
@@ -80,130 +116,57 @@ Goals::TGoalVec GatherArmyBehavior::deliverArmyToHero(const Nullkiller * aiNk, c
 		);
 #endif
 
-		if(path.targetHero->getOwner() != aiNk->playerID)
+		if(!isSafeArmyDeliveryPath(aiNk, receiverHero, path))
 			continue;
-
-		if(path.containsHero(receiverHero))
-		{
-#if NK2AI_TRACE_LEVEL >= 2
-			logAi->trace("GatherArmyBehavior::deliverArmyToHero Selfcontaining path. Ignore");
-#endif
-			continue;
-		}
-
-		if(aiNk->arePathHeroesLocked(path))
-		{
-#if NK2AI_TRACE_LEVEL >= 2
-			logAi->trace("GatherArmyBehavior::deliverArmyToHero Ignore path because of locked hero");
-#endif
-			continue;
-		}
 
 		HeroExchange heroExchange(receiverHero, path);
-		// TODO: Mircea: Artifacts (inventory things) aren't considered in this calculation, though they are properly changed in an army exchange, to revisit
-		const uint64_t additionalArmyStrength = heroExchange.getReinforcementArmyStrength(aiNk);
-		const float additionalArmyRatio = static_cast<float>(additionalArmyStrength) / receiverHero->getArmyStrength();
+		Composition composition;
+		ExecuteHeroChain exchangePath(path, receiverHero);
+		exchangePath.closestWayRatio = 1;
+		composition.addNext(heroExchange);
 
-		// avoid transferring very small amount of army
-		if((additionalArmyRatio < 0.1f && additionalArmyStrength < 20000) || additionalArmyStrength < 500)
+		if(receiverHero->isGarrisoned() && path.turn() == 0)
 		{
-#if NK2AI_TRACE_LEVEL >= 2
-			logAi->trace("GatherArmyBehavior::deliverArmyToHero Army value is too small.");
-#endif
-			continue;
-		}
+			auto lockReason = aiNk->getHeroLockedReason(receiverHero);
 
-		// avoid trying to move bigger army to the weaker one.
-		bool hasOtherMainInPath = false;
-		for(const auto & node : path.nodes)
-		{
-			if(!node.targetHero)
-				continue;
-
-			if(aiNk->heroManager->getHeroRoleOrDefaultInefficient(node.targetHero) == MAIN)
+			if(path.targetHero->getVisitedTown() == receiverHero->getVisitedTown())
 			{
-				const auto score = aiNk->heroManager->evaluateHero(node.targetHero);
-				if(score >= targetHeroScore)
-				{
-					hasOtherMainInPath = true;
-					break;
-				}
-			}
-		}
-
-		if(hasOtherMainInPath)
-		{
-#if NK2AI_TRACE_LEVEL >= 2
-			logAi->trace("GatherArmyBehavior::deliverArmyToHero Avoid trying to move bigger army to the weaker one");
-#endif
-			continue;
-		}
-
-		auto danger = path.getTotalDanger();
-		auto isSafe = isSafeToVisit(receiverHero, path.heroArmy, danger, aiNk->settings->getSafeAttackRatio());
-
-#if NK2AI_TRACE_LEVEL >= 2
-		logAi->trace(
-			"GatherArmyBehavior::deliverArmyToHero It is %s to visit %s by %s with army %lld, danger %lld and army loss %lld",
-			isSafe ? "safe" : "not safe",
-			receiverHero->getObjectName(),
-			path.targetHero->getObjectName(),
-			path.getHeroStrength(),
-			danger,
-			path.getTotalArmyLoss()
-		);
-#endif
-
-		if(isSafe)
-		{
-			Composition composition;
-			ExecuteHeroChain exchangePath(path, receiverHero);
-			exchangePath.closestWayRatio = 1;
-			composition.addNext(heroExchange);
-
-			if(receiverHero->isGarrisoned() && path.turn() == 0)
-			{
-				auto lockReason = aiNk->getHeroLockedReason(receiverHero);
-
-				if(path.targetHero->getVisitedTown() == receiverHero->getVisitedTown())
-				{
-					composition.addNextSequence({sptr(ExchangeSwapTownHeroes(receiverHero->getVisitedTown(), receiverHero, lockReason))});
-				}
-				else
-				{
-					composition.addNextSequence(
-						{sptr(ExchangeSwapTownHeroes(receiverHero->getVisitedTown())),
-						 sptr(exchangePath),
-						 sptr(ExchangeSwapTownHeroes(receiverHero->getVisitedTown(), receiverHero, lockReason))}
-					);
-				}
+				composition.addNextSequence({sptr(ExchangeSwapTownHeroes(receiverHero->getVisitedTown(), receiverHero, lockReason))});
 			}
 			else
 			{
-				composition.addNext(exchangePath);
+				composition.addNextSequence(
+					{sptr(ExchangeSwapTownHeroes(receiverHero->getVisitedTown())),
+					 sptr(exchangePath),
+					 sptr(ExchangeSwapTownHeroes(receiverHero->getVisitedTown(), receiverHero, lockReason))}
+				);
 			}
-
-			const auto blockedAction = path.getFirstBlockedAction();
-			if(blockedAction)
-			{
-#if NK2AI_TRACE_LEVEL >= 2
-				logAi->trace("GatherArmyBehavior::deliverArmyToHero Action is blocked. Considering decomposition.");
-#endif
-				auto subGoal = blockedAction->decompose(aiNk, path.targetHero);
-
-				if(subGoal->invalid())
-				{
-#if NK2AI_TRACE_LEVEL >= 1
-					logAi->trace("GatherArmyBehavior::deliverArmyToHero Path is invalid. Skipping");
-#endif
-					continue;
-				}
-
-				composition.addNext(subGoal);
-			}
-
-			tasks.push_back(sptr(composition));
 		}
+		else
+		{
+			composition.addNext(exchangePath);
+		}
+
+		const auto blockedAction = path.getFirstBlockedAction();
+		if(blockedAction)
+		{
+#if NK2AI_TRACE_LEVEL >= 2
+			logAi->trace("GatherArmyBehavior::deliverArmyToHero Action is blocked. Considering decomposition.");
+#endif
+			auto subGoal = blockedAction->decompose(aiNk, path.targetHero);
+
+			if(subGoal->invalid())
+			{
+#if NK2AI_TRACE_LEVEL >= 1
+				logAi->trace("GatherArmyBehavior::deliverArmyToHero Path is invalid. Skipping");
+#endif
+				continue;
+			}
+
+			composition.addNext(subGoal);
+		}
+
+		tasks.push_back(sptr(composition));
 	}
 
 	return tasks;

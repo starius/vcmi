@@ -29,6 +29,7 @@
 #include "../Goals/StayAtTown.h"
 #include "../Goals/ExchangeSwapTownHeroes.h"
 #include "../Goals/DismissHero.h"
+#include "../Behaviors/GatherArmyBehavior.h"
 #include "../../../lib/spells/CSpell.h"
 #include "../../../lib/spells/adventure/DimensionDoorEffect.h"
 #include "../Markers/UnlockCluster.h"
@@ -96,10 +97,6 @@ static float computeResourceRequirementStrength(const Nullkiller * aiNk, GameRes
 
 static const CGHeroInstance * findReachableMainForArmyDelivery(const Nullkiller * aiNk, const CGHeroInstance * carrier)
 {
-	const auto paths = aiNk->getPathsInfo(carrier);
-	if(!paths)
-		return nullptr;
-
 	for(const auto * hero : aiNk->cc->getHeroesInfo())
 	{
 		if(hero == carrier)
@@ -107,9 +104,15 @@ static const CGHeroInstance * findReachableMainForArmyDelivery(const Nullkiller 
 		if(aiNk->heroManager->getHeroRoleOrDefaultInefficient(hero) != HeroRole::MAIN)
 			continue;
 
-		const auto pathNode = paths->getPathInfo(hero->visitablePos());
-		if(pathNode->reachable() && pathNode->turns <= 1)
-			return hero;
+		const auto paths = aiNk->pathfinder->getPathInfo(hero->visitablePos(), aiNk->isObjectGraphAllowed());
+		for(const auto & path : paths)
+		{
+			if(path.targetHero != carrier || path.turn() > 1 || path.getFirstBlockedAction())
+				continue;
+
+			if(isSafeArmyDeliveryPath(aiNk, hero, path))
+				return hero;
+		}
 	}
 
 	return nullptr;

@@ -15,6 +15,10 @@
 
 namespace NK2AI
 {
+struct AIPath;
+
+bool isSafeArmyDeliveryPath(const Nullkiller * aiNk, const CGHeroInstance * receiverHero, const AIPath & path);
+
 namespace Goals
 {
 	class GatherArmyBehavior : public CGoal<GatherArmyBehavior>
