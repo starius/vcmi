@@ -134,6 +134,7 @@ EvaluationContext::EvaluationContext(const Nullkiller* aiNk)
 	strategicalValue(0),
 	conquestValue(0),
 	evaluator(aiNk),
+	targetObject(nullptr),
 	enemyHeroDangerRatio(0),
 	threat(0),
 	armyGrowth(0),
@@ -1156,6 +1157,7 @@ public:
 
 		if (target)
 		{
+			evaluationContext.targetObject = target;
 			evaluationContext.goldReward += evaluationContext.evaluator.getGoldReward(target, hero);
 			evaluationContext.armyReward += evaluationContext.evaluator.getArmyReward(target, hero, army, checkGold);
 			evaluationContext.armyGrowth += evaluationContext.evaluator.getArmyGrowth(target, hero, army);
@@ -1492,7 +1494,7 @@ float PriorityEvaluator::evaluateConquestValue(float score, const float conquest
 float PriorityEvaluator::evaluate(Goals::TSubgoal task, int priorityTier)
 {
 	auto evaluationContext = buildEvaluationContext(task);
-	const auto * targetObject = task->objid >= 0 ? aiNk->cc->getObj(ObjectInstanceID(task->objid), false) : nullptr;
+	const auto * targetObject = evaluationContext.targetObject;
 	std::optional<GameResID> targetResourceType;
 
 	// Loose resources and mines satisfy the same build shortage pressure
