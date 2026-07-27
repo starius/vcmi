@@ -1681,6 +1681,7 @@ void AINodeStorage::calculateChainInfo(std::vector<AIPath> & paths, const int3 &
 			continue;
 		}
 		path.targetObjectDanger = aiNk->dangerEvaluator->evaluateDanger(pos, path.targetHero, !node.actor->allowBattle);
+		path.targetObjectRequiresBattle = path.targetObjectDanger > 0;
 		for(const auto & pathNode : path.nodes)
 		{
 			auto pathNodeDanger = aiNk->dangerEvaluator->evaluateDanger(pathNode.coord, path.targetHero, !node.actor->allowBattle);
@@ -1903,7 +1904,7 @@ uint64_t AIPath::getTotalDanger() const
 
 bool AIPath::requiresBattle() const
 {
-	if(targetObjectArmyLoss > 0)
+	if(targetRequiresBattle())
 		return true;
 
 	for(const auto & node : nodes)
@@ -1913,6 +1914,18 @@ bool AIPath::requiresBattle() const
 	}
 
 	return false;
+}
+
+bool AIPath::targetRequiresBattle() const
+{
+	if(targetObjectRequiresBattle)
+		return true;
+
+	if(nodes.empty())
+		return false;
+
+	const auto action = targetNode().action;
+	return action == EPathNodeAction::BATTLE || action == EPathNodeAction::TELEPORT_BATTLE;
 }
 
 bool AIPath::containsHero(const CGHeroInstance * hero) const

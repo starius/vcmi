@@ -52,3 +52,38 @@ TEST(Nullkiller2_Pathfinding_ArmyLoss, ignoresZeroDanger)
 {
 	EXPECT_EQ(NK2AI::evaluateArmyLossValue(0, 0, 0.0), 0);
 }
+
+TEST(Nullkiller2_Pathfinding_ArmyLoss, targetBattleDoesNotDependOnEstimatedLoss)
+{
+	NK2AI::AIPath path;
+	path.targetObjectRequiresBattle = true;
+	path.targetObjectArmyLoss = 0;
+
+	EXPECT_TRUE(path.targetRequiresBattle());
+	EXPECT_TRUE(path.requiresBattle());
+}
+
+TEST(Nullkiller2_Pathfinding_ArmyLoss, routeBattleIsNotTargetBattle)
+{
+	NK2AI::AIPath path;
+	NK2AI::AIPathNodeInfo targetNode;
+	NK2AI::AIPathNodeInfo routeNode;
+	targetNode.action = EPathNodeAction::NORMAL;
+	routeNode.action = EPathNodeAction::BATTLE;
+	path.nodes.push_back(targetNode);
+	path.nodes.push_back(routeNode);
+
+	EXPECT_FALSE(path.targetRequiresBattle());
+	EXPECT_TRUE(path.requiresBattle());
+}
+
+TEST(Nullkiller2_Pathfinding_ArmyLoss, targetBattleActionIsDetected)
+{
+	NK2AI::AIPath path;
+	NK2AI::AIPathNodeInfo targetNode;
+	targetNode.action = EPathNodeAction::BATTLE;
+	path.nodes.push_back(targetNode);
+
+	EXPECT_TRUE(path.targetRequiresBattle());
+	EXPECT_TRUE(path.requiresBattle());
+}

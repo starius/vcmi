@@ -1056,7 +1056,7 @@ public:
 
 		vstd::amax(evaluationContext.danger, path.getTotalDanger());
 		evaluationContext.requiresBattle = evaluationContext.requiresBattle || path.requiresBattle();
-		evaluationContext.targetRequiresBattle = evaluationContext.targetRequiresBattle || path.targetObjectArmyLoss > 0;
+		evaluationContext.targetRequiresBattle = evaluationContext.targetRequiresBattle || path.targetRequiresBattle();
 		evaluationContext.movementCost += path.movementCost();
 		evaluationContext.closestWayRatio = chain.closestWayRatio;
 

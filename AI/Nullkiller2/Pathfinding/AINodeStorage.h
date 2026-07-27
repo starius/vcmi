@@ -96,6 +96,7 @@ struct AIPath
 	uint64_t targetObjectDanger;
 	uint64_t armyLoss;
 	uint64_t targetObjectArmyLoss;
+	bool targetObjectRequiresBattle = false;
 	const CGHeroInstance * targetHero;
 	const CCreatureSet * heroArmy;
 	uint64_t chainMask;
@@ -109,8 +110,11 @@ struct AIPath
 	/// Gets danger of path including danger of visiting the target object like creature bank
 	uint64_t getTotalDanger() const;
 
-	/// Returns true if path contains an actual battle action or the target visit itself causes army loss.
+	/// Returns true if path contains an actual battle action or visiting the target itself starts a battle.
 	bool requiresBattle() const;
+
+	/// Returns true if visiting the target itself starts a battle.
+	bool targetRequiresBattle() const;
 
 	/// Gets danger of path including danger of visiting the target object like creature bank
 	uint64_t getTotalArmyLoss() const;

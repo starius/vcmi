@@ -292,6 +292,7 @@ void GraphPaths::addChainInfo(std::vector<AIPath> & paths, int3 tile, const CGHe
 			// from true target-tile guard checks instead of relying on graph transition type.
 			const bool checkTargetTileGuards = !hasDangerousGraphTransition;
 			path.targetObjectDanger = aiNk->dangerEvaluator->evaluateDanger(tile, path.targetHero, checkTargetTileGuards);
+			path.targetObjectRequiresBattle = path.targetObjectDanger > 0;
 			// TODO: Mircea: This is similar same as 263, so what's happening here? Why strength is passed differently?
 			path.targetObjectArmyLoss = aiNk->pathfinder->getStorage()->evaluateArmyLoss(path.targetHero, path.heroArmy->getArmyStrength(), path.targetObjectDanger);
 
@@ -360,6 +361,7 @@ void GraphPaths::quickAddChainInfoWithBlocker(std::vector<AIPath> & paths, int3 
 			// from true target-tile guard checks instead of relying on graph transition type.
 			const bool checkTargetTileGuards = !hasDangerousGraphTransition;
 			path.targetObjectDanger = aiNk->dangerEvaluator->evaluateDanger(tile, path.targetHero, checkTargetTileGuards);
+			path.targetObjectRequiresBattle = path.targetObjectDanger > 0;
 			path.targetObjectArmyLoss = aiNk->pathfinder->getStorage()->evaluateArmyLoss(path.targetHero, path.heroArmy->getArmyStrength(), path.targetObjectDanger);
 
 			AIPathNodeInfo n;
