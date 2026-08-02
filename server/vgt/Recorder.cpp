@@ -115,6 +115,60 @@ std::string yamlKey(const std::string & value)
 	return isPlainYamlKey(value) ? value : yamlString(value);
 }
 
+std::string unwrapFlowRecord(const std::string & line)
+{
+	if(line.size() >= 4 && line.starts_with("{ ") && line.ends_with(" }"))
+		return line.substr(2, line.size() - 4);
+	return line;
+}
+
+bool startsWithAny(const std::string & line, std::initializer_list<const char *> prefixes)
+{
+	for(const auto * prefix : prefixes)
+	{
+		if(line.starts_with(prefix))
+			return true;
+	}
+	return false;
+}
+
+bool isBattleOutcomeDuplicateRecord(const std::string & line)
+{
+	return startsWithAny(line, {
+		"army: { ",
+		"artifacts: ",
+		"experience: { ",
+		"mana: { ",
+		"setExperience: { ",
+		"setMana: { ",
+		"setSkills: { ",
+		"skills: { ",
+		"spells: { ",
+		"stackExperience: { "
+	});
+}
+
+bool isStrategicBattleCleanupRecord(const std::string & line)
+{
+	const auto unwrapped = unwrapFlowRecord(line);
+	return isBattleOutcomeDuplicateRecord(unwrapped) || startsWithAny(unwrapped, {
+		"available: { ",
+		"availableArtifacts: { ",
+		"availableHero: { ",
+		"capture: { ",
+		"heroOwner: { ",
+		"heroRecruited: { ",
+		"objectPosition: { ",
+		"playerEnd: { ",
+		"remove: { ",
+		"resources: { ",
+		"setResources: { ",
+		"town: { ",
+		"townHeroes: { ",
+		"townless: { "
+	});
+}
+
 bool isPlainYamlIdentifier(const std::string & value)
 {
 	if(value.empty())
@@ -5250,6 +5304,15 @@ void VGTRecorder::capturePendingBattleArmies(const CGameState & gameState)
 	pendingBattle->armiesCaptured = true;
 }
 
+void VGTRecorder::appendPendingBattleAftermath(const std::string & line)
+{
+	if(!pendingBattle || line.empty() || isBattleOutcomeDuplicateRecord(line))
+		return;
+	if(std::ranges::find(pendingBattle->aftermath, line) != pendingBattle->aftermath.end())
+		return;
+	pendingBattle->aftermath.push_back(line);
+}
+
 void VGTRecorder::discardPendingBattle(bool reuseTranscriptID)
 {
 	if(!pendingBattle)
@@ -5269,7 +5332,7 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 	flushPendingHeroScene();
 	if(!pendingBattle->ended)
 	{
-		logGlobal->warn("Discarding cancelled or incomplete VGT battle %s", pendingBattle->id);
+		logGlobal->debug("Discarding cancelled temporary VGT battle candidate %s", pendingBattle->id);
 		discardPendingBattle(true);
 		return;
 	}
@@ -5312,6 +5375,11 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 	auto positions = pendingBattle->positions;
 	for(size_t index = 0; index < pendingBattle->events.size();)
 	{
+		if(isStrategicBattleCleanupRecord(pendingBattle->events[index]))
+		{
+			++index;
+			continue;
+		}
 		updateBattlePositions(pendingBattle->events[index], positions);
 		if(isBattlePacketEvent(pendingBattle->events[index], "start"))
 		{
@@ -6173,8 +6241,8 @@ void VGTRecorder::writeActionLine(const CGameState & gameState, const std::strin
 
 	if(pendingBattle)
 	{
-		if(pendingBattle->ended)
-			pendingBattle->aftermath.push_back(line);
+		if(pendingBattle->ended || pendingBattle->resultRecorded)
+			appendPendingBattleAftermath(line);
 		else
 			pendingBattle->events.push_back("{ " + line + " }");
 		return;
@@ -7530,7 +7598,8 @@ void VGTRecorder::recordEffect(CGameHandler & gameHandler, CPackForClient & pack
 	if(auto * removed = dynamic_cast<RemoveObject *>(&pack); pendingBattle && pendingBattle->ended &&
 		removed && objectAlias(gameState, removed->objectID) == pendingBattle->defender)
 	{
-		return;
+		if(pendingBattle->defender.starts_with("monster/"))
+			return;
 	}
 
 	const bool documentBoundary = dynamic_cast<PlayerStartsTurn *>(&pack) ||
@@ -7697,7 +7766,7 @@ void VGTRecorder::recordEffect(CGameHandler & gameHandler, CPackForClient & pack
 		}
 		if(pendingBattle && dynamic_cast<SetAvailableCreatures *>(&pack))
 		{
-			pendingBattle->aftermath.push_back(recorder.result());
+			appendPendingBattleAftermath(recorder.result());
 			return;
 		}
 		flushPendingMove(gameState);

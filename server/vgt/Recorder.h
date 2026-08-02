@@ -259,6 +259,7 @@ class VGTRecorder final
 	void flushPendingBattle(const CGameState & gameState);
 	void discardPendingBattle(bool reuseTranscriptID);
 	void capturePendingBattleArmies(const CGameState & gameState);
+	void appendPendingBattleAftermath(const std::string & line);
 	void collectInitialAvailability(const CGameState & gameState, const SetAvailableCreatures & availability);
 	void flushPendingInitialAvailability(const CGameState & gameState);
 	void collectWeeklyAvailability(const CGameState & gameState, const SetAvailableCreatures & availability);
