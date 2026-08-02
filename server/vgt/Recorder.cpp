@@ -44,7 +44,7 @@
 #include "../../lib/mapObjects/CGHeroInstance.h"
 #include "../../lib/mapObjects/CGResource.h"
 #include "../../lib/mapObjects/CGTownInstance.h"
-#include "../../lib/mapObjects/CQuest.h"
+#include "../../lib/mapObjects/Quest.h"
 #include "../../lib/mapObjects/IMarket.h"
 #include "../../lib/mapObjects/MiscObjects.h"
 #include "../../lib/mapObjects/army/CArmedInstance.h"
@@ -7305,19 +7305,23 @@ void VGTRecorder::recordEffect(CGameHandler & gameHandler, CPackForClient & pack
 		return;
 	}
 	if(auto * addedQuest = dynamic_cast<AddQuest *>(&pack); addedQuest && pendingEncounter &&
-		objectAlias(gameState, addedQuest->quest.obj) == pendingEncounter->object)
+		addedQuest->quest.hasObjectInstance())
 	{
-		const auto * questObject = dynamic_cast<const IQuestObject *>(gameState.getObjInstance(addedQuest->quest.obj));
-		if(questObject && !questObject->getQuest().mission.artifacts.empty())
+		const ObjectInstanceID questObjectID = std::get<ObjectInstanceID>(addedQuest->quest.identity);
+		const auto * questSourceObject = gameState.getObjInstance(questObjectID);
+		const auto * questSource = questSourceObject ? questSourceObject->asQuestSource() : nullptr;
+		const Quest * quest = questSource ? questSource->getActiveQuest() : nullptr;
+		if(quest && objectAlias(gameState, questObjectID) == pendingEncounter->object &&
+			!quest->mission.artifacts.empty())
 		{
 			std::vector<std::string> requestedArtifacts;
-			for(const auto artifactID : questObject->getQuest().mission.artifacts)
+			for(const auto artifactID : quest->mission.artifacts)
 				requestedArtifacts.push_back(artifact(artifactID));
 			const std::string request = requestedArtifacts.size() == 1
 				? requestedArtifacts.front()
 				: flowList(requestedArtifacts);
 			pendingEncounter->quest = "{ bring: " + request + " }";
-			pendingEncounter->standardQuestText = !questObject->getQuest().isCustomFirst;
+			pendingEncounter->standardQuestText = !quest->firstVisitText.hasCustomText();
 			return;
 		}
 	}

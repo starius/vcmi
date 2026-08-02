@@ -21,7 +21,7 @@
 #include "../../lib/mapObjects/CGHeroInstance.h"
 #include "../../lib/mapObjects/CGObjectInstance.h"
 #include "../../lib/mapObjects/CGTownInstance.h"
-#include "../../lib/mapObjects/CQuest.h"
+#include "../../lib/mapObjects/Quest.h"
 #include "../../lib/mapObjects/MiscObjects.h"
 #include "../../lib/mapObjects/army/CArmedInstance.h"
 
@@ -74,7 +74,7 @@ bool isHighTierArtifact(const CGObjectInstance & object)
 bool isStrategicDiscovery(const CGameState & gameState, PlayerColor player, const CGObjectInstance & object)
 {
 	if(object.ID == Obj::TOWN || object.ID == Obj::LIBRARY_OF_ENLIGHTENMENT ||
-		isCreatureBank(object) || dynamic_cast<const IQuestObject *>(&object) ||
+		isCreatureBank(object) || object.asQuestSource() ||
 		isHighTierArtifact(object) || isHighLevelDwelling(object))
 		return true;
 
@@ -88,7 +88,7 @@ bool isStationaryStrategicCandidate(const CGObjectInstance & object)
 	if(dynamic_cast<const CGHeroInstance *>(&object))
 		return false;
 	if(object.ID == Obj::TOWN || object.ID == Obj::LIBRARY_OF_ENLIGHTENMENT ||
-		isCreatureBank(object) || dynamic_cast<const IQuestObject *>(&object) ||
+		isCreatureBank(object) || object.asQuestSource() ||
 		isHighTierArtifact(object) || isHighLevelDwelling(object))
 		return true;
 	return dynamic_cast<const CArmedInstance *>(&object) != nullptr;
