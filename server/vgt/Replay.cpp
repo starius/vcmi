@@ -1439,6 +1439,72 @@ ArtifactPosition decodeArtifactPosition(const JsonNode & node)
 	return ArtifactPosition(static_cast<int>(node.Integer()));
 }
 
+ArtifactPosition decodeArtifactSlotName(const std::string & slotName)
+{
+	for(size_t index = 0; index < NArtifactPosition::namesHero.size(); ++index)
+	{
+		if(slotName == NArtifactPosition::namesHero[index])
+			return ArtifactPosition(static_cast<int>(index));
+	}
+	const std::string backpackPrefix = "backpack";
+	if(slotName.starts_with(backpackPrefix) && slotName.size() > backpackPrefix.size())
+	{
+		const std::string offsetText = slotName.substr(backpackPrefix.size());
+		if(std::all_of(offsetText.begin(), offsetText.end(), [](const char ch)
+		{
+			return std::isdigit(static_cast<unsigned char>(ch));
+		}))
+		{
+			const int offset = std::stoi(offsetText);
+			if(offset > 0)
+				return ArtifactPosition(ArtifactPosition::BACKPACK_START + offset - 1);
+		}
+	}
+	if(slotName == "transition")
+		return ArtifactPosition::TRANSITION_POS;
+	if(slotName == "none")
+		return ArtifactPosition::PRE_FIRST;
+	throw std::runtime_error("Unknown VGT artifact slot name: " + slotName);
+}
+
+struct RecordedArtifactSpoil
+{
+	ArtifactID artifact;
+	ArtifactPosition slot;
+	std::optional<SpellID> spell;
+	std::string text;
+};
+
+RecordedArtifactSpoil decodeArtifactSpoil(const JsonNode & node)
+{
+	std::string artifactRef;
+	std::optional<SpellID> scrollSpell;
+	if(node.isString())
+		artifactRef = node.String();
+	else if(node.isStruct())
+	{
+		artifactRef = requireString(node, "artifact");
+		if(const auto * spell = findField(node, "spell"))
+		{
+			if(!spell->isString())
+				throw std::runtime_error("VGT battle spoils spell is not a string");
+			scrollSpell = decodeSpell(spell->String());
+		}
+	}
+	else
+		throw std::runtime_error("VGT battle spoils artifact is not a string or mapping");
+
+	const size_t slotSeparator = artifactRef.rfind('@');
+	if(slotSeparator == std::string::npos || slotSeparator == 0 || slotSeparator + 1 == artifactRef.size())
+		throw std::runtime_error("VGT battle spoils artifact must use artifact@slot: " + artifactRef);
+
+	return RecordedArtifactSpoil{
+		decodeArtifact(artifactRef.substr(0, slotSeparator)),
+		decodeArtifactSlotName(artifactRef.substr(slotSeparator + 1)),
+		scrollSpell,
+		artifactRef};
+}
+
 ArtifactLocation decodeArtifactLocation(CGameHandler & gameHandler, const JsonNode & node)
 {
 	ArtifactLocation result;
@@ -4998,6 +5064,36 @@ void applyRecordedBattleLearnedSpells(CGameHandler & gameHandler, const JsonNode
 	gameHandler.sendAndApply(change);
 }
 
+void verifyRecordedBattleSpoils(CGameHandler & gameHandler, const JsonNode & outcome)
+{
+	const auto * spoils = findField(outcome, "spoils");
+	if(!spoils)
+		return;
+	if(!spoils->isStruct())
+		throw std::runtime_error("VGT battle spoils is not a mapping");
+
+	ArtifactLocation location;
+	location.artHolder = resolveObjectAlias(gameHandler.gameState(), requireString(*spoils, "to"));
+	if(const auto * creatureSlot = findField(*spoils, "creatureSlot"))
+		location.creature = decodeSlot(*creatureSlot);
+
+	const auto & artifacts = requireField(*spoils, "artifacts");
+	if(!artifacts.isVector())
+		throw std::runtime_error("VGT battle spoils artifacts is not a sequence");
+
+	for(const auto & artifactNode : artifacts.Vector())
+	{
+		const auto recorded = decodeArtifactSpoil(artifactNode);
+		location.slot = recorded.slot;
+		const auto * artifactSet = gameHandler.gameState().getArtSet(location);
+		const auto * instance = artifactSet ? artifactSet->getArt(recorded.slot) : nullptr;
+		if(!instance || instance->getTypeId() != recorded.artifact)
+			throw std::runtime_error("VGT battle spoils mismatch: " + recorded.text);
+		if(recorded.spell && (!instance->isScroll() || instance->getScrollSpellID() != *recorded.spell))
+			throw std::runtime_error("VGT battle spoils scroll mismatch: " + recorded.text);
+	}
+}
+
 const JsonNode & battleRandomBeforeContinuation(const JsonNode & outcome)
 {
 	return requireField(requireField(outcome, "random"), "beforeContinuation");
@@ -5499,6 +5595,7 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 	applyRecordedBattleMana(gameHandler, outcome, battleManaParticipants);
 	gameHandler.randomizer->loadVGTBattleJson(
 		battleRandomAtContinuation(outcome), randomizerParticipants, randomizerHeroes);
+	verifyRecordedBattleSpoils(gameHandler, outcome);
 
 	requireString(outcome, "result");
 	requireString(outcome, "winnerSide");

@@ -191,6 +191,17 @@ export interface CreaturePool {
 }
 
 export type BattleUnitName = string;
+export type ArtifactRef = `${Identifier}@${string}`;
+
+export type BattleSpoilItem =
+	| ArtifactRef
+	| { readonly artifact: ArtifactRef; readonly spell: Identifier };
+
+export interface BattleSpoils {
+	readonly to: Identifier;
+	readonly creatureSlot?: number;
+	readonly artifacts: readonly BattleSpoilItem[];
+}
 
 export interface BattleTarget {
     readonly unit?: BattleUnitName;
@@ -414,7 +425,7 @@ export interface BattleOutcome {
     /** Net persistent hero mana changes caused by the battle. */
     readonly mana?: Readonly<Record<Identifier, number>>;
     readonly armies: Readonly<Record<Identifier, readonly unknown[]>>;
-    readonly artifactMoves?: readonly unknown[];
+    readonly spoils?: BattleSpoils;
     readonly learnedSpells?: { readonly hero: Identifier; readonly spells: readonly Identifier[] };
     readonly grownArtifacts?: number;
     readonly dischargedArtifacts?: number;

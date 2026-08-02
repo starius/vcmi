@@ -32,6 +32,7 @@
 #include "../../lib/callback/GameRandomizer.h"
 #include "../../lib/constants/StringConstants.h"
 #include "../../lib/constants/NumericConstants.h"
+#include "../../lib/entities/artifact/CArtifactInstance.h"
 #include "../../lib/filesystem/CInputStream.h"
 #include "../../lib/filesystem/Filesystem.h"
 #include "../../lib/gameState/GameStatistics.h"
@@ -135,13 +136,39 @@ std::string yamlIdentifier(const std::string & value)
 	return isPlainYamlIdentifier(value) ? value : yamlString(value);
 }
 
-std::string transcriptIdentifier(std::string identifier)
+std::string rawTranscriptIdentifier(std::string identifier)
 {
 	boost::algorithm::replace_all(identifier, ":", "/");
 	const std::string corePrefix = "core/";
 	if(identifier.starts_with(corePrefix))
 		identifier.erase(0, corePrefix.size());
-	return yamlIdentifier(identifier);
+	return identifier;
+}
+
+std::string transcriptIdentifier(std::string identifier)
+{
+	return yamlIdentifier(rawTranscriptIdentifier(std::move(identifier)));
+}
+
+bool isPlainYamlArtifactRef(const std::string & value)
+{
+	if(value.empty())
+		return false;
+	if(!std::isalpha(static_cast<unsigned char>(value.front())) && value.front() != '_')
+		return false;
+
+	for(const char ch : value)
+	{
+		const auto byte = static_cast<unsigned char>(ch);
+		if(!std::isalnum(byte) && ch != '_' && ch != '-' && ch != '/' && ch != '@')
+			return false;
+	}
+	return true;
+}
+
+std::string yamlArtifactRef(const std::string & value)
+{
+	return isPlainYamlArtifactRef(value) ? value : yamlString(value);
 }
 
 struct BattleBlockRecord
@@ -813,6 +840,35 @@ std::string artifact(ArtifactID id)
 	if(id.getNum() < 0)
 		return "none";
 	return transcriptIdentifier(ArtifactID::encode(id.getNum()));
+}
+
+std::string artifactSlotName(ArtifactPosition id)
+{
+	const int position = id.getNum();
+	if(position >= 0 && position < static_cast<int>(NArtifactPosition::namesHero.size()))
+		return NArtifactPosition::namesHero[position];
+	if(position >= ArtifactPosition::BACKPACK_START)
+		return "backpack" + std::to_string(position - ArtifactPosition::BACKPACK_START + 1);
+	if(id == ArtifactPosition::TRANSITION_POS)
+		return "transition";
+	if(id == ArtifactPosition::PRE_FIRST)
+		return "none";
+	return std::to_string(position);
+}
+
+std::string artifactAtSlot(ArtifactID id, ArtifactPosition slot)
+{
+	if(id.getNum() < 0)
+		return "none@" + artifactSlotName(slot);
+	return yamlArtifactRef(rawTranscriptIdentifier(ArtifactID::encode(id.getNum())) + "@" + artifactSlotName(slot));
+}
+
+std::string artifactSpoil(const CArtifactInstance & instance, ArtifactPosition slot)
+{
+	const auto artifactRef = artifactAtSlot(instance.getTypeId(), slot);
+	if(instance.isScroll() && instance.getScrollSpellID() != SpellID::NONE)
+		return "{ artifact: " + artifactRef + ", spell: " + spell(instance.getScrollSpellID()) + " }";
+	return artifactRef;
 }
 
 std::string slot(SlotID id)
@@ -2277,6 +2333,41 @@ std::string bulkArtifactMoves(const CGameState & gameState, const std::vector<Bu
 	return flowList(entries);
 }
 
+std::optional<std::string> battleSpoils(const CGameState & gameState, const std::vector<BulkMoveArtifacts> & moves)
+{
+	std::vector<std::string> artifacts;
+	std::optional<std::string> target;
+	std::optional<SlotID> targetCreature;
+
+	for(const auto & pack : moves)
+	{
+		const std::string packTarget = objectAlias(gameState, pack.dstArtHolder);
+		if(target && *target != packTarget)
+			return std::nullopt;
+		if(target && targetCreature != pack.dstCreature)
+			return std::nullopt;
+		if(!pack.artsPack1.empty())
+			return std::nullopt;
+
+		target = packTarget;
+		targetCreature = pack.dstCreature;
+		for(const auto & move : pack.artsPack0)
+		{
+			const ArtifactLocation source(pack.srcArtHolder, pack.srcCreature, move.srcPos);
+			const auto * sourceSet = gameState.getArtSet(source);
+			const auto * instance = sourceSet ? sourceSet->getArt(move.srcPos) : nullptr;
+			artifacts.push_back(instance ? artifactSpoil(*instance, move.dstPos) : artifactAtSlot(ArtifactID::NONE, move.dstPos));
+		}
+	}
+
+	std::vector<std::string> fields;
+	fields.push_back("to: " + target.value_or("unknown"));
+	if(targetCreature)
+		fields.push_back("creatureSlot: " + slot(*targetCreature));
+	fields.push_back("artifacts: " + flowList(artifacts));
+	return "{ " + boost::algorithm::join(fields, ", ") + " }";
+}
+
 void writeJsonCompact(std::ostream & out, const JsonNode & node)
 {
 	switch(node.getType())
@@ -3370,6 +3461,12 @@ public:
 	{
 		std::vector<std::string> fields;
 		fields.push_back("artifactInstance: " + std::to_string(pack.id.getNum()));
+		if(const auto * instance = gameState.getMap().getArtifactInstance(pack.id))
+		{
+			fields.push_back("artifact: " + artifact(instance->getTypeId()));
+			if(instance->isScroll() && instance->getScrollSpellID() != SpellID::NONE)
+				fields.push_back("spell: " + spell(instance->getScrollSpellID()));
+		}
 		fields.push_back("to: " + artifactLocation(gameState, pack.al));
 		if(pack.askAssemble)
 			fields.push_back("askAssemble: true");
@@ -6329,10 +6426,17 @@ void VGTRecorder::flushPendingEncounter(const CGameState & gameState)
 				}
 				else if(const auto put = nestedFlowFields(*artifactChange, "put"))
 				{
-					std::string found = pendingEncounter->object.substr(0, pendingEncounter->object.find('@'));
-					if(found.starts_with("artifact/"))
-						found.erase(0, std::string("artifact/").size());
-					fields.push_back("artifact: " + found);
+					if(const auto value = flowField(*put, "artifact"))
+						fields.push_back("artifact: " + *value);
+					else
+					{
+						std::string found = pendingEncounter->object.substr(0, pendingEncounter->object.find('@'));
+						if(found.starts_with("artifact/"))
+							found.erase(0, std::string("artifact/").size());
+						fields.push_back("artifact: " + found);
+					}
+					if(const auto value = flowField(*put, "spell"))
+						fields.push_back("spell: " + *value);
 					if(const auto value = flowField(*put, "artifactInstance"))
 						fields.push_back("instance: " + *value);
 					if(const auto target = nestedFlowFields(*put, "to"))
@@ -7168,7 +7272,12 @@ void VGTRecorder::recordEffect(CGameHandler & gameHandler, CPackForClient & pack
 		pendingBattle->outcome.push_back("winner: " + color(applied->victor));
 		pendingBattle->outcome.push_back("loser: " + color(applied->loser));
 		if(!applied->movingArtifacts.empty())
-			pendingBattle->outcome.push_back("artifactMoves: " + bulkArtifactMoves(gameState, applied->movingArtifacts));
+		{
+			if(const auto spoils = battleSpoils(gameState, applied->movingArtifacts))
+				pendingBattle->outcome.push_back("spoils: " + *spoils);
+			else
+				pendingBattle->outcome.push_back("artifactMoves: " + bulkArtifactMoves(gameState, applied->movingArtifacts));
+		}
 		if(!applied->learnedSpells.spells.empty())
 			pendingBattle->outcome.push_back("learnedSpells: { hero: " +
 				heroAlias(gameState, applied->learnedSpells.hid) + ", spells: " +
