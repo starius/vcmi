@@ -3289,8 +3289,22 @@ public:
 
 	void visitAddQuest(AddQuest & pack) override
 	{
+		std::string questIdentity;
+		if(pack.quest.hasObjectInstance())
+			questIdentity = objectAlias(gameState, std::get<ObjectInstanceID>(pack.quest.identity));
+		else
+		{
+			const auto & typeQuest = std::get<CompoundMapObjectID>(pack.quest.identity);
+			questIdentity = transcriptIdentifier(MapObjectID::encode(typeQuest.primaryID));
+			if(questIdentity.empty())
+				questIdentity = "object-" + std::to_string(typeQuest.primaryID);
+			const std::string subType = transcriptIdentifier(
+				MapObjectSubID::encode(MapObjectID(typeQuest.primaryID), typeQuest.secondaryID));
+			if(!subType.empty())
+				questIdentity += "/" + subType;
+		}
 		line = "quest: { player: " + color(pack.player) +
-			", object: " + objectAlias(gameState, pack.quest.obj) + " }";
+			", object: " + questIdentity + " }";
 	}
 
 	void visitGiveBonus(GiveBonus & pack) override
@@ -3684,7 +3698,7 @@ public:
 	void visitBattleObstaclesChanged(BattleObstaclesChanged & pack) override
 	{
 		line = "battle: { id: " + battleAlias(pack.battleID) +
-			", event: obstaclesChanged, changes: " + std::to_string(pack.changes.size()) + " }";
+			", event: obstaclesChanged, changes: 1 }";
 	}
 
 	void visitCatapultAttack(CatapultAttack & pack) override

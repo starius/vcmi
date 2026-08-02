@@ -6214,14 +6214,7 @@ int dumpVGTGameStateSummary(const VGTGameStateSummaryOptions & options)
 	{
 		CLoadFile preambleLoadFile(options.inputSave, nullptr);
 		preambleLoadFile.load(savedHeader);
-		if(preambleLoadFile.hasFeature(ESerializationVersion::NO_RAW_POINTERS_IN_SERIALIZER))
-			preambleLoadFile.load(savedStartInfo);
-		else
-		{
-			auto legacyStartInfo = std::make_shared<StartInfo>();
-			preambleLoadFile.load(legacyStartInfo);
-			savedStartInfo = *legacyStartInfo;
-		}
+		preambleLoadFile.load(savedStartInfo);
 	}
 
 	CGameState gameState;
