@@ -81,6 +81,14 @@ public:
 
 	bool isContactAllowed(PlayerColor left, PlayerColor right) const;
 	bool isPlayerMakingTurn(PlayerColor which) const;
+	bool isPlayerWaitingForTurn(PlayerColor which) const
+	{
+		return isPlayerAwaitsTurn(which);
+	}
+	bool hasPlayerActedThisDay(PlayerColor which) const
+	{
+		return isPlayerAwaitsNewDay(which);
+	}
 
 	/// Add new player to handle (e.g. on game start)
 	void addPlayer(PlayerColor which);
@@ -96,6 +104,15 @@ public:
 
 	/// Start game (or resume from save) and send PlayerStartsTurn pack to player(s)
 	void onGameStarted();
+	void replaceStateForReplay(const std::set<PlayerColor> & awaiting, const std::set<PlayerColor> & acting, const std::set<PlayerColor> & acted)
+	{
+		blockedContacts.clear();
+		awaitingPlayers = awaiting;
+		actingPlayers = acting;
+		actedPlayers = acted;
+		simturnsMinDurationDays.reset();
+		simturnsMaxDurationDays.reset();
+	}
 
 	/// Permanently override duration of contactless simultaneous turns
 	void setMinSimturnsDuration(int days);

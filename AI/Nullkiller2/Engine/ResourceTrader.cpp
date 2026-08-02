@@ -64,8 +64,15 @@ bool ResourceTrader::trade(BuildAnalyzer & buildAnalyzer, CCallback & cc, const 
 			missingNow.toString()
 		);
 
+		const TResources resourcesBeforeTrade = cc.getResourceAmount();
 		if(tradeHelper(EXPENDABLE_BULK_RATIO, *market, missingNow, income, freeAfterMissingTotal, buildAnalyzer, cc))
 		{
+			const TResources resourcesAfterTrade = cc.getResourceAmount();
+			if(resourcesAfterTrade == resourcesBeforeTrade)
+			{
+				logAi->error("ResourceTrader: Trade request changed no resources; stopping this trade pass");
+				break;
+			}
 			haveTraded = true;
 			shouldTryToTrade = true;
 		}
@@ -115,7 +122,9 @@ bool ResourceTrader::tradeHelper(
 	// Find the most expendable resource
 	for(int i = 0; i < missingNow.size(); ++i)
 	{
-		const TResource amountToSell = freeAfterMissingTotal[i];
+		const TResource amountToSell = std::min(
+			freeAfterMissingTotal[i],
+			cc.getResourceAmount(GameResID(i)));
 		if(amountToSell == 0)
 			continue;
 

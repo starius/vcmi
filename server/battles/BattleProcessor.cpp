@@ -395,10 +395,47 @@ void BattleProcessor::cheatBattleVictory(PlayerColor player)
 	setBattleResult(*battle, EBattleResult::NORMAL, winningSide);
 }
 
+bool BattleProcessor::makePlayerBattleAction(
+	const BattleID & battleID,
+	PlayerColor player,
+	const BattleAction & ba,
+	const std::vector<uint32_t> & orderedSecondaryTargets)
+{
+	const auto * battle = gameHandler->gameState().getBattle(battleID);
+	if(!battle)
+		return false;
+	const bool result = actionsProcessor->makePlayerBattleAction(*battle, player, ba, orderedSecondaryTargets);
+	if(gameHandler->gameState().getBattle(battleID) != nullptr && !resultProcessor->battleIsEnding(*battle))
+		flowProcessor->onActionMade(*battle, ba);
+	return result;
+}
+
+bool BattleProcessor::battleIsEnding(const CBattleInfoCallback & battle) const
+{
+	return resultProcessor->battleIsEnding(battle);
+}
+
 void BattleProcessor::setBattleResult(const CBattleInfoCallback & battle, EBattleResult resultType, BattleSide victoriusSide)
 {
 	resultProcessor->setBattleResult(battle, resultType, victoriusSide);
 	resultProcessor->endBattle(battle);
+}
+
+void BattleProcessor::setBattleResultFromReplay(
+	const CBattleInfoCallback & battle,
+	EBattleResult resultType,
+	BattleSide victoriousSide,
+	const BattleSideArray<TExpType> & experience)
+{
+	resultProcessor->setBattleResult(battle, resultType, victoriousSide);
+	resultProcessor->endBattle(battle, experience);
+}
+
+void BattleProcessor::setBattleExperienceFromReplay(
+	const CBattleInfoCallback & battle,
+	const BattleSideArray<TExpType> & experience)
+{
+	resultProcessor->setBattleExperienceFromReplay(battle, experience);
 }
 
 bool BattleProcessor::makeAutomaticBattleAction(const CBattleInfoCallback & battle, const BattleAction &ba)

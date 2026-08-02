@@ -14,6 +14,7 @@
 #include "GlobalLobbyProcessor.h"
 #include "LobbyNetPackVisitors.h"
 #include "processors/PlayerMessageProcessor.h"
+#include "vgt/Integration.h"
 
 #include "../lib/CThreadHelper.h"
 #include "../lib/GameLibrary.h"
@@ -1219,7 +1220,9 @@ void CVCMIServer::applyPack(CPackForClient & pack)
 	logNetwork->trace("\tSending to all clients: %s", typeid(pack).name());
 	for (const auto & c : activeConnections)
 		c->sendPack(pack);
+	vgt::onEffectBeforeApply(*gh, pack);
 	gh->gs->apply(pack);
+	vgt::onEffectAfterApply(*gh);
 	logNetwork->trace("\tApplied on gameState(): %s", typeid(pack).name());
 }
 

@@ -14,6 +14,7 @@
 
 enum class EGameSettings;
 
+class JsonNode;
 class CGHeroInstance;
 
 class DLL_LINKAGE RandomizationBias
@@ -24,6 +25,8 @@ public:
 	/// Performs coin flip with specified success chance
 	/// Returns true with probability successChance percents, and false with probability totalWeight-successChance percents
 	bool roll(vstd::RNG & generator, int successChance, int totalWeight, int biasValue);
+	int32_t getAccumulatedBias() const;
+	void setAccumulatedBias(int32_t value);
 
 	template<typename Handler>
 	void serialize(Handler & h)
@@ -48,6 +51,8 @@ public:
 	/// Performs coin flip with specified success chance
 	/// Returns true with probability successChance percents, and false with probability 100-successChance percents
 	bool roll(int successChance, int totalWeight, int biasValue);
+	JsonNode toVGTJson() const;
+	void loadVGTJson(const JsonNode & node);
 
 	template<typename Handler>
 	void serialize(Handler & h)
@@ -95,6 +100,8 @@ class DLL_LINKAGE GameRandomizer final : public IGameRandomizer
 	std::map<ObjectInstanceID, RandomGeneratorWithBias> combatAbilitySeed;
 
 	bool rollMoraleLuck(std::map<ObjectInstanceID, RandomGeneratorWithBias> & seeds, ObjectInstanceID actor, int moraleLuckValue, EGameSettings biasValue, EGameSettings diceSize, EGameSettings diceWeights);
+	JsonNode heroSkillVGTJson(const std::set<HeroTypeID> * heroes) const;
+	void loadHeroSkillVGTJson(const JsonNode * heroSkills, bool clearExisting);
 
 public:
 	explicit GameRandomizer(const IGameInfoCallback & gameInfo);
@@ -122,6 +129,16 @@ public:
 	vstd::RNG & getDefault() override;
 
 	void setSeed(int newSeed);
+	int getDefaultSeed() const;
+	JsonNode toVGTJson() const;
+	void loadVGTJson(const JsonNode & node);
+	JsonNode toVGTBattleJson(
+		const std::set<ObjectInstanceID> & participants,
+		const std::set<HeroTypeID> & heroes) const;
+	void loadVGTBattleJson(
+		const JsonNode & node,
+		const std::set<ObjectInstanceID> & participants,
+		const std::set<HeroTypeID> & heroes);
 
 	template<typename Handler>
 	void serialize(Handler & h)

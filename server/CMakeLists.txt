@@ -56,7 +56,26 @@ set(vcmiservercommon_HEADERS
 		ServerNetPackVisitors.h
 		TurnTimerHandler.h
 		TurnStartVisitScheduler.h
+
+		vgt/CommandLine.h
+		vgt/Integration.h
+		vgt/README.md
 )
+
+if(ENABLE_VGT)
+	list(APPEND vcmiservercommon_SRCS
+		vgt/CommandLine.cpp
+		vgt/Discovery.cpp
+		vgt/Integration.cpp
+		vgt/Recorder.cpp
+		vgt/Replay.cpp
+	)
+	list(APPEND vcmiservercommon_HEADERS
+		vgt/Discovery.h
+		vgt/Recorder.h
+		vgt/Replay.h
+	)
+endif()
 
 assign_source_group(${vcmiservercommon_SRCS} ${vcmiservercommon_HEADERS})
 
@@ -81,6 +100,10 @@ target_include_directories(vcmiservercommon
 target_compile_definitions(vcmiservercommon
 	PRIVATE $<TARGET_PROPERTY:vcmiMain,INTERFACE_COMPILE_DEFINITIONS>
 )
+
+if(ENABLE_VGT)
+	target_compile_definitions(vcmiservercommon PUBLIC VCMI_ENABLE_VGT=1)
+endif()
 
 if(WIN32)
 	set_target_properties(vcmiservercommon

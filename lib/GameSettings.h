@@ -48,6 +48,8 @@ public:
 
 	// loads all overrides from provided json node, for deserialization
 	void loadOverrides(const JsonNode &);
+	void updateOverrides(const JsonNode &);
+	JsonNode getOverrides() const;
 
 	JsonNode getFullConfig() const override;
 	const JsonNode & getValue(EGameSettings option) const override;

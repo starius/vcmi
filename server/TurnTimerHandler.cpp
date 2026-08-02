@@ -13,6 +13,7 @@
 #include "battles/BattleProcessor.h"
 #include "queries/QueriesProcessor.h"
 #include "processors/TurnOrderProcessor.h"
+#include "vgt/Integration.h"
 #include "../lib/battle/BattleInfo.h"
 #include "../lib/gameState/CGameState.h"
 #include "../lib/networkPacks/PacksForClient.h"
@@ -61,6 +62,21 @@ void TurnTimerHandler::onEndTurn(PlayerColor player)
 	assert(player.isValidPlayer());
 	auto & timer = timers[player];
 	timer.isTurnEnded = true;
+	sendTimerUpdate(player);
+}
+
+void TurnTimerHandler::setBattleTimerForReplay(PlayerColor player)
+{
+	assert(player.isValidPlayer());
+	const auto * si = gameHandler.gameInfo().getStartInfo();
+	if(!si)
+		return;
+
+	auto & timer = timers[player];
+	timer.isBattle = true;
+	timer.isActive = si->turnTimerInfo.isBattleEnabled();
+	timer.battleTimer = si->turnTimerInfo.battleTimer;
+	timer.unitTimer = 0;
 	sendTimerUpdate(player);
 }
 
@@ -169,7 +185,10 @@ void TurnTimerHandler::onPlayerMakingTurn(PlayerColor player, int waitTime)
 			return;
 
 		if(endTurnAllowed[state->color] && !gameHandler.queries->topQuery(state->color)) //wait for replies to avoid pending queries
+		{
+			vgt::onAutomaticEndTurn(gameHandler.gameState(), state->color);
 			gameHandler.turnOrder->onPlayerEndsTurn(state->color);
+		}
 	}
 }
 
@@ -335,6 +354,7 @@ void TurnTimerHandler::onBattleLoop(const BattleID & battleID, int waitTime)
 				doNothing.actionType = EActionType::DEFEND;
 				doNothing.stackNumber = stack->unitId();
 			}
+			vgt::onAutomaticBattleAction(gameHandler.gameState(), player, battleID, doNothing);
 			gameHandler.battles->makePlayerBattleAction(battleID, player, doNothing);
 		}
 		else

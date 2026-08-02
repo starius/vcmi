@@ -9,6 +9,8 @@
   client ? true,
   video ? true,
   scripting ? true,
+  discord ? true,
+  vgt ? false,
 }: let
   rev = builtins.substring 0 7 (src.rev or src.dirtyRev or "HEAD");
 in {
@@ -104,6 +106,16 @@ in {
     ++ (
       if !launcher
       then ["-DENABLE_LAUNCHER=OFF"]
+      else []
+    )
+    ++ (
+      if !discord
+      then ["-DENABLE_DISCORD=OFF"]
+      else []
+    )
+    ++ (
+      if vgt
+      then ["-DENABLE_VGT=ON"]
       else []
     );
   nativeBuildInputs = with pkgs.buildPackages;

@@ -39,6 +39,40 @@ int IGameSettings::getVectorValue(EGameSettings option, size_t index) const
 GameSettings::GameSettings() = default;
 GameSettings::~GameSettings() = default;
 
+namespace
+{
+void copyJsonValuePreservingMetadata(JsonNode & target, const JsonNode & source)
+{
+	switch(source.getType())
+	{
+		case JsonNode::JsonType::DATA_NULL:
+			target.clear();
+			break;
+		case JsonNode::JsonType::DATA_BOOL:
+			target.Bool() = source.Bool();
+			break;
+		case JsonNode::JsonType::DATA_FLOAT:
+			target.Float() = source.Float();
+			break;
+		case JsonNode::JsonType::DATA_STRING:
+			target.String() = source.String();
+			break;
+		case JsonNode::JsonType::DATA_VECTOR:
+			target.Vector().clear();
+			for(const auto & entry : source.Vector())
+				target.Vector().push_back(entry);
+			break;
+		case JsonNode::JsonType::DATA_STRUCT:
+			for(const auto & entry : source.Struct())
+				copyJsonValuePreservingMetadata(target[entry.first], entry.second);
+			break;
+		case JsonNode::JsonType::DATA_INTEGER:
+			target.Integer() = source.Integer();
+			break;
+	}
+}
+}
+
 const std::vector<GameSettings::SettingOption> GameSettings::settingProperties = {
 		{EGameSettings::BANKS_SHOW_GUARDS_COMPOSITION,                    "banks",     "showGuardsComposition"                },
 		{EGameSettings::BONUSES_GLOBAL,                                   "bonuses",   "global"                               },
@@ -175,6 +209,27 @@ void GameSettings::addOverride(EGameSettings option, const JsonNode & input)
 	JsonNode newValue = baseSettings[index];
 	JsonUtils::mergeCopy(newValue, input);
 	actualSettings[index] = newValue;
+}
+
+void GameSettings::updateOverrides(const JsonNode & input)
+{
+	for(const auto & option : settingProperties)
+	{
+		const JsonNode & optionValue = input[option.group][option.key];
+		if(optionValue.isNull())
+			continue;
+
+		const size_t index = static_cast<size_t>(option.setting);
+		copyJsonValuePreservingMetadata(overridenSettings[index], optionValue);
+		JsonNode newValue = baseSettings[index];
+		JsonUtils::mergeCopy(newValue, overridenSettings[index]);
+		actualSettings[index] = newValue;
+	}
+}
+
+JsonNode GameSettings::getOverrides() const
+{
+	return getAllOverrides();
 }
 
 const JsonNode & GameSettings::getValue(EGameSettings option) const

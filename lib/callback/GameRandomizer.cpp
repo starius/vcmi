@@ -17,10 +17,73 @@
 #include "../CCreatureHandler.h"
 #include "../CSkillHandler.h"
 #include "../IGameSettings.h"
+#include "../json/JsonNode.h"
 #include "../entities/artifact/CArtHandler.h"
 #include "../entities/artifact/EArtifactClass.h"
 #include "../entities/hero/CHeroClass.h"
 #include "../mapObjects/CGHeroInstance.h"
+
+namespace
+{
+const JsonNode & requireField(const JsonNode & node, const char * field)
+{
+	if(!node.isStruct())
+		throw std::runtime_error(std::string("VGT randomizer state parent is not a mapping while reading: ") + field);
+
+	const auto iter = node.Struct().find(field);
+	if(iter == node.Struct().end() || iter->second.isNull())
+		throw std::runtime_error(std::string("Missing VGT randomizer state field: ") + field);
+	return iter->second;
+}
+
+const JsonNode * findField(const JsonNode & node, const char * field)
+{
+	if(!node.isStruct())
+		return nullptr;
+
+	const auto iter = node.Struct().find(field);
+	if(iter == node.Struct().end() || iter->second.isNull())
+		return nullptr;
+	return &iter->second;
+}
+
+std::string requireString(const JsonNode & node, const char * field)
+{
+	const auto & child = requireField(node, field);
+	if(!child.isString())
+		throw std::runtime_error(std::string("VGT randomizer state field is not a string: ") + field);
+	return child.String();
+}
+
+int requireInteger(const JsonNode & node, const char * field)
+{
+	const auto & child = requireField(node, field);
+	if(!child.isNumber())
+		throw std::runtime_error(std::string("VGT randomizer state field is not a number: ") + field);
+	return static_cast<int>(child.Integer());
+}
+
+std::string vgtScopedIdentifier(std::string value)
+{
+	std::replace(value.begin(), value.end(), ':', '/');
+	return value;
+}
+
+std::string vgtReadableIdentifier(std::string value)
+{
+	value = vgtScopedIdentifier(std::move(value));
+	static const std::string corePrefix = "core/";
+	if(value.starts_with(corePrefix))
+		value.erase(0, corePrefix.size());
+	return value;
+}
+
+std::string engineScopedIdentifier(std::string value)
+{
+	std::replace(value.begin(), value.end(), '/', ':');
+	return value;
+}
+}
 
 bool RandomizationBias::roll(vstd::RNG & generator, int successChance, int totalWeight, int biasValue)
 {
@@ -41,6 +104,16 @@ bool RandomizationBias::roll(vstd::RNG & generator, int successChance, int total
 	return success;
 }
 
+int32_t RandomizationBias::getAccumulatedBias() const
+{
+	return accumulatedBias;
+}
+
+void RandomizationBias::setAccumulatedBias(int32_t value)
+{
+	accumulatedBias = value;
+}
+
 RandomGeneratorWithBias::RandomGeneratorWithBias(int seed)
 	: generator(seed)
 {
@@ -49,6 +122,28 @@ RandomGeneratorWithBias::RandomGeneratorWithBias(int seed)
 bool RandomGeneratorWithBias::roll(int successChance, int totalWeight, int biasValue)
 {
 	return bias.roll(generator, successChance, totalWeight, biasValue);
+}
+
+JsonNode RandomGeneratorWithBias::toVGTJson() const
+{
+	JsonNode result;
+	result["generator"].String() = generator.getSerializedState();
+	if(bias.getAccumulatedBias() != 0)
+		result["bias"].Integer() = bias.getAccumulatedBias();
+	return result;
+}
+
+void RandomGeneratorWithBias::loadVGTJson(const JsonNode & node)
+{
+	generator.setSerializedState(requireString(node, "generator"));
+	if(const auto * biasNode = findField(node, "bias"))
+	{
+		if(!biasNode->isNumber())
+			throw std::runtime_error("VGT randomizer state field is not a number: bias");
+		bias.setAccumulatedBias(static_cast<int32_t>(biasNode->Integer()));
+	}
+	else
+		bias.setAccumulatedBias(0);
 }
 
 GameRandomizer::GameRandomizer(const IGameInfoCallback & gameInfo)
@@ -235,6 +330,232 @@ vstd::RNG & GameRandomizer::getDefault()
 void GameRandomizer::setSeed(int newSeed)
 {
 	globalRandomNumberGenerator.setSeed(newSeed);
+}
+
+int GameRandomizer::getDefaultSeed() const
+{
+	return globalRandomNumberGenerator.getSeed();
+}
+
+JsonNode GameRandomizer::heroSkillVGTJson(const std::set<HeroTypeID> * heroes) const
+{
+	JsonNode result;
+	result.Struct();
+	for(const auto & [hero, state] : heroSkillSeed)
+	{
+		if(heroes && !heroes->contains(hero))
+			continue;
+		JsonNode heroState;
+		heroState["seed"].String() = state.seed.getSerializedState();
+		heroState["magicSchoolCounter"].Integer() = state.magicSchoolCounter;
+		heroState["wisdomCounter"].Integer() = state.wisdomCounter;
+		result[vgtReadableIdentifier(HeroTypeID::encode(hero.getNum()))] = heroState;
+	}
+	return result;
+}
+
+void GameRandomizer::loadHeroSkillVGTJson(const JsonNode * heroSkills, bool clearExisting)
+{
+	if(clearExisting)
+		heroSkillSeed.clear();
+	if(!heroSkills)
+		return;
+	if(!heroSkills->isStruct())
+		throw std::runtime_error("VGT randomizer heroSkill field is not a mapping");
+	for(const auto & entry : heroSkills->Struct())
+	{
+		const HeroTypeID hero(HeroTypeID::decode(engineScopedIdentifier(entry.first)));
+		auto [iter, inserted] = heroSkillSeed.try_emplace(hero);
+		iter->second.seed.setSerializedState(requireString(entry.second, "seed"));
+		iter->second.magicSchoolCounter = static_cast<int8_t>(requireInteger(entry.second, "magicSchoolCounter"));
+		iter->second.wisdomCounter = static_cast<int8_t>(requireInteger(entry.second, "wisdomCounter"));
+	}
+}
+
+JsonNode GameRandomizer::toVGTJson() const
+{
+	JsonNode result;
+	result["global"].String() = globalRandomNumberGenerator.getSerializedState();
+
+	for(const auto & [artifact, count] : allocatedArtifacts)
+	{
+		if(count != 0)
+			result["allocatedArtifacts"][vgtScopedIdentifier(ArtifactID::encode(artifact.getNum()))].Integer() = count;
+	}
+
+	const JsonNode heroSkills = heroSkillVGTJson(nullptr);
+	if(!heroSkills.Struct().empty())
+		result["heroSkill"] = heroSkills;
+
+	auto writeBiasMap = [](const auto & source) -> JsonNode
+	{
+		JsonNode result;
+		result.Vector();
+		for(const auto & [object, generator] : source)
+		{
+			JsonNode entry;
+			entry["object"].Integer() = object.getNum();
+			entry["state"] = generator.toVGTJson();
+			result.Vector().push_back(entry);
+		}
+		return result;
+	};
+
+	if(!goodMoraleSeed.empty())
+		result["goodMorale"] = writeBiasMap(goodMoraleSeed);
+	if(!badMoraleSeed.empty())
+		result["badMorale"] = writeBiasMap(badMoraleSeed);
+	if(!goodLuckSeed.empty())
+		result["goodLuck"] = writeBiasMap(goodLuckSeed);
+	if(!badLuckSeed.empty())
+		result["badLuck"] = writeBiasMap(badLuckSeed);
+	if(!combatAbilitySeed.empty())
+		result["combatAbility"] = writeBiasMap(combatAbilitySeed);
+	return result;
+}
+
+JsonNode GameRandomizer::toVGTBattleJson(
+	const std::set<ObjectInstanceID> & participants,
+	const std::set<HeroTypeID> & heroes) const
+{
+	JsonNode result;
+	result["global"].String() = globalRandomNumberGenerator.getSerializedState();
+	const JsonNode heroSkills = heroSkillVGTJson(&heroes);
+	if(!heroSkills.Struct().empty())
+		result["heroSkill"] = heroSkills;
+
+	auto writeBiasMap = [&participants](const auto & source) -> JsonNode
+	{
+		JsonNode result;
+		result.Struct();
+		for(const auto & [object, generator] : source)
+		{
+			if(!participants.contains(object))
+				continue;
+			const JsonNode state = generator.toVGTJson();
+			const std::string serialized = requireString(state, "generator");
+			size_t parsed = 0;
+			const int64_t generatorState = std::stoll(serialized, &parsed);
+			if(parsed != serialized.size())
+				throw std::runtime_error("VGT battle randomizer generator state is not an integer");
+
+			auto & entry = result[std::to_string(object.getNum())];
+			if(const auto * bias = findField(state, "bias"))
+			{
+				entry["generator"].Integer() = generatorState;
+				entry["bias"].Integer() = bias->Integer();
+			}
+			else
+				entry.Integer() = generatorState;
+		}
+		return result;
+	};
+
+	for(const auto & [name, source] : {
+		std::pair{"goodMorale", &goodMoraleSeed},
+		std::pair{"badMorale", &badMoraleSeed},
+		std::pair{"goodLuck", &goodLuckSeed},
+		std::pair{"badLuck", &badLuckSeed},
+		std::pair{"combatAbility", &combatAbilitySeed}})
+	{
+		const auto values = writeBiasMap(*source);
+		if(!values.Struct().empty())
+			result[name] = values;
+	}
+	return result;
+}
+
+void GameRandomizer::loadVGTJson(const JsonNode & node)
+{
+	globalRandomNumberGenerator.setSerializedState(requireString(node, "global"));
+
+	allocatedArtifacts.clear();
+	if(const auto * artifacts = findField(node, "allocatedArtifacts"))
+	{
+		if(!artifacts->isStruct())
+			throw std::runtime_error("VGT randomizer allocatedArtifacts field is not a mapping");
+		for(const auto & entry : artifacts->Struct())
+		{
+			if(!entry.second.isNumber())
+				throw std::runtime_error("VGT randomizer allocated artifact count is not a number: " + entry.first);
+			allocatedArtifacts[ArtifactID(ArtifactID::decode(engineScopedIdentifier(entry.first)))] = static_cast<int>(entry.second.Integer());
+		}
+	}
+
+	loadHeroSkillVGTJson(findField(node, "heroSkill"), true);
+
+	auto readBiasMap = [](auto & target, const JsonNode * source, const std::string & name)
+	{
+		target.clear();
+		if(!source)
+			return;
+		if(!source->isVector())
+			throw std::runtime_error("VGT randomizer " + name + " field is not a list");
+		for(const auto & entry : source->Vector())
+		{
+			const ObjectInstanceID object(requireInteger(entry, "object"));
+			auto [iter, inserted] = target.try_emplace(object);
+			iter->second.loadVGTJson(requireField(entry, "state"));
+		}
+	};
+
+	readBiasMap(goodMoraleSeed, findField(node, "goodMorale"), "goodMorale");
+	readBiasMap(badMoraleSeed, findField(node, "badMorale"), "badMorale");
+	readBiasMap(goodLuckSeed, findField(node, "goodLuck"), "goodLuck");
+	readBiasMap(badLuckSeed, findField(node, "badLuck"), "badLuck");
+	readBiasMap(combatAbilitySeed, findField(node, "combatAbility"), "combatAbility");
+}
+
+void GameRandomizer::loadVGTBattleJson(
+	const JsonNode & node,
+	const std::set<ObjectInstanceID> & participants,
+	const std::set<HeroTypeID> & heroes)
+{
+	globalRandomNumberGenerator.setSerializedState(requireString(node, "global"));
+	for(const auto hero : heroes)
+		heroSkillSeed.erase(hero);
+	loadHeroSkillVGTJson(findField(node, "heroSkill"), false);
+
+	auto readBiasMap = [&participants](auto & target, const JsonNode * source, const std::string & name)
+	{
+		for(const auto participant : participants)
+			target.erase(participant);
+		if(!source)
+			return;
+		if(!source->isStruct())
+			throw std::runtime_error("VGT battle randomizer " + name + " field is not a mapping");
+		for(const auto & [objectText, value] : source->Struct())
+		{
+			size_t parsed = 0;
+			const int64_t objectValue = std::stoll(objectText, &parsed);
+			if(parsed != objectText.size() || objectValue < 0 || objectValue > std::numeric_limits<si32>::max())
+				throw std::runtime_error("VGT battle randomizer " + name + " object is invalid: " + objectText);
+			const ObjectInstanceID object(static_cast<si32>(objectValue));
+			JsonNode state;
+			if(value.isNumber())
+				state["generator"].String() = std::to_string(value.Integer());
+			else if(value.isStruct())
+			{
+				state["generator"].String() = std::to_string(requireInteger(value, "generator"));
+				if(const auto * bias = findField(value, "bias"))
+				{
+					if(!bias->isNumber())
+						throw std::runtime_error("VGT battle randomizer " + name + " bias is invalid: " + objectText);
+					state["bias"].Integer() = bias->Integer();
+				}
+			}
+			else
+				throw std::runtime_error("VGT battle randomizer " + name + " state is invalid: " + objectText);
+			auto [iter, inserted] = target.try_emplace(object);
+			iter->second.loadVGTJson(state);
+		}
+	};
+
+	readBiasMap(goodMoraleSeed, findField(node, "goodMorale"), "goodMorale");
+	readBiasMap(badMoraleSeed, findField(node, "badMorale"), "badMorale");
+	readBiasMap(goodLuckSeed, findField(node, "goodLuck"), "goodLuck");
+	readBiasMap(badLuckSeed, findField(node, "badLuck"), "badLuck");
+	readBiasMap(combatAbilitySeed, findField(node, "combatAbility"), "combatAbility");
 }
 
 PrimarySkill GameRandomizer::rollPrimarySkillForLevelup(const CGHeroInstance * hero)

@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "../../lib/GameConstants.h"
 #include "../../lib/constants/EntityIdentifiers.h"
 #include "../../lib/constants/Enumerations.h"
 #include "../../lib/battle/BattleSide.h"
@@ -68,6 +69,24 @@ public:
 	bool makePlayerBattleAction(const BattleID & battleID, PlayerColor player, const BattleAction & ba);
 	/// Kills the opposing army and resolves the current battle in player's favor
 	void cheatBattleVictory(PlayerColor player);
+	/// Replays an action with the recorded ordering of simultaneous secondary hits.
+	bool makePlayerBattleAction(
+		const BattleID & battleID,
+		PlayerColor player,
+		const BattleAction & ba,
+		const std::vector<uint32_t> & orderedSecondaryTargets);
+	/// Whether the server has already created and begun processing this result.
+	bool battleIsEnding(const CBattleInfoCallback & battle) const;
+	/// Completes a replay battle from its recorded tactical outcome.
+	void setBattleResultFromReplay(
+		const CBattleInfoCallback & battle,
+		EBattleResult resultType,
+		BattleSide victoriousSide,
+		const BattleSideArray<TExpType> & experience);
+	/// Registers experience to use when the replayed battle result is produced.
+	void setBattleExperienceFromReplay(
+		const CBattleInfoCallback & battle,
+		const BattleSideArray<TExpType> & experience);
 
 	/// Applies results of a battle once player agrees to them
 	void endBattleConfirm(const BattleID & battleID);
@@ -79,4 +98,3 @@ public:
 
 	}
 };
-

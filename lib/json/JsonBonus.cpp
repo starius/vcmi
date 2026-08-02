@@ -852,7 +852,11 @@ bool JsonUtils::parseBonus(const JsonNode &ability, Bonus *b, const TextIdentifi
 	b->stacking = ability["stacking"].String();
 	b->turnsRemain = static_cast<si32>(ability["turns"].Float());
 
-	if(!ability["description"].isNull())
+	if(!ability["descriptionMeta"].isNull())
+	{
+		b->description.jsonDeserialize(ability["descriptionMeta"]);
+	}
+	else if(!ability["description"].isNull())
 	{
 		if (ability["description"].isString() && !ability["description"].String().empty())
 		{
@@ -863,6 +867,8 @@ bool JsonUtils::parseBonus(const JsonNode &ability, Bonus *b, const TextIdentifi
 				LIBRARY->generaltexth->registerString(ability.getModScope(), descriptionID, ability["description"]);
 				b->description.appendTextID(descriptionID.get());
 			}
+			else
+				b->description.appendRawString(ability["description"].String());
 		}
 		if (ability["description"].isNumber())
 			b->description.appendTextID("core.arraytxt." + std::to_string(ability["description"].Integer()));

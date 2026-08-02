@@ -153,6 +153,10 @@ public:
 	{
 		return initialOpts.get();
 	}
+	StartInfo * getInitialStartInfo()
+	{
+		return initialOpts.get();
+	}
 
 	CMap & getMap()
 	{

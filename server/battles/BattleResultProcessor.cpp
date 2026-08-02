@@ -206,7 +206,9 @@ FinishingBattleHelper::FinishingBattleHelper(const CBattleInfoCallback & info, c
 	this->remainingBattleQueriesCount = remainingBattleQueriesCount;
 }
 
-void BattleResultProcessor::endBattle(const CBattleInfoCallback & battle)
+void BattleResultProcessor::endBattle(
+	const CBattleInfoCallback & battle,
+	const std::optional<BattleSideArray<TExpType>> & replayExperience)
 {
 	auto const & giveExp = [&battle](BattleResult &r)
 	{
@@ -225,30 +227,44 @@ void BattleResultProcessor::endBattle(const CBattleInfoCallback & battle)
 
 	LOG_TRACE(logGlobal);
 
-	auto * battleResult = battleResults.at(battle.getBattle()->getBattleID()).get();
+	const BattleID battleID = battle.getBattle()->getBattleID();
+	auto * battleResult = battleResults.at(battleID).get();
 	const auto * heroAttacker = battle.battleGetFightingHero(BattleSide::ATTACKER);
 	const auto * heroDefender = battle.battleGetFightingHero(BattleSide::DEFENDER);
-
-	//Fill BattleResult structure with exp info
-	giveExp(*battleResult);
-
-	if (battleResult->result == EBattleResult::NORMAL) // give 500 exp for defeating hero, unless he escaped
+	auto effectiveReplayExperience = replayExperience;
+	if(!effectiveReplayExperience)
 	{
-		if(heroAttacker)
-			battleResult->exp[BattleSide::DEFENDER] += 500;
-		if(heroDefender)
-			battleResult->exp[BattleSide::ATTACKER] += 500;
+		const auto replayOverride = replayExperienceOverrides.find(battleID);
+		if(replayOverride != replayExperienceOverrides.end())
+			effectiveReplayExperience = replayOverride->second;
 	}
+	replayExperienceOverrides.erase(battleID);
 
-	// Give 500 exp to winner if a town was conquered during the battle
-	const auto * defendedTown = battle.battleGetDefendedTown();
-	if (defendedTown && battleResult->winner == BattleSide::ATTACKER)
-		battleResult->exp[BattleSide::ATTACKER] += 500;
+	if(effectiveReplayExperience)
+		battleResult->exp = *effectiveReplayExperience;
+	else
+	{
+		//Fill BattleResult structure with exp info
+		giveExp(*battleResult);
 
-	if(heroAttacker)
-		battleResult->exp[BattleSide::ATTACKER] = heroAttacker->calculateXp(battleResult->exp[BattleSide::ATTACKER]);//scholar skill
-	if(heroDefender)
-		battleResult->exp[BattleSide::DEFENDER] = heroDefender->calculateXp(battleResult->exp[BattleSide::DEFENDER]);
+		if (battleResult->result == EBattleResult::NORMAL) // give 500 exp for defeating hero, unless he escaped
+		{
+			if(heroAttacker)
+				battleResult->exp[BattleSide::DEFENDER] += 500;
+			if(heroDefender)
+				battleResult->exp[BattleSide::ATTACKER] += 500;
+		}
+
+		// Give 500 exp to winner if a town was conquered during the battle
+		const auto * defendedTown = battle.battleGetDefendedTown();
+		if (defendedTown && battleResult->winner == BattleSide::ATTACKER)
+			battleResult->exp[BattleSide::ATTACKER] += 500;
+
+		if(heroAttacker)
+			battleResult->exp[BattleSide::ATTACKER] = heroAttacker->calculateXp(battleResult->exp[BattleSide::ATTACKER]);//scholar skill
+		if(heroDefender)
+			battleResult->exp[BattleSide::DEFENDER] = heroDefender->calculateXp(battleResult->exp[BattleSide::DEFENDER]);
+	}
 
 	auto attackerQuery = gameHandler->queries->topQuery(battle.sideToPlayer(BattleSide::ATTACKER));
 
@@ -307,6 +323,13 @@ void BattleResultProcessor::endBattle(const CBattleInfoCallback & battle)
 
 	if (battleResult->queryID == QueryID::NONE)
 		endBattleConfirm(battle);
+}
+
+void BattleResultProcessor::setBattleExperienceFromReplay(
+	const CBattleInfoCallback & battle,
+	const BattleSideArray<TExpType> & experience)
+{
+	replayExperienceOverrides[battle.getBattle()->getBattleID()] = experience;
 }
 
 void BattleResultProcessor::endBattleConfirm(const CBattleInfoCallback & battle)

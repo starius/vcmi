@@ -118,7 +118,7 @@ inline bool TerrainTile::hasRoad() const
 
 inline const TerrainType * TerrainTile::getTerrain() const
 {
-	return terrainType.toEntity(LIBRARY);
+	return LIBRARY->terrainTypeHandler->getByIndexUnchecked(terrainType.getNum());
 }
 
 inline const RiverType * TerrainTile::getRiver() const

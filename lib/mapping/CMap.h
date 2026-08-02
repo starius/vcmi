@@ -75,6 +75,10 @@ class DLL_LINKAGE CMap : public CMapHeader, public GameCallbackHolder
 	/// Precomputed indices of all heroes on map. Does not includes heroes in prisons
 	std::vector<ObjectInstanceID> heroesOnMap;
 
+	/// Lazily-computed indices of terrain patches used for battlefield selection
+	mutable std::vector<ObjectInstanceID> terrainPatches;
+	mutable bool terrainPatchIndexValid = false;
+
 	void deserializeHeroPool(const std::vector<std::shared_ptr<CGHeroInstance> > &);
 
 public:
@@ -89,6 +93,7 @@ public:
 	CMapEditManager * getEditManager();
 	inline TerrainTile & getTile(const int3 & tile);
 	inline const TerrainTile & getTile(const int3 & tile) const;
+	const MapTilesStorage<TerrainTile> & getTerrainTiles() const;
 	bool isCoastalTile(const int3 & pos) const;
 	inline bool isInTheMap(const int3 & pos) const;
 
@@ -126,6 +131,8 @@ public:
 
 	/// Generates unique string identifier for provided object instance
 	void generateUniqueInstanceName(CGObjectInstance * target);
+	si32 getUniqueInstanceNameCounter() const;
+	void setUniqueInstanceNameCounter(si32 value);
 
 	/// Generates new, unique numeric identifier that can be used for creation of a new object
 	ObjectInstanceID allocateUniqueInstanceID();
@@ -249,6 +256,9 @@ public:
 	/// Returns ID's of all towns present on map
 	const std::vector<ObjectInstanceID> & getAllTowns() const;
 
+	/// Returns ID's of all terrain patches present on map
+	const std::vector<ObjectInstanceID> & getTerrainPatches() const;
+
 	/// Sets the victory/loss condition objectives ??
 	void resolveHeroPlaceholderObjectives();
 	void checkForObjectives();
@@ -282,12 +292,15 @@ public:
 
 	void overrideGameSettings(const JsonNode & input);
 	void overrideGameSetting(EGameSettings option, const JsonNode & input);
+	void updateGameSettingsOverrides(const JsonNode & input);
+	JsonNode getGameSettingsOverrides() const;
 	const IGameSettings & getSettings() const;
 
 	void parseUidCounter();
 	static bool compareObjectBlitOrder(const CGObjectInstance * a, const CGObjectInstance * b);
 
 private:
+	void invalidateTerrainPatchIndex();
 
 	/// a 3-dimensional array of terrain tiles
 	MapTilesStorage<TerrainTile> terrain;

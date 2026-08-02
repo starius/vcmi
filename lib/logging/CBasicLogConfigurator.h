@@ -32,11 +32,10 @@ public:
 	/// Removes all targets from the global logger.
 	void deconfigure();
 
+	/// Converts a configured log level name to its enum value.
+	static ELogLevel::ELogLevel getLogLevel(const std::string & level);
 
 private:
-	// Gets ELogLevel enum from string. (Should be moved to CLogger as a separate function?)
-	// Throws: std::runtime_error
-	static ELogLevel::ELogLevel getLogLevel(const std::string & level);
 	// Gets EConsoleTextColor enum from strings. (Should be moved to CLogger as a separate function?)
 	// Throws: std::runtime_error
 	static EConsoleTextColor getConsoleColor(const std::string & colorName);

@@ -21,6 +21,7 @@
 #include "processors/PlayerMessageProcessor.h"
 #include "processors/TurnOrderProcessor.h"
 #include "queries/QueriesProcessor.h"
+#include "vgt/Integration.h"
 #include "queries/MapQueries.h"
 #include "queries/VisitQueries.h"
 
@@ -483,6 +484,8 @@ void CGameHandler::handleClientDisconnection(GameConnectionID connectionID, cons
 
 void CGameHandler::handleReceivedPack(GameConnectionID connection, CPackForServer & pack)
 {
+	vgt::onDecision(*this, pack);
+
 	//prepare struct informing that action was applied
 	auto sendPackageResponse = [&](bool successfullyApplied)
 	{
@@ -557,7 +560,11 @@ CGameHandler::CGameHandler(IGameServer & server)
 	queries->setListener(turnStartVisitScheduler.get());
 }
 
-CGameHandler::~CGameHandler() = default;
+CGameHandler::~CGameHandler()
+{
+	if(gs)
+		vgt::onGameClosing(*this);
+}
 
 ServerCallback * CGameHandler::spellcastEnvironment() const
 {
@@ -572,11 +579,13 @@ void CGameHandler::init(StartInfo *si, Load::ProgressAccumulator & progressTrack
 	randomizer = std::make_unique<GameRandomizer>(*gs);
 	if (requestedSeed != 0)
 		randomizer->setSeed(requestedSeed);
+	const int randomSeed = randomizer->getDefaultSeed();
 	logGlobal->info("Using random seed: %d", randomizer->getDefault().nextInt());
 	gs->preInit(LIBRARY);
 	logGlobal->info("Gamestate created!");
 	gs->init(&mapService, si, *randomizer, progressTracking);
 	logGlobal->info("Gamestate initialized!");
+	vgt::onGameInitialized(*this, randomSeed);
 
 	for (const auto & elem : gameState().players)
 		turnOrder->addPlayer(elem.first);
@@ -658,12 +667,14 @@ void CGameHandler::onAdvInterfaceReady(PlayerColor player)
 
 void CGameHandler::addStatistics(StatisticDataSet &stat) const
 {
+	const auto mapExploredRatios = Statistic::getMapExploredRatios(&gameState());
 	for (const auto & elem : gameState().players)
 	{
 		if (elem.first == PlayerColor::NEUTRAL || !elem.first.isValidPlayer())
 			continue;
 
-		auto data = StatisticDataSet::createEntry(&elem.second, &gameState(), *statistics);
+		auto data = StatisticDataSet::createEntry(
+			&elem.second, &gameState(), *statistics, mapExploredRatios.at(elem.first));
 
 		stat.add(data);
 	}
@@ -1652,6 +1663,15 @@ bool CGameHandler::responseStatistic(PlayerColor player)
 	return true;
 }
 
+void CGameHandler::saveToFile(const std::string & filename)
+{
+	CSaveFile save;
+	gameState().saveGame(save);
+	logGlobal->info("Saving server state");
+	save.save(*this);
+	save.write(filename);
+}
+
 void CGameHandler::save(const std::string & filename, PlayerColor playerToNotifyOnSuccess)
 {
 	logGlobal->info("Saving to %s", filename);
@@ -1670,11 +1690,10 @@ void CGameHandler::save(const std::string & filename, PlayerColor playerToNotify
 
 	try
 	{
-		CSaveFile save;
-		gameState().saveGame(save);
-		logGlobal->info("Saving server state");
-		save.save(*this);
-		save.write(*CResourceHandler::get("local")->getResourceName(savePath));
+		const std::string resolvedSavePath = CResourceHandler::get("local")->getResourceName(savePath)->string();
+		vgt::onBeforeGameSave(*this);
+		saveToFile(resolvedSavePath);
+		vgt::onAfterGameSave(*this, resolvedSavePath);
 
 		if(playerToNotifyOnSuccess.isValidPlayer())
 		{
@@ -1700,7 +1719,8 @@ void CGameHandler::load(const StartInfo &info)
 {
 	logGlobal->info("Loading from %s", info.mapname);
 
-	CLoadFile lf(*CResourceHandler::get()->getResourceName(ResourcePath(info.mapname, EResType::SAVEGAME)), gs.get());
+	const auto savePath = *CResourceHandler::get()->getResourceName(ResourcePath(info.mapname, EResType::SAVEGAME));
+	CLoadFile lf(savePath, gs.get());
 	gs = std::make_shared<CGameState>();
 	randomizer = std::make_unique<GameRandomizer>(*gs);
 	gs->loadGame(lf);
@@ -1710,6 +1730,7 @@ void CGameHandler::load(const StartInfo &info)
 
 	gs->preInit(LIBRARY);
 	gs->updateOnLoad(info);
+	vgt::onGameLoaded(*this, savePath.string());
 }
 
 bool CGameHandler::bulkSplitStack(SlotID slotSrc, ObjectInstanceID srcOwner, si32 howMany)

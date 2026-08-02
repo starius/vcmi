@@ -19,11 +19,13 @@
 #include "../mapObjects/MiscObjects.h"
 #include "../mapping/CMap.h"
 
+#include <tbb/blocked_range.h>
+#include <tbb/parallel_for.h>
+
 void NodeStorage::initialize(const PathfinderOptions & options, const IGameInfoCallback & gameInfo)
 {
 	//TODO: fix this code duplication with AINodeStorage::initialize, problem is to keep `resetTile` inline
 
-	int3 pos;
 	const PlayerColor player = out.hero->tempOwner;
 	const int3 sizes = gameInfo.getMapSize();
 	const auto & fow = gameInfo.getPlayerTeam(player)->fogOfWarMap;
@@ -32,31 +34,36 @@ void NodeStorage::initialize(const PathfinderOptions & options, const IGameInfoC
 	const bool useFlying = options.useFlying;
 	const bool useWaterWalking = options.useWaterWalking;
 
-	for(pos.z=0; pos.z < sizes.z; ++pos.z)
+	tbb::parallel_for(tbb::blocked_range<size_t>(0, sizes.x), [&](const tbb::blocked_range<size_t> & range)
 	{
-		for(pos.x=0; pos.x < sizes.x; ++pos.x)
+		int3 pos;
+		for(pos.z = 0; pos.z < sizes.z; ++pos.z)
 		{
-			for(pos.y=0; pos.y < sizes.y; ++pos.y)
+			for(pos.x = range.begin(); pos.x != range.end(); ++pos.x)
 			{
-				const TerrainTile * tile = gameInfo.getTile(pos);
-				resetTile(pos, ELayer::AVIATE, PathfinderUtil::evaluateAccessibility<ELayer::AVIATE>(pos, *tile, fow, player, gameInfo));
-				if(tile->isWater())
+				for(pos.y = 0; pos.y < sizes.y; ++pos.y)
 				{
-					resetTile(pos, ELayer::SAIL, PathfinderUtil::evaluateAccessibility<ELayer::SAIL>(pos, *tile, fow, player, gameInfo));
-					if(useFlying)
-						resetTile(pos, ELayer::AIR, PathfinderUtil::evaluateAccessibility<ELayer::AIR>(pos, *tile, fow, player, gameInfo));
-					if(useWaterWalking)
-						resetTile(pos, ELayer::WATER, PathfinderUtil::evaluateAccessibility<ELayer::WATER>(pos, *tile, fow, player, gameInfo));
-				}
-				if(tile->isLand())
-				{
-					resetTile(pos, ELayer::LAND, PathfinderUtil::evaluateAccessibility<ELayer::LAND>(pos, *tile, fow, player, gameInfo));
-					if(useFlying)
-						resetTile(pos, ELayer::AIR, PathfinderUtil::evaluateAccessibility<ELayer::AIR>(pos, *tile, fow, player, gameInfo));
+					const TerrainTile * tile = gameInfo.getTile(pos);
+					const bool isWater = tile->isWater();
+					resetTile(pos, ELayer::AVIATE, PathfinderUtil::evaluateAccessibility<ELayer::AVIATE>(pos, *tile, fow, player, gameInfo));
+					if(isWater)
+					{
+						resetTile(pos, ELayer::SAIL, PathfinderUtil::evaluateAccessibility<ELayer::SAIL>(pos, *tile, fow, player, gameInfo));
+						if(useFlying)
+							resetTile(pos, ELayer::AIR, PathfinderUtil::evaluateAccessibility<ELayer::AIR>(pos, *tile, fow, player, gameInfo));
+						if(useWaterWalking)
+							resetTile(pos, ELayer::WATER, PathfinderUtil::evaluateAccessibility<ELayer::WATER>(pos, *tile, fow, player, gameInfo));
+					}
+					else
+					{
+						resetTile(pos, ELayer::LAND, PathfinderUtil::evaluateAccessibility<ELayer::LAND>(pos, *tile, fow, player, gameInfo));
+						if(useFlying)
+							resetTile(pos, ELayer::AIR, PathfinderUtil::evaluateAccessibility<ELayer::AIR>(pos, *tile, fow, player, gameInfo));
+					}
 				}
 			}
 		}
-	}
+	});
 }
 
 void NodeStorage::calculateNeighbours(

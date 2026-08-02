@@ -232,6 +232,7 @@ public:
 	bool bulkMergeStacks(SlotID slotSrc, ObjectInstanceID srcOwner);
 	bool bulkSplitAndRebalanceStack(SlotID slotSrc, ObjectInstanceID srcOwner);
 	bool responseStatistic(PlayerColor player);
+	void saveToFile(const std::string & filename);
 	void save(const std::string &fname, PlayerColor playerToNotifyOnSuccess);
 	void load(const StartInfo &info);
 

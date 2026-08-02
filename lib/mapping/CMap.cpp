@@ -611,8 +611,20 @@ void CMap::generateUniqueInstanceName(CGObjectInstance * target)
 	target->instanceName = fmt.str();
 }
 
+si32 CMap::getUniqueInstanceNameCounter() const
+{
+	return uidCounter;
+}
+
+void CMap::setUniqueInstanceNameCounter(si32 value)
+{
+	uidCounter = value;
+}
+
 void CMap::addNewObject(std::shared_ptr<CGObjectInstance> obj)
 {
+	invalidateTerrainPatchIndex();
+
 	if (!obj->id.hasValue())
 		obj->id = ObjectInstanceID(objects.size());
 
@@ -674,6 +686,8 @@ bool CMap::adjustToMapBounds(CGObjectInstance * obj)
 
 std::shared_ptr<CGObjectInstance> CMap::removeObject(ObjectInstanceID oldObject)
 {
+	invalidateTerrainPatchIndex();
+
 	auto obj = objects.at(oldObject);
 
 	hideObject(obj.get());
@@ -715,6 +729,8 @@ std::shared_ptr<CGObjectInstance> CMap::removeObject(ObjectInstanceID oldObject)
 
 std::shared_ptr<CGObjectInstance> CMap::replaceObject(ObjectInstanceID oldObjectID, const std::shared_ptr<CGObjectInstance> & newObject)
 {
+	invalidateTerrainPatchIndex();
+
 	auto oldObject = objects.at(oldObjectID.getNum());
 
 	newObject->id = oldObjectID;
@@ -734,6 +750,8 @@ std::shared_ptr<CGObjectInstance> CMap::replaceObject(ObjectInstanceID oldObject
 
 std::shared_ptr<CGObjectInstance> CMap::eraseObject(ObjectInstanceID oldObjectID)
 {
+	invalidateTerrainPatchIndex();
+
 	auto oldObject = objects.at(oldObjectID.getNum());
 
 	instanceNames.erase(oldObject->instanceName);
@@ -875,6 +893,8 @@ CMapEditManager * CMap::getEditManager()
 
 void CMap::reindexObjects()
 {
+	invalidateTerrainPatchIndex();
+
 	// Only reindex at editor / RMG operations
 
 	auto oldIndex = objects;
@@ -935,6 +955,16 @@ void CMap::overrideGameSetting(EGameSettings option, const JsonNode & input)
 void CMap::overrideGameSettings(const JsonNode & input)
 {
 	return gameSettings->loadOverrides(input);
+}
+
+void CMap::updateGameSettingsOverrides(const JsonNode & input)
+{
+	return gameSettings->updateOverrides(input);
+}
+
+JsonNode CMap::getGameSettingsOverrides() const
+{
+	return gameSettings->getOverrides();
 }
 
 CArtifactInstance * CMap::createScroll(const SpellID & spellId)
@@ -1007,6 +1037,32 @@ const CArtifactInstance * CMap::getArtifactInstance(const ArtifactInstanceID & a
 const std::vector<ObjectInstanceID> & CMap::getAllTowns() const
 {
 	return towns;
+}
+
+const std::vector<ObjectInstanceID> & CMap::getTerrainPatches() const
+{
+	if(!terrainPatchIndexValid)
+	{
+		terrainPatches.clear();
+		for(const auto & object : objects)
+		{
+			if(object && object->isTile2Terrain())
+				terrainPatches.push_back(object->id);
+		}
+		terrainPatchIndexValid = true;
+	}
+
+	return terrainPatches;
+}
+
+void CMap::invalidateTerrainPatchIndex()
+{
+	terrainPatchIndexValid = false;
+}
+
+const MapTilesStorage<TerrainTile> & CMap::getTerrainTiles() const
+{
+	return terrain;
 }
 
 const std::vector<ObjectInstanceID> & CMap::getHeroesOnMap() const
@@ -1187,4 +1243,3 @@ void CMap::deserializeHeroPool(const std::vector<std::shared_ptr<CGHeroInstance>
 		if (hero)
 			heroesPool.at(hero->getHeroTypeID().getNum()) = hero;
 }
-

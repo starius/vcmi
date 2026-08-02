@@ -45,6 +45,7 @@ public:
 	void setTimerEnabled(PlayerColor player, bool enabled);
 	void setEndTurnAllowed(PlayerColor player, bool enabled);
 	void onEndTurn(PlayerColor player);
+	void setBattleTimerForReplay(PlayerColor player);
 
 	void prolongTimers(int durationMs);
 

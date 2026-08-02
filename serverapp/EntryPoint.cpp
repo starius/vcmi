@@ -12,6 +12,7 @@
 #include <vstd/DateUtils.h>
 
 #include "../server/CVCMIServer.h"
+#include "../server/vgt/CommandLine.h"
 
 #include "../lib/CConsoleHandler.h"
 #include "../lib/logging/CBasicLogConfigurator.h"
@@ -237,6 +238,7 @@ static void handleCommandOptions(int argc, const char * argv[], boost::program_o
 	("export-lua-docs", boost::program_options::value<std::string>(), "Export Lua scripting API documentation to specified directory")
 	("port", boost::program_options::value<ui16>(), "port at which server will listen to connections from client")
 	("lobby", "start server in lobby mode in which server connects to a global lobby");
+	vgt::addCommandLineOptions(opts);
 
 	if(argc > 1)
 	{
@@ -301,8 +303,16 @@ int main(int argc, const char * argv[])
 	LIBRARY = new GameLibrary;
 	LIBRARY->initializeFilesystem(false);
 	logConfigurator.configure();
+	vgt::configureLogLevel(opts);
 
 	LIBRARY->initializeLibrary();
+
+	if(const auto vgtResult = vgt::handleCommandLine(opts))
+	{
+		logConfigurator.deconfigure();
+		delete LIBRARY;
+		return *vgtResult;
+	}
 
 	if(!opts.count("dummy-run"))
 	{

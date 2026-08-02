@@ -22,10 +22,120 @@
 #include "../mapObjects/MiscObjects.h"
 #include "../mapping/CMap.h"
 #include "../entities/building/CBuilding.h"
+#include "../json/JsonNode.h"
 #include "../serializer/JsonDeserializer.h"
+#include "../serializer/JsonSerializer.h"
 #include "../serializer/JsonUpdater.h"
 #include "../entities/ResourceTypeHandler.h"
 
+namespace
+{
+std::string vgtExactFloat(float value)
+{
+	std::ostringstream stream;
+	stream << std::hexfloat << value;
+	return stream.str();
+}
+
+const JsonNode * vgtFindField(const JsonNode & node, const char * field)
+{
+	if(!node.isStruct())
+		return nullptr;
+
+	const auto iter = node.Struct().find(field);
+	if(iter == node.Struct().end() || iter->second.isNull())
+		return nullptr;
+	return &iter->second;
+}
+
+float vgtParseExactFloat(const JsonNode & node, const char * field)
+{
+	const auto * child = vgtFindField(node, field);
+	if(!child)
+		return 0.0f;
+
+	if(!child->isString())
+		throw std::runtime_error(std::string("VGT statistics exact float field is not a string: ") + field);
+
+	size_t parsed = 0;
+	float result = std::stof(child->String(), &parsed);
+	if(parsed != child->String().size())
+		throw std::runtime_error(std::string("Unable to parse VGT statistics exact float field: ") + field);
+	return result;
+}
+
+bool hasMines(const std::map<EGameResID, int> & mines)
+{
+	for(const auto & [resource, count] : mines)
+	{
+		if(count != 0)
+			return true;
+	}
+	return false;
+}
+
+struct PlayerStatisticSnapshot
+{
+	int numberHeroes = 0;
+	int numberTowns = 0;
+	int numberArtifacts = 0;
+	int numberDwellings = 0;
+	si64 armyStrength = 0;
+	si64 totalExperience = 0;
+	int income = 0;
+	float townBuiltRatio = 0;
+	bool hasGrail = false;
+	std::map<EGameResID, int> numMines;
+	const CGHeroInstance * bestHero = nullptr;
+
+	explicit PlayerStatisticSnapshot(const PlayerState * player)
+	{
+		for(const auto & resource : LIBRARY->resourceTypeHandler->getAllObjects())
+			numMines[resource] = 0;
+
+		const auto heroes = player->getHeroes();
+		numberHeroes = static_cast<int>(heroes.size());
+		for(const auto * hero : heroes)
+		{
+			numberArtifacts += hero->artifactsInBackpack.size() + hero->artifactsWorn.size();
+			armyStrength += hero->getArmyStrength();
+			totalExperience += hero->exp;
+			hasGrail |= hero->hasArt(ArtifactID::GRAIL);
+			if(!bestHero || hero->exp > bestHero->exp)
+				bestHero = hero;
+		}
+
+		float built = 0;
+		float total = 0;
+		const auto towns = player->getTowns();
+		numberTowns = static_cast<int>(towns.size());
+		for(const auto * town : towns)
+		{
+			hasGrail |= town->hasBuilt(BuildingID::GRAIL);
+			built += town->getBuildings().size();
+			for(const auto & building : town->getTown()->buildings)
+				if(!town->forbiddenBuildings.count(building.first))
+					total += 1;
+		}
+		if(total >= 1)
+			townBuiltRatio = built / total;
+
+		for(const auto * object : player->getOwnedObjects())
+		{
+			const auto * ownable = object->asOwnable();
+			if(!ownable->providedCreatures().empty())
+				++numberDwellings;
+			income += ownable->dailyIncome()[EGameResID::GOLD];
+
+			if(object->ID == Obj::MINE || object->ID == Obj::ABANDONED_MINE)
+			{
+				const auto * mine = static_cast<const CGMine *>(object);
+				numMines[mine->producedResource]++;
+			}
+		}
+	}
+};
+}
 
 void StatisticDataSet::add(StatisticDataSetEntry entry)
 {
@@ -62,17 +172,20 @@ void StatisticDataSet::filterByTeam(const TeamState * team)
 	}), data.end());
 }
 
-StatisticDataSetEntry StatisticDataSet::createEntry(const PlayerState * ps, const CGameState * gs, const StatisticDataSet & accumulatedData)
+StatisticDataSetEntry StatisticDataSet::createEntry(const PlayerState * ps, const CGameState * gs,
+	const StatisticDataSet & accumulatedData, float mapExploredRatio)
 {
 	StatisticDataSetEntry data;
+	const PlayerStatisticSnapshot snapshot(ps);
 
-	HighScoreParameter param = HighScore::prepareHighScores(gs, ps->color, false);
+	HighScoreParameter param = HighScore::prepareHighScores(
+		gs, ps->color, false, snapshot.numberTowns, snapshot.hasGrail);
 	HighScoreCalculation scenarioHighScores;
 	scenarioHighScores.parameters.push_back(param);
 	scenarioHighScores.isCampaign = false;
 
 	data.map = gs->getMap().name.toString();
-	data.timestamp = std::time(nullptr);
+	data.timestamp = gs->getStartInfo()->startTime;
 	data.day = gs->getCalendar().getCurrentDay();
 	data.player = ps->color;
 	data.playerName = gs->getStartInfo()->playerInfos.at(ps->color).name;
@@ -80,32 +193,34 @@ StatisticDataSetEntry StatisticDataSet::createEntry(const PlayerState * ps, cons
 	data.isHuman = ps->isHuman();
 	data.status = ps->status;
 	data.resources = ps->resources;
-	data.numberHeroes = ps->getHeroes().size();
-	data.numberTowns = gs->howManyTowns(ps->color);
-	data.numberArtifacts = Statistic::getNumberOfArts(ps);
-	data.numberDwellings = Statistic::getNumberOfDwellings(ps);
-	data.armyStrength = Statistic::getArmyStrength(ps, true);
-	data.totalExperience = Statistic::getTotalExperience(ps);
-	data.income = Statistic::getIncome(gs, ps);
-	data.mapExploredRatio = Statistic::getMapExploredRatio(gs, ps->color);
+	data.numberHeroes = snapshot.numberHeroes;
+	data.numberTowns = snapshot.numberTowns;
+	data.numberArtifacts = snapshot.numberArtifacts;
+	data.numberDwellings = snapshot.numberDwellings;
+	data.armyStrength = snapshot.armyStrength;
+	data.totalExperience = snapshot.totalExperience;
+	data.income = snapshot.income;
+	data.mapExploredRatio = mapExploredRatio;
 	data.obeliskVisitedRatio = Statistic::getObeliskVisitedRatio(gs, ps->team);
-	data.townBuiltRatio = Statistic::getTownBuiltRatio(ps);
+	data.townBuiltRatio = snapshot.townBuiltRatio;
 	data.hasGrail = param.hasGrail;
-	data.numMines = Statistic::getNumMines(gs, ps);
+	data.numMines = snapshot.numMines;
 	data.score = scenarioHighScores.calculate().total;
-	data.maxHeroLevel = Statistic::findBestHero(gs, ps->color) ? Statistic::findBestHero(gs, ps->color)->level : 0;
-	data.numBattlesNeutral = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).numBattlesNeutral : 0;
-	data.numBattlesPlayer = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).numBattlesPlayer : 0;
-	data.numWinBattlesNeutral = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).numWinBattlesNeutral : 0;
-	data.numWinBattlesPlayer = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).numWinBattlesPlayer : 0;
-	data.numHeroSurrendered = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).numHeroSurrendered : 0;
-	data.numHeroEscaped = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).numHeroEscaped : 0;
-	data.spentResourcesForArmy = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).spentResourcesForArmy : TResources();
-	data.spentResourcesForBuildings = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).spentResourcesForBuildings : TResources();
-	data.tradeVolume = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).tradeVolume : TResources();
-	data.eventCapturedTown = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).lastCapturedTownDay == data.day : false;
-	data.eventDefeatedStrongestHero = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).lastDefeatedStrongestHeroDay == data.day : false;
-	data.movementPointsUsed = accumulatedData.accumulatedValues.count(ps->color) ? accumulatedData.accumulatedValues.at(ps->color).movementPointsUsed : 0;
+	data.maxHeroLevel = snapshot.bestHero ? snapshot.bestHero->level : 0;
+	const auto accumulatedIt = accumulatedData.accumulatedValues.find(ps->color);
+	const auto * accumulated = accumulatedIt != accumulatedData.accumulatedValues.end() ? &accumulatedIt->second : nullptr;
+	data.numBattlesNeutral = accumulated ? accumulated->numBattlesNeutral : 0;
+	data.numBattlesPlayer = accumulated ? accumulated->numBattlesPlayer : 0;
+	data.numWinBattlesNeutral = accumulated ? accumulated->numWinBattlesNeutral : 0;
+	data.numWinBattlesPlayer = accumulated ? accumulated->numWinBattlesPlayer : 0;
+	data.numHeroSurrendered = accumulated ? accumulated->numHeroSurrendered : 0;
+	data.numHeroEscaped = accumulated ? accumulated->numHeroEscaped : 0;
+	data.spentResourcesForArmy = accumulated ? accumulated->spentResourcesForArmy : TResources();
+	data.spentResourcesForBuildings = accumulated ? accumulated->spentResourcesForBuildings : TResources();
+	data.tradeVolume = accumulated ? accumulated->tradeVolume : TResources();
+	data.eventCapturedTown = accumulated && accumulated->lastCapturedTownDay == data.day;
+	data.eventDefeatedStrongestHero = accumulated && accumulated->lastDefeatedStrongestHeroDay == data.day;
+	data.movementPointsUsed = accumulated ? accumulated->movementPointsUsed : 0;
 
 	return data;
 }
@@ -121,65 +236,139 @@ void StatisticDataSetEntry::serializeJson(JsonSerializeFormat & handler)
 	handler.serializeBool("isHuman", isHuman);
 	handler.serializeEnum("status", status, {"ingame", "loser", "winner"});
 	resources.serializeJson(handler, "resources");
-	handler.serializeInt("numberHeroes", numberHeroes);
-	handler.serializeInt("numberTowns", numberTowns);
-	handler.serializeInt("numberArtifacts", numberArtifacts);
-	handler.serializeInt("numberDwellings", numberDwellings);
-	handler.serializeInt("armyStrength", armyStrength);
-	handler.serializeInt("totalExperience", totalExperience);
-	handler.serializeInt("income", income);
-	handler.serializeFloat("mapExploredRatio", mapExploredRatio);
-	handler.serializeFloat("obeliskVisitedRatio", obeliskVisitedRatio);
-	handler.serializeFloat("townBuiltRatio", townBuiltRatio);
+	handler.serializeInt("numberHeroes", numberHeroes, 0);
+	handler.serializeInt("numberTowns", numberTowns, 0);
+	handler.serializeInt("numberArtifacts", numberArtifacts, 0);
+	handler.serializeInt("numberDwellings", numberDwellings, 0);
+	handler.serializeInt("armyStrength", armyStrength, 0);
+	handler.serializeInt("totalExperience", totalExperience, 0);
+	handler.serializeInt("income", income, 0);
+	handler.serializeFloat("mapExploredRatio", mapExploredRatio, 0.0);
+	handler.serializeFloat("obeliskVisitedRatio", obeliskVisitedRatio, 0.0);
+	handler.serializeFloat("townBuiltRatio", townBuiltRatio, 0.0);
 	handler.serializeBool("hasGrail", hasGrail);
+	if(!handler.saving || hasMines(numMines))
 	{
 		auto zonesData = handler.enterStruct("numMines");
 		for(auto & idx : LIBRARY->resourceTypeHandler->getAllObjects())
 			handler.serializeInt(idx.toResource()->getJsonKey(), numMines[idx], 0);
 	}
-	handler.serializeInt("score", score);
-	handler.serializeInt("maxHeroLevel", maxHeroLevel);
-	handler.serializeInt("numBattlesNeutral", numBattlesNeutral);
-	handler.serializeInt("numBattlesPlayer", numBattlesPlayer);
-	handler.serializeInt("numWinBattlesNeutral", numWinBattlesNeutral);
-	handler.serializeInt("numWinBattlesPlayer", numWinBattlesPlayer);
-	handler.serializeInt("numHeroSurrendered", numHeroSurrendered);
-	handler.serializeInt("numHeroEscaped", numHeroEscaped);
+	handler.serializeInt("score", score, 0);
+	handler.serializeInt("maxHeroLevel", maxHeroLevel, 0);
+	handler.serializeInt("numBattlesNeutral", numBattlesNeutral, 0);
+	handler.serializeInt("numBattlesPlayer", numBattlesPlayer, 0);
+	handler.serializeInt("numWinBattlesNeutral", numWinBattlesNeutral, 0);
+	handler.serializeInt("numWinBattlesPlayer", numWinBattlesPlayer, 0);
+	handler.serializeInt("numHeroSurrendered", numHeroSurrendered, 0);
+	handler.serializeInt("numHeroEscaped", numHeroEscaped, 0);
 	spentResourcesForArmy.serializeJson(handler, "spentResourcesForArmy");
 	spentResourcesForBuildings.serializeJson(handler, "spentResourcesForBuildings");
 	tradeVolume.serializeJson(handler, "tradeVolume");
 	handler.serializeBool("eventCapturedTown", eventCapturedTown);
 	handler.serializeBool("eventDefeatedStrongestHero", eventDefeatedStrongestHero);
-	handler.serializeInt("movementPointsUsed", movementPointsUsed);
+	handler.serializeInt("movementPointsUsed", movementPointsUsed, 0);
 }
 
 void StatisticDataSet::PlayerAccumulatedValueStorage::serializeJson(JsonSerializeFormat & handler)
 {
-	handler.serializeInt("numBattlesNeutral", numBattlesNeutral);
-	handler.serializeInt("numBattlesPlayer", numBattlesPlayer);
-	handler.serializeInt("numWinBattlesNeutral", numWinBattlesNeutral);
-	handler.serializeInt("numWinBattlesPlayer", numWinBattlesPlayer);
-	handler.serializeInt("numHeroSurrendered", numHeroSurrendered);
-	handler.serializeInt("numHeroEscaped", numHeroEscaped);
+	handler.serializeInt("numBattlesNeutral", numBattlesNeutral, 0);
+	handler.serializeInt("numBattlesPlayer", numBattlesPlayer, 0);
+	handler.serializeInt("numWinBattlesNeutral", numWinBattlesNeutral, 0);
+	handler.serializeInt("numWinBattlesPlayer", numWinBattlesPlayer, 0);
+	handler.serializeInt("numHeroSurrendered", numHeroSurrendered, 0);
+	handler.serializeInt("numHeroEscaped", numHeroEscaped, 0);
 	spentResourcesForArmy.serializeJson(handler, "spentResourcesForArmy");
 	spentResourcesForBuildings.serializeJson(handler, "spentResourcesForBuildings");
 	tradeVolume.serializeJson(handler, "tradeVolume");
-	handler.serializeInt("movementPointsUsed", movementPointsUsed);
-	handler.serializeInt("lastCapturedTownDay", lastCapturedTownDay);
-	handler.serializeInt("lastDefeatedStrongestHeroDay", lastDefeatedStrongestHeroDay);
+	handler.serializeInt("movementPointsUsed", movementPointsUsed, 0);
+	handler.serializeInt("lastCapturedTownDay", lastCapturedTownDay, 0);
+	handler.serializeInt("lastDefeatedStrongestHeroDay", lastDefeatedStrongestHeroDay, 0);
 }
 
 void StatisticDataSet::serializeJson(JsonSerializeFormat & handler)
 {
+	if(!handler.saving || !data.empty())
 	{
 		auto eventsHandler = handler.enterArray("data");
 		eventsHandler.syncSize(data, JsonNode::JsonType::DATA_VECTOR);
 		eventsHandler.serializeStruct(data);
 	}
+	if(!handler.saving || !accumulatedValues.empty())
 	{
 		auto eventsHandler = handler.enterStruct("accumulatedValues");
 		for(auto & val : accumulatedValues)
 			eventsHandler->serializeStruct(GameConstants::PLAYER_COLOR_NAMES[val.first], val.second);
+	}
+}
+
+JsonNode StatisticDataSet::toVGTJson() const
+{
+	JsonNode result;
+	JsonSerializer handler(nullptr, result);
+	const_cast<StatisticDataSet *>(this)->serializeJson(handler);
+
+	JsonNode exactFloats;
+	exactFloats.Vector();
+	bool hasExactFloats = false;
+	for(const auto & entry : data)
+	{
+		JsonNode exactEntry;
+		if(entry.mapExploredRatio != 0.0f)
+			exactEntry["mapExploredRatio"].String() = vgtExactFloat(entry.mapExploredRatio);
+		if(entry.obeliskVisitedRatio != 0.0f)
+			exactEntry["obeliskVisitedRatio"].String() = vgtExactFloat(entry.obeliskVisitedRatio);
+		if(entry.townBuiltRatio != 0.0f)
+			exactEntry["townBuiltRatio"].String() = vgtExactFloat(entry.townBuiltRatio);
+		hasExactFloats = hasExactFloats || !exactEntry.Struct().empty();
+		exactFloats.Vector().push_back(exactEntry);
+	}
+	if(hasExactFloats)
+		result["exactFloats"] = exactFloats;
+	return result;
+}
+
+void StatisticDataSet::loadVGTJson(const JsonNode & node)
+{
+	data.clear();
+	accumulatedValues.clear();
+
+	JsonDeserializer handler(nullptr, node);
+	serializeJson(handler);
+
+	if(!node.isStruct())
+		throw std::runtime_error("VGT statistics state must be a mapping");
+
+	const auto accumulatedIter = node.Struct().find("accumulatedValues");
+	if(accumulatedIter == node.Struct().end() || accumulatedIter->second.isNull())
+		return;
+
+	const auto & accumulatedNode = accumulatedIter->second;
+	if(!accumulatedNode.isStruct())
+		throw std::runtime_error("VGT statistics accumulatedValues field must be a mapping");
+
+	for(const auto & entry : accumulatedNode.Struct())
+	{
+		PlayerAccumulatedValueStorage value{};
+		JsonDeserializer valueHandler(nullptr, entry.second);
+		value.serializeJson(valueHandler);
+		accumulatedValues[PlayerColor(PlayerColor::decode(entry.first))] = value;
+	}
+
+	const auto exactFloatsIter = node.Struct().find("exactFloats");
+	if(exactFloatsIter == node.Struct().end() || exactFloatsIter->second.isNull())
+		return;
+
+	const auto & exactFloats = exactFloatsIter->second;
+	if(!exactFloats.isVector())
+		throw std::runtime_error("VGT statistics exactFloats field must be a list");
+	if(exactFloats.Vector().size() != data.size())
+		throw std::runtime_error("VGT statistics exactFloats size does not match data size");
+
+	for(size_t index = 0; index < data.size(); ++index)
+	{
+		data[index].mapExploredRatio = vgtParseExactFloat(exactFloats.Vector()[index], "mapExploredRatio");
+		data[index].obeliskVisitedRatio = vgtParseExactFloat(exactFloats.Vector()[index], "obeliskVisitedRatio");
+		data[index].townBuiltRatio = vgtParseExactFloat(exactFloats.Vector()[index], "townBuiltRatio");
 	}
 }
 
@@ -349,26 +538,43 @@ int Statistic::getIncome(const CGameState * gs, const PlayerState * ps)
 	return totalIncome;
 }
 
-float Statistic::getMapExploredRatio(const CGameState * gs, PlayerColor player)
+std::map<PlayerColor, float> Statistic::getMapExploredRatios(const CGameState * gs)
 {
-	float visible = 0.0;
-	float numTiles = 0.0;
+	struct PlayerVisibility
+	{
+		PlayerColor player;
+		MapTilesStorage<uint8_t>::const_iterator current;
+		size_t visible = 0;
+	};
 
-	for(int layer = 0; layer < gs->getMap().levels(); layer++)
-		for(int y = 0; y < gs->getMap().height; ++y)
-			for(int x = 0; x < gs->getMap().width; ++x)
-			{
-				TerrainTile tile = gs->getMap().getTile(int3(x, y, layer));
+	std::vector<PlayerVisibility> visibility;
+	for(const auto & playerState : gs->players)
+	{
+		const auto player = playerState.first;
+		if(player == PlayerColor::NEUTRAL || !player.isValidPlayer())
+			continue;
+		const auto & fogOfWar = gs->getPlayerTeam(player)->fogOfWarMap;
+		visibility.push_back({player, fogOfWar.begin()});
+	}
 
-				if(tile.blocked() && !tile.visitable())
-					continue;
+	size_t numTiles = 0;
+	for(const auto & tile : gs->getMap().getTerrainTiles())
+	{
+		const bool explorable = !tile.blocked() || tile.visitable();
+		if(explorable)
+			numTiles++;
+		for(auto & player : visibility)
+		{
+			if(explorable && *player.current)
+				player.visible++;
+			player.current++;
+		}
+	}
 
-				if(gs->isVisibleFor(int3(x, y, layer), player))
-					visible++;
-				numTiles++;
-			}
-	
-	return visible / numTiles;
+	std::map<PlayerColor, float> result;
+	for(const auto & player : visibility)
+		result[player.player] = static_cast<float>(player.visible) / static_cast<float>(numTiles);
+	return result;
 }
 
 const CGHeroInstance * Statistic::findBestHero(const CGameState * gs, const PlayerColor & color)

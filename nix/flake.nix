@@ -41,6 +41,13 @@
           generator = pkgs.ninja;
           inherit src;
         };
+        packages.vgt = import ./default.nix {
+          inherit pkgs;
+          generator = pkgs.ninja;
+          inherit src;
+          discord = false;
+          vgt = true;
+        };
         formatter = pkgs.alejandra;
       };
     };

@@ -43,6 +43,8 @@ class DLL_LINKAGE HighScore
 {
 public:
 	static HighScoreParameter prepareHighScores(const CGameState * gs, PlayerColor player, bool victory);
+	static HighScoreParameter prepareHighScores(
+		const CGameState * gs, PlayerColor player, bool victory, int townAmount, bool hasGrail);
 };
 
 class DLL_LINKAGE HighScoreCalculation

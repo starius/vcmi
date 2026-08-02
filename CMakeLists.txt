@@ -49,6 +49,7 @@ option(ENABLE_VIDEO "Enable video support using ffmpeg" ON)
 option(ENABLE_TRANSLATIONS "Enable generation of translations for launcher and editor" ON)
 option(ENABLE_MINIMAL_LIB "Build only core parts of vcmi library that are required for game lobby" OFF)
 option(ENABLE_GOLDMASTER "Build in public release mode in which some debug routines are disabled" OFF)
+option(ENABLE_VGT "Enable VGT transcript recording and replay tools" OFF)
 
 # AI libraries. Empty AI is always on
 

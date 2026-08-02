@@ -16,6 +16,7 @@ class PlayerState;
 class CGameState;
 class CGHeroInstance;
 class CGMine;
+class JsonNode;
 struct TeamState;
 
 struct DLL_LINKAGE StatisticDataSetEntry
@@ -102,11 +103,14 @@ class DLL_LINKAGE StatisticDataSet
 {
 public:
 	void add(StatisticDataSetEntry entry);
-	static StatisticDataSetEntry createEntry(const PlayerState * ps, const CGameState * gs, const StatisticDataSet & accumulatedData);
+	static StatisticDataSetEntry createEntry(const PlayerState * ps, const CGameState * gs,
+		const StatisticDataSet & accumulatedData, float mapExploredRatio);
 	std::string toCsv(std::string sep) const;
 	std::string writeCsv() const;
 
 	void serializeJson(JsonSerializeFormat & handler);
+	JsonNode toVGTJson() const;
+	void loadVGTJson(const JsonNode & node);
 
 	struct PlayerAccumulatedValueStorage // holds some actual values needed for stats
 	{
@@ -167,7 +171,7 @@ public:
 	static si64 getArmyStrength(const PlayerState * ps, bool withTownGarrison = false);
 	static si64 getTotalExperience(const PlayerState * ps);
 	static int getIncome(const CGameState * gs, const PlayerState * ps);
-	static float getMapExploredRatio(const CGameState * gs, PlayerColor player);
+	static std::map<PlayerColor, float> getMapExploredRatios(const CGameState * gs);
 	static const CGHeroInstance * findBestHero(const CGameState * gs, const PlayerColor & color);
 	static std::vector<std::vector<PlayerColor>> getRank(std::vector<std::pair<PlayerColor, si64>> stats);
 	static int getObeliskVisited(const CGameState * gs, const TeamID & t);

@@ -13,6 +13,7 @@
 
 enum class TavernHeroSlot : int8_t;
 enum class TavernSlotRole : int8_t;
+class JsonNode;
 class PlayerColor;
 class CGHeroInstance;
 class HeroTypeID;
@@ -58,6 +59,8 @@ public:
 
 	/// Incoming net pack handling
 	bool hireHero(const ObjectInstanceID & objectID, const HeroTypeID & hid, const PlayerColor & player, const HeroTypeID & nextHero);
+	JsonNode toVGTJson() const;
+	void loadVGTJson(const JsonNode & node);
 
 	template <typename Handler> void serialize(Handler &h)
 	{

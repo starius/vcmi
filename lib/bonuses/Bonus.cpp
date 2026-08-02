@@ -119,7 +119,12 @@ JsonNode Bonus::toJsonNode() const
 	if(!stacking.empty())
 		root["stacking"].String() = stacking;
 	if(!description.empty())
+	{
 		root["description"].String() = description.toString();
+		description.jsonSerialize(root["descriptionMeta"]);
+	}
+	if(!customIconPath.empty())
+		root["icon"].String() = customIconPath.getOriginalName();
 	if(effectRange != BonusLimitEffect::NO_LIMIT)
 		root["effectRange"].String() = vstd::findKey(bonusLimitEffect, effectRange);
 	if(duration != BonusDuration::PERMANENT)
@@ -130,6 +135,8 @@ JsonNode Bonus::toJsonNode() const
 		root["limiters"] = limiter->toJsonNode();
 	if(updater)
 		root["updater"] = updater->toJsonNode();
+	if(propagationUpdater)
+		root["propagationUpdater"] = propagationUpdater->toJsonNode();
 	if(propagator)
 		root["propagator"].String() = vstd::findKey(bonusPropagatorMap, propagator);
 	if(hidden)

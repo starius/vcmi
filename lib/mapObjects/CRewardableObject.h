@@ -76,6 +76,11 @@ public:
 
 	void initializeGuards();
 	
+	bool isOnceVisitableObjectCleared() const
+	{
+		return onceVisitableObjectCleared;
+	}
+
 	void setPropertyDer(ObjProperty what, ObjPropertyID identifier) override;
 
 	CRewardableObject(IGameInfoCallback *cb);

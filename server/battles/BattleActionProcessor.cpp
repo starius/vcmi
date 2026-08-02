@@ -39,6 +39,26 @@ BattleActionProcessor::BattleActionProcessor(BattleProcessor * owner, CGameHandl
 {
 }
 
+void BattleActionProcessor::orderSecondaryTargets(std::vector<const CStack *> & targets) const
+{
+	if(secondaryTargetOrder.empty() || targets.size() < 2)
+		return;
+
+	std::map<uint32_t, size_t> priority;
+	for(size_t index = 0; index < secondaryTargetOrder.size(); ++index)
+		priority.try_emplace(secondaryTargetOrder[index], index);
+	std::stable_sort(targets.begin(), targets.end(), [&priority](const CStack * left, const CStack * right)
+	{
+		const auto leftPriority = priority.find(left->unitId());
+		const auto rightPriority = priority.find(right->unitId());
+		if(leftPriority == priority.end())
+			return false;
+		if(rightPriority == priority.end())
+			return true;
+		return leftPriority->second < rightPriority->second;
+	});
+}
+
 bool BattleActionProcessor::doEmptyAction(const CBattleInfoCallback & battle, const BattleAction & ba)
 {
 	return true;
@@ -1083,7 +1103,9 @@ void BattleActionProcessor::makeAttack(const CBattleInfoCallback & battle, const
 		applyBattleEffects(battle, bat, attackerState, fireShield, defender, healInfo, distance, false);
 
 	//multiple-hex normal attack
-	const auto & [attackedCreatures, useCustomAnimation] = battle.getAttackedCreatures(attacker, targetHex, bat.shot()); //creatures other than primary target
+	const auto & [attackedCreatureSet, useCustomAnimation] = battle.getAttackedCreatures(attacker, targetHex, bat.shot()); //creatures other than primary target
+	std::vector<const CStack *> attackedCreatures(attackedCreatureSet.begin(), attackedCreatureSet.end());
+	orderSecondaryTargets(attackedCreatures);
 	for(const CStack * stack : attackedCreatures)
 	{
 		if(stack != defender && stack->alive()) //do not hit same stack twice
@@ -1114,6 +1136,7 @@ void BattleActionProcessor::makeAttack(const CBattleInfoCallback & battle, const
 		event.setSpellLevel(bonus->val);
 
 		auto affectedStacks = spell->battleMechanics(&event)->getAffectedStacks(target);
+		orderSecondaryTargets(affectedStacks);
 
 		//TODO: get exact attacked hex for defender
 
@@ -1751,6 +1774,26 @@ bool BattleActionProcessor::makePlayerBattleAction(const CBattleInfoCallback & b
 	}
 
 	return makeBattleActionImpl(battle, ba);
+}
+
+bool BattleActionProcessor::makePlayerBattleAction(
+	const CBattleInfoCallback & battle,
+	PlayerColor player,
+	const BattleAction & ba,
+	const std::vector<uint32_t> & orderedSecondaryTargets)
+{
+	auto previousOrder = std::exchange(secondaryTargetOrder, orderedSecondaryTargets);
+	try
+	{
+		const bool result = makePlayerBattleAction(battle, player, ba);
+		secondaryTargetOrder = std::move(previousOrder);
+		return result;
+	}
+	catch(...)
+	{
+		secondaryTargetOrder = std::move(previousOrder);
+		throw;
+	}
 }
 
 void BattleActionProcessor::processBattleEventTriggers(const CBattleInfoCallback & battle, CombatEventType event, const CStack * target, const CStack * secondary)

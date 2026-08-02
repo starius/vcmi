@@ -73,6 +73,9 @@
 #include <vcmi/scripting/Service.h>
 #include <vstd/RNG.h>
 
+#include <fstream>
+#include <iterator>
+
 std::shared_mutex CGameState::mutex;
 
 const Services * GameStateEnvironment::services() const
@@ -301,6 +304,15 @@ void CGameState::updateOnLoad(const StartInfo & si)
 
 void CGameState::initNewGame(const IMapService * mapService, vstd::RNG & randomGenerator, bool allowSavingRandomMap, Load::ProgressAccumulator & progressTracking)
 {
+	if(scenarioOps->createRandomMap() && !scenarioOps->fileURI.empty() && scenarioOps->fileURI != "random-map")
+	{
+		randomGenerator.nextInt();
+		logGlobal->info("Open generated map file: %s", scenarioOps->mapname);
+		const ResourcePath mapURI(scenarioOps->mapname, EResType::MAP);
+		map = mapService->loadMap(mapURI, this);
+		return;
+	}
+
 	if(scenarioOps->createRandomMap())
 	{
 		logGlobal->info("Create random map.");
@@ -352,6 +364,20 @@ void CGameState::initNewGame(const IMapService * mapService, vstd::RNG & randomG
 				map->name.appendRawString(boost::str(boost::format(" %s") % dt));
 
 				mapService->saveMap(map, fullPath);
+				scenarioOps->fileURI = "Maps/RandomMaps/" + fileName;
+				scenarioOps->mapname = scenarioOps->fileURI;
+
+				std::ifstream savedMap(fullPath.string(), std::ios::binary);
+				if(!savedMap)
+					throw std::runtime_error("Unable to reopen saved random map");
+				const std::string savedMapData((std::istreambuf_iterator<char>(savedMap)), {});
+				map = mapService->loadMap(
+					reinterpret_cast<const uint8_t *>(savedMapData.data()),
+					static_cast<int>(savedMapData.size()),
+					scenarioOps->mapname,
+					"",
+					"",
+					this);
 
 				logGlobal->info("Random map has been saved to:");
 				logGlobal->info(fullPath.string());
@@ -1089,13 +1115,15 @@ BattleField CGameState::battleGetBattlefieldType(int3 tile, vstd::RNG & randomGe
 
 	ObjectInstanceID topObjectID = t.visitableObjects.front();
 	const CGObjectInstance * topObject = getObjInstance(topObjectID);
-	if(topObject && topObject->getBattlefield() != BattleField::NONE)
-	{
-		return topObject->getBattlefield();
-	}
+	const auto objectBattlefield = topObject ? topObject->getBattlefield() : BattleField::NONE;
+	if(objectBattlefield != BattleField::NONE)
+		return objectBattlefield;
 
-	for(auto & obj : map->getObjects<CGTerrainPatch>())
+	for(const auto & objectID : map->getTerrainPatches())
 	{
+		const auto * obj = getObjInstance(objectID);
+		assert(obj);
+
 		//look only for magical terrain-like objects covering given tile
 		if(!obj->coveringAt(tile))
 			continue;
@@ -1607,6 +1635,7 @@ void CGameState::obtainPlayersStats(SThievesGuildInfo & tgi, int level) const
 
 void CGameState::buildBonusSystemTree()
 {
+	CBonusSystemNode::InvalidationBatch invalidationBatch;
 	buildGlobalTeamPlayerTree();
 	for(auto & armed : map->getObjects<CGObjectInstance>())
 		armed->attachToBonusSystem(*this);
@@ -1616,12 +1645,15 @@ void CGameState::restoreBonusSystemTree()
 {
 	heroesPool->setGameState(this);
 
-	buildGlobalTeamPlayerTree();
-	for(auto & armed : map->getObjects<CGObjectInstance>())
-		armed->restoreBonusSystem(*this);
+	{
+		CBonusSystemNode::InvalidationBatch invalidationBatch;
+		buildGlobalTeamPlayerTree();
+		for(auto & armed : map->getObjects<CGObjectInstance>())
+			armed->restoreBonusSystem(*this);
 
-	for(auto & art : map->getArtifacts())
-		art->attachToBonusSystem(*this);
+		for(auto & art : map->getArtifacts())
+			art->attachToBonusSystem(*this);
+	}
 
 	for(auto & heroID : map->getHeroesInPool())
 		map->tryGetFromHeroPool(heroID)->artDeserializationFix(*this, map->tryGetFromHeroPool(heroID));

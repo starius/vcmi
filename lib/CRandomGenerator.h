@@ -37,6 +37,9 @@ public:
 	explicit CRandomGenerator(int seed);
 
 	void setSeed(int seed);
+	int getSeed() const;
+	std::string getSerializedState() const;
+	void setSerializedState(const std::string & state);
 
 	/// Resets the seed to the product of the current time in milliseconds and the
 	/// current thread ID.
@@ -71,6 +74,7 @@ public:
 
 private:
 	TGenerator rand;
+	int currentSeed = 0;
 
 public:
 	template <typename Handler>
@@ -78,18 +82,14 @@ public:
 	{
 		if(h.saving)
 		{
-			std::ostringstream stream;
-			stream << rand;
-			std::string str = stream.str();
+			std::string str = getSerializedState();
 			h & str;
 		}
 		else
 		{
 			std::string str;
 			h & str;
-			std::istringstream stream(str);
-			stream >> rand;
+			setSerializedState(str);
 		}
 	}
 };
-

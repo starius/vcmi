@@ -102,6 +102,8 @@ public:
 	/// Gives specified amount of stack experience that will not be scaled by unit size
 	void giveAverageStackExperience(TExpType exp);
 	void giveTotalStackExperience(TExpType exp);
+	/// Restores an absolute serialized value even when the stack-experience module is disabled.
+	void setTotalStackExperience(TExpType exp);
 
 	bool valid(bool allowUnrandomized) const;
 	ArtPlacementMap putArtifact(const ArtifactPosition & pos, const CArtifactInstance * art) override; //from CArtifactSet

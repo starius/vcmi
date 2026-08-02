@@ -11,10 +11,199 @@
 #include "StdInc.h"
 #include "Reward.h"
 
+#include "../json/JsonBonus.h"
 #include "../mapObjects/CGHeroInstance.h"
 #include "../serializer/JsonSerializeFormat.h"
 #include "../constants/StringConstants.h"
 #include "../CSkillHandler.h"
+
+namespace
+{
+constexpr std::array<std::string_view, 17> COMPONENT_TYPE_NAMES = {
+	"none",
+	"primarySkill",
+	"secondarySkill",
+	"resource",
+	"resourcePerDay",
+	"creature",
+	"artifact",
+	"spellScroll",
+	"mana",
+	"experience",
+	"level",
+	"spell",
+	"morale",
+	"luck",
+	"building",
+	"heroPortrait",
+	"flag"
+};
+
+std::string componentTypeName(ComponentType type)
+{
+	const auto index = static_cast<int>(type) + 1;
+	if(index < 0 || index >= static_cast<int>(COMPONENT_TYPE_NAMES.size()))
+		return "none";
+
+	return std::string(COMPONENT_TYPE_NAMES[index]);
+}
+
+ComponentType decodeComponentType(const std::string & type)
+{
+	for(size_t index = 0; index < COMPONENT_TYPE_NAMES.size(); ++index)
+		if(COMPONENT_TYPE_NAMES[index] == type)
+			return static_cast<ComponentType>(static_cast<int>(index) - 1);
+
+	return ComponentType::NONE;
+}
+
+std::string componentSubtype(const Component & component)
+{
+	switch(component.type)
+	{
+		case ComponentType::PRIM_SKILL:
+			return PrimarySkill::encode(component.subType.as<PrimarySkill>().getNum());
+		case ComponentType::SEC_SKILL:
+			return SecondarySkill::encode(component.subType.as<SecondarySkill>().getNum());
+		case ComponentType::RESOURCE:
+		case ComponentType::RESOURCE_PER_DAY:
+			return GameResID::encode(component.subType.as<GameResID>().getNum());
+		case ComponentType::CREATURE:
+			return CreatureID::encode(component.subType.as<CreatureID>().getNum());
+		case ComponentType::ARTIFACT:
+			return ArtifactID::encode(component.subType.as<ArtifactID>().getNum());
+		case ComponentType::SPELL_SCROLL:
+		case ComponentType::SPELL:
+			return SpellID::encode(component.subType.as<SpellID>().getNum());
+		case ComponentType::HERO_PORTRAIT:
+			return HeroTypeID::encode(component.subType.as<HeroTypeID>().getNum());
+		case ComponentType::FLAG:
+			return component.subType.as<PlayerColor>().toString();
+		case ComponentType::NONE:
+		case ComponentType::MANA:
+		case ComponentType::EXPERIENCE:
+		case ComponentType::LEVEL:
+		case ComponentType::MORALE:
+		case ComponentType::LUCK:
+		case ComponentType::BUILDING:
+			return "";
+	}
+
+	return "";
+}
+
+void decodeComponentSubtype(Component & component, const std::string & subtype)
+{
+	if(subtype.empty())
+		return;
+
+	switch(component.type)
+	{
+		case ComponentType::PRIM_SKILL:
+			component.subType = PrimarySkill(PrimarySkill::decode(subtype));
+			break;
+		case ComponentType::SEC_SKILL:
+			component.subType = SecondarySkill(SecondarySkill::decode(subtype));
+			break;
+		case ComponentType::RESOURCE:
+		case ComponentType::RESOURCE_PER_DAY:
+			component.subType = GameResID(GameResID::decode(subtype));
+			break;
+		case ComponentType::CREATURE:
+			component.subType = CreatureID(CreatureID::decode(subtype));
+			break;
+		case ComponentType::ARTIFACT:
+			component.subType = ArtifactID(ArtifactID::decode(subtype));
+			break;
+		case ComponentType::SPELL_SCROLL:
+		case ComponentType::SPELL:
+			component.subType = SpellID(SpellID::decode(subtype));
+			break;
+		case ComponentType::HERO_PORTRAIT:
+			component.subType = HeroTypeID(HeroTypeID::decode(subtype));
+			break;
+		case ComponentType::FLAG:
+			component.subType = PlayerColor(PlayerColor::decode(subtype));
+			break;
+		case ComponentType::NONE:
+		case ComponentType::MANA:
+		case ComponentType::EXPERIENCE:
+		case ComponentType::LEVEL:
+		case ComponentType::MORALE:
+		case ComponentType::LUCK:
+		case ComponentType::BUILDING:
+			break;
+	}
+}
+
+void serializeBuildingComponent(JsonSerializeFormat & handler, Component & component)
+{
+	auto building = handler.enterStruct("building");
+	FactionID faction = component.subType.as<BuildingTypeUniqueID>().getFaction();
+	BuildingID buildingID = component.subType.as<BuildingTypeUniqueID>().getBuilding();
+	building->serializeId("faction", faction, FactionID::NONE);
+	if(handler.saving)
+	{
+		std::string buildingName = BuildingID::encode(buildingID.getNum());
+		building->serializeString("building", buildingName);
+	}
+	else
+	{
+		std::string buildingName;
+		building->serializeString("building", buildingName);
+		buildingID = BuildingID(BuildingID::decode(buildingName));
+	}
+
+	if(!handler.saving)
+		component.subType = BuildingTypeUniqueID(faction, buildingID);
+}
+
+void serializeComponent(JsonSerializeFormat & handler, Component & component)
+{
+	if(handler.saving)
+	{
+		std::string type = componentTypeName(component.type);
+		handler.serializeString("type", type);
+		std::string subtype = componentSubtype(component);
+		handler.serializeString("subtype", subtype);
+	}
+	else
+	{
+		std::string type;
+		handler.serializeString("type", type);
+		component.type = decodeComponentType(type);
+		std::string subtype;
+		handler.serializeString("subtype", subtype);
+		decodeComponentSubtype(component, subtype);
+	}
+
+	if(component.type == ComponentType::BUILDING)
+		serializeBuildingComponent(handler, component);
+
+	handler.serializeInt("value", component.value);
+}
+
+void serializeBonusList(JsonSerializeFormat & handler, const std::string & fieldName, std::vector<std::shared_ptr<Bonus>> & bonuses)
+{
+	JsonNode node;
+	if(handler.saving)
+	{
+		if(bonuses.empty())
+			return;
+		for(const auto & bonus : bonuses)
+			node.Vector().push_back(bonus->toJsonNode());
+	}
+
+	handler.serializeRaw(fieldName, node, {});
+
+	if(!handler.saving)
+	{
+		bonuses.clear();
+		for(const auto & bonusNode : node.Vector())
+			bonuses.push_back(JsonUtils::parseBonus(bonusNode));
+	}
+}
+}
 
 void Rewardable::RewardRevealTiles::serializeJson(JsonSerializeFormat & handler)
 {
@@ -171,6 +360,7 @@ void Rewardable::Reward::loadComponents(std::vector<Component> & comps, const CG
 void Rewardable::Reward::serializeJson(JsonSerializeFormat & handler)
 {
 	resources.serializeJson(handler, "resources");
+	handler.enterArray("extraComponents").serializeStruct<Component>(extraComponents, serializeComponent);
 	handler.serializeBool("removeObject", removeObject);
 	handler.serializeInt("manaPercentage", manaPercentage);
 	handler.serializeInt("movePercentage", movePercentage);
@@ -179,7 +369,11 @@ void Rewardable::Reward::serializeJson(JsonSerializeFormat & handler)
 	handler.serializeInt("manaDiff", manaDiff);
 	handler.serializeInt("manaOverflowFactor", manaOverflowFactor);
 	handler.serializeInt("movePoints", movePoints);
-	handler.serializeInt("moveOverflowFactor", manaOverflowFactor);
+	handler.serializeInt("moveOverflowFactor", moveOverflowFactor);
+	handler.enterArray("guards").serializeStruct(guards);
+	serializeBonusList(handler, "bonuses", heroBonuses);
+	serializeBonusList(handler, "commanderBonuses", commanderBonuses);
+	serializeBonusList(handler, "playerBonuses", playerBonuses);
 	handler.serializeIdArray("artifacts", grantedArtifacts);
 	handler.serializeIdArray("takenArtifacts", takenArtifacts);
 	handler.serializeIdArray("takenArtifactSlots", takenArtifactSlots);
@@ -187,6 +381,7 @@ void Rewardable::Reward::serializeJson(JsonSerializeFormat & handler)
 	handler.serializeIdArray("takenScrolls", takenScrolls);
 	handler.serializeIdArray("spells", spells);
 	handler.enterArray("creatures").serializeStruct(creatures);
+	handler.enterArray("takenCreatures").serializeStruct(takenCreatures);
 	handler.enterArray("primary").serializeArray(primary);
 	{
 		auto a = handler.enterArray("secondary");
@@ -209,6 +404,23 @@ void Rewardable::Reward::serializeJson(JsonSerializeFormat & handler)
 			h.serializeId("amount", e.second, CreatureID{});
 		});
 		creaturesChange = std::map<CreatureID, CreatureID>(fieldValue.begin(), fieldValue.end());
+	}
+	if(handler.saving)
+	{
+		if(revealTiles)
+			handler.serializeStruct("revealTiles", *revealTiles);
+	}
+	else
+	{
+		if(!handler.getCurrent()["revealTiles"].isNull())
+		{
+			revealTiles = RewardRevealTiles();
+			handler.serializeStruct("revealTiles", *revealTiles);
+		}
+		else
+		{
+			revealTiles.reset();
+		}
 	}
 	
 	{

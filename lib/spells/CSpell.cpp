@@ -111,14 +111,11 @@ spells::AimType CSpell::getTargetType() const
 void CSpell::forEachSchool(const std::function<void(const SpellSchool &, bool &)>& cb) const
 {
 	bool stop = false;
-	for(auto schoolID : LIBRARY->spellSchoolHandler->getAllObjects())
+	for(auto schoolID : schools)
 	{
-		if(schools.count(schoolID))
-		{
-			cb(schoolID, stop);
-			if(stop)
-				break;
-		}
+		cb(schoolID, stop);
+		if(stop)
+			break;
 	}
 }
 

@@ -17,6 +17,26 @@
 
 constexpr bool cachingEnabled = true;
 static std::atomic<int32_t> globalCounter = 1;
+static thread_local int invalidationBatchDepth = 0;
+static thread_local std::vector<CBonusSystemNode *> pendingInvalidations;
+
+CBonusSystemNode::InvalidationBatch::InvalidationBatch()
+{
+	++invalidationBatchDepth;
+}
+
+CBonusSystemNode::InvalidationBatch::~InvalidationBatch()
+{
+	assert(invalidationBatchDepth > 0);
+	if(--invalidationBatchDepth != 0)
+		return;
+
+	auto invalidations = std::move(pendingInvalidations);
+	pendingInvalidations.clear();
+	const int32_t changeCounter = ++globalCounter;
+	for(auto * node : invalidations)
+		node->invalidateChildrenNodes(changeCounter);
+}
 
 std::shared_ptr<Bonus> CBonusSystemNode::getLocalBonus(const CSelector & selector)
 {
@@ -597,6 +617,12 @@ void CBonusSystemNode::nodeHasChanged()
 
 void CBonusSystemNode::invalidateChildrenNodes(int32_t changeCounter)
 {
+	if(invalidationBatchDepth != 0)
+	{
+		pendingInvalidations.push_back(this);
+		return;
+	}
+
 	if (nodeChanged == changeCounter)
 		return;
 

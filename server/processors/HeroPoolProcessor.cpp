@@ -16,6 +16,7 @@
 #include "../../lib/CRandomGenerator.h"
 #include "../../lib/CPlayerState.h"
 #include "../../lib/IGameSettings.h"
+#include "../../lib/json/JsonNode.h"
 #include "../../lib/StartInfo.h"
 #include "../../lib/entities/hero/CHeroClass.h"
 #include "../../lib/entities/hero/CHero.h"
@@ -257,6 +258,34 @@ bool HeroPoolProcessor::hireHero(const ObjectInstanceID & objectID, const HeroTy
 	// If new hero has scouting he might reveal more terrain than we saw before
 	gameHandler->changeFogOfWar(recruitedHero->getSightCenter(), recruitedHero->getSightRadius(), player, ETileVisibility::REVEALED);
 	return true;
+}
+
+JsonNode HeroPoolProcessor::toVGTJson() const
+{
+	JsonNode result;
+	result.Struct();
+	for(const auto & [player, generator] : playerSeed)
+	{
+		if(generator)
+			result[player.toString()].String() = generator->getSerializedState();
+	}
+	return result;
+}
+
+void HeroPoolProcessor::loadVGTJson(const JsonNode & node)
+{
+	if(!node.isStruct())
+		throw std::runtime_error("VGT hero pool state must be a mapping");
+
+	playerSeed.clear();
+	for(const auto & entry : node.Struct())
+	{
+		if(!entry.second.isString())
+			throw std::runtime_error("VGT hero pool state value is not a string: " + entry.first);
+		auto generator = std::make_unique<CRandomGenerator>();
+		generator->setSerializedState(entry.second.String());
+		playerSeed[PlayerColor(PlayerColor::decode(entry.first))] = std::move(generator);
+	}
 }
 
 std::vector<const CHeroClass *> HeroPoolProcessor::findAvailableClassesFor(const PlayerColor & player) const
