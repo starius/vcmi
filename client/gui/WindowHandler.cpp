@@ -32,6 +32,32 @@ void WindowHandler::popWindow(std::shared_ptr<IShowActivatable> top)
 	totalRedraw();
 }
 
+bool WindowHandler::removeWindow(std::shared_ptr<IShowActivatable> window)
+{
+	if(window == nullptr || windowsStack.empty())
+		return false;
+
+	auto found = std::find(windowsStack.begin(), windowsStack.end(), window);
+	if(found == windowsStack.end())
+		return false;
+
+	const bool removingTopWindow = found + 1 == windowsStack.end();
+	if(removingTopWindow)
+		window->deactivate();
+
+	disposed.push_back(*found);
+	windowsStack.erase(found);
+
+	if(removingTopWindow && !windowsStack.empty())
+		windowsStack.back()->activate();
+
+	totalRedraw();
+	if(removingTopWindow)
+		ENGINE->fakeMouseMove();
+
+	return true;
+}
+
 void WindowHandler::pushWindow(std::shared_ptr<IShowActivatable> newInt)
 {
 	if (newInt == nullptr)

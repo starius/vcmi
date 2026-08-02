@@ -57,6 +57,9 @@ public:
 	/// removes given windows from the top and activates next
 	void popWindow(std::shared_ptr<IShowActivatable> top);
 
+	/// removes selected window from the stack, even if another window is currently on top
+	bool removeWindow(std::shared_ptr<IShowActivatable> window);
+
 	/// returns true if selected interface is on top
 	bool isTopWindow(std::shared_ptr<IShowActivatable> window) const;
 	bool isTopWindow(IShowActivatable * window) const;
