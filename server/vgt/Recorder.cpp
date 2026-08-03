@@ -5336,7 +5336,11 @@ void VGTRecorder::capturePendingBattleArmies(const CGameState & gameState)
 	{
 		const auto * army = dynamic_cast<const CArmedInstance *>(gameState.getMap().getObject(armyID));
 		if(army)
-			pendingBattle->armies[objectAlias(gameState, armyID)] = strategicArmyState(*army);
+		{
+			const std::string state = strategicArmyState(*army);
+			if(state != "[]")
+				pendingBattle->armies[objectAlias(gameState, armyID)] = state;
+		}
 	}
 	pendingBattle->armiesCaptured = true;
 }
