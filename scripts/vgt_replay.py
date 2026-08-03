@@ -265,8 +265,8 @@ def validate_battle_block(value: Any, document_index: int, record_index: int) ->
             raise VGTError(
                 f"document {document_index} record {record_index} battle has no {field}"
             )
-    if not isinstance(value.get("forces"), dict):
-        raise VGTError(f"document {document_index} record {record_index} battle has no forces mapping")
+    if "forces" in value:
+        raise VGTError(f"document {document_index} record {record_index} battle uses removed forces mapping")
     outcome = value.get("outcome")
     if not isinstance(outcome, dict):
         raise VGTError(f"document {document_index} record {record_index} battle has no explicit outcome")
@@ -279,9 +279,9 @@ def validate_battle_block(value: Any, document_index: int, record_index: int) ->
         raise VGTError(
             f"document {document_index} record {record_index} battle outcome has no casualties mapping"
         )
-    if not isinstance(outcome.get("survivors"), dict):
+    if "survivors" in outcome:
         raise VGTError(
-            f"document {document_index} record {record_index} battle outcome has no survivors mapping"
+            f"document {document_index} record {record_index} battle outcome uses removed survivors mapping"
         )
     if not isinstance(outcome.get("armies"), dict):
         raise VGTError(
@@ -299,11 +299,6 @@ def validate_battle_block(value: Any, document_index: int, record_index: int) ->
         validate_battle_randomizer(
             random["atContinuation"], document_index, record_index, "outcome.random.atContinuation"
         )
-    for name, count in value["forces"].items():
-        if not isinstance(name, str) or not name.startswith(("attacker/", "defender/")):
-            raise VGTError(f"document {document_index} record {record_index} has non-descriptive battle unit {name!r}")
-        if type(count) is not int or count <= 0:
-            raise VGTError(f"document {document_index} record {record_index} battle force {name!r} has invalid count")
     if ("events" in value) != ("randomBefore" in value):
         raise VGTError(
             f"document {document_index} record {record_index} battle tactical fields are incomplete"

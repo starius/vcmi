@@ -408,8 +408,6 @@ export interface BattleOutcome {
         readonly attacker?: Readonly<Record<Identifier, number>>;
         readonly defender?: Readonly<Record<Identifier, number>>;
     };
-	/** Permanent surviving count by battle unit name; dead units are omitted. */
-	readonly survivors: Readonly<Record<BattleUnitName, number>>;
 	/** Permanent stacks created during combat; count is the initially created amount. */
 	readonly createdUnits?: Readonly<Record<BattleUnitName, {
 		readonly creature: Identifier;
@@ -459,7 +457,6 @@ export interface BattleBlock {
     readonly id: number;
     readonly attacker: Identifier;
     readonly defender: Identifier;
-    readonly forces: Readonly<Record<BattleUnitName, number>>;
     readonly outcome: BattleOutcome;
 	/** Optional tactical fields merged from the companion by id. */
 	readonly randomBefore?: BattleRandomizerState;
