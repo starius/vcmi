@@ -1099,6 +1099,43 @@ bool generatedObjectAliasName(const std::string & name, const std::string & type
 	return name == sanitizedAliasName(type) + "-" + std::to_string(id.getNum());
 }
 
+bool generatedTownAliasName(const std::string & name)
+{
+	const std::string prefix = "town-";
+	return name.starts_with(prefix) &&
+		std::all_of(name.begin() + prefix.size(), name.end(), [](char character)
+		{
+			return std::isdigit(static_cast<unsigned char>(character));
+		});
+}
+
+std::string townFactionAlias(FactionID id)
+{
+	if(id == FactionID::NONE)
+		return "none";
+	if(id == FactionID::RANDOM)
+		return "random";
+	if(id.getNum() < 0)
+		return objectAliasIdentifier("faction:" + std::to_string(id.getNum()));
+	return objectAliasIdentifier(FactionID::encode(id.getNum()));
+}
+
+std::string canonicalTownAlias(const CGTownInstance & town)
+{
+	std::string result;
+	if(town.tempOwner.isValidPlayer())
+		result = town.tempOwner.toString() + "/";
+	result += townFactionAlias(town.getFactionID());
+
+	std::string name = sanitizedAliasName(town.getObjectName());
+	if(name.empty())
+		name = sanitizedAliasName(town.instanceName);
+	if(!name.empty() && !generatedTownAliasName(name))
+		result += "/" + name;
+
+	return result + objectLocation(town.visitablePos());
+}
+
 std::string canonicalObjectAlias(const CGObjectInstance & object)
 {
 	if(const auto * hero = dynamic_cast<const CGHeroInstance *>(&object))
@@ -1125,8 +1162,10 @@ std::string canonicalObjectAlias(const CGObjectInstance & object)
 	if(const auto * pile = dynamic_cast<const CGResource *>(&object))
 		return "resource/" + objectAliasIdentifier(GameResID::encode(pile->resourceID().getNum())) +
 			objectLocation(object.visitablePos());
+	if(const auto * town = dynamic_cast<const CGTownInstance *>(&object))
+		return canonicalTownAlias(*town);
 
-	std::string type = dynamic_cast<const CGTownInstance *>(&object) ? "town" : objectAliasType(object.ID);
+	std::string type = objectAliasType(object.ID);
 	if(type.empty())
 		type = "unknown";
 	const std::string owner = object.tempOwner.isValidPlayer() ? object.tempOwner.toString() : "";
@@ -3723,11 +3762,8 @@ std::string battleUnitBase(BattleSide side, CreatureID creatureID)
 		pluralizedBattleCreature(creatureID);
 }
 
-std::map<std::string, int> liveBattleRoster(const BattleInfo & battle, const JsonNode & forces)
+std::map<std::string, int> liveBattleRoster(const BattleInfo & battle)
 {
-	if(!forces.isStruct())
-		throw std::runtime_error("VGT battle forces field is not a mapping");
-
 	std::map<std::string, std::vector<int>> groups;
 	for(const auto * stack : battle.battleGetAllStacks(true))
 	{
@@ -3744,14 +3780,26 @@ std::map<std::string, int> liveBattleRoster(const BattleInfo & battle, const Jso
 		{
 			// Automatic opening effects, such as arrow-tower attacks, may have
 			// changed a live stack before the readable battle block is consumed.
-			// Match immutable stack identity here; `forces` remains the frozen
-			// human-readable snapshot of the battle's initial counts.
+			// Match immutable stack identity through side/creature grouping instead
+			// of relying on a duplicated initial-forces snapshot in the main file.
 			const std::string alias = base + (stackIDs.size() == 1 ? "" : "/" + std::to_string(index + 1));
-			const auto expected = forces.Struct().find(alias);
-			if(expected == forces.Struct().end() || !expected->second.isNumber())
-				throw std::runtime_error("Live battle has no matching VGT force " + alias);
 			result.emplace(alias, stackIDs[index]);
 		}
+	}
+	return result;
+}
+
+std::map<std::string, int> liveBattleRoster(const BattleInfo & battle, const JsonNode & forces)
+{
+	if(!forces.isStruct())
+		throw std::runtime_error("VGT battle forces field is not a mapping");
+
+	auto result = liveBattleRoster(battle);
+	for(const auto & [alias, ignoredStackID] : result)
+	{
+		const auto expected = forces.Struct().find(alias);
+		if(expected == forces.Struct().end() || !expected->second.isNumber())
+			throw std::runtime_error("Live battle has no matching VGT force " + alias);
 	}
 	if(result.size() != forces.Struct().size())
 		throw std::runtime_error("VGT battle forces contain a unit absent from the live battle");
@@ -5107,6 +5155,164 @@ const JsonNode & battleRandomAtContinuation(const JsonNode & outcome)
 	return requireField(random, "beforeContinuation");
 }
 
+std::map<int, std::pair<CreatureID, int>> decodedArmyStateBySlot(const JsonNode & state)
+{
+	if(!state.isVector())
+		throw std::runtime_error("VGT battle final army state is not a list");
+
+	std::map<int, std::pair<CreatureID, int>> result;
+	for(const auto & stack : state.Vector())
+	{
+		if(!stack.isStruct())
+			throw std::runtime_error("VGT battle final army stack is not a mapping");
+		const int64_t slot = requireInteger(stack, "slot");
+		const int64_t count = requireInteger(stack, "count");
+		if(slot < 0 || slot > std::numeric_limits<int>::max() ||
+			count <= 0 || count > std::numeric_limits<int>::max())
+			throw std::runtime_error("Invalid VGT battle final army stack");
+		result[static_cast<int>(slot)] = {
+			decodeCreature(requireString(stack, "creature")),
+			static_cast<int>(count)};
+	}
+	return result;
+}
+
+const JsonNode * recordedArmyStateForObject(
+	const CGameState & gameState,
+	const JsonNode & armies,
+	ObjectInstanceID objectID)
+{
+	if(!armies.isStruct())
+		throw std::runtime_error("VGT battle outcome armies is not a mapping");
+	for(const auto & [armyName, state] : armies.Struct())
+	{
+		try
+		{
+			if(resolveObjectAlias(gameState, armyName) == objectID)
+				return &state;
+		}
+		catch(const std::exception &)
+		{
+		}
+	}
+	return nullptr;
+}
+
+std::optional<std::map<int, std::pair<CreatureID, int>>> recordedAvailableHeroArmy(
+	const JsonNode & outcome,
+	PlayerColor player,
+	HeroTypeID heroType)
+{
+	if(!player.isValidPlayer() || !heroType.hasValue())
+		return std::nullopt;
+	const auto * aftermath = findField(outcome, "aftermath");
+	if(!aftermath)
+		return std::nullopt;
+	if(!aftermath->isVector())
+		throw std::runtime_error("VGT battle aftermath is not a list");
+
+	const std::string expectedPlayer = player.toString();
+	const std::string expectedHero = objectAliasIdentifier(HeroTypeID::encode(heroType.getNum()));
+	for(const auto & record : aftermath->Vector())
+	{
+		if(!record.isStruct() || record.Struct().size() != 1)
+			continue;
+		const auto & entry = *record.Struct().begin();
+		if(entry.first != "availableHero")
+			continue;
+		if(requireString(entry.second, "player") != expectedPlayer ||
+			requireString(entry.second, "hero") != expectedHero)
+			continue;
+		return decodedArmyStateBySlot(requireField(entry.second, "army"));
+	}
+	return std::nullopt;
+}
+
+std::map<std::string, int> decodedBattleSurvivors(const JsonNode & survivors)
+{
+	if(!survivors.isStruct())
+		throw std::runtime_error("VGT battle outcome survivors is not a mapping");
+
+	std::map<std::string, int> result;
+	for(const auto & [alias, count] : survivors.Struct())
+	{
+		if(!count.isNumber() || count.Integer() <= 0 || count.Integer() > std::numeric_limits<int>::max())
+			throw std::runtime_error("VGT battle survivor count must be positive: " + alias);
+		result[alias] = static_cast<int>(count.Integer());
+	}
+	return result;
+}
+
+std::map<std::string, int> inferredBattleSurvivors(
+	CGameHandler & gameHandler,
+	const BattleInfo & battle,
+	const std::map<std::string, int> & roster,
+	const JsonNode & outcome,
+	EBattleResult result,
+	BattleSide winnerSide)
+{
+	std::map<int, std::string> aliasesByStack;
+	for(const auto & [alias, stack] : roster)
+		aliasesByStack[stack] = alias;
+
+	const auto & armies = requireField(outcome, "armies");
+	std::map<BattleSide, std::map<int, std::pair<CreatureID, int>>> finalArmies;
+	for(const auto side : {BattleSide::ATTACKER, BattleSide::DEFENDER})
+	{
+		const auto * army = battle.battleGetArmyObject(side);
+		if(!army)
+			continue;
+		if(const auto * state = recordedArmyStateForObject(gameHandler.gameState(), armies, army->id))
+		{
+			finalArmies[side] = decodedArmyStateBySlot(*state);
+			continue;
+		}
+		const auto * hero = battle.getSideHero(side);
+		if(hero)
+		{
+			if(auto availableArmy = recordedAvailableHeroArmy(
+				outcome, battle.getSidePlayer(side), hero->getHeroTypeID()))
+				finalArmies[side] = std::move(*availableArmy);
+		}
+	}
+
+	std::map<std::string, int> resultSurvivors;
+	const BattleSide loserSide = battle.otherSide(winnerSide);
+	for(const auto * stack : battle.battleGetAllStacks(true))
+	{
+		if(!stack || stack->summoned || stack->isTurret())
+			continue;
+		const auto alias = aliasesByStack.find(static_cast<int>(stack->unitId()));
+		if(alias == aliasesByStack.end())
+			throw std::runtime_error("Live VGT battle stack is absent from the recorded roster");
+
+		int count = stack->getCount();
+		const SlotID slot = stack->unitSlot();
+		if(slot.validSlot())
+		{
+			count = 0;
+			const auto sideState = finalArmies.find(stack->unitSide());
+			if(sideState != finalArmies.end())
+			{
+				const auto recorded = sideState->second.find(slot.getNum());
+				if(recorded != sideState->second.end() && recorded->second.first == stack->creatureId())
+					count = recorded->second.second;
+			}
+			else if(result != EBattleResult::NORMAL || stack->unitSide() != loserSide)
+			{
+				// If no final state was recorded for a non-normal loser, preserve the
+				// live stack and let explicit aftermath/final-army checks correct the
+				// strategic object. Normal defeated armies without a final state died.
+				count = stack->getCount();
+			}
+		}
+
+		if(count > 0)
+			resultSurvivors[alias->second] = count;
+	}
+	return resultSurvivors;
+}
+
 BattleSideArray<TExpType> recordedBattleExperience(
 	CGameHandler & gameHandler,
 	const CBattleInfoCallback & battle,
@@ -5163,19 +5369,20 @@ void fastForwardBattle(
 		gameHandler.giveResource(player, EGameResID::GOLD, -cost);
 	}
 
-	const JsonNode & survivors = requireField(outcome, "survivors");
-	if(!survivors.isStruct())
-		throw std::runtime_error("VGT battle outcome survivors is not a mapping");
+	std::map<std::string, int> survivors;
+	if(const auto * recordedSurvivors = findField(outcome, "survivors"))
+		survivors = decodedBattleSurvivors(*recordedSurvivors);
+	else
+		survivors = inferredBattleSurvivors(
+			gameHandler, *battle, roster, outcome, result, winnerSide);
 	const JsonNode * createdUnits = findField(outcome, "createdUnits");
 	if(createdUnits && !createdUnits->isStruct())
 		throw std::runtime_error("VGT battle outcome createdUnits is not a mapping");
 	std::map<int, std::string> aliasesByStack;
 	for(const auto & [alias, stack] : roster)
 		aliasesByStack[stack] = alias;
-	for(const auto & [alias, count] : survivors.Struct())
+	for(const auto & [alias, count] : survivors)
 	{
-		if(!count.isNumber() || count.Integer() <= 0)
-			throw std::runtime_error("VGT battle survivor count must be positive: " + alias);
 		if(!roster.contains(alias) && (!createdUnits || !createdUnits->Struct().contains(alias)))
 			throw std::runtime_error("VGT battle survivor is absent from the roster: " + alias);
 	}
@@ -5192,10 +5399,10 @@ void fastForwardBattle(
 			throw std::runtime_error("Live VGT battle stack is absent from the recorded roster");
 		const std::string & alias = aliasIter->second;
 		seenAliases.insert(alias);
-		const auto survivorIter = survivors.Struct().find(alias);
-		const int targetCount = survivorIter == survivors.Struct().end()
+		const auto survivorIter = survivors.find(alias);
+		const int targetCount = survivorIter == survivors.end()
 			? 0
-			: static_cast<int>(survivorIter->second.Integer());
+			: survivorIter->second;
 
 		auto state = stack->acquireState();
 		const int64_t currentHealth = state->getAvailableHealth();
@@ -5225,12 +5432,12 @@ void fastForwardBattle(
 	{
 		for(const auto & [alias, created] : createdUnits->Struct())
 		{
-			if(!created.isStruct() || !survivors.Struct().contains(alias) || seenAliases.contains(alias))
+			if(!created.isStruct() || !survivors.contains(alias) || seenAliases.contains(alias))
 				throw std::runtime_error("Invalid VGT permanently created battle unit: " + alias);
 			if(!roster.contains(alias))
 				roster.emplace(alias, static_cast<int>(battle->battleNextUnitId()));
 			const int initialCount = static_cast<int>(requireInteger(created, "count"));
-			const int survivorCount = static_cast<int>(survivors.Struct().at(alias).Integer());
+			const int survivorCount = survivors.at(alias);
 			if(initialCount <= 0 || survivorCount > initialCount)
 				throw std::runtime_error("Invalid VGT permanently created battle unit count: " + alias);
 
@@ -5269,7 +5476,7 @@ void fastForwardBattle(
 			seenAliases.insert(alias);
 		}
 	}
-	for(const auto & [alias, count] : survivors.Struct())
+	for(const auto & [alias, count] : survivors)
 	{
 		if(!seenAliases.contains(alias))
 			throw std::runtime_error("VGT fast-forward lacks createdUnits state for dynamic survivor: " + alias);
@@ -5306,7 +5513,10 @@ void applyBattleBlock(CGameHandler & gameHandler, const JsonNode & node, bool fa
 				hero->getHeroTypeID(),
 				initialBattle->getSide(side).initialMana});
 	}
-	std::map<std::string, int> roster = liveBattleRoster(*initialBattle, requireField(node, "forces"));
+	const JsonNode * forces = findField(node, "forces");
+	std::map<std::string, int> roster = forces
+		? liveBattleRoster(*initialBattle, *forces)
+		: liveBattleRoster(*initialBattle);
 	const JsonNode * events = findField(node, "events");
 	if(events)
 	{

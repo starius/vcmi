@@ -457,6 +457,43 @@ bool generatedObjectAliasName(const std::string & name, const std::string & type
 	return name == sanitizedAliasName(type) + "-" + std::to_string(id.getNum());
 }
 
+bool generatedTownAliasName(const std::string & name)
+{
+	const std::string prefix = "town-";
+	return name.starts_with(prefix) &&
+		std::all_of(name.begin() + prefix.size(), name.end(), [](char character)
+		{
+			return std::isdigit(static_cast<unsigned char>(character));
+		});
+}
+
+std::string townFactionAlias(FactionID id)
+{
+	if(id == FactionID::NONE)
+		return "none";
+	if(id == FactionID::RANDOM)
+		return "random";
+	if(id.getNum() < 0)
+		return transcriptIdentifier("faction:" + std::to_string(id.getNum()));
+	return transcriptIdentifier(FactionID::encode(id.getNum()));
+}
+
+std::string townAlias(const CGTownInstance & town)
+{
+	std::string result;
+	if(town.tempOwner.isValidPlayer())
+		result = town.tempOwner.toString() + "/";
+	result += townFactionAlias(town.getFactionID());
+
+	std::string name = sanitizedAliasName(town.getObjectName());
+	if(name.empty())
+		name = sanitizedAliasName(town.instanceName);
+	if(!name.empty() && !generatedTownAliasName(name))
+		result += "/" + name;
+
+	return result + objectLocation(town.visitablePos());
+}
+
 std::string objectAlias(const CGameState & gameState, ObjectInstanceID id)
 {
 	if(id == ObjectInstanceID::NONE)
@@ -472,6 +509,8 @@ std::string objectAlias(const CGameState & gameState, ObjectInstanceID id)
 	if(const auto * pile = dynamic_cast<const CGResource *>(object))
 		return "resource/" + transcriptIdentifier(GameResID::encode(pile->resourceID().getNum())) +
 			objectLocation(object->visitablePos());
+	if(const auto * town = dynamic_cast<const CGTownInstance *>(object))
+		return townAlias(*town);
 
 	std::string type = transcriptIdentifier(MapObjectID::encode(object->ID.getNum()));
 	if(type.empty())
@@ -486,8 +525,6 @@ std::string objectAlias(const CGameState & gameState, ObjectInstanceID id)
 		name = sanitizedAliasName(object->instanceName);
 	if(name.empty())
 		name = "id-" + std::to_string(id.getNum());
-	if(dynamic_cast<const CGTownInstance *>(object))
-		type = "town";
 
 	const auto typeName = type.substr(type.rfind('/') == std::string::npos ? 0 : type.rfind('/') + 1);
 	std::string result;
@@ -5973,31 +6010,9 @@ void VGTRecorder::flushPendingBattle(const CGameState & gameState)
 	output << "      id: " << pendingBattle->id << "\n";
 	output << "      attacker: " << pendingBattle->attacker << "\n";
 	output << "      defender: " << pendingBattle->defender << "\n";
-	if(!pendingBattle->units.empty())
-	{
-		output << "      forces:\n";
-		for(const auto & unit : pendingBattle->units)
-		{
-			const auto mapping = unit.find(": { ");
-			const auto count = unit.find("count: ");
-			if(mapping == std::string::npos || count == std::string::npos)
-				continue;
-			const auto end = unit.find_first_of(" }", count + 7);
-			output << "        " << unit.substr(0, mapping) << ": "
-				<< unit.substr(count + 7, end - count - 7) << "\n";
-		}
-	}
 	output << "      outcome:\n";
 	for(const auto & field : pendingBattle->outcome)
 		output << "        " << field << "\n";
-	if(pendingBattle->survivors.empty())
-		output << "        survivors: {}\n";
-	else
-	{
-		output << "        survivors:\n";
-		for(const auto & survivor : pendingBattle->survivors)
-			output << "          " << survivor << "\n";
-	}
 	if(!pendingBattle->createdUnits.empty())
 		output << "        createdUnits: { " + boost::algorithm::join(pendingBattle->createdUnits, ", ") + " }\n";
 	if(!pendingBattle->randomBeforeContinuation.empty())
@@ -6571,7 +6586,7 @@ void VGTRecorder::flushPendingEncounter(const CGameState & gameState)
 			destination = {position.x, position.y, position.z};
 		}
 		const int32_t answer = pendingEncounter->answer.value_or(-1);
-		if(answer < 0)
+		if(answer < 0 && pendingEncounter->teleportExits.size() != 1)
 			line += ", random: true";
 
 		std::string exit;
