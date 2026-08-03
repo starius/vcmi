@@ -526,7 +526,7 @@ export type SemanticEffectRecord =
     | { readonly story: { readonly hero?: Identifier; readonly at?: Identifier; readonly text: string; readonly choice?: Choice } }
     | { readonly collects: { readonly resources: ResourceMap } }
     | { readonly joins: { readonly hero: Identifier; readonly units: Readonly<Record<Identifier, number>> } }
-    | { readonly finds: { readonly artifact: Identifier; readonly instance?: number; readonly slot?: number | string } }
+    | { readonly finds: { readonly artifact: Identifier; readonly spell?: Identifier; readonly instance?: number; readonly slot?: number | string } }
     | { readonly reveal: { readonly by: Identifier; readonly player?: PlayerColor } }
     | { readonly appears: { readonly object: Identifier | null; readonly at?: Position; readonly owner?: PlayerColor; readonly units?: readonly unknown[] } }
     | { readonly opened: OpenedActivity }
