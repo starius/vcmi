@@ -159,6 +159,7 @@ public:
 	void lockHero(const CGHeroInstance * hero, HeroLockedReason lockReason);
 	void unlockHero(const CGHeroInstance * hero);
 	bool canReleaseDefenderForTownCapture(const CGHeroInstance * hero, const CGObjectInstance * target, const AIPath & path) const;
+	bool canReleaseDefenderForEscape(const CGHeroInstance * hero) const;
 	bool isPathRejected(const AIPath & path, const CGHeroInstance * releasedDefender = nullptr) const;
 	TResources getFreeResources() const;
 	int32_t getFreeGold() const { return getFreeResources()[EGameResID::GOLD]; }

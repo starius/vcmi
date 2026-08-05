@@ -523,6 +523,20 @@ bool Nullkiller::canReleaseDefenderForTownCapture(const CGHeroInstance * hero, c
 		calendar.getDaysInWeek());
 }
 
+bool Nullkiller::canReleaseDefenderForEscape(const CGHeroInstance * hero) const
+{
+	if(!hero || getHeroLockedReason(hero) != HeroLockedReason::DEFENCE)
+		return false;
+
+	const auto * defendedTown = hero->getVisitedTown();
+	if(!defendedTown || defendedTown->getOwner() != playerID)
+		return false;
+	if(defendedTown->getGarrisonHero() != hero && defendedTown->getVisitingHero() != hero)
+		return false;
+
+	return !defenderMakesTownStableAfterTurnEnd(defendedTown, hero, this);
+}
+
 bool Nullkiller::isPathRejected(const AIPath & path, const CGHeroInstance * releasedDefender) const
 {
 	if(isPathKnownToFail(path))

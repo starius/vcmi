@@ -111,7 +111,10 @@ void considerEscapePath(
 	if(threatenedHero == threatenedHeroes.end())
 		return;
 
-	if(aiNk->isPathRejected(path))
+	const auto * releasedDefender = aiNk->canReleaseDefenderForEscape(path.targetHero)
+		? path.targetHero
+		: nullptr;
+	if(aiNk->isPathRejected(path, releasedDefender))
 		return;
 
 	const auto destination = path.targetTile();
@@ -170,7 +173,7 @@ Goals::TGoalVec EscapeBehavior::decompose(const Nullkiller * aiNk) const
 
 	for(const CGHeroInstance * candidateHero : aiNk->cc->getHeroesInfo())
 	{
-		if(aiNk->isHeroLocked(candidateHero))
+		if(aiNk->isHeroLocked(candidateHero) && !aiNk->canReleaseDefenderForEscape(candidateHero))
 			continue;
 
 		const auto & threat = aiNk->dangerHitMap->getTileThreat(candidateHero->visitablePos()).fastestDanger;
