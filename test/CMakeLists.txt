@@ -105,6 +105,7 @@ set(test_SRCS
  		mock/mock_MapServiceTinyH3M.cpp
  		mock/mock_BonusBearer.cpp
 		mock/mock_CPSICallback.cpp
+		mock/TinyMapGameTest.cpp
 		mock/TinyH3MWriter.cpp
 		mock/TinyH3MBuilder.cpp
 )
@@ -131,6 +132,7 @@ set(test_HEADERS
  		mock/mock_MapServiceTinyH3M.h
 		mock/mock_BonusBearer.h
 		mock/TownFake.h
+		mock/TinyMapGameTest.h
 		mock/TinyH3MWriter.h
 		mock/TinyH3MBuilder.h
 
