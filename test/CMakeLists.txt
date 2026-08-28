@@ -170,6 +170,7 @@ if(ENABLE_BATTLE_AI)
 
 	list(APPEND test_SRCS
 		${BATTLE_AI_TEST_SRCS}
+		battleAI/ClassicBattleAITest.cpp
 		battleAI/SpellTargetsEvaluatorTest.cpp
 	)
 endif()

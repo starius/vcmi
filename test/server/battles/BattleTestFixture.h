@@ -76,7 +76,7 @@ public:
 	void TearDown() override;
 
 	/// Two heroes with a token army each, so that a battle between them is valid.
-	void startGame();
+	void startGame(bool withTown = false, FactionID townFaction = FactionID::CASTLE);
 	void startBattle();
 	/// Ends the tactics phase, which fires the battle-start triggers and activates the first
 	/// stack. Call once every unit a scenario needs is on the field.

@@ -109,7 +109,7 @@ void BattleTestFixture::configurePlayer(PlayerSettings & settings) const
 	settings.bonus = PlayerStartingBonus::GOLD; // no random starting artifact
 }
 
-void BattleTestFixture::startGame()
+void BattleTestFixture::startGame(bool withTown, FactionID townFaction)
 {
 	const CreatureID token(0);
 
@@ -121,6 +121,8 @@ void BattleTestFixture::startGame()
 		.playerActive(PlayerColor(1))
 		.hero({5, 5, 0}, HeroTypeID(0), PlayerColor(0)).heroGarrison({{token, 1}})
 		.hero({7, 7, 0}, HeroTypeID(1), PlayerColor(1)).heroGarrison({{token, 1}});
+	if(withTown)
+		builder.town({10, 10, 0}, townFaction, PlayerColor(1));
 
 	startWithMap(std::move(builder));
 

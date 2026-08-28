@@ -122,6 +122,11 @@ public:
 
 	/// Append a fixed-faction Town object owned by `owner`.
 	TinyH3MBuilder & town(const int3 & pos, FactionID faction, PlayerColor owner);
+	/// Up to seven fixed garrison stacks for the most recently added town.
+	TinyH3MBuilder & townGarrison(std::vector<std::pair<CreatureID, uint16_t>> stacks);
+	/// Set fortification of the most recently added town: 0 none, 1 Fort,
+	/// 2 Citadel, 3 Castle. Towns default to a Fort for historical fixtures.
+	TinyH3MBuilder & townFortification(uint8_t level);
 
 	/// Append a Random Town object owned by `owner`. Builder auto-registers the
 	/// RANDOM_TOWN template on first call. No garrison, standard fort, no events.
@@ -275,6 +280,7 @@ private:
 		uint16_t       monsterCount      = 0;
 		int8_t         monsterCharacter  = 0;
 		uint32_t       resourceAmount    = 0;
+		uint8_t        townFortLevel     = 1;
 		HeroTypeID     heroType;            // HERO / RANDOM_HERO
 		SpellID        scrollSpell;         // SPELL_SCROLL
 		Quest          quest;               // QUEST_GUARD / QUEST_GATE
