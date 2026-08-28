@@ -11,6 +11,7 @@
 #include "BattleAI.h"
 #include "BattleEvaluator.h"
 #include "BattleExchangeVariant.h"
+#include "Classic/ClassicBattleController.h"
 
 #include "StackWithBonuses.h"
 #include "tbb/parallel_for.h"
@@ -33,9 +34,10 @@
 #define LOGL(text) print(text)
 #define LOGFL(text, formattingEl) print(boost::str(boost::format(text) % formattingEl))
 
-CBattleAI::CBattleAI()
+CBattleAI::CBattleAI(BattleAISettings settings)
 	: side(BattleSide::NONE),
-	wasWaitingForRealize(false)
+	wasWaitingForRealize(false),
+	battleAISettings(settings)
 {
 }
 
@@ -67,6 +69,13 @@ void CBattleAI::initBattleInterface(std::shared_ptr<Environment> ENV, std::share
 	wasWaitingForRealize = CB->waitTillRealize;
 	CB->waitTillRealize = false;
 	movesSkippedByDefense = 0;
+	if(isClassicMode())
+		classicController = std::make_unique<ClassicBattleController>(
+			env,
+			cb,
+			playerID,
+			battleAISettings.randomGenerator,
+			battleAISettings.decisionTrace);
 
 	logHexNumbers();
 }
@@ -95,12 +104,27 @@ BattleAction CBattleAI::useHealingTent(const BattleID & battleID, const CStack *
 
 void CBattleAI::yourTacticPhase(const BattleID & battleID, int distance)
 {
+	if(isClassicMode())
+	{
+		classicController->yourTacticPhase(battleID, distance, autobattlePreferences);
+		return;
+	}
 	tacticsHandler->onTacticsStarted();
 }
 
 void CBattleAI::actionFinished(const BattleID & battleID, const BattleAction & action)
 {
+	if(isClassicMode())
+	{
+		classicController->actionFinished(battleID, action);
+		return;
+	}
 	tacticsHandler->onActionFinished(action);
+}
+
+bool CBattleAI::isClassicMode() const
+{
+	return battleAISettings.mode == BattleAIMode::CLASSIC;
 }
 
 static float getStrengthRatio(std::shared_ptr<CBattleInfoCallback> cb, BattleSide side)
@@ -131,6 +155,17 @@ int getSimulationTurnsCount(const StartInfo * startInfo)
 }
 
 void CBattleAI::activeStack(const BattleID & battleID, const CStack * stack )
+{
+	if(isClassicMode())
+	{
+		classicController->activeStack(battleID, stack, autobattlePreferences);
+		return;
+	}
+
+	activeStackModern(battleID, stack);
+}
+
+void CBattleAI::activeStackModern(const BattleID & battleID, const CStack * stack )
 {
 	LOG_TRACE_PARAMS(logAi, "stack: %s", stack->nodeName());
 
@@ -249,8 +284,19 @@ void CBattleAI::battleStart(const BattleID & battleID, const CCreatureSet *army1
 {
 	LOG_TRACE(logAi);
 	side = Side;
+	if(isClassicMode())
+	{
+		classicController->battleStart(battleID, Side);
+		return;
+	}
 	auto tacticsSettings = TacticsHandler::Settings{.enabled = autobattlePreferences.enableTacticsUsage};
 	tacticsHandler = std::make_unique<TacticsHandler>(cb, battleID, tacticsSettings);
+}
+
+void CBattleAI::battleEnd(const BattleID & battleID, const BattleResult * result, QueryID queryID)
+{
+	if(isClassicMode() && classicController)
+		classicController->battleEnd(battleID);
 }
 
 void CBattleAI::print(const std::string &text) const
@@ -298,6 +344,4 @@ std::optional<BattleAction> CBattleAI::considerFleeingOrSurrendering(const Battl
 
 	return result;
 }
-
-
 
